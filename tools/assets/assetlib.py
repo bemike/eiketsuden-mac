@@ -184,17 +184,28 @@ def pixels(img: Image.Image) -> list[RGBA]:
     return [tuple(raw[i : i + 4]) for i in range(0, len(raw), 4)]  # type: ignore[misc]
 
 
-def recolor(img: Image.Image, mapping: Mapping[Sequence[int], Sequence[int]]) -> Image.Image:
-    """Replace exact RGB colours (alpha preserved). Keys/values may be RGB or RGBA."""
+def recolor(
+    img: Image.Image, mapping: Mapping[Sequence[int], Sequence[int]], strict: bool = True
+) -> Image.Image:
+    """Replace exact RGB colours (alpha preserved). Keys/values may be RGB or RGBA.
+
+    With `strict`, every key must occur in the image, which catches stale colour tables when a
+    source file changes.
+    """
     table = {tuple(k[:3]): tuple(v[:3]) for k, v in mapping.items()}
     out = img.copy()
     px = out.load()
+    seen: set[tuple[int, ...]] = set()
     for y in range(out.height):
         for x in range(out.width):
             c = px[x, y]
             if c[3] and c[:3] in table:
+                seen.add(c[:3])
                 r, g, b = table[c[:3]]
                 px[x, y] = (r, g, b, c[3])
+    if strict and len(seen) != len(table):
+        missing = ", ".join("#%02x%02x%02x" % k for k in table if k not in seen)
+        raise ValueError(f"recolor: colour(s) not found in image: {missing}")
     return out
 
 
