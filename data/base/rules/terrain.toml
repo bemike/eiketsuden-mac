@@ -1,0 +1,160 @@
+# Terrain of the base pack (`TerrainDef` in crates/hero-core/src/data.rs). The ids and glyphs are the
+# canonical set of docs/ASSETS.md; battle maps draw with the glyphs.
+#
+# defense  - percent of physical damage removed for the unit standing here (PC values).
+# heal_hp  - percent of max HP restored at the start of the occupant's phase (design: the PC original
+#            restores a small, slightly random amount; the regeneration treasures in items.toml use the
+#            same numbers, as in the original).
+# elements - attack-strategy elements that can target a unit here (PC): fire on plain, grassland, forest
+#            and castle floor; water on plain and bridges; earth on mountains and wasteland; nothing on
+#            villages, barracks, forts, granaries and treasuries.
+# boost    - elements dealing +25% here (fire in forest).
+#
+# Move types (keys of `cost`, used by classes.toml), after the move-cost table of the original:
+#   foot     - infantry line, archer line, sorcerers, civilians
+#   horse    - cavalry line: no forest or mountains, wasteland 2, granary/treasury 3
+#   mountain - bandit line, martial artists, beast tamers, tribesmen: may climb mountains
+#   slow     - supply wagons and military bands: forest and wasteland cost 2
+# Establishments (village, barracks, fort) cost 2 for everyone. A move type missing from `cost` cannot
+# enter the tile; river, wall, cliff, house and fence have no costs at all (impassable).
+
+[[terrain]]
+id = "plain"
+name = "평지"
+glyph = "."
+defense = 0
+elements = ["fire", "water"]
+cost = { foot = 1, horse = 1, mountain = 1, slow = 1 }
+
+[[terrain]]
+id = "grass"
+name = "초원"
+glyph = ","
+defense = 5
+elements = ["fire"]
+cost = { foot = 1, horse = 1, mountain = 1, slow = 1 }
+
+# A road behaves exactly like a plain; only the tile looks different.
+[[terrain]]
+id = "road"
+name = "길"
+glyph = "_"
+defense = 0
+elements = ["fire", "water"]
+cost = { foot = 1, horse = 1, mountain = 1, slow = 1 }
+
+[[terrain]]
+id = "forest"
+name = "숲"
+glyph = "T"
+defense = 20
+elements = ["fire"]
+boost = ["fire"]
+cost = { foot = 1, mountain = 1, slow = 2 }
+
+[[terrain]]
+id = "mountain"
+name = "산지"
+glyph = "^"
+defense = 30
+elements = ["earth"]
+cost = { mountain = 1 }
+
+[[terrain]]
+id = "wasteland"
+name = "황무지"
+glyph = ":"
+defense = 0
+elements = ["earth"]
+cost = { foot = 1, horse = 2, mountain = 1, slow = 2 }
+
+[[terrain]]
+id = "bridge"
+name = "다리"
+glyph = "="
+defense = 0
+elements = ["water"]
+cost = { foot = 1, horse = 1, mountain = 1, slow = 1 }
+
+[[terrain]]
+id = "castle"
+name = "성내"
+glyph = "c"
+defense = 0
+elements = ["fire"]
+cost = { foot = 1, horse = 1, mountain = 1, slow = 1 }
+
+# An open city gate uses the castle-floor rules; only the tile looks different.
+[[terrain]]
+id = "gate"
+name = "성문"
+glyph = "G"
+defense = 0
+elements = ["fire"]
+cost = { foot = 1, horse = 1, mountain = 1, slow = 1 }
+
+[[terrain]]
+id = "village"
+name = "마을"
+glyph = "v"
+defense = 5
+heal_hp = 10
+heal_morale = 10
+cost = { foot = 2, horse = 2, mountain = 2, slow = 2 }
+
+[[terrain]]
+id = "barracks"
+name = "병영"
+glyph = "b"
+defense = 10
+heal_hp = 15
+cost = { foot = 2, horse = 2, mountain = 2, slow = 2 }
+
+[[terrain]]
+id = "fort"
+name = "성채"
+glyph = "f"
+defense = 30
+heal_hp = 10
+heal_morale = 10
+cost = { foot = 2, horse = 2, mountain = 2, slow = 2 }
+
+# Granaries and treasuries hold a one-off prize (see `treasures` in the battle files).
+[[terrain]]
+id = "granary"
+name = "군량고"
+glyph = "g"
+defense = 0
+cost = { foot = 2, horse = 3, mountain = 2, slow = 2 }
+
+[[terrain]]
+id = "treasury"
+name = "보물고"
+glyph = "$"
+defense = 0
+cost = { foot = 2, horse = 3, mountain = 2, slow = 2 }
+
+[[terrain]]
+id = "river"
+name = "강"
+glyph = "~"
+
+[[terrain]]
+id = "wall"
+name = "성벽"
+glyph = "#"
+
+[[terrain]]
+id = "cliff"
+name = "절벽"
+glyph = "X"
+
+[[terrain]]
+id = "house"
+name = "민가"
+glyph = "H"
+
+[[terrain]]
+id = "fence"
+name = "목책"
+glyph = "|"

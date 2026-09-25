@@ -1,0 +1,552 @@
+# Strategies (책략) of the base pack (`StrategyDef` in crates/hero-core/src/data.rs): the 36 strategies of
+# the PC original in eight families, plus one item-only effect (`blast`, used by the bomb).
+#
+# mp, damage power, reach and area are PC values. Reach: range8 = the 3x3 square around the caster,
+# range12 = range8 plus the four tiles two steps straight out, range20 = the 5x5 square minus its corners.
+# Area: `cross` hits the aimed tile and its four neighbours (the 大 attack strategies and 위장),
+# `all_in_range` affects every friendly unit in reach, the caster included (the 大 heals).
+# Elements (PC): fire needs plain/grassland/forest/castle floor and fails in rain; water needs plain or a
+# bridge and deals +25% in rain; earth needs mountain or wasteland.
+#
+# (design) values:
+#  * Heal power. Only "원조 heals roughly 600-800" is documented. Healing is power + 2 * (INT * level / 50
+#    + INT) (docs/RULES.md §5), so power is the base: 원조 400, 보급 800, 구제 1200. The healing food items
+#    in items.toml restore exactly these bases, matching "items heal less than the strategy".
+#  * Morale amounts: the documented morale-down steps are about -20/-30/-40; the morale-up family uses
+#    +20/+35/+50.
+#  * Confusion lasts `turns = 2`: the countdown runs at the start of the confused unit's own phase, before
+#    it could act, so 2 means "loses its next phase" - the PC behaviour ("wears off after about a turn
+#    unless morale is low"). A value of 1 would expire before the victim ever lost an action.
+
+# ---------------------------------------------------------------------------------------------------
+# Fire (화계) - infantry line, martial artists, sorcerers
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "scorch"
+name = "초열"
+hanja = "焦熱"
+kind = "attack"
+mp = 4
+range = "range8"
+area = "single"
+target = "enemy"
+element = "fire"
+effects = [{ type = "damage", power = 200 }]
+fx = "fire"
+desc = "불을 질러 가까운 적 한 부대를 공격한다. 비가 오면 쓸 수 없다."
+
+[[strategy]]
+id = "fire_dragon"
+name = "화룡"
+hanja = "火龍"
+kind = "attack"
+mp = 8
+range = "range12"
+area = "single"
+target = "enemy"
+element = "fire"
+effects = [{ type = "damage", power = 600 }]
+fx = "fire"
+desc = "용처럼 휘감는 불길로 적 한 부대를 태운다."
+
+[[strategy]]
+id = "hellfire"
+name = "업화"
+hanja = "業火"
+kind = "attack"
+mp = 12
+range = "range20"
+area = "single"
+target = "enemy"
+element = "fire"
+effects = [{ type = "damage", power = 1000 }]
+fx = "fire"
+desc = "지옥의 겁화를 불러 먼 곳의 적 한 부대를 불사른다."
+
+[[strategy]]
+id = "great_scorch"
+name = "대초열"
+hanja = "大焦熱"
+kind = "attack"
+mp = 16
+range = "range8"
+area = "cross"
+target = "enemy"
+element = "fire"
+effects = [{ type = "damage", power = 200 }]
+fx = "fire"
+desc = "노린 칸과 그 상하좌우까지 불길을 번지게 하여 최대 다섯 부대를 공격한다."
+
+[[strategy]]
+id = "great_fire_dragon"
+name = "대화룡"
+hanja = "大火龍"
+kind = "attack"
+mp = 20
+range = "range12"
+area = "cross"
+target = "enemy"
+element = "fire"
+effects = [{ type = "damage", power = 600 }]
+fx = "fire"
+desc = "거대한 불의 용으로 노린 칸과 그 상하좌우의 적을 한꺼번에 태운다."
+
+# ---------------------------------------------------------------------------------------------------
+# Water (수계) - archer line, tribesmen, sorcerers
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "whirlpool"
+name = "소용돌이"
+hanja = "渦潮"
+kind = "attack"
+mp = 6
+range = "range8"
+area = "single"
+target = "enemy"
+element = "water"
+effects = [{ type = "damage", power = 300 }]
+fx = "water"
+desc = "물살을 휘몰아 가까운 적 한 부대를 공격한다. 비가 오면 위력이 커진다."
+
+[[strategy]]
+id = "torrent"
+name = "탁류"
+hanja = "濁流"
+kind = "attack"
+mp = 10
+range = "range12"
+area = "single"
+target = "enemy"
+element = "water"
+effects = [{ type = "damage", power = 700 }]
+fx = "water"
+desc = "흙탕물을 쏟아부어 적 한 부대를 휩쓸어 버린다."
+
+[[strategy]]
+id = "tsunami"
+name = "해일"
+hanja = "津波"
+kind = "attack"
+mp = 14
+range = "range20"
+area = "single"
+target = "enemy"
+element = "water"
+effects = [{ type = "damage", power = 1100 }]
+fx = "water"
+desc = "산더미 같은 물결로 먼 곳의 적 한 부대를 덮친다."
+
+[[strategy]]
+id = "great_whirlpool"
+name = "대소용돌이"
+hanja = "大渦潮"
+kind = "attack"
+mp = 18
+range = "range8"
+area = "cross"
+target = "enemy"
+element = "water"
+effects = [{ type = "damage", power = 300 }]
+fx = "water"
+desc = "커다란 소용돌이로 노린 칸과 그 상하좌우의 적을 한꺼번에 공격한다."
+
+[[strategy]]
+id = "great_torrent"
+name = "대탁류"
+hanja = "大濁流"
+kind = "attack"
+mp = 22
+range = "range12"
+area = "cross"
+target = "enemy"
+element = "water"
+effects = [{ type = "damage", power = 700 }]
+fx = "water"
+desc = "거센 흙탕물로 노린 칸과 그 상하좌우의 적을 한꺼번에 휩쓴다."
+
+# ---------------------------------------------------------------------------------------------------
+# Earth (지계) - bandit line, sorcerers
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "rockfall"
+name = "낙석"
+hanja = "落石"
+kind = "attack"
+mp = 8
+range = "range8"
+area = "single"
+target = "enemy"
+element = "earth"
+effects = [{ type = "damage", power = 400 }]
+fx = "rock"
+desc = "바위를 굴려 산이나 황무지에 있는 적 한 부대를 공격한다."
+
+[[strategy]]
+id = "landslide"
+name = "산사태"
+hanja = "山崩"
+kind = "attack"
+mp = 12
+range = "range12"
+area = "single"
+target = "enemy"
+element = "earth"
+effects = [{ type = "damage", power = 800 }]
+fx = "rock"
+desc = "산허리를 무너뜨려 적 한 부대를 흙더미에 묻는다."
+
+[[strategy]]
+id = "mudflow"
+name = "토석류"
+hanja = "山津波"
+kind = "attack"
+mp = 16
+range = "range20"
+area = "single"
+target = "enemy"
+element = "earth"
+effects = [{ type = "damage", power = 1200 }]
+fx = "rock"
+desc = "흙과 돌의 급류를 일으켜 먼 곳의 적 한 부대를 쓸어 버린다."
+
+[[strategy]]
+id = "great_rockfall"
+name = "대낙석"
+hanja = "大落石"
+kind = "attack"
+mp = 20
+range = "range8"
+area = "cross"
+target = "enemy"
+element = "earth"
+effects = [{ type = "damage", power = 400 }]
+fx = "rock"
+desc = "바위를 무더기로 굴려 노린 칸과 그 상하좌우의 적을 한꺼번에 공격한다."
+
+[[strategy]]
+id = "great_landslide"
+name = "대산사태"
+hanja = "大山崩"
+kind = "attack"
+mp = 24
+range = "range12"
+area = "cross"
+target = "enemy"
+element = "earth"
+effects = [{ type = "damage", power = 800 }]
+fx = "rock"
+desc = "큰 산사태로 노린 칸과 그 상하좌우의 적을 한꺼번에 묻어 버린다."
+
+# ---------------------------------------------------------------------------------------------------
+# Confusion (혼란) - usable on any terrain; a confused unit cannot move or act.
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "false_report"
+name = "거짓정보"
+hanja = "僞情報"
+kind = "support"
+mp = 8
+range = "range8"
+area = "single"
+target = "enemy"
+effects = [{ type = "status", status = "confused", turns = 2 }]
+fx = "confuse"
+desc = "헛소문을 퍼뜨려 가까운 적 한 부대를 혼란에 빠뜨린다."
+
+[[strategy]]
+id = "false_troops"
+name = "위병"
+hanja = "僞兵"
+kind = "support"
+mp = 16
+range = "range20"
+area = "single"
+target = "enemy"
+effects = [{ type = "status", status = "confused", turns = 2 }]
+fx = "confuse"
+desc = "허수아비 군세를 보여 먼 곳의 적 한 부대를 혼란에 빠뜨린다."
+
+[[strategy]]
+id = "disguise"
+name = "위장"
+hanja = "僞裝"
+kind = "support"
+mp = 24
+range = "range8"
+area = "cross"
+target = "enemy"
+effects = [{ type = "status", status = "confused", turns = 2 }]
+fx = "confuse"
+desc = "아군으로 변장한 병사를 섞어 노린 칸과 그 상하좌우의 적을 혼란에 빠뜨린다."
+
+# ---------------------------------------------------------------------------------------------------
+# Morale down (사기 저하) - the effect grows with the caster's level lead (docs/RULES.md §5).
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "harass"
+name = "견제"
+hanja = "牽制"
+kind = "support"
+mp = 4
+range = "range8"
+area = "single"
+target = "enemy"
+effects = [{ type = "morale", amount = -20 }]
+fx = "morale_down"
+desc = "위협하여 가까운 적 한 부대의 사기를 조금 떨어뜨린다."
+
+[[strategy]]
+id = "provoke"
+name = "도발"
+hanja = "挑發"
+kind = "support"
+mp = 8
+range = "range12"
+area = "single"
+target = "enemy"
+effects = [{ type = "morale", amount = -30 }]
+fx = "morale_down"
+desc = "욕설과 조롱으로 적 한 부대의 사기를 떨어뜨린다."
+
+[[strategy]]
+id = "intimidate"
+name = "위압"
+hanja = "威壓"
+kind = "support"
+mp = 16
+range = "range20"
+area = "single"
+target = "enemy"
+effects = [{ type = "morale", amount = -40 }]
+fx = "morale_down"
+desc = "압도적인 기세로 먼 곳의 적 한 부대의 사기를 크게 떨어뜨린다."
+
+# ---------------------------------------------------------------------------------------------------
+# Morale recovery (사기 회복)
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "encourage"
+name = "격려"
+hanja = "激勵"
+kind = "heal"
+mp = 4
+range = "range8"
+area = "single"
+target = "ally"
+effects = [{ type = "morale", amount = 20 }]
+fx = "morale_up"
+desc = "가까운 아군 한 부대를 격려하여 사기를 조금 회복한다."
+
+[[strategy]]
+id = "cheer"
+name = "응원"
+hanja = "應援"
+kind = "heal"
+mp = 8
+range = "range12"
+area = "single"
+target = "ally"
+effects = [{ type = "morale", amount = 35 }]
+fx = "morale_up"
+desc = "북소리로 아군 한 부대를 응원하여 사기를 회복한다."
+
+[[strategy]]
+id = "inspire"
+name = "고무"
+hanja = "鼓舞"
+kind = "heal"
+mp = 12
+range = "range20"
+area = "single"
+target = "ally"
+effects = [{ type = "morale", amount = 50 }]
+fx = "morale_up"
+desc = "먼 곳의 아군 한 부대까지 기세를 북돋아 사기를 크게 회복한다."
+
+[[strategy]]
+id = "great_encourage"
+name = "대격려"
+hanja = "大激勵"
+kind = "heal"
+mp = 16
+range = "range8"
+area = "all_in_range"
+target = "ally"
+effects = [{ type = "morale", amount = 20 }]
+fx = "morale_up"
+desc = "주위의 아군 모두(자신 포함)의 사기를 조금 회복한다."
+
+[[strategy]]
+id = "great_cheer"
+name = "대응원"
+hanja = "大應援"
+kind = "heal"
+mp = 24
+range = "range12"
+area = "all_in_range"
+target = "ally"
+effects = [{ type = "morale", amount = 35 }]
+fx = "morale_up"
+desc = "넓은 범위의 아군 모두(자신 포함)의 사기를 회복한다."
+
+[[strategy]]
+id = "great_inspire"
+name = "대고무"
+hanja = "大鼓舞"
+kind = "heal"
+mp = 32
+range = "range20"
+area = "all_in_range"
+target = "ally"
+effects = [{ type = "morale", amount = 50 }]
+fx = "morale_up"
+desc = "아주 넓은 범위의 아군 모두(자신 포함)의 사기를 크게 회복한다."
+
+# ---------------------------------------------------------------------------------------------------
+# Troop recovery (병력 회복) - halved on targets whose morale is below 30.
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "aid"
+name = "원조"
+hanja = "援助"
+kind = "heal"
+mp = 6
+range = "range8"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 400 }]
+fx = "heal"
+desc = "가까운 아군 한 부대의 병력을 조금 회복한다."
+
+[[strategy]]
+id = "resupply"
+name = "보급"
+hanja = "補給"
+kind = "heal"
+mp = 10
+range = "range12"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 800 }]
+fx = "heal"
+desc = "군량과 병사를 보내 아군 한 부대의 병력을 회복한다."
+
+[[strategy]]
+id = "relief"
+name = "구제"
+hanja = "救濟"
+kind = "heal"
+mp = 14
+range = "range20"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 1200 }]
+fx = "heal"
+desc = "먼 곳의 아군 한 부대까지 병력을 크게 회복한다."
+
+[[strategy]]
+id = "great_aid"
+name = "대원조"
+hanja = "大援助"
+kind = "heal"
+mp = 24
+range = "range8"
+area = "all_in_range"
+target = "ally"
+effects = [{ type = "heal", power = 400 }]
+fx = "heal"
+desc = "주위의 아군 모두(자신 포함)의 병력을 조금 회복한다."
+
+[[strategy]]
+id = "great_resupply"
+name = "대보급"
+hanja = "大補給"
+kind = "heal"
+mp = 32
+range = "range12"
+area = "all_in_range"
+target = "ally"
+effects = [{ type = "heal", power = 800 }]
+fx = "heal"
+desc = "넓은 범위의 아군 모두(자신 포함)의 병력을 회복한다."
+
+[[strategy]]
+id = "great_relief"
+name = "대구제"
+hanja = "大救濟"
+kind = "heal"
+mp = 40
+range = "range20"
+area = "all_in_range"
+target = "ally"
+effects = [{ type = "heal", power = 1200 }]
+fx = "heal"
+desc = "아주 넓은 범위의 아군 모두(자신 포함)의 병력을 크게 회복한다."
+
+# ---------------------------------------------------------------------------------------------------
+# Troop and morale recovery (병력·사기 회복) - sorcerers only.
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "nurse"
+name = "간호"
+hanja = "看護"
+kind = "heal"
+mp = 12
+range = "range8"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 400 }, { type = "morale", amount = 20 }]
+fx = "heal"
+desc = "가까운 아군 한 부대의 병력과 사기를 함께 회복한다."
+
+[[strategy]]
+id = "cure"
+name = "치유"
+hanja = "治癒"
+kind = "heal"
+mp = 20
+range = "range12"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 800 }, { type = "morale", amount = 35 }]
+fx = "heal"
+desc = "아군 한 부대의 병력과 사기를 넉넉히 회복한다."
+
+[[strategy]]
+id = "revive"
+name = "구명"
+hanja = "救命"
+kind = "heal"
+mp = 28
+range = "range20"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 1200 }, { type = "morale", amount = 50 }]
+fx = "heal"
+desc = "먼 곳의 아군 한 부대까지 병력과 사기를 크게 회복한다."
+
+# ---------------------------------------------------------------------------------------------------
+# Item-only effect: no class learns it; the bomb item (items.toml) casts it. (PC: about 1,500 damage and
+# a third of the morale, usable on any terrain and in any weather, two tiles of reach.)
+# ---------------------------------------------------------------------------------------------------
+
+[[strategy]]
+id = "blast"
+name = "폭발"
+hanja = "爆發"
+kind = "attack"
+mp = 0
+range = "range12"
+area = "single"
+target = "enemy"
+effects = [{ type = "damage", power = 1500 }, { type = "morale", amount = -30 }]
+fx = "fire"
+desc = "화약을 터뜨려 지형과 날씨에 상관없이 적 한 부대에 큰 피해를 준다. 폭탄 전용."
