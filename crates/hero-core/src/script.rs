@@ -84,10 +84,7 @@ pub enum Cmd {
     Bgm(Option<String>),
     Sfx(String),
     /// Show a portrait (officer id or portrait key) in a slot.
-    Show {
-        who: String,
-        slot: Slot,
-    },
+    Show { who: String, slot: Slot },
     /// Hide the portrait in a slot, or every slot when `None`.
     Hide(Option<Slot>),
     /// Pause for the given number of milliseconds.
@@ -99,22 +96,12 @@ pub enum Cmd {
     /// Narration box without a speaker.
     Narr(String),
     /// Dialogue. `speaker` is an officer id or a free display name.
-    Say {
-        speaker: String,
-        text: String,
-    },
+    Say { speaker: String, text: String },
     Choice(Vec<ChoiceOption>),
     Label(String),
     Goto(String),
-    If {
-        cond: Cond,
-        label: String,
-    },
-    Set {
-        flag: String,
-        op: SetOp,
-        value: i64,
-    },
+    If { cond: Cond, label: String },
+    Set { flag: String, op: SetOp, value: i64 },
     /// Officer joins the player's army.
     Join(String),
     /// Officer leaves the player's army.
@@ -190,9 +177,7 @@ pub fn parse_drama(file: &str, src: &str) -> Result<Vec<Scene>, ParseError> {
                         i += 1;
                         continue;
                     }
-                    let Some(opt) = t.strip_prefix('-') else {
-                        break;
-                    };
+                    let Some(opt) = t.strip_prefix('-') else { break };
                     let Some((text, label)) = opt.rsplit_once("->") else {
                         return Err(p.err(i + 1, "choice option needs `- text -> label`"));
                     };
@@ -334,10 +319,7 @@ impl Parser<'_> {
                 t.push_str(text);
                 Ok(())
             }
-            _ => Err(self.err(
-                line,
-                "indented continuation line must follow dialogue, @narr or @title",
-            )),
+            _ => Err(self.err(line, "indented continuation line must follow dialogue, @narr or @title")),
         }
     }
 
@@ -364,8 +346,7 @@ impl Parser<'_> {
                 if who.is_empty() {
                     return Err(self.err(line, "@show needs `<who> <left|center|right>`"));
                 }
-                let slot = parse_slot(slot)
-                    .ok_or_else(|| self.err(line, "@show slot must be left, center or right"))?;
+                let slot = parse_slot(slot).ok_or_else(|| self.err(line, "@show slot must be left, center or right"))?;
                 Cmd::Show {
                     who: who.to_string(),
                     slot,
@@ -373,9 +354,9 @@ impl Parser<'_> {
             }
             "hide" => match arg {
                 "" | "all" => Cmd::Hide(None),
-                s => Cmd::Hide(Some(parse_slot(s).ok_or_else(|| {
-                    self.err(line, "@hide takes left, center, right or all")
-                })?)),
+                s => Cmd::Hide(Some(
+                    parse_slot(s).ok_or_else(|| self.err(line, "@hide takes left, center, right or all"))?,
+                )),
             },
             "wait" => Cmd::Wait(
                 arg.parse()
@@ -417,8 +398,7 @@ impl Parser<'_> {
                 if flag.is_empty() {
                     return Err(self.err(line, "@set flag name missing"));
                 }
-                let value = v_parse(value)
-                    .ok_or_else(|| self.err(line, "@set value must be an integer"))?;
+                let value = v_parse(value).ok_or_else(|| self.err(line, "@set value must be an integer"))?;
                 Cmd::Set {
                     flag: flag.to_string(),
                     op,
@@ -427,9 +407,7 @@ impl Parser<'_> {
             }
             "join" => Cmd::Join(need("an officer id")?),
             "leave" => Cmd::Leave(need("an officer id")?),
-            "gold" => Cmd::Gold(
-                v_parse(arg).ok_or_else(|| self.err(line, "@gold needs an integer like +100"))?,
-            ),
+            "gold" => Cmd::Gold(v_parse(arg).ok_or_else(|| self.err(line, "@gold needs an integer like +100"))?),
             "item" => Cmd::Item(need("an item id")?),
             "end" => Cmd::End,
             other => return Err(self.err(line, format!("unknown command @{other}"))),
@@ -448,8 +426,7 @@ impl Parser<'_> {
         for (tok, cmp) in OPS {
             if let Some((flag, value)) = s.split_once(tok) {
                 let flag = flag.trim();
-                let value = v_parse(value)
-                    .ok_or_else(|| self.err(line, "@if comparison value must be an integer"))?;
+                let value = v_parse(value).ok_or_else(|| self.err(line, "@if comparison value must be an integer"))?;
                 if flag.is_empty() {
                     return Err(self.err(line, "@if flag name missing"));
                 }
@@ -533,10 +510,7 @@ liu_bei: 어지러운 세상이로구나.
         let s = &scenes[0];
         assert_eq!(s.id, "prologue");
         assert_eq!(s.cmds[0], Cmd::Bg(Some("village".into())));
-        assert_eq!(
-            s.cmds[3],
-            Cmd::Narr("184년, 황건적의 난이\n천하를 뒤덮었다.".into())
-        );
+        assert_eq!(s.cmds[3], Cmd::Narr("184년, 황건적의 난이\n천하를 뒤덮었다.".into()));
         assert_eq!(
             s.cmds[4],
             Cmd::Say {
@@ -570,9 +544,7 @@ liu_bei: 어지러운 세상이로구나.
         assert!(s.cmds.contains(&Cmd::Bgm(None)));
         // Scenes without an explicit @end get one appended.
         assert_eq!(scenes[1].cmds.last(), Some(&Cmd::End));
-        assert!(
-            matches!(&scenes[1].cmds[0], Cmd::If { cond, .. } if cond.cmp == Compare::Ne && cond.value == 0)
-        );
+        assert!(matches!(&scenes[1].cmds[0], Cmd::If { cond, .. } if cond.cmp == Compare::Ne && cond.value == 0));
     }
 
     #[test]

@@ -9,9 +9,7 @@ fn yes() -> bool {
     true
 }
 
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Side {
     /// Units the player controls.
@@ -174,13 +172,9 @@ pub enum Trigger {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventAction {
     /// Play a drama scene (global scene id).
-    Drama {
-        scene: String,
-    },
+    Drama { scene: String },
     /// Bring a reinforcement group onto the map (occupied tiles shift to the nearest free tile).
-    Spawn {
-        group: String,
-    },
+    Spawn { group: String },
     SetAi {
         target: String,
         ai: AiMode,
@@ -190,24 +184,12 @@ pub enum EventAction {
         ai_pos: Option<Pos>,
     },
     /// Remove a unit from the map without defeating it in combat (duel loser, escape).
-    Retreat {
-        target: String,
-    },
+    Retreat { target: String },
     /// Grant levels (duel reward).
-    LevelUp {
-        target: String,
-        amount: u32,
-    },
-    GiveItem {
-        item: Id,
-    },
-    GiveGold {
-        amount: i64,
-    },
-    SetFlag {
-        flag: String,
-        value: i64,
-    },
+    LevelUp { target: String, amount: u32 },
+    GiveItem { item: Id },
+    GiveGold { amount: i64 },
+    SetFlag { flag: String, value: i64 },
     Victory,
     Defeat,
 }

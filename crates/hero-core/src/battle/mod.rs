@@ -118,31 +118,15 @@ pub enum Outcome {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     /// Move within the movement range. A unit moves at most once per phase.
-    Move {
-        unit: UnitId,
-        to: Pos,
-    },
-    Attack {
-        unit: UnitId,
-        target: UnitId,
-    },
+    Move { unit: UnitId, to: Pos },
+    Attack { unit: UnitId, target: UnitId },
     /// Aim a strategy at a tile (area effects are centred there).
-    Strategy {
-        unit: UnitId,
-        strategy: Id,
-        target: Pos,
-    },
+    Strategy { unit: UnitId, strategy: Id, target: Pos },
     /// Use a battle consumable from the army inventory. For strategy scrolls `target` is the
     /// unit on the aimed tile.
-    UseItem {
-        unit: UnitId,
-        item: Id,
-        target: UnitId,
-    },
+    UseItem { unit: UnitId, item: Id, target: UnitId },
     /// End this unit's action without doing anything.
-    Wait {
-        unit: UnitId,
-    },
+    Wait { unit: UnitId },
     /// End the current side's phase (remaining units forfeit their actions).
     EndPhase,
 }
@@ -260,14 +244,8 @@ pub struct StrategyHit {
 /// Everything the frontend needs to animate, in the order it happened.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BattleEvent {
-    PhaseStart {
-        side: Side,
-        turn: u32,
-    },
-    Moved {
-        unit: UnitId,
-        path: Vec<Pos>,
-    },
+    PhaseStart { side: Side, turn: u32 },
+    Moved { unit: UnitId, path: Vec<Pos> },
     /// One strike: the attack itself, or the defender's counter-attack.
     Strike {
         attacker: UnitId,
@@ -284,72 +262,24 @@ pub enum BattleEvent {
         target: Pos,
         hits: Vec<StrategyHit>,
     },
-    ItemUsed {
-        user: UnitId,
-        target: UnitId,
-        item: Id,
-        healed: i32,
-        morale: i32,
-    },
+    ItemUsed { user: UnitId, target: UnitId, item: Id, healed: i32, morale: i32 },
     /// Terrain / treasure / band-aura regeneration at phase start.
-    Regenerated {
-        unit: UnitId,
-        hp: i32,
-        mp: i32,
-        morale: i32,
-    },
+    Regenerated { unit: UnitId, hp: i32, mp: i32, morale: i32 },
     /// A unit became confused (strategy or low morale).
-    Confused {
-        unit: UnitId,
-    },
-    StatusExpired {
-        unit: UnitId,
-        status: StatusKind,
-    },
-    WeatherChanged {
-        weather: Weather,
-    },
-    ExpGained {
-        unit: UnitId,
-        amount: u32,
-    },
-    LevelUp {
-        unit: UnitId,
-        level: u32,
-        hp_gain: i32,
-        mp_gain: i32,
-    },
-    Promoted {
-        unit: UnitId,
-        from: Id,
-        to: Id,
-    },
-    Learned {
-        unit: UnitId,
-        strategy: Id,
-    },
-    Retreated {
-        unit: UnitId,
-    },
-    Spawned {
-        units: Vec<UnitId>,
-    },
-    TreasureFound {
-        unit: UnitId,
-        item: Option<Id>,
-        gold: i64,
-    },
-    ItemDropped {
-        unit: UnitId,
-        item: Id,
-    },
+    Confused { unit: UnitId },
+    StatusExpired { unit: UnitId, status: StatusKind },
+    WeatherChanged { weather: Weather },
+    ExpGained { unit: UnitId, amount: u32 },
+    LevelUp { unit: UnitId, level: u32, hp_gain: i32, mp_gain: i32 },
+    Promoted { unit: UnitId, from: Id, to: Id },
+    Learned { unit: UnitId, strategy: Id },
+    Retreated { unit: UnitId },
+    Spawned { units: Vec<UnitId> },
+    TreasureFound { unit: UnitId, item: Option<Id>, gold: i64 },
+    ItemDropped { unit: UnitId, item: Id },
     /// Play a drama scene now (battle state has already been updated).
-    Drama {
-        scene: String,
-    },
-    BonusAchieved {
-        exp: u32,
-    },
+    Drama { scene: String },
+    BonusAchieved { exp: u32 },
     Victory,
     Defeat(DefeatReason),
 }
@@ -384,12 +314,7 @@ impl BattleState {
     /// Build the initial state of `battle`: player units from `campaign.deployed` (falling back to
     /// required officers + roster order up to `deploy.max`) placed on deploy slots, enemy/ally
     /// spawns without a `group` placed on the map, grouped spawns hidden.
-    pub fn new(
-        pack: &Pack,
-        battle: &str,
-        campaign: &CampaignState,
-        seed: u64,
-    ) -> Result<BattleState, BattleError> {
+    pub fn new(pack: &Pack, battle: &str, campaign: &CampaignState, seed: u64) -> Result<BattleState, BattleError> {
         let _ = (pack, campaign, seed);
         todo!("W1a: BattleState::new {battle}")
     }
@@ -418,10 +343,7 @@ impl BattleState {
 
     /// First unit (any state) matching a tag or officer id.
     pub fn find_unit(&self, reference: &str) -> Option<UnitId> {
-        self.units
-            .iter()
-            .find(|u| u.matches(reference))
-            .map(|u| u.id)
+        self.units.iter().find(|u| u.matches(reference)).map(|u| u.id)
     }
 
     pub fn terrain_at<'a>(&self, pack: &'a Pack, pos: Pos) -> Option<&'a TerrainDef> {
@@ -501,23 +423,12 @@ impl BattleState {
         todo!("W1a: item_targets")
     }
 
-    pub fn forecast_attack(
-        &self,
-        pack: &Pack,
-        attacker: UnitId,
-        defender: UnitId,
-    ) -> AttackForecast {
+    pub fn forecast_attack(&self, pack: &Pack, attacker: UnitId, defender: UnitId) -> AttackForecast {
         let _ = (pack, attacker, defender);
         todo!("W1a: forecast_attack")
     }
 
-    pub fn forecast_strategy(
-        &self,
-        pack: &Pack,
-        caster: UnitId,
-        strategy: &str,
-        target: Pos,
-    ) -> Vec<StrategyForecast> {
+    pub fn forecast_strategy(&self, pack: &Pack, caster: UnitId, strategy: &str, target: Pos) -> Vec<StrategyForecast> {
         let _ = (pack, caster, strategy, target);
         todo!("W1a: forecast_strategy")
     }

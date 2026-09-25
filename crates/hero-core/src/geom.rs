@@ -3,9 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A tile position. Serialized as a two-element array `[x, y]` so data files stay compact.
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(from = "[i32; 2]", into = "[i32; 2]")]
 pub struct Pos {
     pub x: i32,
