@@ -1,0 +1,26 @@
+# Base data pack of Eiketsuden Reloaded (`PackManifest` in crates/hero-core/src/pack.rs).
+# Every text file the engine reads is listed here; media files are looked up by key (docs/ASSETS.md).
+
+id = "base"
+name = "영걸전 Reloaded 기본 팩"
+version = "0.1.0"
+authors = ["Eiketsuden Reloaded contributors"]
+license = "CC-BY-SA-4.0 (text) / see CREDITS.md (media)"
+description = "원작의 PC판 규칙을 따르는 기본 규칙과 서장(반동탁 연합: 사수관·호로관 전투). 이야기와 대사는 『삼국지연의』를 바탕으로 새로 썼다."
+
+officers = "officers.toml"
+campaign = "campaign.toml"
+battles = [
+  "battles/p1_sishui.toml",
+  "battles/p2_hulao.toml",
+]
+dramas = [
+  "dramas/prologue.drama",
+]
+
+[rules]
+game = "rules/game.toml"
+terrain = "rules/terrain.toml"
+classes = "rules/classes.toml"
+strategies = "rules/strategies.toml"
+items = "rules/items.toml"

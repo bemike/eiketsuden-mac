@@ -1,0 +1,71 @@
+# Campaign flow of the base pack (`CampaignDef` in crates/hero-core/src/campaign.rs).
+#
+# Version 0.1 contains the prologue (서장): the anti-Dong Zhuo coalition, Sishui Pass and Hulao Pass.
+# The ending node below is a temporary end of this slice; chapter 1 will continue from `after_hulao`.
+#
+# Money: the PC original starts with Cao Cao handing Liu Bei 500 gold in the Chenliu camp. We keep that
+# as a drama event (`@gold +500` in prologue_chenliu), so a new game starts with 0 gold and reaches the
+# first shop with exactly 500. The Chenliu shop (scorch scrolls, wine, beans) is the prologue's only
+# shop, as in the original.
+
+title = "유비전"
+start = "prologue_opening"
+starting_officers = ["liu_bei", "guan_yu", "zhang_fei"]
+starting_gold = 0
+
+[[node]]
+type = "drama"
+id = "prologue_opening"
+scene = "prologue_opening"
+next = "chenliu"
+
+[[node]]
+type = "drama"
+id = "chenliu"
+scene = "prologue_chenliu"
+next = "camp_sishui"
+
+[[node]]
+type = "camp"
+id = "camp_sishui"
+title = "진류 — 사수관 출진 준비"
+shop = ["scroll_scorch", "wine", "bean"]
+battle = "p1_sishui"
+next = "battle_sishui"
+
+[[node]]
+type = "battle"
+id = "battle_sishui"
+battle = "p1_sishui"
+next = "after_sishui"
+
+[[node]]
+type = "drama"
+id = "after_sishui"
+scene = "prologue_after_sishui"
+next = "camp_hulao"
+
+[[node]]
+type = "camp"
+id = "camp_hulao"
+title = "호로관 — 출진 준비"
+battle = "p2_hulao"
+next = "battle_hulao"
+
+[[node]]
+type = "battle"
+id = "battle_hulao"
+battle = "p2_hulao"
+next = "after_hulao"
+
+[[node]]
+type = "drama"
+id = "after_hulao"
+scene = "prologue_coalition_breaks"
+next = "prologue_end"
+
+[[node]]
+type = "ending"
+id = "prologue_end"
+scene = "prologue_to_be_continued"
+title = "서장 완료"
