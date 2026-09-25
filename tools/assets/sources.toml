@@ -1,0 +1,81 @@
+# Third-party archives read by the asset build (tools/assets/build.py).
+#
+# `fetch.py` downloads every entry into tools/assets/.cache/<file> and refuses to continue unless the
+# file's size and SHA-256 match the values pinned here, so a rebuild always starts from exactly the
+# same bytes. Only licences allowed by docs/ASSETS.md (CC0, CC-BY, CC-BY-SA, OFL, public domain) may
+# appear here, and every source must be credited in CREDITS.md.
+#
+# Download methods:
+#   url  = "..."                 plain HTTP(S) GET
+#   [sources.<id>.itch]          itch.io "name your own price" flow: GET the page, POST its
+#                                csrf_token to <page>/file/<upload>, then GET the short-lived
+#                                signed URL returned in the JSON answer.
+
+[sources.ninja_adventure]
+title = "Ninja Adventure - Asset Pack (Update #8, 2026-03-29)"
+author = "Pixel-Boy and AAA"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://pixel-boy.itch.io/ninja-adventure-asset-pack"
+file = "NinjaAdventure-AssetPack.zip"
+size = 94022790
+sha256 = "95a06f4fdcfd1882f061a45ff313b7c905dbe2de1e8512b281d7937df62a7b15"
+
+[sources.ninja_adventure.itch]
+page = "https://pixel-boy.itch.io/ninja-adventure-asset-pack"
+upload = 16981275
+
+[sources.miniworld]
+title = "Free 16x16 Mini World Sprites"
+author = "Shade (Merchant Shade)"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://opengameart.org/content/miniworld-sprites"
+url = "https://opengameart.org/sites/default/files/miniworldsprites_1.zip"
+file = "miniworldsprites_1.zip"
+size = 2061458
+sha256 = "d9f2badbd79f92e4961629d7cbe063ab8427b1e6a2d6e1f2dd4b8c3b673ad348"
+
+[sources.toen]
+title = "Toen's Medieval Strategy Sprite Pack v1.0 (16x16)"
+author = "Andre Mari Coppola (Toen)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://toen.itch.io/toens-medieval-strategy"
+url = "https://opengameart.org/sites/default/files/Toen%27s%20Medieval%20Strategy%20Sprite%20Pack%20v.1.0%20%20%2816x16%29.zip"
+file = "toens-medieval-strategy-v1.0.zip"
+size = 458373
+sha256 = "e53985a2e8a3e9b79017fd68e4552e5663b651ab738ee441e468dfbe0a81fac0"
+
+[sources.dualr_vehicles]
+title = "16x16 fantasy pixel art vehicles"
+author = "DualR (commissioned by OpenGameArt.org)"
+license = "CC-BY-3.0"
+license_url = "https://creativecommons.org/licenses/by/3.0/"
+homepage = "https://opengameart.org/content/16x16-fantasy-pixel-art-vehicles"
+url = "https://opengameart.org/sites/default/files/fullsheet.png"
+file = "dualr-fullsheet.png"
+size = 5044
+sha256 = "60addb65a3aa738e3e9ee345bdb2e30bb8e00668edd1ff6f219dc64c1d79184d"
+
+[sources.chinese_icons]
+title = "Chinese Icons"
+author = "Pixel Archer"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://opengameart.org/content/chinese-icons"
+url = "https://opengameart.org/sites/default/files/chinese_icons.png"
+file = "chinese_icons.png"
+size = 998
+sha256 = "9b4aad71fabd4f778c3c76a384bc32131724fbc5b64002cb1572bb9a2f387b6a"
+
+[sources.galmuri]
+title = "Galmuri v2.40.4"
+author = "Minseo Lee (quiple)"
+license = "OFL-1.1"
+license_url = "https://openfontlicense.org/"
+homepage = "https://github.com/quiple/galmuri"
+url = "https://github.com/quiple/galmuri/releases/download/v2.40.4/Galmuri-v2.40.4.zip"
+file = "Galmuri-v2.40.4.zip"
+size = 19938873
+sha256 = "c8b3d9861a62ae73c8b1178091401cd79994812437ef386413f6dd54856e60e7"
