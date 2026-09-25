@@ -147,28 +147,31 @@ pub fn army_for(pack: &Pack, id: &str) -> Result<CampaignState, String> {
         army.join(pack, &officer).map_err(|e| e.to_string())?;
     }
     let deploy = &battle.deploy;
+    let lords = army
+        .roster
+        .iter()
+        .filter(|o| pack.officer(&o.id).is_some_and(|def| def.lord))
+        .map(|o| &o.id);
     let mut deployed: Vec<String> = Vec::new();
-    let mut add = |officer: &str| {
-        if !deploy.forbidden.iter().any(|f| f == officer) && !deployed.iter().any(|d| d == officer) {
-            deployed.push(officer.to_string());
-        }
-    };
-    for officer in &deploy.required {
-        add(officer);
-    }
-    for o in &army.roster {
-        if pack.officer(&o.id).is_some_and(|def| def.lord) {
-            add(&o.id);
-        }
+    // Required officers and lords always go; the rest of the roster fills up to `max`.
+    for officer in deploy.required.iter().chain(lords) {
+        push_deployable(&mut deployed, &deploy.forbidden, officer);
     }
     for o in &army.roster {
         if deployed.len() >= deploy.max as usize {
             break;
         }
-        add(&o.id);
+        push_deployable(&mut deployed, &deploy.forbidden, &o.id);
     }
     army.deployed = deployed;
     Ok(army)
+}
+
+/// Append `officer` unless it is forbidden or already deployed.
+fn push_deployable(deployed: &mut Vec<String>, forbidden: &[String], officer: &str) {
+    if !forbidden.iter().any(|f| f == officer) && !deployed.iter().any(|d| d == officer) {
+        deployed.push(officer.to_string());
+    }
 }
 
 /// How one seeded run ended.
