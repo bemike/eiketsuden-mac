@@ -6,6 +6,8 @@
 # cavalry Lv3), Zhang Liao (infantry Lv3), Song Xian (archer Lv3), Wei Xu (archer Lv2) and two archer
 # squads Lv1. Lü Bu stays in front of the gate until turn 18 and then charges. Zhang Fei moving next to
 # Lü Bu starts the duel that ends the battle (+1 level); a granary and a treasury; 100 gold.
+# (design) The treasury holds the 100 gold of the PC's Sishui treasury; the 초열서 it held in the PC
+# original moved to Sishui Pass (see p1_sishui.toml).
 #
 # Map: the pass fortress closes the west edge; the road runs straight from its gate to the coalition
 # camp in the east. Lü Bu waits on the road before the gate behind a palisade with three openings; his

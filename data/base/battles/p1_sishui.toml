@@ -5,6 +5,9 @@
 # PC original: 30 turns, 3 deployable officers, enemy Hua Xiong Lv5 (light cavalry), Zhao Cen, Hu Zhen
 # (infantry Lv2), Li Su (archer Lv2) and three infantry squads Lv1; Guan Yu moving next to Hua Xiong
 # starts the duel that ends the battle (+1 level); a granary and a treasury; 100 gold for the victory.
+# (design) The PC treasures are 콩 + 100 gold here and 콩 + 초열서 at Hulao Pass. We swap the gold and
+# the scroll between the two battles, so the very first battle already hands out a strategy scroll;
+# the prologue's total loot (2 콩, 1 초열서, 100 gold) stays the same.
 #
 # Map: the Si river crosses the valley below the pass; three bridges lead north to the fortress wall.
 # Hua Xiong guards the gate, Zhao Cen sits in the eastern fort, Li Su covers the treasury path from the

@@ -15,10 +15,10 @@
 # cast by a capable officer always heals more than the item, as in the original. Scrolls cast their
 # strategy with the user's INT and no MP cost.
 #
-# Icon keys (gfx/ui/icons.toml): item_sword, item_spear, item_blade, item_halberd, item_book, item_horse,
-# item_letter, item_seal, item_bean, item_wheat, item_rice, item_wine, item_medicine, item_scroll_fire,
-# item_scroll_water, item_scroll_earth, item_scroll_confuse, item_scroll_morale, item_scroll_heal,
-# item_bomb, item_classup, item_manual.
+# Icon keys (gfx/ui/icons.toml): item_sword, item_spear, item_blade, item_halberd, item_book (war
+# manuals and class-change books), item_horse, item_report, item_edict, item_seal, item_bean, item_wheat,
+# item_rice, item_wine, item_medicine, item_scroll_fire, item_scroll_water, item_scroll_earth,
+# item_scroll_confuse, item_scroll (the great heal and morale scrolls), item_bomb, item_classup.
 
 # ---------------------------------------------------------------------------------------------------
 # Weapons (무기) - ATK +10% .. +24%; only the equipped weapon counts.
@@ -224,7 +224,7 @@ hanja = "援軍報告"
 kind = "accessory"
 price = 3820
 regen_hp = 10
-icon = "item_letter"
+icon = "item_report"
 desc = "원군이 온다는 보고서. 지닌 부대의 병력이 매 턴 조금씩 회복된다."
 
 [[item]]
@@ -234,7 +234,7 @@ hanja = "勅命書"
 kind = "accessory"
 price = 3820
 regen_morale = 10
-icon = "item_letter"
+icon = "item_edict"
 desc = "황제의 칙명을 적은 문서. 지닌 부대의 사기가 매 턴 조금씩 회복된다."
 
 [[item]]
@@ -421,6 +421,8 @@ battle_use = true
 icon = "item_scroll_water"
 desc = "해일을 쓸 수 있는 책략서."
 
+# (design) The Korean release names the earth scrolls off by one (its 설붕서 casts 산사태 and its
+# 산사태서 casts 토석류). We name every scroll after the strategy it casts to avoid that trap.
 [[item]]
 id = "scroll_rockfall"
 name = "낙석서"
@@ -496,7 +498,7 @@ kind = "consumable"
 price = 400
 strategy = "great_encourage"
 battle_use = true
-icon = "item_scroll_morale"
+icon = "item_scroll"
 desc = "대격려를 쓸 수 있는 책략서. 주위 아군 모두의 사기를 회복한다."
 
 [[item]]
@@ -507,7 +509,7 @@ kind = "consumable"
 price = 800
 strategy = "great_cheer"
 battle_use = true
-icon = "item_scroll_morale"
+icon = "item_scroll"
 desc = "대응원을 쓸 수 있는 책략서."
 
 [[item]]
@@ -518,7 +520,7 @@ kind = "consumable"
 price = 1600
 strategy = "great_inspire"
 battle_use = true
-icon = "item_scroll_morale"
+icon = "item_scroll"
 desc = "대고무를 쓸 수 있는 책략서."
 
 [[item]]
@@ -529,7 +531,7 @@ kind = "consumable"
 price = 500
 strategy = "great_aid"
 battle_use = true
-icon = "item_scroll_heal"
+icon = "item_scroll"
 desc = "대원조를 쓸 수 있는 책략서. 주위 아군 모두의 병력을 회복한다."
 
 [[item]]
@@ -540,7 +542,7 @@ kind = "consumable"
 price = 1000
 strategy = "great_resupply"
 battle_use = true
-icon = "item_scroll_heal"
+icon = "item_scroll"
 desc = "대보급을 쓸 수 있는 책략서."
 
 [[item]]
@@ -551,7 +553,7 @@ kind = "consumable"
 price = 2000
 strategy = "great_relief"
 battle_use = true
-icon = "item_scroll_heal"
+icon = "item_scroll"
 desc = "대구제를 쓸 수 있는 책략서."
 
 # (PC) The bomb gives no EXP in the original; here it earns EXP like any attack scroll.
@@ -662,7 +664,7 @@ hanja = "劍術指針書"
 kind = "consumable"
 price = 3820
 effects = [{ type = "change_class", to = "short_infantry" }]
-icon = "item_manual"
+icon = "item_book"
 desc = "부대를 단병으로 바꾼다."
 
 [[item]]
@@ -672,7 +674,7 @@ hanja = "弓術指針書"
 kind = "consumable"
 price = 3820
 effects = [{ type = "change_class", to = "archer" }]
-icon = "item_manual"
+icon = "item_book"
 desc = "부대를 궁병으로 바꾼다."
 
 [[item]]
@@ -682,7 +684,7 @@ hanja = "馬術指針書"
 kind = "consumable"
 price = 3820
 effects = [{ type = "change_class", to = "light_cavalry" }]
-icon = "item_manual"
+icon = "item_book"
 desc = "부대를 경기병으로 바꾼다."
 
 [[item]]
@@ -692,7 +694,7 @@ hanja = "靑囊書"
 kind = "consumable"
 price = 3820
 effects = [{ type = "change_class", to = "supply" }]
-icon = "item_manual"
+icon = "item_book"
 desc = "명의의 비방을 담은 책. 부대를 수송대로 바꾼다."
 
 [[item]]
@@ -702,7 +704,7 @@ hanja = "鼓吹具"
 kind = "consumable"
 price = 3820
 effects = [{ type = "change_class", to = "band" }]
-icon = "item_manual"
+icon = "item_book"
 desc = "북과 나팔 한 벌. 부대를 군악대로 바꾼다."
 
 [[item]]
@@ -712,5 +714,5 @@ hanja = "遁甲天書"
 kind = "consumable"
 price = 3820
 effects = [{ type = "change_class", to = "sorcerer" }]
-icon = "item_manual"
+icon = "item_book"
 desc = "천지의 이치를 적은 비서. 부대를 주술사로 바꾼다."
