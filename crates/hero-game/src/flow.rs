@@ -218,7 +218,9 @@ fn show_current_node(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
         Some(node) => node_screen(ctx, pack, &node.clone()),
         None => Box::new(ErrorScreen::recoverable(
             "캠페인 오류",
-            vec![format!("캠페인 노드 `{id}`를 찾을 수 없습니다. 데이터 팩을 확인하세요.")],
+            vec![format!(
+                "캠페인 노드 `{id}`를 찾을 수 없습니다. 데이터 팩을 확인하세요."
+            )],
         )),
     }
 }
@@ -283,7 +285,9 @@ pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Scree
         Node::Camp { .. } => Box::new(PlaceholderScreen::for_node(node)),
         // Integration: BattleScreen, returning `Flow::BattleEnded(state)`.
         Node::Battle { .. } => Box::new(PlaceholderScreen::for_node(node)),
-        Node::Ending { scene: None, title, .. } => Box::new(CreditsScreen::ending(title.clone())),
+        Node::Ending {
+            scene: None, title, ..
+        } => Box::new(CreditsScreen::ending(title.clone())),
         // Integration: DramaScreen for `scene`, then `Flow::Ending { title }`.
         Node::Ending { .. } => Box::new(PlaceholderScreen::for_node(node)),
         Node::Branch { id, .. } => Box::new(ErrorScreen::recoverable(
@@ -306,7 +310,10 @@ pub fn battle_screen(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
 fn no_pack() -> Box<dyn Screen> {
     Box::new(ErrorScreen::recoverable(
         "데이터 팩 없음",
-        vec!["데이터 팩이 로드되지 않았습니다. (UI 갤러리 모드에서는 게임을 시작할 수 없습니다.)".into()],
+        vec![
+            "데이터 팩이 로드되지 않았습니다. (UI 갤러리 모드에서는 게임을 시작할 수 없습니다.)"
+                .into(),
+        ],
     ))
 }
 

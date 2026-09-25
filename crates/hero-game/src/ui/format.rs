@@ -114,7 +114,10 @@ mod tests {
         assert_eq!(relative_time(now - 300, now), "5분 전");
         assert_eq!(relative_time(now - 3 * 3600, now), "3시간 전");
         assert_eq!(relative_time(now - 2 * 86_400, now), "2일 전");
-        assert_eq!(relative_time(now - 40 * 86_400, now), date_utc(now - 40 * 86_400));
+        assert_eq!(
+            relative_time(now - 40 * 86_400, now),
+            date_utc(now - 40 * 86_400)
+        );
         assert_eq!(relative_time(now + 86_400, now), date_utc(now + 86_400));
     }
 }

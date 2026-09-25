@@ -415,16 +415,32 @@ impl Menu {
                 } else {
                     theme::TEXT_DISABLED
                 };
-                gfx.text(tag, row.x + CURSOR_GUTTER, ty, TextStyle { color: tcolor, ..style });
+                gfx.text(
+                    tag,
+                    row.x + CURSOR_GUTTER,
+                    ty,
+                    TextStyle {
+                        color: tcolor,
+                        ..style
+                    },
+                );
             }
-            gfx.text(&item.label, row.x + CURSOR_GUTTER + self.tag_width, ty, style);
+            gfx.text(
+                &item.label,
+                row.x + CURSOR_GUTTER + self.tag_width,
+                ty,
+                style,
+            );
             if let Some(detail) = &item.detail {
                 let dcolor = if item.enabled {
                     theme::TEXT_ACCENT
                 } else {
                     theme::TEXT_DISABLED
                 };
-                let dstyle = TextStyle { color: dcolor, ..style };
+                let dstyle = TextStyle {
+                    color: dcolor,
+                    ..style
+                };
                 let dw = gfx.text_width(detail, self.font, 1);
                 if item.adjustable {
                     let (la, ra) = self.arrow_rects(i, gfx);
@@ -516,10 +532,7 @@ mod tests {
 
     #[test]
     fn initial_cursor_is_first_enabled_item() {
-        let m = Menu::new(vec![
-            MenuItem::new("a").enabled(false),
-            MenuItem::new("b"),
-        ]);
+        let m = Menu::new(vec![MenuItem::new("a").enabled(false), MenuItem::new("b")]);
         assert_eq!(m.cursor(), 1);
     }
 

@@ -233,7 +233,9 @@ impl Screen for CreditsScreen {
                         y,
                         VIRTUAL_W,
                         Align::Center,
-                        TextStyle::main(theme::TEXT_ACCENT).size(2).shadow(theme::TEXT_SHADOW),
+                        TextStyle::main(theme::TEXT_ACCENT)
+                            .size(2)
+                            .shadow(theme::TEXT_SHADOW),
                     ),
                     Line::Section(t) => gfx.text_aligned(
                         t,
@@ -275,7 +277,9 @@ mod tests {
 
     #[test]
     fn credits_markup() {
-        let lines = layout("# Title\n## Art\nAlice, Bob\n\nMore", |s| vec![s.to_string()]);
+        let lines = layout("# Title\n## Art\nAlice, Bob\n\nMore", |s| {
+            vec![s.to_string()]
+        });
         assert_eq!(
             lines,
             vec![

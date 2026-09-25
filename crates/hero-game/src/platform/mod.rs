@@ -53,13 +53,16 @@ impl LaunchOptions {
                 "--gallery" => opts.gallery = true,
                 "--data" => match args.next() {
                     Some(dir) => opts.data_dir = Some(PathBuf::from(dir)),
-                    None => opts.warnings.push("--data needs a directory argument".into()),
+                    None => opts
+                        .warnings
+                        .push("--data needs a directory argument".into()),
                 },
                 other => {
                     if let Some(dir) = other.strip_prefix("--data=") {
                         opts.data_dir = Some(PathBuf::from(dir));
                     } else {
-                        opts.warnings.push(format!("unknown argument `{other}` ignored"));
+                        opts.warnings
+                            .push(format!("unknown argument `{other}` ignored"));
                     }
                 }
             }
@@ -74,7 +77,9 @@ impl LaunchOptions {
             match word {
                 "" => {}
                 "gallery" => opts.gallery = true,
-                other => opts.warnings.push(format!("unknown URL option `{other}` ignored")),
+                other => opts
+                    .warnings
+                    .push(format!("unknown URL option `{other}` ignored")),
             }
         }
         opts
@@ -341,7 +346,10 @@ mod tests {
         assert_eq!(web.path("/fonts/a.ttf"), "data/base/fonts/a.ttf");
 
         let native = DataRoot::from_dir(Path::new("/games/hero/data/base"), &[]);
-        assert_eq!(native.path("rules/game.toml"), "/games/hero/data/base/rules/game.toml");
+        assert_eq!(
+            native.path("rules/game.toml"),
+            "/games/hero/data/base/rules/game.toml"
+        );
         let trailing = DataRoot::from_dir(Path::new("base/"), &[]);
         assert_eq!(trailing.path("pack.toml"), "base/pack.toml");
     }

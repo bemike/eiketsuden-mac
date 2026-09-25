@@ -68,11 +68,7 @@ pub fn describe_error(e: &macroquad::Error) -> String {
 }
 
 fn fetch(path: String) -> BoxFuture<BytesResult> {
-    Box::pin(async move {
-        load_file(&path)
-            .await
-            .map_err(|e| describe_error(&e))
-    })
+    Box::pin(async move { load_file(&path).await.map_err(|e| describe_error(&e)) })
 }
 
 /// One file being read (by full path/URL, see [`DataRoot::path`]).
@@ -182,7 +178,9 @@ impl<T> Slot<T> {
 }
 
 enum JobKind {
-    Texture { key: String },
+    Texture {
+        key: String,
+    },
     /// `paths` are the remaining candidate files, tried in order; `errors` collects why the
     /// earlier candidates failed.
     Sound {
@@ -451,7 +449,9 @@ impl Media {
                     match (result, &mut job.kind) {
                         (Ok(bytes), JobKind::Sound { .. }) => {
                             job.stage = Stage::DecodeSound {
-                                future: Box::pin(async move { load_sound_from_bytes(&bytes).await }),
+                                future: Box::pin(
+                                    async move { load_sound_from_bytes(&bytes).await },
+                                ),
                                 started: get_time(),
                             };
                         }
@@ -579,10 +579,16 @@ mod tests {
 
     #[test]
     fn hi_res_art_uses_linear_filtering() {
-        assert_eq!(Media::texture_filter("portraits/liu_bei"), FilterMode::Linear);
+        assert_eq!(
+            Media::texture_filter("portraits/liu_bei"),
+            FilterMode::Linear
+        );
         assert_eq!(Media::texture_filter("bg/palace"), FilterMode::Linear);
         assert_eq!(Media::texture_filter("ui/title"), FilterMode::Linear);
-        assert_eq!(Media::texture_filter("units/archer_player"), FilterMode::Nearest);
+        assert_eq!(
+            Media::texture_filter("units/archer_player"),
+            FilterMode::Nearest
+        );
         assert_eq!(Media::texture_filter("ui/icons"), FilterMode::Nearest);
     }
 }

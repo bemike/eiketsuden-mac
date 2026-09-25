@@ -32,7 +32,12 @@ pub struct ChoiceBox {
 impl ChoiceBox {
     /// Centred on the screen. With `cancel = Some(i)` the cancel button picks option `i`;
     /// with `None` the choice cannot be cancelled.
-    pub fn new(gfx: &Gfx, prompt: Option<&str>, options: &[&str], cancel: Option<usize>) -> ChoiceBox {
+    pub fn new(
+        gfx: &Gfx,
+        prompt: Option<&str>,
+        options: &[&str],
+        cancel: Option<usize>,
+    ) -> ChoiceBox {
         let items: Vec<MenuItem> = options.iter().map(|o| MenuItem::new(*o)).collect();
         let mut menu = Menu::new(items).rows(options.len().min(8));
         menu.cancellable = cancel.is_some();
@@ -133,7 +138,9 @@ impl ConfirmDialog {
             .iter()
             .map(|l| gfx.text_width(l, FontId::Main, 1))
             .fold(0.0, f32::max);
-        let w = (text_w + 2.0 * theme::PADDING + 16.0).max(2.0 * BUTTON_W + 40.0).round();
+        let w = (text_w + 2.0 * theme::PADDING + 16.0)
+            .max(2.0 * BUTTON_W + 40.0)
+            .round();
         let h = lines.len() as f32 * 16.0 + BUTTON_H + 2.0 * theme::PADDING + 14.0;
         ConfirmDialog {
             lines,
@@ -239,7 +246,11 @@ impl ConfirmDialog {
             if selected {
                 draw_highlight(super::window::inset(r, 3.0), true, ctx.time);
             }
-            let color = if selected { theme::TEXT } else { theme::TEXT_DIM };
+            let color = if selected {
+                theme::TEXT
+            } else {
+                theme::TEXT_DIM
+            };
             gfx.text_aligned(
                 label,
                 r.x,

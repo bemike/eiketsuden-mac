@@ -36,7 +36,13 @@ pub struct SettingsScreen {
 
 impl SettingsScreen {
     pub fn new() -> SettingsScreen {
-        let mut rows = vec![Row::Master, Row::Bgm, Row::Sfx, Row::TextSpeed, Row::BattleSpeed];
+        let mut rows = vec![
+            Row::Master,
+            Row::Bgm,
+            Row::Sfx,
+            Row::TextSpeed,
+            Row::BattleSpeed,
+        ];
         if crate::platform::can_toggle_fullscreen() {
             rows.push(Row::Fullscreen);
         }

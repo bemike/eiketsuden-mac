@@ -36,7 +36,6 @@ enum Stage {
     Fonts(FileBatch),
     Manifest(FileBatch),
     Files {
-        manifest: PackManifest,
         /// Original `pack.toml` text (`Pack::load` reads it again from the file map).
         manifest_src: String,
         batch: FileBatch,
@@ -96,7 +95,10 @@ impl LoadingScreen {
                 self.status = "글꼴".into();
                 self.stage = Stage::Fonts(FileBatch::new(
                     &ctx.data_root,
-                    [FontId::Main.file().to_string(), FontId::Small.file().to_string()],
+                    [
+                        FontId::Main.file().to_string(),
+                        FontId::Small.file().to_string(),
+                    ],
                 ));
             }
             Stage::Fonts(mut batch) => {
@@ -109,7 +111,9 @@ impl LoadingScreen {
                     let bytes = results
                         .remove(id.file())
                         .unwrap_or_else(|| Err("not requested".into()));
-                    ctx.gfx.fonts.install(id, bytes.as_deref().map_err(Clone::clone));
+                    ctx.gfx
+                        .fonts
+                        .install(id, bytes.as_deref().map_err(Clone::clone));
                 }
                 self.fonts_ready = true;
                 self.progress = 0.1;
@@ -120,13 +124,15 @@ impl LoadingScreen {
                     ));
                 }
                 ctx.media.preload_sounds(
-                    &[sfx::CURSOR, sfx::CONFIRM, sfx::CANCEL, sfx::ERROR].map(|k| format!("sfx/{k}")),
+                    &[sfx::CURSOR, sfx::CONFIRM, sfx::CANCEL, sfx::ERROR]
+                        .map(|k| format!("sfx/{k}")),
                 );
                 if self.target == Target::Gallery {
                     return Transition::replace(GalleryScreen::new());
                 }
                 self.status = "pack.toml".into();
-                self.stage = Stage::Manifest(FileBatch::new(&ctx.data_root, ["pack.toml".to_string()]));
+                self.stage =
+                    Stage::Manifest(FileBatch::new(&ctx.data_root, ["pack.toml".to_string()]));
             }
             Stage::Manifest(mut batch) => {
                 if !batch.poll() {
@@ -160,13 +166,11 @@ impl LoadingScreen {
                 self.status = manifest.name.clone();
                 self.progress = 0.15;
                 self.stage = Stage::Files {
-                    manifest,
                     manifest_src,
                     batch,
                 };
             }
             Stage::Files {
-                manifest,
                 manifest_src,
                 mut batch,
             } => {
@@ -178,10 +182,9 @@ impl LoadingScreen {
                 }
                 if !done {
                     self.stage = Stage::Files {
-                    manifest,
-                    manifest_src,
-                    batch,
-                };
+                        manifest_src,
+                        batch,
+                    };
                     return Transition::None;
                 }
                 let mut files = BTreeMap::new();
@@ -275,7 +278,12 @@ impl Screen for LoadingScreen {
         let bar = Rect::new(140.0, 170.0, 200.0, 6.0);
         fill_rect(bar, theme::GAUGE_BG);
         stroke_rect(bar, theme::BORDER_MID);
-        let fill = Rect::new(bar.x + 1.0, bar.y + 1.0, (bar.w - 2.0) * self.progress, bar.h - 2.0);
+        let fill = Rect::new(
+            bar.x + 1.0,
+            bar.y + 1.0,
+            (bar.w - 2.0) * self.progress,
+            bar.h - 2.0,
+        );
         fill_rect(fill, theme::TEXT_ACCENT);
         // Spinner dots (visible even before the fonts exist).
         for i in 0..8 {

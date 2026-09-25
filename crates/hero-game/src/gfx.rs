@@ -58,7 +58,7 @@ pub fn integer_scale(screen_w: f32, screen_h: f32) -> u32 {
 /// at 1:1 when it fits, otherwise shrunk to fit (only possible for windows below 480×270).
 pub fn present_rect(screen_w: f32, screen_h: f32, scale: u32) -> Rect {
     let (w, h) = (VIRTUAL_W * scale as f32, VIRTUAL_H * scale as f32);
-    let fit = (screen_w / w).min(screen_h / h).min(1.0).max(0.0);
+    let fit = (screen_w / w).min(screen_h / h).clamp(0.0, 1.0);
     let (w, h) = (w * fit, h * fit);
     Rect::new(
         ((screen_w - w) / 2.0).floor(),
@@ -92,10 +92,7 @@ impl Canvas {
     }
 
     fn make_target(scale: u32) -> (RenderTarget, Camera2D) {
-        let target = render_target(
-            (VIRTUAL_W as u32) * scale,
-            (VIRTUAL_H as u32) * scale,
-        );
+        let target = render_target((VIRTUAL_W as u32) * scale, (VIRTUAL_H as u32) * scale);
         target.texture.set_filter(FilterMode::Nearest);
         let mut camera = Camera2D::from_display_rect(SCREEN);
         camera.render_target = Some(target.clone());
@@ -254,9 +251,8 @@ impl Fonts {
     /// Install a font from TTF bytes. On failure the fallback font stays and the error is
     /// recorded.
     pub fn install(&mut self, id: FontId, bytes: Result<&[u8], String>) {
-        let result = bytes.and_then(|b| {
-            load_ttf_font_from_bytes(b).map_err(|e| format!("{}: {e}", id.file()))
-        });
+        let result = bytes
+            .and_then(|b| load_ttf_font_from_bytes(b).map_err(|e| format!("{}: {e}", id.file())));
         match result {
             Ok(mut font) => {
                 font.set_filter(FilterMode::Nearest);
@@ -422,7 +418,9 @@ impl Gfx {
     pub fn text_aligned(&self, text: &str, x: f32, y: f32, w: f32, align: Align, style: TextStyle) {
         let tx = match align {
             Align::Left => x,
-            Align::Center => x + ((w - self.text_width(text, style.font, style.size)) / 2.0).round(),
+            Align::Center => {
+                x + ((w - self.text_width(text, style.font, style.size)) / 2.0).round()
+            }
             Align::Right => x + w - self.text_width(text, style.font, style.size),
         };
         self.text(text, tx, y, style);
@@ -481,7 +479,10 @@ fn no_break_before(c: char) -> bool {
 
 /// Characters that may not end a line.
 fn no_break_after(c: char) -> bool {
-    matches!(c, '(' | '[' | '{' | '「' | '『' | '《' | '〈' | '（' | '‘' | '“')
+    matches!(
+        c,
+        '(' | '[' | '{' | '「' | '『' | '《' | '〈' | '（' | '‘' | '“'
+    )
 }
 
 /// Hangul, kana and CJK ideographs: scripts where a line may break between two characters.
@@ -534,10 +535,17 @@ pub fn wrap_text(text: &str, max_width: f32, mut advance: impl FnMut(char) -> f3
                 let c = chars[i];
                 let w = advance(c);
                 if width + w > max_width && i > start {
+                    // A space only counts once a word precedes it (not the indentation of a
+                    // paragraph), otherwise the line would come out empty.
+                    let usable_space =
+                        last_space.filter(|&sp| chars[start..sp].iter().any(|&ch| ch != ' '));
                     cut = Some(if c == ' ' {
                         (i, i + 1)
-                    } else if let Some(sp) = last_space {
+                    } else if let Some(sp) = usable_space {
                         (sp, sp + 1)
+                    } else if can_break_between(chars[i - 1], c) {
+                        // The overflowing syllable itself starts the next line.
+                        (i, i)
                     } else if let Some(b) = last_break {
                         (b, b)
                     } else {
@@ -694,7 +702,12 @@ pub fn fit_rects(size: Vec2, dest: Rect, fit: Fit) -> (Rect, Rect) {
             let (w, h) = (size.x * k, size.y * k);
             (
                 full,
-                Rect::new(dest.x + (dest.w - w) / 2.0, dest.y + (dest.h - h) / 2.0, w, h),
+                Rect::new(
+                    dest.x + (dest.w - w) / 2.0,
+                    dest.y + (dest.h - h) / 2.0,
+                    w,
+                    h,
+                ),
             )
         }
         Fit::Cover => {
@@ -759,10 +772,22 @@ mod tests {
     #[test]
     fn mouse_mapping() {
         let present = Rect::new(203.0, 114.0, 960.0, 540.0);
-        assert_eq!(screen_to_virtual(present, vec2(203.0, 114.0)), vec2(0.0, 0.0));
-        assert_eq!(screen_to_virtual(present, vec2(1163.0, 654.0)), vec2(480.0, 270.0));
-        assert_eq!(screen_to_virtual(present, vec2(683.0, 384.0)), vec2(240.0, 135.0));
-        assert_eq!(screen_to_virtual(Rect::new(0.0, 0.0, 0.0, 0.0), vec2(5.0, 5.0)), Vec2::ZERO);
+        assert_eq!(
+            screen_to_virtual(present, vec2(203.0, 114.0)),
+            vec2(0.0, 0.0)
+        );
+        assert_eq!(
+            screen_to_virtual(present, vec2(1163.0, 654.0)),
+            vec2(480.0, 270.0)
+        );
+        assert_eq!(
+            screen_to_virtual(present, vec2(683.0, 384.0)),
+            vec2(240.0, 135.0)
+        );
+        assert_eq!(
+            screen_to_virtual(Rect::new(0.0, 0.0, 0.0, 0.0), vec2(5.0, 5.0)),
+            Vec2::ZERO
+        );
     }
 
     #[test]
@@ -794,6 +819,10 @@ mod tests {
         assert_eq!(wrap_mono("가나", 1.0), vec!["가", "나"]);
         // Leading spaces of a paragraph are kept, those after a wrap are dropped.
         assert_eq!(wrap_mono("  ab cd", 5.0), vec!["  ab", "cd"]);
+        // Indentation is not a break opportunity (no empty first line).
+        assert_eq!(wrap_mono("  abcdef", 4.0), vec!["  ab", "cdef"]);
+        // Spaces win over syllable breaks.
+        assert_eq!(wrap_mono("가 나다라", 6.0), vec!["가", "나다라"]);
     }
 
     #[test]
@@ -802,10 +831,18 @@ mod tests {
         let (src, dst) = fit_rects(vec2(192.0, 240.0), dest, Fit::Contain);
         assert_eq!(src, Rect::new(0.0, 0.0, 192.0, 240.0));
         assert_eq!(dst, dest);
-        let (src, dst) = fit_rects(vec2(200.0, 100.0), Rect::new(0.0, 0.0, 100.0, 100.0), Fit::Cover);
+        let (src, dst) = fit_rects(
+            vec2(200.0, 100.0),
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            Fit::Cover,
+        );
         assert_eq!(src, Rect::new(50.0, 0.0, 100.0, 100.0));
         assert_eq!(dst, Rect::new(0.0, 0.0, 100.0, 100.0));
-        let (_, dst) = fit_rects(vec2(200.0, 100.0), Rect::new(0.0, 0.0, 100.0, 100.0), Fit::Contain);
+        let (_, dst) = fit_rects(
+            vec2(200.0, 100.0),
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            Fit::Contain,
+        );
         assert_eq!(dst, Rect::new(0.0, 25.0, 100.0, 50.0));
     }
 

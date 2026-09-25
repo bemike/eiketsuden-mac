@@ -97,7 +97,10 @@ impl MessageBox {
     }
 
     fn page_chars(&self) -> usize {
-        self.pages[self.page].iter().map(|l| l.chars().count()).sum()
+        self.pages[self.page]
+            .iter()
+            .map(|l| l.chars().count())
+            .sum()
     }
 
     /// The current page is still being typed.

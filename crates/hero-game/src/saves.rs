@@ -179,10 +179,13 @@ pub fn latest(store: &dyn KeyValueStore, pack_id: &str) -> Option<SaveSlot> {
         .into_iter()
         .filter_map(|info| info.summary().map(|s| (s.saved_at, info.slot)))
         // Newest first; on equal timestamps prefer the autosave (it is listed first).
-        .fold(None, |best: Option<(u64, SaveSlot)>, (at, slot)| match best {
-            Some((b, _)) if b >= at => best,
-            _ => Some((at, slot)),
-        })
+        .fold(
+            None,
+            |best: Option<(u64, SaveSlot)>, (at, slot)| match best {
+                Some((b, _)) if b >= at => best,
+                _ => Some((at, slot)),
+            },
+        )
         .map(|(_, slot)| slot)
 }
 
@@ -242,7 +245,12 @@ mod tests {
 
         write(&mut store, SaveSlot::Manual(2), &save("탁현", 100, "base")).unwrap();
         write(&mut store, SaveSlot::Auto, &save("자동", 200, "base")).unwrap();
-        write(&mut store, SaveSlot::Manual(5), &save("다른 팩", 300, "other")).unwrap();
+        write(
+            &mut store,
+            SaveSlot::Manual(5),
+            &save("다른 팩", 300, "other"),
+        )
+        .unwrap();
         store.set("save_7", "garbage").unwrap();
 
         let loaded = read(&store, SaveSlot::Manual(2), "base").unwrap();
@@ -283,6 +291,8 @@ mod tests {
             expected: "base".into(),
         });
         assert!(e.to_string().contains("다른 데이터 팩"));
-        assert!(SaveSlotError::Empty(SaveSlot::Auto).to_string().contains("자동 기록"));
+        assert!(SaveSlotError::Empty(SaveSlot::Auto)
+            .to_string()
+            .contains("자동 기록"));
     }
 }

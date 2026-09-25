@@ -59,7 +59,11 @@ pub enum BattleSpeed {
 }
 
 impl BattleSpeed {
-    pub const ALL: [BattleSpeed; 3] = [BattleSpeed::Normal, BattleSpeed::Fast, BattleSpeed::VeryFast];
+    pub const ALL: [BattleSpeed; 3] = [
+        BattleSpeed::Normal,
+        BattleSpeed::Fast,
+        BattleSpeed::VeryFast,
+    ];
 
     /// Factor applied to animation playback speed (durations are divided by it).
     pub fn multiplier(self) -> f32 {
@@ -211,8 +215,17 @@ mod tests {
         };
         assert!((s.bgm_gain() - 0.25).abs() < 1e-6);
         assert!((s.sfx_gain() - 0.5).abs() < 1e-6);
-        assert_eq!(cycle(&TextSpeed::ALL, TextSpeed::Instant, 1), TextSpeed::Slow);
-        assert_eq!(cycle(&TextSpeed::ALL, TextSpeed::Slow, -1), TextSpeed::Instant);
-        assert_eq!(cycle(&BattleSpeed::ALL, BattleSpeed::Normal, 1), BattleSpeed::Fast);
+        assert_eq!(
+            cycle(&TextSpeed::ALL, TextSpeed::Instant, 1),
+            TextSpeed::Slow
+        );
+        assert_eq!(
+            cycle(&TextSpeed::ALL, TextSpeed::Slow, -1),
+            TextSpeed::Instant
+        );
+        assert_eq!(
+            cycle(&BattleSpeed::ALL, BattleSpeed::Normal, 1),
+            BattleSpeed::Fast
+        );
     }
 }

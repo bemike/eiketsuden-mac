@@ -148,9 +148,16 @@ impl Screen for ErrorScreen {
             &self.title,
             TEXT_RECT.x,
             18.0,
-            TextStyle::main(theme::TEXT_BAD).size(2).shadow(theme::TEXT_SHADOW),
+            TextStyle::main(theme::TEXT_BAD)
+                .size(2)
+                .shadow(theme::TEXT_SHADOW),
         );
-        let frame = Rect::new(TEXT_RECT.x - 6.0, TEXT_RECT.y - 6.0, TEXT_RECT.w + 12.0, TEXT_RECT.h + 12.0);
+        let frame = Rect::new(
+            TEXT_RECT.x - 6.0,
+            TEXT_RECT.y - 6.0,
+            TEXT_RECT.w + 12.0,
+            TEXT_RECT.h + 12.0,
+        );
         draw_window(frame);
         let style = TextStyle::small(theme::TEXT);
         for (i, line) in self
@@ -160,13 +167,28 @@ impl Screen for ErrorScreen {
             .take(self.visible_lines())
             .enumerate()
         {
-            gfx.text(line, TEXT_RECT.x + 4.0, TEXT_RECT.y + i as f32 * 12.0, style);
+            gfx.text(
+                line,
+                TEXT_RECT.x + 4.0,
+                TEXT_RECT.y + i as f32 * 12.0,
+                style,
+            );
         }
         if self.scroll > 0 {
-            draw_small_arrow(frame.right() - 10.0, frame.y + 8.0, false, theme::TEXT_ACCENT);
+            draw_small_arrow(
+                frame.right() - 10.0,
+                frame.y + 8.0,
+                false,
+                theme::TEXT_ACCENT,
+            );
         }
         if self.scroll + self.visible_lines() < self.wrapped.len() {
-            draw_small_arrow(frame.right() - 10.0, frame.bottom() - 8.0, true, theme::TEXT_ACCENT);
+            draw_small_arrow(
+                frame.right() - 10.0,
+                frame.bottom() - 8.0,
+                true,
+                theme::TEXT_ACCENT,
+            );
         }
         self.menu.draw(ctx);
     }

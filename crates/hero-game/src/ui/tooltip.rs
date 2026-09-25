@@ -16,7 +16,9 @@ pub struct HoverTimer {
 }
 
 impl HoverTimer {
-    /// Feed the id of the hovered target (or `None`); returns whether its tooltip is visible.
+    /// Feed the id of the hovered target (or `None`) once per frame; returns whether its tooltip
+    /// is visible. Hover time counts from the first frame the target is seen (that frame's `dt`
+    /// is not counted, the pointer arrived somewhere during it).
     pub fn update(&mut self, target: Option<u64>, dt: f32) -> bool {
         if target != self.target {
             self.target = target;
@@ -76,11 +78,16 @@ mod tests {
     #[test]
     fn hover_delay() {
         let mut h = HoverTimer::default();
+        // First sighting: the clock starts, the frame time is not counted.
         assert!(!h.update(Some(1), 0.1));
         assert!(!h.update(Some(1), 0.2));
-        assert!(h.update(Some(1), 0.2));
+        assert!(!h.update(Some(1), 0.2)); // 0.4 s < TOOLTIP_DELAY
+        assert!(h.update(Some(1), 0.1)); // 0.5 s
+        assert_eq!(h.target(), Some(1));
+        // Another target restarts the delay; leaving hides it.
         assert!(!h.update(Some(2), 0.5));
         assert!(!h.update(None, 1.0));
+        assert!(!h.visible());
     }
 
     #[test]

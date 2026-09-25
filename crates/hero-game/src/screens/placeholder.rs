@@ -86,11 +86,20 @@ impl PlaceholderScreen {
             } => (
                 "출진 준비 (Camp)",
                 vec![
-                    format!("노드 `{id}` · {}", if title.is_empty() { "(제목 없음)" } else { title }),
+                    format!(
+                        "노드 `{id}` · {}",
+                        if title.is_empty() {
+                            "(제목 없음)"
+                        } else {
+                            title
+                        }
+                    ),
                     format!(
                         "상점 물품 {}종 · 배치할 전투 {}",
                         shop.len(),
-                        battle.as_deref().map_or("없음".to_string(), |b| format!("`{b}`"))
+                        battle
+                            .as_deref()
+                            .map_or("없음".to_string(), |b| format!("`{b}`"))
                     ),
                     format!("다음 노드 `{next}`"),
                 ],
@@ -120,9 +129,14 @@ impl PlaceholderScreen {
                 vec![
                     format!(
                         "노드 `{id}` · 장면 {}",
-                        scene.as_deref().map_or("없음".to_string(), |s| format!("`{s}`"))
+                        scene
+                            .as_deref()
+                            .map_or("없음".to_string(), |s| format!("`{s}`"))
                     ),
-                    format!("엔딩 제목: {}", if title.is_empty() { "(없음)" } else { title }),
+                    format!(
+                        "엔딩 제목: {}",
+                        if title.is_empty() { "(없음)" } else { title }
+                    ),
                 ],
                 vec![Action::Ending(title.clone()), Action::Title],
             ),
@@ -141,7 +155,8 @@ impl PlaceholderScreen {
             "전투 이어하기 (Battle)",
             vec![
                 format!("진행 중이던 전투 `{battle_id}`"),
-                "‘전투 기록 버리기’는 전투 상태를 지우고 현재 캠페인 노드를 다시 보여 줍니다.".into(),
+                "‘전투 기록 버리기’는 전투 상태를 지우고 현재 캠페인 노드를 다시 보여 줍니다."
+                    .into(),
             ],
             vec![Action::AbandonBattle, Action::Title],
         )
@@ -256,7 +271,10 @@ mod tests {
             next: "c1".into(),
         };
         let p = PlaceholderScreen::for_node(&drama);
-        assert_eq!(p.actions, vec![Action::Advance, Action::Save, Action::Title]);
+        assert_eq!(
+            p.actions,
+            vec![Action::Advance, Action::Save, Action::Title]
+        );
         assert!(p.details.iter().any(|d| d.contains("prologue")));
 
         let ending = Node::Ending {

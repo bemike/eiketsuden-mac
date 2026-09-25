@@ -95,16 +95,64 @@ const DIALOGUE: [(Option<&str>, Option<&str>, &str); 3] = [
 /// The demo menu of the widgets page: label, detail, enabled, adjustable, tooltip.
 const DEMO_ITEMS: [(&str, &str, bool, bool, &str); 12] = [
     ("공격", "", true, false, "인접한 적 부대를 공격합니다."),
-    ("책략", "MP 6", true, false, "책략을 사용합니다. 오른쪽 값은 소모 MP입니다."),
+    (
+        "책략",
+        "MP 6",
+        true,
+        false,
+        "책략을 사용합니다. 오른쪽 값은 소모 MP입니다.",
+    ),
     ("도구", "3개", true, false, "소지한 도구를 사용합니다."),
     ("대기", "", true, false, "이번 턴의 행동을 마칩니다."),
-    ("퇴각", "", false, false, "비활성 항목: 선택하면 오류음이 납니다."),
-    ("음량", "", true, true, "←/→ 또는 ◀ ▶ 를 눌러 값을 바꿉니다."),
-    ("글자 속도", "", true, true, "조절 항목: 설정 화면과 같은 방식입니다."),
-    ("장비", "", true, false, "목록이 길면 휠·드래그·방향키로 스크롤됩니다."),
-    ("능력치", "", true, false, "커서가 보이는 범위를 벗어나면 자동으로 스크롤됩니다."),
-    ("전황", "", true, false, "아래쪽의 깜빡이는 화살표는 남은 항목을 뜻합니다."),
-    ("부대 목록", "", true, false, "마우스를 올려 두면 이 설명(툴팁)이 나타납니다."),
+    (
+        "퇴각",
+        "",
+        false,
+        false,
+        "비활성 항목: 선택하면 오류음이 납니다.",
+    ),
+    (
+        "음량",
+        "",
+        true,
+        true,
+        "←/→ 또는 ◀ ▶ 를 눌러 값을 바꿉니다.",
+    ),
+    (
+        "글자 속도",
+        "",
+        true,
+        true,
+        "조절 항목: 설정 화면과 같은 방식입니다.",
+    ),
+    (
+        "장비",
+        "",
+        true,
+        false,
+        "목록이 길면 휠·드래그·방향키로 스크롤됩니다.",
+    ),
+    (
+        "능력치",
+        "",
+        true,
+        false,
+        "커서가 보이는 범위를 벗어나면 자동으로 스크롤됩니다.",
+    ),
+    (
+        "전황",
+        "",
+        true,
+        false,
+        "아래쪽의 깜빡이는 화살표는 남은 항목을 뜻합니다.",
+    ),
+    (
+        "부대 목록",
+        "",
+        true,
+        false,
+        "마우스를 올려 두면 이 설명(툴팁)이 나타납니다.",
+    ),
     ("턴 종료", "", true, false, "마지막 항목입니다."),
 ];
 
@@ -246,10 +294,15 @@ impl GalleryScreen {
         if crate::platform::can_quit() {
             screen_items.push(ScreenItem::Quit);
         }
-        let screens_menu = Menu::new(screen_items.iter().map(|s| MenuItem::new(s.label())).collect())
-            .at(8.0, TOP + 2.0, 212.0)
-            .rows(14)
-            .cancellable(false);
+        let screens_menu = Menu::new(
+            screen_items
+                .iter()
+                .map(|s| MenuItem::new(s.label()))
+                .collect(),
+        )
+        .at(8.0, TOP + 2.0, 212.0)
+        .rows(14)
+        .cancellable(false);
         GalleryScreen {
             page: PAGE_FONTS,
             wrap_width: 300.0,
@@ -312,7 +365,11 @@ impl GalleryScreen {
         let mut target = None;
         let shift = input.key_down(KeyCode::LeftShift) || input.key_down(KeyCode::RightShift);
         if input.key_pressed(KeyCode::Tab) {
-            target = Some(if shift { (self.page + n - 1) % n } else { (self.page + 1) % n });
+            target = Some(if shift {
+                (self.page + n - 1) % n
+            } else {
+                (self.page + 1) % n
+            });
         } else if input.key_pressed(KeyCode::PageDown) {
             target = Some((self.page + 1) % n);
         } else if input.key_pressed(KeyCode::PageUp) {
@@ -425,7 +482,11 @@ impl GalleryScreen {
             let choice = ChoiceBox::new(
                 &ctx.gfx,
                 Some("어디로 향하시겠습니까?"),
-                &["북쪽 관문으로 진군한다", "마을에서 병사를 모은다", "잠시 쉬어 간다"],
+                &[
+                    "북쪽 관문으로 진군한다",
+                    "마을에서 병사를 모은다",
+                    "잠시 쉬어 간다",
+                ],
                 Some(2),
             )
             .with_bottom(bottom);
@@ -481,15 +542,18 @@ impl GalleryScreen {
             ScreenItem::Error => Transition::push(ErrorScreen::recoverable(
                 "오류 화면 예시",
                 vec![
-                    "오류 화면은 제목, 자세한 내용(줄바꿈·스크롤), 선택 메뉴로 이루어집니다.".into(),
+                    "오류 화면은 제목, 자세한 내용(줄바꿈·스크롤), 선택 메뉴로 이루어집니다."
+                        .into(),
                     "technical detail: example error text for bug reports".into(),
                 ],
             )),
-            ScreenItem::Placeholder => Transition::push(PlaceholderScreen::for_node(&Node::Drama {
-                id: "gallery_drama".into(),
-                scene: "prologue".into(),
-                next: "gallery_camp".into(),
-            })),
+            ScreenItem::Placeholder => {
+                Transition::push(PlaceholderScreen::for_node(&Node::Drama {
+                    id: "gallery_drama".into(),
+                    scene: "prologue".into(),
+                    next: "gallery_camp".into(),
+                }))
+            }
             ScreenItem::GameOver => Transition::push(GameOverScreen::new()),
             ScreenItem::StartGame => Transition::replace(LoadingScreen::new(Target::Game)),
             ScreenItem::MusicTitle => {
@@ -519,7 +583,10 @@ impl GalleryScreen {
     // ----- drawing ---------------------------------------------------------------------------
 
     fn draw_tabs(&self, ctx: &Ctx) {
-        fill_rect(Rect::new(0.0, 0.0, VIRTUAL_W, TAB_H + 1.0), theme::BORDER_OUTER);
+        fill_rect(
+            Rect::new(0.0, 0.0, VIRTUAL_W, TAB_H + 1.0),
+            theme::BORDER_OUTER,
+        );
         for (i, label) in TABS.iter().enumerate() {
             let r = Self::tab_rect(i);
             let active = i == self.page;
@@ -570,8 +637,17 @@ impl GalleryScreen {
             gfx.text(line, x, y, small);
             y += 12.0;
         }
-        let big = TextStyle::main(theme::TEXT_ACCENT).size(2).shadow(theme::TEXT_SHADOW);
-        gfx.text_aligned("영걸전 英傑傳", r.x, r.y + 6.0, r.w - 12.0, Align::Right, big);
+        let big = TextStyle::main(theme::TEXT_ACCENT)
+            .size(2)
+            .shadow(theme::TEXT_SHADOW);
+        gfx.text_aligned(
+            "영걸전 英傑傳",
+            r.x,
+            r.y + 6.0,
+            r.w - 12.0,
+            Align::Right,
+            big,
+        );
         gfx.text_aligned(
             "×2",
             r.x,
@@ -582,7 +658,12 @@ impl GalleryScreen {
         );
 
         // Word wrap demo with a guide at the wrap width.
-        let w = Rect::new(8.0, r.bottom() + 5.0, VIRTUAL_W - 16.0, VIRTUAL_H - r.bottom() - 26.0);
+        let w = Rect::new(
+            8.0,
+            r.bottom() + 5.0,
+            VIRTUAL_W - 16.0,
+            VIRTUAL_H - r.bottom() - 26.0,
+        );
         draw_window_ex(w, WindowStyle::Panel, 1.0);
         let c = content_rect(w);
         gfx.text(
@@ -615,7 +696,10 @@ impl GalleryScreen {
                 270 * gfx.scale()
             )
         } else {
-            format!("글꼴 없음(대체 글꼴 사용): {}", gfx.fonts.missing().join(", "))
+            format!(
+                "글꼴 없음(대체 글꼴 사용): {}",
+                gfx.fonts.missing().join(", ")
+            )
         };
         let color = if gfx.fonts.missing().is_empty() {
             theme::TEXT_DIM
@@ -657,7 +741,10 @@ impl GalleryScreen {
         let d = Rect::new(8.0, c.bottom() + 6.0, 144.0, VIRTUAL_H - c.bottom() - 14.0);
         draw_window_ex(d, WindowStyle::Panel, 1.0);
         gfx.text("16×16 아이콘", d.x + 8.0, d.y + 5.0, label);
-        for (i, key) in ["gold", "hp", "mp", "atk", "def", "move", "exp"].iter().enumerate() {
+        for (i, key) in ["gold", "hp", "mp", "atk", "def", "move", "exp"]
+            .iter()
+            .enumerate()
+        {
             draw_icon(ctx, key, vec2(d.x + 8.0 + i as f32 * 18.0, d.y + 20.0));
         }
 
@@ -703,7 +790,12 @@ impl GalleryScreen {
         draw_portrait(ctx, Some("liu_bei"), p1);
         let p2 = Rect::new(p1.right() + 8.0, p1.y, 64.0, 80.0);
         draw_portrait(ctx, None, p2);
-        gfx.text("초상화 64×80 · 없으면 실루엣", p1.x, p1.bottom() + 1.0, label);
+        gfx.text(
+            "초상화 64×80 · 없으면 실루엣",
+            p1.x,
+            p1.bottom() + 1.0,
+            label,
+        );
 
         // Tooltip for the hovered menu row.
         if self.hover.visible() {
@@ -759,13 +851,18 @@ impl GalleryScreen {
             ("병력 (60%)", 900, 1500, GaugeKind::Hp),
             ("병력 (40%)", 600, 1500, GaugeKind::Hp),
             ("병력 (10%)", 150, 1500, GaugeKind::Hp),
-            ("병력 (변화)", (wave * 1500.0).round() as i64, 1500, GaugeKind::Hp),
+            (
+                "병력 (변화)",
+                (wave * 1500.0).round() as i64,
+                1500,
+                GaugeKind::Hp,
+            ),
             ("책략 MP", 18, 30, GaugeKind::Mp),
             ("경험치", 72, 100, GaugeKind::Exp),
             ("사기", 80, 100, GaugeKind::Morale),
         ];
         for (name, value, max, kind) in rows {
-            draw_gauge_labeled(gfx, x, y, w, name, value, max, kind);
+            draw_gauge_labeled(gfx, vec2(x, y), w, name, value, max, kind);
             y += 23.0;
         }
         gfx.text("draw_gauge (막대만)", x, y, label);
@@ -798,9 +895,18 @@ impl GalleryScreen {
             ("ratio", format::ratio(1200, 1500)),
             ("percent", format::percent(80)),
             ("play_time", format::play_time(3 * 3600 + 25 * 60 + 7)),
-            ("5분 전", format::relative_time(now.saturating_sub(300), now)),
-            ("3시간 전", format::relative_time(now.saturating_sub(3 * 3600), now)),
-            ("40일 전", format::relative_time(now.saturating_sub(40 * 86_400), now)),
+            (
+                "5분 전",
+                format::relative_time(now.saturating_sub(300), now),
+            ),
+            (
+                "3시간 전",
+                format::relative_time(now.saturating_sub(3 * 3600), now),
+            ),
+            (
+                "40일 전",
+                format::relative_time(now.saturating_sub(40 * 86_400), now),
+            ),
             ("오늘 (UTC)", format::date_utc(now)),
         ];
         let mut y = n.y + 6.0;
@@ -931,7 +1037,10 @@ mod tests {
         assert_eq!(GalleryScreen::tab_rect(0).x, 0.0);
         assert_eq!(last.right(), VIRTUAL_W);
         for i in 1..TABS.len() {
-            assert_eq!(GalleryScreen::tab_rect(i - 1).right(), GalleryScreen::tab_rect(i).x);
+            assert_eq!(
+                GalleryScreen::tab_rect(i - 1).right(),
+                GalleryScreen::tab_rect(i).x
+            );
         }
     }
 

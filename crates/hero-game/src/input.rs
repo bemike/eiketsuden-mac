@@ -71,7 +71,12 @@ pub struct KeyRepeat {
 impl KeyRepeat {
     /// Advance by `dt`. `pressed` is a direction pressed this frame, `down` reports whether a
     /// direction is currently held. Returns the direction to act on this frame, if any.
-    pub fn step(&mut self, dt: f32, pressed: Option<Dir>, down: impl Fn(Dir) -> bool) -> Option<Dir> {
+    pub fn step(
+        &mut self,
+        dt: f32,
+        pressed: Option<Dir>,
+        down: impl Fn(Dir) -> bool,
+    ) -> Option<Dir> {
         if let Some(d) = pressed {
             self.held = Some(d);
             self.timer = REPEAT_DELAY;
@@ -350,7 +355,10 @@ mod tests {
             }
         }
         let expected = (60.0 * 0.016 / REPEAT_RATE) as i32;
-        assert!((fired - expected).abs() <= 2, "fired {fired}, expected ~{expected}");
+        assert!(
+            (fired - expected).abs() <= 2,
+            "fired {fired}, expected ~{expected}"
+        );
     }
 
     #[test]

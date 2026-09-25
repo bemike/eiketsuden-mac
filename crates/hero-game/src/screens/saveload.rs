@@ -113,10 +113,9 @@ impl SaveLoadScreen {
             .map(|info| {
                 let (text, detail) = match &info.status {
                     SlotStatus::Empty => ("— 비어 있음 —".to_string(), String::new()),
-                    SlotStatus::Ready(s) => (
-                        s.label.clone(),
-                        format::relative_time(s.saved_at, self.now),
-                    ),
+                    SlotStatus::Ready(s) => {
+                        (s.label.clone(), format::relative_time(s.saved_at, self.now))
+                    }
                     SlotStatus::Unreadable(_) => ("(읽을 수 없는 기록)".to_string(), String::new()),
                 };
                 let enabled = match (&info.status, info.slot) {
@@ -291,7 +290,11 @@ impl Screen for SaveLoadScreen {
         }
         if ctx.input.key_pressed(KeyCode::Delete) {
             let i = self.menu.cursor();
-            if self.slots.get(i).is_some_and(|s| s.status != SlotStatus::Empty) {
+            if self
+                .slots
+                .get(i)
+                .is_some_and(|s| s.status != SlotStatus::Empty)
+            {
                 self.confirm(ctx, i, SlotAction::Delete);
                 return Transition::None;
             }
@@ -325,7 +328,12 @@ impl Screen for SaveLoadScreen {
 
         // Details of the selected slot.
         let list = self.menu.rect();
-        let info_rect = Rect::new(list.x, list.bottom() + 6.0, list.w, 252.0 - list.bottom() - 6.0);
+        let info_rect = Rect::new(
+            list.x,
+            list.bottom() + 6.0,
+            list.w,
+            252.0 - list.bottom() - 6.0,
+        );
         if info_rect.h >= 20.0 {
             draw_window_ex(info_rect, WindowStyle::Panel, 1.0);
             let x = info_rect.x + 10.0;
@@ -355,10 +363,20 @@ impl Screen for SaveLoadScreen {
                         gfx.text(&detail, x, y + 17.0, small);
                     }
                     SlotStatus::Empty => {
-                        gfx.text("비어 있는 칸입니다.", x, y, TextStyle::main(theme::TEXT_DIM));
+                        gfx.text(
+                            "비어 있는 칸입니다.",
+                            x,
+                            y,
+                            TextStyle::main(theme::TEXT_DIM),
+                        );
                     }
                     SlotStatus::Unreadable(why) => {
-                        gfx.text("읽을 수 없는 기록입니다.", x, y, TextStyle::main(theme::TEXT_BAD));
+                        gfx.text(
+                            "읽을 수 없는 기록입니다.",
+                            x,
+                            y,
+                            TextStyle::main(theme::TEXT_BAD),
+                        );
                         let lines = gfx.wrap(why, crate::gfx::FontId::Small, 1, info_rect.w - 20.0);
                         gfx.text_lines(&lines[..lines.len().min(2)], x, y + 17.0, small);
                     }

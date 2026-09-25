@@ -64,18 +64,18 @@ pub fn draw_gauge(r: Rect, value: f32, max: f32, kind: GaugeKind) {
     }
 }
 
-/// A labelled gauge: `label` on the left and `value/max` on the right above a thin bar.
-/// Occupies `w` × 17 virtual pixels.
+/// A labelled gauge with its top-left corner at `pos`: `label` on the left and `value/max` on
+/// the right above a thin bar. Occupies `w` × 17 virtual pixels.
 pub fn draw_gauge_labeled(
     gfx: &Gfx,
-    x: f32,
-    y: f32,
+    pos: Vec2,
     w: f32,
     label: &str,
     value: i64,
     max: i64,
     kind: GaugeKind,
 ) {
+    let (x, y) = (pos.x, pos.y);
     let small = TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW);
     gfx.text(label, x, y, small);
     gfx.text_aligned(

@@ -9,7 +9,9 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::AssetState;
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{fill_gradient_v, draw_texture_fit, Align, Fit, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{
+    draw_texture_fit, fill_gradient_v, Align, Fit, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
+};
 use crate::saves;
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -88,7 +90,10 @@ impl TitleScreen {
         let mut menu = Menu::new(items).cancellable(crate::platform::can_quit());
         menu.set_width(112.0);
         let h = menu.rect().h;
-        menu.set_position(((VIRTUAL_W - 112.0) / 2.0).round(), (VIRTUAL_H - 18.0 - h).round());
+        menu.set_position(
+            ((VIRTUAL_W - 112.0) / 2.0).round(),
+            (VIRTUAL_H - 18.0 - h).round(),
+        );
         // Keep the cursor where it was, but land on "continue" when saves exist on first show.
         if self.age == 0.0 && self.has_saves {
             menu.set_cursor(1);

@@ -31,7 +31,10 @@ pub fn draw_window_ex(r: Rect, style: WindowStyle, alpha: f32) {
     }
     let a = |c: Color| Color::new(c.r, c.g, c.b, c.a * alpha);
     // Soft shadow below-right.
-    fill_rect(Rect::new(r.x + 2.0, r.y + 2.0, r.w, r.h), a(theme::WINDOW_SHADOW));
+    fill_rect(
+        Rect::new(r.x + 2.0, r.y + 2.0, r.w, r.h),
+        a(theme::WINDOW_SHADOW),
+    );
     let (top, bottom) = match style {
         WindowStyle::Normal => (theme::WIN_TOP, theme::WIN_BOTTOM),
         WindowStyle::Panel => (theme::PANEL_TOP, theme::PANEL_BOTTOM),
@@ -42,14 +45,25 @@ pub fn draw_window_ex(r: Rect, style: WindowStyle, alpha: f32) {
     let b = inset(r, 1.0);
     fill_rect(Rect::new(b.x, b.y, b.w, 1.0), a(theme::BORDER_LIGHT));
     fill_rect(Rect::new(b.x, b.y, 1.0, b.h), a(theme::BORDER_LIGHT));
-    fill_rect(Rect::new(b.x, b.bottom() - 1.0, b.w, 1.0), a(theme::BORDER_MID));
-    fill_rect(Rect::new(b.right() - 1.0, b.y + 1.0, 1.0, b.h - 1.0), a(theme::BORDER_MID));
+    fill_rect(
+        Rect::new(b.x, b.bottom() - 1.0, b.w, 1.0),
+        a(theme::BORDER_MID),
+    );
+    fill_rect(
+        Rect::new(b.right() - 1.0, b.y + 1.0, 1.0, b.h - 1.0),
+        a(theme::BORDER_MID),
+    );
     stroke_rect(inset(r, 2.0), a(theme::BORDER_INNER));
 }
 
 /// `r` shrunk by `d` on every side.
 pub fn inset(r: Rect, d: f32) -> Rect {
-    Rect::new(r.x + d, r.y + d, (r.w - 2.0 * d).max(0.0), (r.h - 2.0 * d).max(0.0))
+    Rect::new(
+        r.x + d,
+        r.y + d,
+        (r.w - 2.0 * d).max(0.0),
+        (r.h - 2.0 * d).max(0.0),
+    )
 }
 
 /// Content area of a window (inside border and padding).
@@ -68,7 +82,10 @@ pub fn draw_highlight(r: Rect, active: bool, time: f64) {
             Color::new(t.r, t.g, t.b, t.a * pulse),
             Color::new(b.r, b.g, b.b, b.a * pulse),
         );
-        fill_rect(Rect::new(r.x, r.y, r.w, 1.0), Color::new(1.0, 1.0, 1.0, 0.25));
+        fill_rect(
+            Rect::new(r.x, r.y, r.w, 1.0),
+            Color::new(1.0, 1.0, 1.0, 0.25),
+        );
     } else {
         fill_rect(r, theme::CURSOR_IDLE);
     }
@@ -133,14 +150,20 @@ pub fn draw_side_arrow(cx: f32, cy: f32, right: bool, color: Color) {
 /// Horizontal separator line with a highlight below.
 pub fn draw_divider(x: f32, y: f32, w: f32) {
     fill_rect(Rect::new(x, y, w, 1.0), theme::BORDER_INNER);
-    fill_rect(Rect::new(x, y + 1.0, w, 1.0), Color::new(1.0, 1.0, 1.0, 0.18));
+    fill_rect(
+        Rect::new(x, y + 1.0, w, 1.0),
+        Color::new(1.0, 1.0, 1.0, 0.18),
+    );
 }
 
 /// Title strip at the top of a screen: gradient band with a heading.
 pub fn draw_title_bar(ctx: &Ctx, title: &str) {
     let r = Rect::new(0.0, 0.0, crate::gfx::VIRTUAL_W, 20.0);
     fill_gradient_h(r, theme::WIN_TOP, theme::WIN_BOTTOM.with_alpha(0.6));
-    fill_rect(Rect::new(0.0, 20.0, r.w, 1.0), theme::BORDER_LIGHT.with_alpha(0.6));
+    fill_rect(
+        Rect::new(0.0, 20.0, r.w, 1.0),
+        theme::BORDER_LIGHT.with_alpha(0.6),
+    );
     ctx.gfx.text(
         title,
         10.0,
@@ -222,7 +245,12 @@ pub fn draw_silhouette(r: Rect) {
     draw_circle(cx, head_y, head_r, c);
     // Topknot / hat.
     fill_rect(
-        Rect::new(cx - head_r * 0.35, head_y - head_r * 1.45, head_r * 0.7, head_r * 0.6),
+        Rect::new(
+            cx - head_r * 0.35,
+            head_y - head_r * 1.45,
+            head_r * 0.7,
+            head_r * 0.6,
+        ),
         c,
     );
     // Shoulders.
@@ -234,7 +262,12 @@ pub fn draw_silhouette(r: Rect) {
         c,
     );
     fill_rect(
-        Rect::new(r.x + r.w * 0.12, sy + head_r * 0.6, r.w * 0.76, r.bottom() - sy - head_r * 0.6),
+        Rect::new(
+            r.x + r.w * 0.12,
+            sy + head_r * 0.6,
+            r.w * 0.76,
+            r.bottom() - sy - head_r * 0.6,
+        ),
         c,
     );
 }

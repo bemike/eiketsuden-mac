@@ -16,9 +16,9 @@ fn hash01(seed: u32) -> f32 {
 
 /// Height of a mountain ridge at `x` (sum of a few sines with seeded phases).
 fn ridge(x: f32, seed: u32, base: f32, amp: f32) -> f32 {
-    let p1 = hash01(seed) * 6.28;
-    let p2 = hash01(seed + 1) * 6.28;
-    let p3 = hash01(seed + 2) * 6.28;
+    let p1 = hash01(seed) * std::f32::consts::TAU;
+    let p2 = hash01(seed + 1) * std::f32::consts::TAU;
+    let p3 = hash01(seed + 2) * std::f32::consts::TAU;
     base - amp
         * (0.55 * (x / 57.0 + p1).sin().abs()
             + 0.3 * (x / 23.0 + p2).sin()
@@ -57,7 +57,12 @@ pub fn draw_backdrop(time: f64) {
         draw_circle(mx, my, r, Color::new(1.0, 0.92, 0.7, a));
     }
     draw_circle(mx, my, 15.0, Color::from_hex(0xf6e8c0));
-    draw_circle(mx + 5.0, my - 3.0, 13.0, Color::from_hex(0xfdf3d6).with_alpha(0.5));
+    draw_circle(
+        mx + 5.0,
+        my - 3.0,
+        13.0,
+        Color::from_hex(0xfdf3d6).with_alpha(0.5),
+    );
 
     // Mountain ridges, far to near.
     let layers: [(u32, f32, f32, u32); 3] = [
@@ -72,12 +77,7 @@ pub fn draw_backdrop(time: f64) {
         while x < VIRTUAL_W {
             let y0 = ridge(x, seed, base, amp);
             let y1 = ridge(x + step, seed, base, amp);
-            draw_triangle(
-                vec2(x, y0),
-                vec2(x + step, y1),
-                vec2(x, VIRTUAL_H),
-                c,
-            );
+            draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, VIRTUAL_H), c);
             draw_triangle(
                 vec2(x + step, y1),
                 vec2(x + step, VIRTUAL_H),

@@ -31,8 +31,8 @@ use crate::input::Input;
 use crate::platform::storage::KeyValueStore;
 use crate::platform::{DataRoot, LaunchOptions};
 use crate::settings::Settings;
-use crate::ui::toast::Toasts;
 use crate::ui::theme;
+use crate::ui::toast::Toasts;
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
 use std::rc::Rc;
@@ -352,7 +352,10 @@ impl App {
                 top,
                 ctx.media.pending()
             );
-            fill_rect(Rect::new(0.0, 0.0, 480.0, 13.0), Color::new(0.0, 0.0, 0.0, 0.6));
+            fill_rect(
+                Rect::new(0.0, 0.0, 480.0, 13.0),
+                Color::new(0.0, 0.0, 0.0, 0.6),
+            );
             ctx.gfx.text(&text, 3.0, 0.0, TextStyle::small(theme::TEXT));
         }
         ctx.gfx.canvas.present(theme::LETTERBOX);

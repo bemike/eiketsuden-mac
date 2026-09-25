@@ -51,8 +51,27 @@ pub mod sfx {
 
     /// Every engine effect, for preloading.
     pub const ALL: [&str; 21] = [
-        CURSOR, CONFIRM, CANCEL, ERROR, STEP, HIT, HIT_HEAVY, ARROW, FIRE, WATER, ROCK, HEAL,
-        MORALE_UP, MORALE_DOWN, CONFUSE, LEVELUP, RETREAT, TREASURE, PHASE, VICTORY, DEFEAT,
+        CURSOR,
+        CONFIRM,
+        CANCEL,
+        ERROR,
+        STEP,
+        HIT,
+        HIT_HEAVY,
+        ARROW,
+        FIRE,
+        WATER,
+        ROCK,
+        HEAL,
+        MORALE_UP,
+        MORALE_DOWN,
+        CONFUSE,
+        LEVELUP,
+        RETREAT,
+        TREASURE,
+        PHASE,
+        VICTORY,
+        DEFEAT,
     ];
 }
 
@@ -162,7 +181,7 @@ impl Audio {
             media.sound_state(&full);
             return;
         }
-        if self.sfx_gain <= 0.0 || self.played_this_frame.iter().any(|k| *k == full) {
+        if self.sfx_gain <= 0.0 || self.played_this_frame.contains(&full) {
             return;
         }
         if let Some(sound) = media.sound(&full) {

@@ -216,15 +216,18 @@ mod native {
             match fs::read_to_string(&path) {
                 Ok(s) => Ok(Some(s)),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                Err(e) => Err(Self::err(key, &format!("cannot read {}", path.display()), e)),
+                Err(e) => Err(Self::err(
+                    key,
+                    &format!("cannot read {}", path.display()),
+                    e,
+                )),
             }
         }
 
         fn set(&mut self, key: &str, value: &str) -> Result<(), StorageError> {
             let path = self.file(key)?;
-            fs::create_dir_all(&self.dir).map_err(|e| {
-                Self::err(key, &format!("cannot create {}", self.dir.display()), e)
-            })?;
+            fs::create_dir_all(&self.dir)
+                .map_err(|e| Self::err(key, &format!("cannot create {}", self.dir.display()), e))?;
             let tmp = self.dir.join(format!("{key}.json.tmp"));
             let write = || -> io::Result<()> {
                 let mut f = fs::File::create(&tmp)?;
@@ -247,7 +250,11 @@ mod native {
             match fs::remove_file(&path) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(Self::err(key, &format!("cannot delete {}", path.display()), e)),
+                Err(e) => Err(Self::err(
+                    key,
+                    &format!("cannot delete {}", path.display()),
+                    e,
+                )),
             }
         }
 
