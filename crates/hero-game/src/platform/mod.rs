@@ -231,6 +231,41 @@ pub fn notify_ready() {
     web::ready();
 }
 
+/// File name of the native crash report inside the user data directory.
+pub const CRASH_LOG: &str = "crash.log";
+
+/// Record a panic where the player (and a bug report) can find it. Called from the panic hook
+/// installed by `main.rs`.
+///
+/// * Always logged as an error (stderr natively, the browser console on the web).
+/// * Natively also written to [`CRASH_LOG`] in the user data directory, because release builds
+///   on Windows have no console window.
+/// * On the web the page shows the message over the (now frozen) canvas.
+pub fn report_panic(message: &str) {
+    macroquad::logging::error!("panic: {}", message);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let Some(dir) = storage::user_data_dir() else {
+            return;
+        };
+        let report = format!(
+            "Eiketsuden Reloaded {} crashed at unix time {}\n{}\n",
+            env!("CARGO_PKG_VERSION"),
+            unix_now(),
+            message
+        );
+        let path = dir.join(CRASH_LOG);
+        let written = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, report));
+        match written {
+            Ok(()) => eprintln!("crash report written to {}", path.display()),
+            // Nothing else can be done inside a panic hook; at least say why the file is missing.
+            Err(e) => eprintln!("cannot write crash report {}: {e}", path.display()),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    web::show_panic(message);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -256,7 +256,8 @@ impl Menu {
         self.scroll..end
     }
 
-    fn row_at(&self, p: Vec2) -> Option<usize> {
+    /// Index of the visible item whose row contains the virtual point `p` (for tooltips).
+    pub fn row_at(&self, p: Vec2) -> Option<usize> {
         self.visible_range().find(|&i| self.row_rect(i).contains(p))
     }
 

@@ -1,7 +1,8 @@
 // Eiketsuden Reloaded — browser glue for the WebAssembly build.
 // Registers a miniquad plugin that gives the game localStorage-backed save
-// slots, the wall clock, the URL hash (launch options such as #gallery) and
-// lets it dismiss the HTML loading overlay once the first frame is up.
+// slots, the wall clock, the URL hash (launch options such as #gallery), lets
+// it dismiss the HTML loading overlay once the first frame is up and show a
+// crash message if it panics.
 // Requires mq_js_bundle.js (sapp_jsutils helpers js_object/consume_js_object).
 //
 // Keep in sync with crates/hero-game/src/platform/web.rs. Bump `version`
@@ -22,6 +23,27 @@
       if (el) el.remove();
       var canvas = document.getElementById("glcanvas");
       if (canvas) canvas.focus();
+    };
+    // The game panicked and cannot continue: show the message over the frozen canvas.
+    importObject.env.hero_web_panic = function (message) {
+      var text = consume_js_object(message);
+      var box = document.getElementById("crash");
+      if (!box) {
+        box = document.createElement("div");
+        box.id = "crash";
+        box.setAttribute("role", "alert");
+        document.body.appendChild(box);
+      }
+      box.textContent = "";
+      var title = document.createElement("h1");
+      title.textContent = "오류가 발생했습니다 / The game crashed";
+      var hint = document.createElement("p");
+      hint.textContent = "페이지를 새로 고치면 다시 시작합니다. 버그 신고 시 아래 내용을 함께 보내 주세요.";
+      var detail = document.createElement("pre");
+      detail.textContent = text;
+      box.appendChild(title);
+      box.appendChild(hint);
+      box.appendChild(detail);
     };
     // 1 when the key exists, 0 when it is missing or storage is unavailable.
     importObject.env.hero_storage_has = function (key) {
@@ -83,5 +105,5 @@
     };
   }
 
-  miniquad_add_plugin({ register_plugin: register_plugin, name: "hero_web", version: 2 });
+  miniquad_add_plugin({ register_plugin: register_plugin, name: "hero_web", version: 3 });
 })();

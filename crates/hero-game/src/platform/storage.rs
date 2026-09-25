@@ -66,7 +66,7 @@ pub fn open_default() -> Box<dyn KeyValueStore> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        match native::default_dir() {
+        match user_data_dir() {
             Some(dir) => Box::new(native::FileStore::new(dir)),
             None => Box::new(UnavailableStore {
                 reason: "no user data directory (APPDATA / HOME is not set)".into(),
@@ -138,6 +138,13 @@ impl KeyValueStore for UnavailableStore {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::FileStore;
+
+/// The per-user data directory of this OS (saves, settings, crash log), not created here.
+/// `None` when the relevant environment variable (`APPDATA` / `HOME`) is missing.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn user_data_dir() -> Option<std::path::PathBuf> {
+    native::default_dir()
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {

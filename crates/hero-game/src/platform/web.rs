@@ -8,13 +8,14 @@ use super::storage::{validate_key, KeyValueStore, StorageError};
 use sapp_jsutils::JsObject;
 
 /// Version of the `hero_web` JS plugin this build expects.
-pub const HERO_WEB_VERSION: u32 = 2;
+pub const HERO_WEB_VERSION: u32 = 3;
 
 /// Prefix of every `localStorage` item written by the game.
 const KEY_PREFIX: &str = "eiketsuden.";
 
 extern "C" {
     fn hero_web_ready();
+    fn hero_web_panic(message: JsObject);
     fn hero_storage_has(key: JsObject) -> i32;
     fn hero_storage_get(key: JsObject) -> JsObject;
     fn hero_storage_set(key: JsObject, value: JsObject) -> i32;
@@ -31,6 +32,11 @@ pub extern "C" fn hero_web_crate_version() -> u32 {
 
 pub fn ready() {
     unsafe { hero_web_ready() }
+}
+
+/// Show a crash message over the canvas (the game cannot continue after a panic).
+pub fn show_panic(message: &str) {
+    unsafe { hero_web_panic(JsObject::string(message)) }
 }
 
 pub fn now_seconds() -> f64 {
