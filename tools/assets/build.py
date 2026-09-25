@@ -20,12 +20,14 @@ from pathlib import Path
 
 from assetlib import PACK_DIR, Sources, SourceError
 from build_audio import build_fonts, build_sfx
+from build_fx import build_fx
 
 Step = Callable[[Sources, Path], list[str]]
 
 STEPS: dict[str, Step] = {
     "fonts": build_fonts,
     "sfx": build_sfx,
+    "fx": build_fx,
 }
 
 
