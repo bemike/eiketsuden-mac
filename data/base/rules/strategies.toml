@@ -1,5 +1,7 @@
 # Strategies (책략) of the base pack (`StrategyDef` in crates/hero-core/src/data.rs): the 36 strategies of
 # the PC original in eight families, plus one item-only effect (`blast`, used by the bomb).
+# `name` is the Korean name players know from the Korean release; `hanja` is the name of the PC original
+# (so 해일 shows 津波 and 소용돌이 shows 渦潮). The scroll items in items.toml follow the same rule.
 #
 # mp, damage power, reach and area are PC values. Reach: range8 = the 3x3 square around the caster,
 # range12 = range8 plus the four tiles two steps straight out, range20 = the 5x5 square minus its corners.
