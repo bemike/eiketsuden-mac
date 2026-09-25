@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            exe: eiketsuden.exe
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x64
+            exe: eiketsuden
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos-arm64
+            exe: eiketsuden
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: macos-x64
+            exe: eiketsuden
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for macroquad
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release -p hero-game --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NAME="eiketsuden-reloaded-${VERSION}-${{ matrix.platform }}"
+          mkdir -p "dist/$NAME/data"
+          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "dist/$NAME/"
+          cp -r data/base "dist/$NAME/data/base"
+          cp README.md LICENSE CREDITS.md "dist/$NAME/"
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$NAME.zip" "$NAME" > /dev/null
+          else
+            tar czf "$NAME.tar.gz" "$NAME"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

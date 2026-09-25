@@ -1,0 +1,48 @@
+name: Web demo (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build WebAssembly
+        run: cargo build --release -p hero-game --target wasm32-unknown-unknown
+      - name: Assemble site
+        run: |
+          mkdir -p site/data
+          cp web/index.html web/mq_js_bundle.js web/hero_web.js site/
+          cp target/wasm32-unknown-unknown/release/eiketsuden.wasm site/
+          cp -r data/base site/data/base
+          cp web/favicon.png site/ 2>/dev/null || true
+          touch site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

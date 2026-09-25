@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>영걸전 Reloaded — Eiketsuden Reloaded</title>
+  <meta name="description" content="삼국지 영걸전 스타일 전술 SRPG의 오픈소스 재구현. Rust + WebAssembly로 브라우저에서 바로 플레이.">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <style>
+    :root { --bg: #0b0d14; --ink: #e8d9a8; --muted: #9a8f70; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); }
+    canvas {
+      display: block; position: absolute; inset: 0; width: 100%; height: 100%;
+      outline: none; image-rendering: pixelated; touch-action: none; z-index: 0;
+    }
+    #loading {
+      position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px; background: var(--bg);
+      color: var(--ink); font-family: "Galmuri11", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      text-align: center; padding: 0 16px;
+    }
+    #loading h1 { margin: 0; font-size: 28px; letter-spacing: 2px; }
+    #loading p { margin: 0; color: var(--muted); font-size: 14px; }
+    #loading .bar { width: min(320px, 80vw); height: 6px; border: 1px solid var(--muted); }
+    #loading .bar i { display: block; height: 100%; width: 30%; background: var(--ink); animation: slide 1.2s ease-in-out infinite alternate; }
+    @keyframes slide { from { margin-left: 0; } to { margin-left: 70%; } }
+    noscript { color: var(--ink); }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas" tabindex="1"></canvas>
+  <div id="loading">
+    <h1>영걸전 Reloaded</h1>
+    <div class="bar"><i></i></div>
+    <p>불러오는 중… / Loading…</p>
+    <noscript>이 게임은 JavaScript와 WebAssembly가 필요합니다.</noscript>
+  </div>
+  <script src="mq_js_bundle.js"></script>
+  <script src="hero_web.js"></script>
+  <script>load("eiketsuden.wasm");</script>
+</body>
+</html>

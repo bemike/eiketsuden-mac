@@ -1,0 +1,15 @@
+[package]
+name = "hero-tools"
+description = "Command line tools for Eiketsuden Reloaded data packs (validate, simulate)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hero-tools"
+path = "src/main.rs"
+
+[dependencies]
+hero-core = { path = "../hero-core" }

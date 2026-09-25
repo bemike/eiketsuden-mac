@@ -1,0 +1,12 @@
+/target
+/dist
+/web/dist
+*.pdb
+.DS_Store
+Thumbs.db
+# local user data / imported original assets must never be committed
+/data/original/
+/saves/
+/tools/assets/.cache/
+__pycache__/
+/.claude/
