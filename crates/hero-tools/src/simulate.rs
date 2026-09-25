@@ -94,7 +94,9 @@ pub fn player_needs(pack: &Pack, battle: &BattleDef) -> Vec<String> {
         .chain(battle.bonus.as_ref().map(|b| &b.condition));
     for c in conditions {
         match c {
-            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => refs.push(target),
+            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
+                refs.push(target)
+            }
             Condition::Reach { who: Some(who), .. } => refs.push(who),
             _ => {}
         }
@@ -114,7 +116,9 @@ pub fn player_needs(pack: &Pack, battle: &BattleDef) -> Vec<String> {
                     refs.push(target);
                     refs.extend(ai_target.as_deref());
                 }
-                EventAction::Retreat { target } | EventAction::LevelUp { target, .. } => refs.push(target),
+                EventAction::Retreat { target } | EventAction::LevelUp { target, .. } => {
+                    refs.push(target)
+                }
                 _ => {}
             }
         }
@@ -143,7 +147,13 @@ pub fn army_for(pack: &Pack, id: &str) -> Result<CampaignState, String> {
         .get(id)
         .ok_or_else(|| format!("unknown battle `{id}`"))?;
     let mut army = CampaignState::new_game(pack);
-    for officer in battle.deploy.required.iter().cloned().chain(player_needs(pack, battle)) {
+    for officer in battle
+        .deploy
+        .required
+        .iter()
+        .cloned()
+        .chain(player_needs(pack, battle))
+    {
         army.join(pack, &officer).map_err(|e| e.to_string())?;
     }
     let deploy = &battle.deploy;
@@ -177,9 +187,14 @@ fn push_deployable(deployed: &mut Vec<String>, forbidden: &[String], officer: &s
 /// How one seeded run ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunResult {
-    Finished { outcome: Outcome, turns: u32 },
+    Finished {
+        outcome: Outcome,
+        turns: u32,
+    },
     /// Still undecided after [`MAX_PHASES`] phases.
-    Stuck { turns: u32 },
+    Stuck {
+        turns: u32,
+    },
     SetupFailed(String),
     Panicked(String),
 }
@@ -257,7 +272,11 @@ fn defeat_name(reason: DefeatReason) -> &'static str {
 }
 
 fn seed_list(seeds: &[u32]) -> String {
-    seeds.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
+    seeds
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Results of all seeds of one battle.
@@ -292,7 +311,9 @@ impl BattleStats {
                 self.turns += u64::from(turns);
                 match outcome {
                     Outcome::Victory => self.wins += 1,
-                    Outcome::Defeat(reason) => *self.defeats.entry(defeat_name(reason)).or_insert(0) += 1,
+                    Outcome::Defeat(reason) => {
+                        *self.defeats.entry(defeat_name(reason)).or_insert(0) += 1
+                    }
                 }
             }
             RunResult::Stuck { .. } => self.stuck.push(seed),
@@ -385,7 +406,9 @@ mod tests {
         let pack = fixture_pack();
         assert_eq!(battle_order(&pack, None).unwrap(), ["b01", "b02"]);
         assert_eq!(battle_order(&pack, Some("b02")).unwrap(), ["b02"]);
-        assert!(battle_order(&pack, Some("b99")).unwrap_err().contains("unknown battle `b99`"));
+        assert!(battle_order(&pack, Some("b99"))
+            .unwrap_err()
+            .contains("unknown battle `b99`"));
 
         // A battle the campaign does not use still runs, after the campaign's.
         let mut pack = pack;
@@ -442,7 +465,10 @@ mod tests {
         let mut lost = BattleStats::new("b02");
         lost.record(1, finished(Outcome::Defeat(DefeatReason::TurnLimit), 15));
         lost.record(2, finished(Outcome::Defeat(DefeatReason::LordRetreated), 4));
-        assert_eq!(lost.warnings(), ["never won (defeats: lord retreated 1, turn limit 1)"]);
+        assert_eq!(
+            lost.warnings(),
+            ["never won (defeats: lord retreated 1, turn limit 1)"]
+        );
         assert!(lost.errors().is_empty());
 
         let mut won = BattleStats::new("b03");
@@ -453,7 +479,10 @@ mod tests {
         broken.record(1, RunResult::Panicked("boom (src/battle/mod.rs:1)".into()));
         broken.record(2, RunResult::Panicked("boom (src/battle/mod.rs:1)".into()));
         broken.record(3, RunResult::Stuck { turns: 67 });
-        broken.record(4, RunResult::SetupFailed("battle setup failed: no slots".into()));
+        broken.record(
+            4,
+            RunResult::SetupFailed("battle setup failed: no slots".into()),
+        );
         broken.record(5, finished(Outcome::Victory, 9));
         assert_eq!(
             broken.errors(),
@@ -466,7 +495,13 @@ mod tests {
         // One win in five runs is neither "never" nor "always".
         assert!(broken.warnings().is_empty());
         let out = broken.render("x");
-        assert!(out.starts_with("b04 x: 5 run(s), won 20% (1/5), 9.0 turns on average\n"), "{out}");
-        assert!(out.contains("    ERROR: panicked (seeds 1, 2): boom"), "{out}");
+        assert!(
+            out.starts_with("b04 x: 5 run(s), won 20% (1/5), 9.0 turns on average\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("    ERROR: panicked (seeds 1, 2): boom"),
+            "{out}"
+        );
     }
 }

@@ -1211,13 +1211,13 @@ impl<'a> Validator<'a> {
                             self.error(&ctx, format!("@item names unknown item `{item}`"));
                         }
                     }
-                    Cmd::Say { speaker, .. } => {
-                        if looks_like_id(speaker) && pack.officer(speaker).is_none() {
-                            self.error(
-                                &ctx,
-                                format!("speaker `{speaker}` looks like an officer id, but no such officer exists"),
-                            );
-                        }
+                    Cmd::Say { speaker, .. }
+                        if looks_like_id(speaker) && pack.officer(speaker).is_none() =>
+                    {
+                        self.error(
+                            &ctx,
+                            format!("speaker `{speaker}` looks like an officer id, but no such officer exists"),
+                        );
                     }
                     _ => {}
                 }

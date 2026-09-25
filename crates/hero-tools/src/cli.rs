@@ -65,7 +65,9 @@ fn only_pack(command: &str, rest: &[String]) -> Result<PathBuf, String> {
     match rest {
         [pack] if !pack.starts_with('-') => Ok(PathBuf::from(pack)),
         [] => Err(format!("`{command}` needs a pack directory")),
-        [flag, ..] if flag.starts_with('-') => Err(format!("unknown option `{flag}` for `{command}`")),
+        [flag, ..] if flag.starts_with('-') => {
+            Err(format!("unknown option `{flag}` for `{command}`"))
+        }
         _ => Err(format!("`{command}` takes exactly one pack directory")),
     }
 }
@@ -97,7 +99,9 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
                 };
             }
             "--battle" => battle = Some(value("a battle id")?),
-            flag if flag.starts_with('-') => return Err(format!("unknown option `{flag}` for `simulate`")),
+            flag if flag.starts_with('-') => {
+                return Err(format!("unknown option `{flag}` for `simulate`"))
+            }
             _ if pack.is_none() => pack = Some(PathBuf::from(arg)),
             _ => return Err("`simulate` takes exactly one pack directory".into()),
         }
@@ -152,8 +156,14 @@ mod tests {
             seeds: 8,
             battle: Some("b03".into()),
         });
-        assert_eq!(parse_str(&["simulate", "p", "--seeds", "8", "--battle", "b03"]), expected);
-        assert_eq!(parse_str(&["simulate", "--battle=b03", "--seeds=8", "p"]), expected);
+        assert_eq!(
+            parse_str(&["simulate", "p", "--seeds", "8", "--battle", "b03"]),
+            expected
+        );
+        assert_eq!(
+            parse_str(&["simulate", "--battle=b03", "--seeds=8", "p"]),
+            expected
+        );
     }
 
     #[test]
@@ -166,11 +176,20 @@ mod tests {
             (&["validate", "--fast"][..], "unknown option `--fast`"),
             (&["simulate"][..], "needs a pack directory"),
             (&["simulate", "p", "q"][..], "exactly one pack directory"),
-            (&["simulate", "p", "--seeds"][..], "`--seeds` needs a number"),
+            (
+                &["simulate", "p", "--seeds"][..],
+                "`--seeds` needs a number",
+            ),
             (&["simulate", "p", "--seeds", "0"][..], "positive number"),
             (&["simulate", "p", "--seeds", "many"][..], "positive number"),
-            (&["simulate", "p", "--battle="][..], "`--battle` needs a battle id"),
-            (&["simulate", "p", "--turbo"][..], "unknown option `--turbo`"),
+            (
+                &["simulate", "p", "--battle="][..],
+                "`--battle` needs a battle id",
+            ),
+            (
+                &["simulate", "p", "--turbo"][..],
+                "unknown option `--turbo`",
+            ),
         ] {
             let err = parse_str(args).unwrap_err();
             assert!(err.contains(fragment), "{args:?}: {err}");

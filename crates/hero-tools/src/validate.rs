@@ -71,15 +71,29 @@ mod tests {
         let pack = crate::tests::fixture_pack();
         let issues = [
             issue(Severity::Warning, "scene spare", "is never played"),
-            issue(Severity::Error, "battle b01", "turn_limit must be at least 1"),
-            issue(Severity::Error, "rules/game.toml", "TOML parse error\n  |\n1 | x ="),
+            issue(
+                Severity::Error,
+                "battle b01",
+                "turn_limit must be at least 1",
+            ),
+            issue(
+                Severity::Error,
+                "rules/game.toml",
+                "TOML parse error\n  |\n1 | x =",
+            ),
         ];
         let out = render(&pack, &issues);
         let errors = out.find("Errors (2):").expect(&out);
         let warnings = out.find("Warnings (1):").expect(&out);
         assert!(errors < warnings, "{out}");
-        assert!(out.contains("  - battle b01: turn_limit must be at least 1\n"), "{out}");
-        assert!(out.contains("TOML parse error\n        |\n      1 | x ="), "{out}");
+        assert!(
+            out.contains("  - battle b01: turn_limit must be at least 1\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("TOML parse error\n        |\n      1 | x ="),
+            "{out}"
+        );
         assert!(out.ends_with("2 errors, 1 warning: FAILED\n"), "{out}");
         assert!(out.starts_with("Mini test pack (mini 0.1.0)\n"), "{out}");
     }
