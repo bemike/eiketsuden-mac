@@ -125,6 +125,19 @@ struct Choice {
     action: Action,
 }
 
+/// Value of dealing `damage` to `target` (§12): the damage, ×3 when it defeats the target,
+/// +50% against the lord or a commander.
+fn damage_value(damage: i32, target: &Unit) -> i64 {
+    let mut value = damage as i64;
+    if damage >= target.hp {
+        value *= 3;
+    }
+    if target.lord || target.commander {
+        value = value * 3 / 2;
+    }
+    value
+}
+
 fn offer(best: &mut Option<Choice>, c: Choice) {
     let better = match best {
         None => true,
@@ -392,13 +405,7 @@ impl<'a> Planner<'a> {
         let terrain = self.board.terrain(t.pos).map_or(0, |tt| tt.defense);
         let dmg = hit_damage(self.atk, st.defense_power(pack, target), st.affinity(pack, self.id, target), terrain);
         let kill = dmg >= t.hp;
-        let mut value = dmg.min(t.hp) as i64;
-        if kill {
-            value *= 3;
-        }
-        if t.lord || t.commander {
-            value = value * 3 / 2;
-        }
+        let value = damage_value(dmg, t);
         let mut counter = None;
         let t_class = st.class_of(pack, target);
         if !kill && t_class.can_counter && st.class_of(pack, self.id).provokes_counter {
@@ -499,8 +506,7 @@ impl<'a> Planner<'a> {
             match e {
                 Effect::Damage { power } => {
                     let dmg = st.strategy_damage_base(pack, self.id, s, *power, u, terrain);
-                    let dealt = dmg.min(hp);
-                    let mut value = dealt as i64;
+                    let mut value = dmg as i64;
                     if dmg >= hp {
                         value *= 3;
                     }
@@ -508,7 +514,7 @@ impl<'a> Planner<'a> {
                         value = value * 3 / 2;
                     }
                     v += sign * value;
-                    hp -= dealt;
+                    hp -= dmg.min(hp);
                     morale -= morale_loss(&pack.rules, dmg, t.max_hp).min(morale);
                 }
                 Effect::Heal { power } => {
