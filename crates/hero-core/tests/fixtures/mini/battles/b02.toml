@@ -1,0 +1,60 @@
+id = "b02"
+name = "성문 전투"
+location = "184년 광종"
+objective = "적을 모두 물리쳐라"
+bgm = "battle"
+turn_limit = 15
+reward_gold = 300
+intro = "b02_intro"
+victory = [{ type = "defeat_all" }]
+
+[map]
+theme = "castle"
+# `G` is not a terrain glyph: the legend maps it to castle floor (a gate look).
+legend = { G = "castle" }
+rows = """
+#########
+#ccc#ccc#
+#ccccccc#
+#cc...cc#
+....G....
+.........
+.........
+"""
+
+[deploy]
+max = 3
+required = ["jian_yong"]
+forbidden = ["zhang_fei"]
+slots = [[3, 6], [4, 6], [5, 6], [4, 5]]
+
+[[units]]
+side = "enemy"
+name = "성벽 궁병"
+class = "archer"
+level = 5
+pos = [2, 1]
+ai = "hold"
+
+[[units]]
+side = "enemy"
+name = "성벽 궁병"
+class = "archer"
+level = 5
+pos = [6, 1]
+ai = "hold"
+
+[[units]]
+side = "enemy"
+name = "황건 대장"
+class = "bandit"
+level = 6
+pos = [4, 2]
+ai = "defensive"
+commander = true
+tag = "chief"
+equip = { weapon = "bronze_sword" }
+
+[[events]]
+trigger = { type = "reach", pos = [4, 4] }
+actions = [{ type = "set_flag", flag = "gate_taken", value = 1 }, { type = "give_gold", amount = 100 }]

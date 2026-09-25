@@ -1,0 +1,20 @@
+# Scenes played by battle events.
+
+== b01_intro
+@bgm tension
+liu_bei: 적이 온다. 모두 준비하라!
+
+== b01_rein
+@sfx confirm
+장보: 지원군이 도착했다!
+
+== b01_duel
+guan_yu: 네 상대는 나다.
+zhang_bao: 덤벼라!
+
+== b01_outro
+@narr 적이 흩어졌다.
+
+== b02_intro
+@bg castle
+jian_yong: 성문을 먼저 확보해야 합니다.

@@ -1,0 +1,46 @@
+[[strategy]]
+id = "fire"
+name = "초열"
+hanja = "焦熱"
+kind = "attack"
+mp = 4
+range = "range12"
+area = "single"
+target = "enemy"
+element = "fire"
+effects = [{ type = "damage", power = 60 }]
+fx = "fire"
+
+[[strategy]]
+id = "rockfall"
+name = "낙석"
+kind = "attack"
+mp = 8
+range = "range12"
+area = "single"
+target = "enemy"
+element = "earth"
+effects = [{ type = "damage", power = 80 }]
+fx = "rock"
+
+[[strategy]]
+id = "heal"
+name = "원조"
+kind = "heal"
+mp = 6
+range = "range8"
+area = "single"
+target = "ally"
+effects = [{ type = "heal", power = 100 }]
+fx = "heal"
+
+[[strategy]]
+id = "confuse"
+name = "혼란"
+kind = "support"
+mp = 8
+range = "range12"
+area = "single"
+target = "enemy"
+effects = [{ type = "status", status = "confused", turns = 2 }]
+fx = "confuse"

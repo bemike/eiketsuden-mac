@@ -620,7 +620,7 @@ impl<'a> Validator<'a> {
                 Some(item) if item.kind != kind => self.error(
                     ctx,
                     format!(
-                        "`{id}` is a {} and cannot go in the {slot} slot",
+                        "`{id}` ({}) cannot go in the {slot} slot",
                         kind_name(item.kind)
                     ),
                 ),

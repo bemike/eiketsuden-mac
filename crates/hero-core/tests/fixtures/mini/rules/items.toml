@@ -1,0 +1,74 @@
+[[item]]
+id = "bean"
+name = "콩"
+kind = "consumable"
+price = 20
+effects = [{ type = "heal", power = 200 }]
+battle_use = true
+icon = "bean"
+
+[[item]]
+id = "wine"
+name = "술"
+kind = "consumable"
+price = 50
+effects = [{ type = "morale", amount = 20 }]
+battle_use = true
+icon = "wine"
+
+[[item]]
+id = "fire_scroll"
+name = "초열서"
+kind = "consumable"
+strategy = "fire"
+battle_use = true
+icon = "scroll"
+
+[[item]]
+id = "long_spear"
+name = "장창"
+kind = "consumable"
+price = 300
+effects = [{ type = "promote" }]
+icon = "class_up"
+
+[[item]]
+id = "archery_manual"
+name = "궁술서"
+kind = "consumable"
+effects = [{ type = "change_class", to = "archer" }]
+icon = "class_change"
+
+[[item]]
+id = "bronze_sword"
+name = "청동검"
+kind = "weapon"
+price = 200
+families = ["infantry", "bandit"]
+atk_pct = 110
+icon = "weapon"
+
+[[item]]
+id = "short_bow"
+name = "단궁"
+kind = "weapon"
+price = 250
+families = ["archer"]
+atk_pct = 110
+icon = "weapon"
+
+[[item]]
+id = "war_manual"
+name = "병법서"
+kind = "armor"
+price = 300
+def_pct = 110
+icon = "armor"
+
+[[item]]
+id = "red_horse"
+name = "적토마"
+kind = "accessory"
+move_bonus = 1
+regen_morale = 5
+icon = "accessory"
