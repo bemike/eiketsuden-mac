@@ -35,7 +35,8 @@ pub(super) fn validate(pack: &Pack) -> Vec<Issue> {
 /// names (`장비`, `Messenger`) are shown as they are.
 pub(super) fn looks_like_id(s: &str) -> bool {
     s.starts_with(|c: char| c.is_ascii_lowercase())
-        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn kind_name(kind: ItemKind) -> &'static str {
@@ -62,12 +63,16 @@ fn at(p: Pos) -> String {
 fn successors(node: &Node) -> Vec<&str> {
     match node {
         Node::Drama { next, .. } | Node::Camp { next, .. } => vec![next],
-        Node::Battle { next, on_defeat, .. } => {
+        Node::Battle {
+            next, on_defeat, ..
+        } => {
             let mut v = vec![next.as_str()];
             v.extend(on_defeat.as_deref());
             v
         }
-        Node::Branch { then, otherwise, .. } => vec![then, otherwise],
+        Node::Branch {
+            then, otherwise, ..
+        } => vec![then, otherwise],
         Node::Ending { .. } => vec![],
     }
 }
@@ -87,8 +92,12 @@ struct Validator<'a> {
 
 impl<'a> Validator<'a> {
     fn new(pack: &'a Pack) -> Self {
-        let mut player_officers: BTreeSet<&str> =
-            pack.campaign.starting_officers.iter().map(|s| s.as_str()).collect();
+        let mut player_officers: BTreeSet<&str> = pack
+            .campaign
+            .starting_officers
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
         for scene in pack.scenes.values() {
             for cmd in &scene.cmds {
                 if let Cmd::Join(o) = cmd {
@@ -100,8 +109,15 @@ impl<'a> Validator<'a> {
             pack,
             issues: Vec::new(),
             families: pack.classes.values().map(|c| c.family.as_str()).collect(),
-            class_move_types: pack.classes.values().map(|c| c.move_type.as_str()).collect(),
-            foot_defined: pack.terrain.iter().any(|t| t.cost.contains_key(FOOT_MOVE_TYPE)),
+            class_move_types: pack
+                .classes
+                .values()
+                .map(|c| c.move_type.as_str())
+                .collect(),
+            foot_defined: pack
+                .terrain
+                .iter()
+                .any(|t| t.cost.contains_key(FOOT_MOVE_TYPE)),
             player_officers,
         }
     }
@@ -182,11 +198,17 @@ impl<'a> Validator<'a> {
         }
         for (attacker, row) in &r.affinity {
             if !self.families.contains(attacker.as_str()) {
-                self.warn(&ctx, format!("affinity names unknown class family `{attacker}`"));
+                self.warn(
+                    &ctx,
+                    format!("affinity names unknown class family `{attacker}`"),
+                );
             }
             for (defender, pct) in row {
                 if !self.families.contains(defender.as_str()) {
-                    self.warn(&ctx, format!("affinity names unknown class family `{defender}`"));
+                    self.warn(
+                        &ctx,
+                        format!("affinity names unknown class family `{defender}`"),
+                    );
                 }
                 if *pct <= 0 {
                     self.error(
@@ -213,7 +235,10 @@ impl<'a> Validator<'a> {
         for t in &pack.terrain {
             let ctx = format!("terrain {}", t.id);
             if t.glyph.is_whitespace() || t.glyph.is_control() {
-                self.error(&ctx, format!("glyph {:?} must be a visible character", t.glyph));
+                self.error(
+                    &ctx,
+                    format!("glyph {:?} must be a visible character", t.glyph),
+                );
             }
             if !(0..=100).contains(&t.defense) {
                 self.error(&ctx, "defense must be within 0..=100");
@@ -226,10 +251,16 @@ impl<'a> Validator<'a> {
             }
             for (move_type, cost) in &t.cost {
                 if *cost == 0 {
-                    self.error(&ctx, format!("movement cost for `{move_type}` must be at least 1"));
+                    self.error(
+                        &ctx,
+                        format!("movement cost for `{move_type}` must be at least 1"),
+                    );
                 }
                 if !self.class_move_types.contains(move_type.as_str()) {
-                    self.warn(&ctx, format!("cost for move type `{move_type}`, which no class uses"));
+                    self.warn(
+                        &ctx,
+                        format!("cost for move type `{move_type}`, which no class uses"),
+                    );
                 }
             }
             for e in &t.elements {
@@ -276,7 +307,10 @@ impl<'a> Validator<'a> {
                 );
             }
             match c.range.offsets() {
-                None => self.error(&ctx, format!("unknown attack range {}", range_name(&c.range))),
+                None => self.error(
+                    &ctx,
+                    format!("unknown attack range {}", range_name(&c.range)),
+                ),
                 Some(o) if o.contains(&Pos::new(0, 0)) => {
                     self.warn(&ctx, "attack range includes the unit's own tile")
                 }
@@ -286,7 +320,10 @@ impl<'a> Validator<'a> {
                 self.error(&ctx, "hp must be positive");
             }
             if c.hp_growth < 0 {
-                self.warn(&ctx, "hp_growth is negative: units lose troops when they level up");
+                self.warn(
+                    &ctx,
+                    "hp_growth is negative: units lose troops when they level up",
+                );
             }
             if !(1..=3).contains(&c.tier) {
                 self.warn(&ctx, "tier should be 1, 2 or 3");
@@ -304,7 +341,10 @@ impl<'a> Validator<'a> {
                 if !(1..=cap).contains(&learn.level) {
                     self.warn(
                         &ctx,
-                        format!("learns `{}` at level {}, outside 1..={cap}", learn.id, learn.level),
+                        format!(
+                            "learns `{}` at level {}, outside 1..={cap}",
+                            learn.id, learn.level
+                        ),
                     );
                 }
             }
@@ -318,7 +358,10 @@ impl<'a> Validator<'a> {
                     None => self.error(&ctx, format!("promotion item `{}` does not exist", p.item)),
                     Some(item) if !item.effects.contains(&Effect::Promote) => self.error(
                         &ctx,
-                        format!("promotion item `{}` has no `promote` effect, so it cannot be used", p.item),
+                        format!(
+                            "promotion item `{}` has no `promote` effect, so it cannot be used",
+                            p.item
+                        ),
                     ),
                     Some(_) => {}
                 }
@@ -334,7 +377,10 @@ impl<'a> Validator<'a> {
         let mut promoted_from: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for c in pack.classes.values() {
             if let Some(p) = &c.promote {
-                promoted_from.entry(p.to.as_str()).or_default().push(c.id.as_str());
+                promoted_from
+                    .entry(p.to.as_str())
+                    .or_default()
+                    .push(c.id.as_str());
             }
         }
         for (to, from) in promoted_from {
@@ -484,16 +530,26 @@ impl<'a> Validator<'a> {
                     self.warn(&ctx, "consumable has no effects and casts no strategy");
                 }
                 if camp_effect && i.battle_use {
-                    self.warn(&ctx, "class items are used in camp; `battle_use` has no effect on them");
+                    self.warn(
+                        &ctx,
+                        "class items are used in camp; `battle_use` has no effect on them",
+                    );
                 }
                 let battle_effect = i.strategy.is_some()
                     || i.effects
                         .iter()
                         .any(|e| matches!(e, Effect::Heal { .. } | Effect::Morale { .. }));
                 if battle_effect && !i.battle_use {
-                    self.warn(&ctx, "battle effects without `battle_use = true` can never be used");
+                    self.warn(
+                        &ctx,
+                        "battle effects without `battle_use = true` can never be used",
+                    );
                 }
-                if i.atk_pct != 0 || i.def_pct != 0 || i.move_bonus != 0 || i.regen_hp != 0 || i.regen_morale != 0
+                if i.atk_pct != 0
+                    || i.def_pct != 0
+                    || i.move_bonus != 0
+                    || i.regen_hp != 0
+                    || i.regen_morale != 0
                 {
                     self.warn(&ctx, "equipment bonuses are ignored on consumables");
                 }
@@ -563,7 +619,10 @@ impl<'a> Validator<'a> {
                 None => self.error(ctx, format!("{slot} `{id}` does not exist")),
                 Some(item) if item.kind != kind => self.error(
                     ctx,
-                    format!("`{id}` is a {} and cannot go in the {slot} slot", kind_name(item.kind)),
+                    format!(
+                        "`{id}` is a {} and cannot go in the {slot} slot",
+                        kind_name(item.kind)
+                    ),
                 ),
                 Some(item) => {
                     if let Some(f) = family {
@@ -589,7 +648,9 @@ impl<'a> Validator<'a> {
         if self.foot_defined {
             self.passable(map, p, FOOT_MOVE_TYPE)
         } else {
-            self.class_move_types.iter().any(|m| self.passable(map, p, m))
+            self.class_move_types
+                .iter()
+                .any(|m| self.passable(map, p, m))
         }
     }
 
@@ -613,10 +674,16 @@ impl<'a> Validator<'a> {
         }
         for (glyph, terrain) in &b.map.legend {
             if glyph.chars().count() != 1 {
-                self.error(&ctx, format!("map legend key `{glyph}` must be exactly one character"));
+                self.error(
+                    &ctx,
+                    format!("map legend key `{glyph}` must be exactly one character"),
+                );
             }
             if pack.terrain(terrain).is_none() {
-                self.error(&ctx, format!("map legend maps `{glyph}` to unknown terrain `{terrain}`"));
+                self.error(
+                    &ctx,
+                    format!("map legend maps `{glyph}` to unknown terrain `{terrain}`"),
+                );
             }
         }
         let map = match BattleMap::parse(&b.map.rows, &b.map.legend, &pack.terrain) {
@@ -672,14 +739,20 @@ impl<'a> Validator<'a> {
                 if let EventAction::Spawn { group } = a {
                     spawned.insert(group);
                     if !groups.contains(group.as_str()) {
-                        self.error(&ectx, format!("spawns group `{group}`, but no unit belongs to it"));
+                        self.error(
+                            &ectx,
+                            format!("spawns group `{group}`, but no unit belongs to it"),
+                        );
                     }
                 }
                 self.action(&ectx, a, map, &names);
             }
         }
         for g in groups.difference(&spawned) {
-            self.warn(&ctx, format!("units of group `{g}` never appear: no event spawns the group"));
+            self.warn(
+                &ctx,
+                format!("units of group `{g}` never appear: no event spawns the group"),
+            );
         }
 
         let mut treasure_tiles = BTreeSet::new();
@@ -717,7 +790,13 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn deploy(&mut self, ctx: &str, b: &BattleDef, map: Option<&BattleMap>, occupied: &mut BTreeSet<Pos>) {
+    fn deploy(
+        &mut self,
+        ctx: &str,
+        b: &BattleDef,
+        map: Option<&BattleMap>,
+        occupied: &mut BTreeSet<Pos>,
+    ) {
         let pack = self.pack;
         let d = &b.deploy;
         if d.max == 0 {
@@ -726,7 +805,11 @@ impl<'a> Validator<'a> {
         if d.max as usize > d.slots.len() {
             self.error(
                 ctx,
-                format!("deploy.max is {} but only {} deploy slots exist", d.max, d.slots.len()),
+                format!(
+                    "deploy.max is {} but only {} deploy slots exist",
+                    d.max,
+                    d.slots.len()
+                ),
             );
         }
         let mut required = BTreeSet::new();
@@ -745,9 +828,10 @@ impl<'a> Validator<'a> {
         for o in &d.forbidden {
             match pack.officer(o) {
                 None => self.error(ctx, format!("forbidden officer `{o}` does not exist")),
-                Some(def) if def.lord => {
-                    self.error(ctx, format!("the lord `{o}` is always deployed and cannot be forbidden"))
-                }
+                Some(def) if def.lord => self.error(
+                    ctx,
+                    format!("the lord `{o}` is always deployed and cannot be forbidden"),
+                ),
                 Some(_) => {}
             }
         }
@@ -772,10 +856,16 @@ impl<'a> Validator<'a> {
             let sctx = format!("{ctx} deploy slot {}", at(*slot));
             if let Some(map) = map {
                 if !map.in_bounds(*slot) {
-                    self.error(&sctx, format!("is outside the {}x{} map", map.width, map.height));
+                    self.error(
+                        &sctx,
+                        format!("is outside the {}x{} map", map.width, map.height),
+                    );
                 } else if !self.deployable(map, *slot) {
                     let terrain = map.terrain_at(*slot).unwrap_or("?");
-                    self.error(&sctx, format!("is on `{terrain}`, which foot units cannot enter"));
+                    self.error(
+                        &sctx,
+                        format!("is on `{terrain}`, which foot units cannot enter"),
+                    );
                 }
             }
             if !occupied.insert(*slot) {
@@ -809,10 +899,16 @@ impl<'a> Validator<'a> {
                         self.error(&uctx, format!("unknown officer `{o}`"));
                     }
                     if !officers.insert(o.as_str()) {
-                        self.error(&uctx, format!("officer `{o}` appears more than once in this battle"));
+                        self.error(
+                            &uctx,
+                            format!("officer `{o}` appears more than once in this battle"),
+                        );
                     }
                     if b.deploy.required.contains(o) {
-                        self.error(&uctx, format!("officer `{o}` is also a required player officer"));
+                        self.error(
+                            &uctx,
+                            format!("officer `{o}` is also a required player officer"),
+                        );
                     }
                     if u.stats.is_some() {
                         self.warn(&uctx, "stats are ignored for named officers");
@@ -848,7 +944,12 @@ impl<'a> Validator<'a> {
                 if !map.in_bounds(u.pos) {
                     self.error(
                         &uctx,
-                        format!("position {} is outside the {}x{} map", at(u.pos), map.width, map.height),
+                        format!(
+                            "position {} is outside the {}x{} map",
+                            at(u.pos),
+                            map.width,
+                            map.height
+                        ),
                     );
                 } else if let Some(class) = class {
                     if !self.passable(map, u.pos, &class.move_type) {
@@ -874,7 +975,10 @@ impl<'a> Validator<'a> {
             if u.group.is_none() && !occupied.insert(u.pos) {
                 self.error(
                     &uctx,
-                    format!("position {} is already taken by another unit or a deploy slot", at(u.pos)),
+                    format!(
+                        "position {} is already taken by another unit or a deploy slot",
+                        at(u.pos)
+                    ),
                 );
             }
             if let Some(tag) = &u.tag {
@@ -884,7 +988,12 @@ impl<'a> Validator<'a> {
                     self.error(&uctx, format!("duplicate tag `{tag}`"));
                 }
                 if pack.officer(tag).is_some() {
-                    self.warn(&uctx, format!("tag `{tag}` is also an officer id; references to it are ambiguous"));
+                    self.warn(
+                        &uctx,
+                        format!(
+                            "tag `{tag}` is also an officer id; references to it are ambiguous"
+                        ),
+                    );
                 }
             }
             if u.ai == AiMode::Target && u.ai_target.is_none() {
@@ -892,7 +1001,10 @@ impl<'a> Validator<'a> {
             }
             if let Some(t) = &u.ai_target {
                 if !names.contains(t.as_str()) {
-                    self.error(&uctx, format!("ai_target `{t}` names no unit of this battle"));
+                    self.error(
+                        &uctx,
+                        format!("ai_target `{t}` names no unit of this battle"),
+                    );
                 }
             }
             if let Some(equip) = &u.equip {
@@ -910,7 +1022,9 @@ impl<'a> Validator<'a> {
         if !names.contains(name) {
             self.error(
                 ctx,
-                format!("{what} `{name}` matches no unit tag, officer of this battle or player officer"),
+                format!(
+                    "{what} `{name}` matches no unit tag, officer of this battle or player officer"
+                ),
             );
         }
     }
@@ -938,7 +1052,11 @@ impl<'a> Validator<'a> {
         let cctx = format!("{ctx} {what}");
         match c {
             Condition::DefeatAll => {
-                if !b.units.iter().any(|u| u.side == Side::Enemy && u.group.is_none()) {
+                if !b
+                    .units
+                    .iter()
+                    .any(|u| u.side == Side::Enemy && u.group.is_none())
+                {
                     self.error(&cctx, "defeat_all, but no enemy unit starts on the map");
                 }
             }
@@ -962,20 +1080,36 @@ impl<'a> Validator<'a> {
                 } else if *turns > b.turn_limit {
                     self.warn(
                         &cctx,
-                        format!("survive_turns {turns} can never be met: turn_limit is {}", b.turn_limit),
+                        format!(
+                            "survive_turns {turns} can never be met: turn_limit is {}",
+                            b.turn_limit
+                        ),
                     );
                 }
             }
         }
     }
 
-    fn trigger(&mut self, ctx: &str, t: &Trigger, b: &BattleDef, map: Option<&BattleMap>, names: &BTreeSet<&str>) {
+    fn trigger(
+        &mut self,
+        ctx: &str,
+        t: &Trigger,
+        b: &BattleDef,
+        map: Option<&BattleMap>,
+        names: &BTreeSet<&str>,
+    ) {
         match t {
             Trigger::TurnStart { turn, .. } => {
                 if *turn == 0 {
                     self.error(ctx, "turn_start needs a turn of at least 1");
                 } else if *turn > b.turn_limit {
-                    self.warn(ctx, format!("turn {turn} is after turn_limit {}; it never fires", b.turn_limit));
+                    self.warn(
+                        ctx,
+                        format!(
+                            "turn {turn} is after turn_limit {}; it never fires",
+                            b.turn_limit
+                        ),
+                    );
                 }
             }
             Trigger::UnitDefeated { target } => self.reference(ctx, names, "target", target),
@@ -1001,7 +1135,13 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn action(&mut self, ctx: &str, a: &EventAction, map: Option<&BattleMap>, names: &BTreeSet<&str>) {
+    fn action(
+        &mut self,
+        ctx: &str,
+        a: &EventAction,
+        map: Option<&BattleMap>,
+        names: &BTreeSet<&str>,
+    ) {
         let pack = self.pack;
         match a {
             EventAction::Drama { scene } => {
@@ -1058,7 +1198,11 @@ impl<'a> Validator<'a> {
                 match cmd {
                     Cmd::Join(o) | Cmd::Leave(o) => {
                         if pack.officer(o).is_none() {
-                            let word = if matches!(cmd, Cmd::Join(_)) { "join" } else { "leave" };
+                            let word = if matches!(cmd, Cmd::Join(_)) {
+                                "join"
+                            } else {
+                                "leave"
+                            };
                             self.error(&ctx, format!("@{word} names unknown officer `{o}`"));
                         }
                     }
@@ -1085,7 +1229,9 @@ impl<'a> Validator<'a> {
                 Node::Drama { scene, .. } => {
                     used.insert(scene);
                 }
-                Node::Ending { scene: Some(scene), .. } => {
+                Node::Ending {
+                    scene: Some(scene), ..
+                } => {
                     used.insert(scene);
                 }
                 _ => {}
@@ -1152,7 +1298,10 @@ impl<'a> Validator<'a> {
             }
         }
         if !(0..=pack.rules.gold_cap).contains(&c.starting_gold) {
-            self.warn(ctx, "starting_gold is outside 0..=gold_cap and will be clamped");
+            self.warn(
+                ctx,
+                "starting_gold is outside 0..=gold_cap and will be clamped",
+            );
         }
 
         for node in &c.nodes {
@@ -1247,7 +1396,10 @@ impl<'a> Validator<'a> {
             .collect();
         for id in pack.battles.keys() {
             if !used.contains(id.as_str()) {
-                self.warn(&format!("battle {id}"), "is not used by any campaign battle node");
+                self.warn(
+                    &format!("battle {id}"),
+                    "is not used by any campaign battle node",
+                );
             }
         }
     }

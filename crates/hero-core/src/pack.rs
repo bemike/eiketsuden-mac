@@ -98,7 +98,9 @@ pub trait FileSource {
 
 impl FileSource for BTreeMap<String, String> {
     fn read_text(&self, path: &str) -> Result<String, PackError> {
-        self.get(path).cloned().ok_or_else(|| PackError::Missing { file: path.into() })
+        self.get(path)
+            .cloned()
+            .ok_or_else(|| PackError::Missing { file: path.into() })
     }
 }
 
@@ -255,7 +257,10 @@ impl PackManifest {
                 ));
             }
             if !seen.insert(path.clone()) {
-                return Err(parse_error(MANIFEST_FILE, format!("file `{path}` is listed more than once")));
+                return Err(parse_error(
+                    MANIFEST_FILE,
+                    format!("file `{path}` is listed more than once"),
+                ));
             }
         }
         Ok(())
@@ -273,7 +278,8 @@ impl Pack {
 
         let rules: GameRules = parse_toml(&files.game, &read(src, &files.game)?)?;
 
-        let terrain = parse_toml::<TerrainFile>(&files.terrain, &read(src, &files.terrain)?)?.terrain;
+        let terrain =
+            parse_toml::<TerrainFile>(&files.terrain, &read(src, &files.terrain)?)?.terrain;
         let mut terrain_ids = BTreeSet::new();
         let mut glyphs = BTreeMap::new();
         for t in &terrain {
@@ -281,30 +287,44 @@ impl Pack {
                 return Err(parse_error(&files.terrain, "terrain with an empty id"));
             }
             if !terrain_ids.insert(t.id.as_str()) {
-                return Err(parse_error(&files.terrain, format!("duplicate terrain id `{}`", t.id)));
+                return Err(parse_error(
+                    &files.terrain,
+                    format!("duplicate terrain id `{}`", t.id),
+                ));
             }
             if let Some(other) = glyphs.insert(t.glyph, t.id.as_str()) {
                 return Err(parse_error(
                     &files.terrain,
-                    format!("terrain `{}` reuses glyph {:?} of terrain `{other}`", t.id, t.glyph),
+                    format!(
+                        "terrain `{}` reuses glyph {:?} of terrain `{other}`",
+                        t.id, t.glyph
+                    ),
                 ));
             }
         }
 
         let classes = parse_toml::<ClassesFile>(&files.classes, &read(src, &files.classes)?)?.class;
         let classes = index_by_id(&files.classes, "class", classes, |c| &c.id)?;
-        let strategies = parse_toml::<StrategiesFile>(&files.strategies, &read(src, &files.strategies)?)?.strategy;
+        let strategies =
+            parse_toml::<StrategiesFile>(&files.strategies, &read(src, &files.strategies)?)?
+                .strategy;
         let strategies = index_by_id(&files.strategies, "strategy", strategies, |s| &s.id)?;
         let items = parse_toml::<ItemsFile>(&files.items, &read(src, &files.items)?)?.item;
         let items = index_by_id(&files.items, "item", items, |i| &i.id)?;
-        let officers = parse_toml::<OfficersFile>(&manifest.officers, &read(src, &manifest.officers)?)?.officer;
+        let officers =
+            parse_toml::<OfficersFile>(&manifest.officers, &read(src, &manifest.officers)?)?
+                .officer;
         let officers = index_by_id(&manifest.officers, "officer", officers, |o| &o.id)?;
 
-        let campaign: CampaignDef = parse_toml(&manifest.campaign, &read(src, &manifest.campaign)?)?;
+        let campaign: CampaignDef =
+            parse_toml(&manifest.campaign, &read(src, &manifest.campaign)?)?;
         let mut node_ids = BTreeSet::new();
         for node in &campaign.nodes {
             if node.id().trim().is_empty() {
-                return Err(parse_error(&manifest.campaign, "campaign node with an empty id"));
+                return Err(parse_error(
+                    &manifest.campaign,
+                    "campaign node with an empty id",
+                ));
             }
             if !node_ids.insert(node.id()) {
                 return Err(parse_error(
@@ -324,7 +344,10 @@ impl Pack {
             if let Some(first) = battle_files.get(&battle.id) {
                 return Err(parse_error(
                     file,
-                    format!("duplicate battle id `{}` (first defined in {first})", battle.id),
+                    format!(
+                        "duplicate battle id `{}` (first defined in {first})",
+                        battle.id
+                    ),
                 ));
             }
             if let Some(key) = battle.map.legend.keys().find(|k| k.chars().count() != 1) {
@@ -342,14 +365,16 @@ impl Pack {
         let mut scenes: BTreeMap<String, Scene> = BTreeMap::new();
         let mut scene_files: BTreeMap<String, &str> = BTreeMap::new();
         for file in &manifest.dramas {
-            let parsed = crate::script::parse_drama(file, &read(src, file)?).map_err(|e| {
-                parse_error(&e.file, format!("line {}: {}", e.line, e.msg))
-            })?;
+            let parsed = crate::script::parse_drama(file, &read(src, file)?)
+                .map_err(|e| parse_error(&e.file, format!("line {}: {}", e.line, e.msg)))?;
             for scene in parsed {
                 if let Some(first) = scene_files.get(&scene.id) {
                     return Err(parse_error(
                         file,
-                        format!("duplicate scene id `{}` (first defined in {first})", scene.id),
+                        format!(
+                            "duplicate scene id `{}` (first defined in {first})",
+                            scene.id
+                        ),
                     ));
                 }
                 scene_files.insert(scene.id.clone(), file);

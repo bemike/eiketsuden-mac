@@ -93,7 +93,10 @@ impl MediaCheck<'_> {
             return;
         }
         let index = self.index(UNITS_TOML, "unit sprites");
-        let sprites = index.as_ref().and_then(|t| t.get("sprites")).and_then(|v| v.as_table());
+        let sprites = index
+            .as_ref()
+            .and_then(|t| t.get("sprites"))
+            .and_then(|v| v.as_table());
         let mut keys_seen = BTreeSet::new();
         for class in pack.classes.values() {
             let key = class.sprite.as_str();
@@ -116,7 +119,12 @@ impl MediaCheck<'_> {
     }
 
     fn portraits(&mut self, pack: &Pack) {
-        self.require(Severity::Error, "portraits", UNKNOWN_PORTRAIT, "fallback portrait");
+        self.require(
+            Severity::Error,
+            "portraits",
+            UNKNOWN_PORTRAIT,
+            "fallback portrait",
+        );
         for officer in pack.officers.values() {
             let rel = format!("gfx/portraits/{}.png", officer.portrait_key());
             self.require(
@@ -147,7 +155,12 @@ impl MediaCheck<'_> {
     fn audio_and_backgrounds(&mut self, pack: &Pack) {
         for b in pack.battles.values() {
             for key in [&b.bgm, &b.bgm_enemy].into_iter().flatten() {
-                self.require(Severity::Error, &format!("battle {}", b.id), &format!("bgm/{key}.ogg"), "music");
+                self.require(
+                    Severity::Error,
+                    &format!("battle {}", b.id),
+                    &format!("bgm/{key}.ogg"),
+                    "music",
+                );
             }
         }
         for scene in pack.scenes.values() {
@@ -157,13 +170,19 @@ impl MediaCheck<'_> {
                     Cmd::Bgm(Some(key)) => {
                         self.require(Severity::Error, &ctx, &format!("bgm/{key}.ogg"), "music")
                     }
-                    Cmd::Bg(Some(key)) => {
-                        self.require(Severity::Error, &ctx, &format!("gfx/bg/{key}.png"), "background")
-                    }
+                    Cmd::Bg(Some(key)) => self.require(
+                        Severity::Error,
+                        &ctx,
+                        &format!("gfx/bg/{key}.png"),
+                        "background",
+                    ),
                     Cmd::Sfx(key) => {
                         let ogg = format!("sfx/{key}.ogg");
                         let wav = format!("sfx/{key}.wav");
-                        if !self.exists(&ogg) && !self.exists(&wav) && self.reported.insert(ogg.clone()) {
+                        if !self.exists(&ogg)
+                            && !self.exists(&wav)
+                            && self.reported.insert(ogg.clone())
+                        {
                             self.push(
                                 Severity::Error,
                                 &ctx,
@@ -189,7 +208,11 @@ impl MediaCheck<'_> {
                 let rel = format!("gfx/tiles/{image}");
                 self.require(Severity::Error, TILES_TOML, &rel, "terrain atlas");
             }
-            None => self.push(Severity::Error, TILES_TOML, "has no `image` atlas file name".into()),
+            None => self.push(
+                Severity::Error,
+                TILES_TOML,
+                "has no `image` atlas file name".into(),
+            ),
         }
         let tiles = index.get("tiles").and_then(|v| v.as_table());
         for t in &pack.terrain {
@@ -205,7 +228,11 @@ impl MediaCheck<'_> {
     }
 
     fn effects(&mut self, pack: &Pack) {
-        let users: Vec<_> = pack.strategies.values().filter(|s| !s.fx.is_empty()).collect();
+        let users: Vec<_> = pack
+            .strategies
+            .values()
+            .filter(|s| !s.fx.is_empty())
+            .collect();
         if users.is_empty() {
             return;
         }
@@ -216,9 +243,18 @@ impl MediaCheck<'_> {
         for s in users {
             let ctx = format!("strategy {}", s.id);
             if !fx.is_some_and(|fx| fx.contains_key(&s.fx)) {
-                self.push(Severity::Error, &ctx, format!("{FX_TOML} has no [fx.{}] entry", s.fx));
+                self.push(
+                    Severity::Error,
+                    &ctx,
+                    format!("{FX_TOML} has no [fx.{}] entry", s.fx),
+                );
             }
-            self.require(Severity::Error, &ctx, &format!("gfx/fx/{}.png", s.fx), "effect strip");
+            self.require(
+                Severity::Error,
+                &ctx,
+                &format!("gfx/fx/{}.png", s.fx),
+                "effect strip",
+            );
         }
     }
 

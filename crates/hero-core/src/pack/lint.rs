@@ -6,8 +6,8 @@
 //! of the original that did not survive the round trip.
 
 use super::{
-    parse_error, parse_toml, read, ClassesFile, FileSource, ItemsFile, OfficersFile, PackError, PackManifest,
-    StrategiesFile, TerrainFile, MANIFEST_FILE,
+    parse_error, parse_toml, read, ClassesFile, FileSource, ItemsFile, OfficersFile, PackError,
+    PackManifest, StrategiesFile, TerrainFile, MANIFEST_FILE,
 };
 use super::{Issue, Pack, Severity};
 use crate::battledef::BattleDef;
@@ -33,8 +33,16 @@ impl Pack {
         check::<ClassesFile>(&r.classes, &read(src, &r.classes)?, &mut issues)?;
         check::<StrategiesFile>(&r.strategies, &read(src, &r.strategies)?, &mut issues)?;
         check::<ItemsFile>(&r.items, &read(src, &r.items)?, &mut issues)?;
-        check::<OfficersFile>(&manifest.officers, &read(src, &manifest.officers)?, &mut issues)?;
-        check::<CampaignDef>(&manifest.campaign, &read(src, &manifest.campaign)?, &mut issues)?;
+        check::<OfficersFile>(
+            &manifest.officers,
+            &read(src, &manifest.officers)?,
+            &mut issues,
+        )?;
+        check::<CampaignDef>(
+            &manifest.campaign,
+            &read(src, &manifest.campaign)?,
+            &mut issues,
+        )?;
         for file in &manifest.battles {
             check::<BattleDef>(file, &read(src, file)?, &mut issues)?;
         }
@@ -42,11 +50,19 @@ impl Pack {
     }
 }
 
-fn check<T: DeserializeOwned + Serialize>(file: &str, text: &str, issues: &mut Vec<Issue>) -> Result<(), PackError> {
+fn check<T: DeserializeOwned + Serialize>(
+    file: &str,
+    text: &str,
+    issues: &mut Vec<Issue>,
+) -> Result<(), PackError> {
     let original: toml::Table = parse_toml(file, text)?;
     let typed: T = parse_toml(file, text)?;
-    let known = Value::try_from(&typed)
-        .map_err(|e| parse_error(file, format!("cannot re-serialize for the unknown-field check: {e}")))?;
+    let known = Value::try_from(&typed).map_err(|e| {
+        parse_error(
+            file,
+            format!("cannot re-serialize for the unknown-field check: {e}"),
+        )
+    })?;
     compare(&Value::Table(original), &known, "", file, issues);
     Ok(())
 }
