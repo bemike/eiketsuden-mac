@@ -76,7 +76,13 @@ layers = [
 
 ## Unit sprites — `gfx/units/<sprite>_<side>.png` + `gfx/units/units.toml`
 
-One sheet per class sprite key and side colour: `side` ∈ `player` (blue), `ally` (green), `enemy` (red).
+The sprite key of a class is its `sprite` field; the base pack uses the class id. Base pack class ids:
+`short_infantry` 단병, `long_infantry` 장병, `chariot` 전차, `light_cavalry` 경기병, `heavy_cavalry` 중기병,
+`guard_cavalry` 친위대, `archer` 궁병, `crossbow` 연노병, `catapult` 발석차, `bandit` 산적, `brigand` 흉적,
+`outlaw` 의적, `martial` 무도가, `tribe` 이민족, `beast` 맹수사, `supply` 수송대, `band` 군악대, `sorcerer` 주술사,
+`civilian` 백성.
+
+One sheet per sprite key and side colour: `side` ∈ `player` (blue), `ally` (green), `enemy` (red).
 Layout (same as the Ninja Adventure character sheets): **4 columns = facing down, up, left, right**; rows:
 
 | row | content |
@@ -86,9 +92,9 @@ Layout (same as the Ninja Adventure character sheets): **4 columns = facing down
 | 5 | hurt pose |
 
 ```toml
-[sprites.infantry]
+[sprites.short_infantry]
 frame = [16, 16]      # frame size in pixels
-anchor = [8, 15]      # pixel of the frame that sits on the tile's bottom-centre (x = 8, y = 15 of the tile)
+anchor = [8, 15]      # frame pixel placed on the tile's bottom-centre pixel (8, 15)
 ```
 
 Frames larger than 16×16 (cavalry 24×24) overhang the tile upwards/sideways around the anchor.
@@ -112,14 +118,14 @@ strategies' `fx` and by the renderer: `slash`, `arrow`, `fire`, `water`, `rock`,
 
 ## UI — `gfx/ui/`
 
+Windows, menus, the map cursor and range highlights are drawn procedurally by the engine (blue bevelled windows
+in the spirit of the original PC version), so a pack only supplies:
+
 | file | content |
 |---|---|
-| `window.png` + `ui.toml [window]` | nine-slice window skin (`border = 6` etc.) |
-| `cursor.png` | 16×16 map cursor, 2 frames horizontally |
-| `highlight.png` | 16×16 range overlays in a row: move (blue), attack (red), strategy (purple), heal (green), danger (orange) |
-| `icons.png` + `ui.toml [icons]` | 16×16 icons by key (items, weather `clear`/`cloudy`/`rain`, stats, classes) |
-| `pointer.png` | menu selection arrow |
-| `title.png` | title screen artwork (16:9) |
+| `icons.png` + `icons.toml` | 16×16 icons by key: `[icons] bean = [0, 0]` (column, row). Keys used by the engine: `gold`, `weather_clear`, `weather_cloudy`, `weather_rain`, `hp`, `mp`, `morale`, `atk`, `def`, `move`, `exp`, `weapon`, `armor`, `accessory`, `consumable`, `fire`, `water`, `earth`, `heal`, `morale_up`, `morale_down`, `confuse`, `lord`, `commander`; items and strategies may use any other key. |
+| `title.png` | title screen artwork (16:9, recommended 960×540) |
+| `flags.png` | 16×16 animated banner, 4 frames horizontally, per side in rows: player, ally, enemy (drawn beside commanders) |
 
 ## Audio — `bgm/<key>.ogg`, `sfx/<key>.(ogg|wav)`
 
