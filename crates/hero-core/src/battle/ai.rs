@@ -5,7 +5,8 @@
 //! regeneration, minus half the damage hostile units could deal on that tile next phase).
 //! When no action is possible it walks towards its goal along the cheapest path. All
 //! iteration is in unit-id / position order and ties are broken by the affected unit's id,
-//! then the tile, so a plan is deterministic for a given state.
+//! then staying on the current tile, then the tile's position order, so a plan is
+//! deterministic for a given state.
 //!
 //! Scores are expressed in "HP-equivalents": one point is one HP of damage dealt or healed.
 
@@ -138,10 +139,13 @@ fn damage_value(damage: i32, target: &Unit) -> i64 {
     value
 }
 
-fn offer(best: &mut Option<Choice>, c: Choice) {
+/// Keep `c` when it beats `best`: higher score, then lower affected unit id, then acting from
+/// `origin` (no needless move), then the lower tile in position order.
+fn offer(best: &mut Option<Choice>, c: Choice, origin: Pos) {
+    let rank = |x: &Choice| (x.score, Reverse(x.key), x.tile == origin, Reverse(x.tile));
     let better = match best {
         None => true,
-        Some(b) => (c.score, Reverse(c.key), Reverse(c.tile)) > (b.score, Reverse(b.key), Reverse(b.tile)),
+        Some(b) => rank(&c) > rank(b),
     };
     if better {
         *best = Some(c);
@@ -341,6 +345,7 @@ impl<'a> Planner<'a> {
                         tile,
                         action: Action::Attack { unit: self.id, target: t },
                     },
+                    self.me.pos,
                 );
             }
             for si in 0..self.strategies.len() {
@@ -370,6 +375,7 @@ impl<'a> Planner<'a> {
                                 target: aim,
                             },
                         },
+                        self.me.pos,
                     );
                 }
             }
@@ -582,6 +588,7 @@ impl<'a> Planner<'a> {
                                 target: u,
                             },
                         },
+                        self.me.pos,
                     );
                 }
             }

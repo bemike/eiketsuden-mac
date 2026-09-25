@@ -270,6 +270,8 @@ fn level_up_keeps_remainder_and_learns() {
     let mut st = state(&pack);
     let a = add(&mut st, &pack, Side::Player, "infantry", 2, p(3, 3));
     let d = add(&mut st, &pack, Side::Enemy, "infantry", 2, p(3, 4));
+    // INT 40: max MP (2 + 10) * 40 / 40 = 12 -> (3 + 10) * 40 / 40 = 13.
+    set_stats(&mut st, &pack, a, [50, 40, 50]);
     st.units[a].exp = 95;
     st.units[a].hp = 100;
     let ev = st.apply(&pack, Action::Attack { unit: a, target: d }).unwrap();
@@ -291,7 +293,7 @@ fn level_up_keeps_remainder_and_learns() {
     );
     let u = &st.units[a];
     assert_eq!((u.level, u.exp, u.hp, u.max_hp), (3, 1, 120, 540));
-    assert_eq!((u.mp, u.max_mp), (10, 9 + 1));
+    assert_eq!((u.mp, u.max_mp), (13, 13));
 }
 
 #[test]
