@@ -1,0 +1,1337 @@
+//! Cross-reference checks behind [`Pack::validate`]. Every check is documented for modders in
+//! `docs/MODDING.md` ("Validation"); keep the two in sync.
+
+use super::{Issue, Pack, Severity};
+use crate::battledef::{AiMode, BattleDef, Condition, EventAction, Side, Trigger, UnitSpawn};
+use crate::campaign::Node;
+use crate::data::{ClassDef, Effect, Equipment, ItemKind, RangeSpec, StrategyKind, TargetSide};
+use crate::geom::Pos;
+use crate::map::BattleMap;
+use crate::script::Cmd;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Move type that every deploy slot must be passable for (ordinary infantry). A pack that has
+/// no terrain cost for it instead needs its slots passable for at least one class move type.
+pub(super) const FOOT_MOVE_TYPE: &str = "foot";
+
+pub(super) fn validate(pack: &Pack) -> Vec<Issue> {
+    let mut v = Validator::new(pack);
+    v.rules();
+    v.terrain();
+    v.classes();
+    v.strategies();
+    v.items();
+    v.officers();
+    for battle in pack.battles.values() {
+        v.battle(battle);
+    }
+    v.dramas();
+    v.campaign();
+    v.flags();
+    v.issues
+}
+
+/// A drama speaker that is written like an id (`liu_bei`) must name an officer; free display
+/// names (`장비`, `Messenger`) are shown as they are.
+pub(super) fn looks_like_id(s: &str) -> bool {
+    s.starts_with(|c: char| c.is_ascii_lowercase())
+        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn kind_name(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Weapon => "weapon",
+        ItemKind::Armor => "armor",
+        ItemKind::Accessory => "accessory",
+        ItemKind::Consumable => "consumable",
+    }
+}
+
+fn range_name(r: &RangeSpec) -> String {
+    match r {
+        RangeSpec::Named(n) => format!("`{n}`"),
+        RangeSpec::Offsets(o) => format!("{o:?}"),
+    }
+}
+
+fn at(p: Pos) -> String {
+    format!("[{}, {}]", p.x, p.y)
+}
+
+/// Campaign nodes a node can continue to.
+fn successors(node: &Node) -> Vec<&str> {
+    match node {
+        Node::Drama { next, .. } | Node::Camp { next, .. } => vec![next],
+        Node::Battle { next, on_defeat, .. } => {
+            let mut v = vec![next.as_str()];
+            v.extend(on_defeat.as_deref());
+            v
+        }
+        Node::Branch { then, otherwise, .. } => vec![then, otherwise],
+        Node::Ending { .. } => vec![],
+    }
+}
+
+struct Validator<'a> {
+    pack: &'a Pack,
+    issues: Vec<Issue>,
+    /// Class families that exist (`ClassDef::family`).
+    families: BTreeSet<&'a str>,
+    /// Move types used by classes.
+    class_move_types: BTreeSet<&'a str>,
+    /// Whether some terrain has a cost for [`FOOT_MOVE_TYPE`].
+    foot_defined: bool,
+    /// Officers that can be in the player's army: starting officers and `@join` targets.
+    player_officers: BTreeSet<&'a str>,
+}
+
+impl<'a> Validator<'a> {
+    fn new(pack: &'a Pack) -> Self {
+        let mut player_officers: BTreeSet<&str> =
+            pack.campaign.starting_officers.iter().map(|s| s.as_str()).collect();
+        for scene in pack.scenes.values() {
+            for cmd in &scene.cmds {
+                if let Cmd::Join(o) = cmd {
+                    player_officers.insert(o);
+                }
+            }
+        }
+        Validator {
+            pack,
+            issues: Vec::new(),
+            families: pack.classes.values().map(|c| c.family.as_str()).collect(),
+            class_move_types: pack.classes.values().map(|c| c.move_type.as_str()).collect(),
+            foot_defined: pack.terrain.iter().any(|t| t.cost.contains_key(FOOT_MOVE_TYPE)),
+            player_officers,
+        }
+    }
+
+    fn push(&mut self, severity: Severity, context: &str, msg: String) {
+        self.issues.push(Issue {
+            severity,
+            context: context.to_string(),
+            msg,
+        });
+    }
+
+    fn error(&mut self, context: &str, msg: impl Into<String>) {
+        self.push(Severity::Error, context, msg.into());
+    }
+
+    fn warn(&mut self, context: &str, msg: impl Into<String>) {
+        self.push(Severity::Warning, context, msg.into());
+    }
+
+    fn level_ok(&self, level: u32) -> bool {
+        (1..=self.pack.rules.level_cap).contains(&level)
+    }
+
+    // ----- rules/game.toml -----------------------------------------------------------------
+
+    fn rules(&mut self) {
+        let ctx = self.pack.manifest.rules.game.clone();
+        let r = &self.pack.rules;
+        if r.level_cap == 0 {
+            self.error(&ctx, "level_cap must be at least 1");
+        }
+        if r.exp_per_level == 0 {
+            self.error(&ctx, "exp_per_level must be at least 1");
+        }
+        if r.gold_cap < 0 {
+            self.error(&ctx, "gold_cap must not be negative");
+        }
+        if r.mp_cap < 0 {
+            self.error(&ctx, "mp_cap must not be negative");
+        }
+        if !(0..=100).contains(&r.morale_start) {
+            self.error(&ctx, "morale_start must be within 0..=100");
+        }
+        if r.morale_loss_pct < 0 {
+            self.error(&ctx, "morale_loss_pct must not be negative");
+        }
+        if !(0..=100).contains(&r.confuse_morale) {
+            self.error(&ctx, "confuse_morale must be within 0..=100");
+        }
+        for (name, table) in [("exp_attack", &r.exp_attack), ("exp_kill", &r.exp_kill)] {
+            if table.is_empty() {
+                self.warn(&ctx, format!("{name} is empty, so it never awards EXP"));
+            }
+            if table.windows(2).any(|w| w[0][0] >= w[1][0]) {
+                self.error(
+                    &ctx,
+                    format!("{name} must be sorted by strictly increasing level difference"),
+                );
+            }
+            if table.iter().any(|p| p[1] < 0) {
+                self.error(&ctx, format!("{name} contains a negative EXP value"));
+            }
+        }
+        if r.counter_divisor <= 0 {
+            self.error(&ctx, "counter_divisor must be positive");
+        }
+        if r.counter_damage_pct < 0 {
+            self.error(&ctx, "counter_damage_pct must not be negative");
+        }
+        let w = &r.weather;
+        let sum = w.clear + w.cloudy + w.rain;
+        if w.clear < 0 || w.cloudy < 0 || w.rain < 0 || sum != 100 {
+            self.error(
+                &ctx,
+                format!("weather chances must be non-negative and sum to 100 (they sum to {sum})"),
+            );
+        }
+        for (attacker, row) in &r.affinity {
+            if !self.families.contains(attacker.as_str()) {
+                self.warn(&ctx, format!("affinity names unknown class family `{attacker}`"));
+            }
+            for (defender, pct) in row {
+                if !self.families.contains(defender.as_str()) {
+                    self.warn(&ctx, format!("affinity names unknown class family `{defender}`"));
+                }
+                if *pct <= 0 {
+                    self.error(
+                        &ctx,
+                        format!("affinity {attacker} -> {defender} must be a positive percentage"),
+                    );
+                }
+            }
+        }
+    }
+
+    // ----- rules/terrain.toml --------------------------------------------------------------
+
+    fn terrain(&mut self) {
+        let pack = self.pack;
+        if pack.terrain.is_empty() {
+            self.error(&pack.manifest.rules.terrain, "no terrain is defined");
+        }
+        let strategy_elements: BTreeSet<&str> = pack
+            .strategies
+            .values()
+            .filter_map(|s| s.element.as_deref())
+            .collect();
+        for t in &pack.terrain {
+            let ctx = format!("terrain {}", t.id);
+            if t.glyph.is_whitespace() || t.glyph.is_control() {
+                self.error(&ctx, format!("glyph {:?} must be a visible character", t.glyph));
+            }
+            if !(0..=100).contains(&t.defense) {
+                self.error(&ctx, "defense must be within 0..=100");
+            }
+            if !(0..=100).contains(&t.heal_hp) {
+                self.error(&ctx, "heal_hp must be within 0..=100");
+            }
+            if !(0..=100).contains(&t.heal_morale) {
+                self.error(&ctx, "heal_morale must be within 0..=100");
+            }
+            for (move_type, cost) in &t.cost {
+                if *cost == 0 {
+                    self.error(&ctx, format!("movement cost for `{move_type}` must be at least 1"));
+                }
+                if !self.class_move_types.contains(move_type.as_str()) {
+                    self.warn(&ctx, format!("cost for move type `{move_type}`, which no class uses"));
+                }
+            }
+            for e in &t.elements {
+                if !strategy_elements.contains(e.as_str()) {
+                    self.warn(&ctx, format!("element `{e}` is not used by any strategy"));
+                }
+            }
+            for e in &t.boost {
+                if !t.elements.contains(e) {
+                    self.warn(
+                        &ctx,
+                        format!("boosted element `{e}` is not listed in `elements`, so it can never apply"),
+                    );
+                }
+            }
+        }
+    }
+
+    // ----- rules/classes.toml --------------------------------------------------------------
+
+    fn classes(&mut self) {
+        let pack = self.pack;
+        let cap = pack.rules.level_cap;
+        let terrain_move_types: BTreeSet<&str> = pack
+            .terrain
+            .iter()
+            .flat_map(|t| t.cost.keys().map(|k| k.as_str()))
+            .collect();
+        for c in pack.classes.values() {
+            let ctx = format!("class {}", c.id);
+            if c.name.trim().is_empty() {
+                self.warn(&ctx, "name is empty");
+            }
+            if c.family.trim().is_empty() {
+                self.error(&ctx, "family must not be empty");
+            }
+            if !terrain_move_types.contains(c.move_type.as_str()) {
+                self.error(
+                    &ctx,
+                    format!(
+                        "move type `{}` has a cost on no terrain, so units of this class can never move",
+                        c.move_type
+                    ),
+                );
+            }
+            match c.range.offsets() {
+                None => self.error(&ctx, format!("unknown attack range {}", range_name(&c.range))),
+                Some(o) if o.contains(&Pos::new(0, 0)) => {
+                    self.warn(&ctx, "attack range includes the unit's own tile")
+                }
+                Some(_) => {}
+            }
+            if c.hp <= 0 {
+                self.error(&ctx, "hp must be positive");
+            }
+            if c.hp_growth < 0 {
+                self.warn(&ctx, "hp_growth is negative: units lose troops when they level up");
+            }
+            if !(1..=3).contains(&c.tier) {
+                self.warn(&ctx, "tier should be 1, 2 or 3");
+            }
+            if c.sprite.trim().is_empty() {
+                self.error(&ctx, "sprite key must not be empty");
+            }
+            if c.generic.iter().any(|s| !(0..=100).contains(s)) {
+                self.warn(&ctx, "generic [str, int, lead] should be within 0..=100");
+            }
+            for learn in &c.strategies {
+                if pack.strategy(&learn.id).is_none() {
+                    self.error(&ctx, format!("learns unknown strategy `{}`", learn.id));
+                }
+                if !(1..=cap).contains(&learn.level) {
+                    self.warn(
+                        &ctx,
+                        format!("learns `{}` at level {}, outside 1..={cap}", learn.id, learn.level),
+                    );
+                }
+            }
+            if let Some(p) = &c.promote {
+                if p.to == c.id {
+                    self.error(&ctx, "promotes to itself");
+                } else if pack.class(&p.to).is_none() {
+                    self.error(&ctx, format!("promotes to unknown class `{}`", p.to));
+                }
+                match pack.item(&p.item) {
+                    None => self.error(&ctx, format!("promotion item `{}` does not exist", p.item)),
+                    Some(item) if !item.effects.contains(&Effect::Promote) => self.error(
+                        &ctx,
+                        format!("promotion item `{}` has no `promote` effect, so it cannot be used", p.item),
+                    ),
+                    Some(_) => {}
+                }
+                if p.level > cap {
+                    self.warn(
+                        &ctx,
+                        format!("promotion level {} is above level_cap {cap}", p.level),
+                    );
+                }
+            }
+        }
+        self.promotion_cycles();
+        let mut promoted_from: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for c in pack.classes.values() {
+            if let Some(p) = &c.promote {
+                promoted_from.entry(p.to.as_str()).or_default().push(c.id.as_str());
+            }
+        }
+        for (to, from) in promoted_from {
+            if from.len() > 1 {
+                self.warn(
+                    &format!("class {to}"),
+                    format!(
+                        "is the promotion target of several classes ({}); inherited strategies come from `{}` only",
+                        from.join(", "),
+                        from[0]
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Report each promotion cycle once (at its alphabetically first class).
+    fn promotion_cycles(&mut self) {
+        let pack = self.pack;
+        for start in pack.classes.values() {
+            let mut path = vec![start.id.as_str()];
+            let mut cur = start;
+            while let Some(next) = cur.promote.as_ref().and_then(|p| pack.class(&p.to)) {
+                if next.id == start.id {
+                    if path.iter().all(|id| *id >= start.id.as_str()) {
+                        path.push(start.id.as_str());
+                        self.error(
+                            &format!("class {}", start.id),
+                            format!("promotion chain loops: {}", path.join(" -> ")),
+                        );
+                    }
+                    break;
+                }
+                if path.contains(&next.id.as_str()) {
+                    break; // a loop that does not include `start`; reported from its own members
+                }
+                path.push(next.id.as_str());
+                cur = next;
+            }
+        }
+    }
+
+    // ----- rules/strategies.toml -----------------------------------------------------------
+
+    fn strategies(&mut self) {
+        let pack = self.pack;
+        let terrain_elements: BTreeSet<&str> = pack
+            .terrain
+            .iter()
+            .flat_map(|t| t.elements.iter().map(|e| e.as_str()))
+            .collect();
+        for s in pack.strategies.values() {
+            let ctx = format!("strategy {}", s.id);
+            if s.name.trim().is_empty() {
+                self.warn(&ctx, "name is empty");
+            }
+            if s.mp < 0 {
+                self.error(&ctx, "mp must not be negative");
+            }
+            if s.range.offsets().is_none() {
+                self.error(&ctx, format!("unknown range {}", range_name(&s.range)));
+            }
+            if let Some(e) = &s.element {
+                if !terrain_elements.contains(e.as_str()) {
+                    self.error(
+                        &ctx,
+                        format!("element `{e}` is allowed by no terrain, so the strategy can never be cast"),
+                    );
+                }
+            }
+            if s.effects.is_empty() {
+                self.error(&ctx, "has no effects");
+            }
+            for e in &s.effects {
+                match e {
+                    Effect::Promote | Effect::ChangeClass { .. } => self.error(
+                        &ctx,
+                        "`promote` and `change_class` effects only work on items",
+                    ),
+                    Effect::Damage { power } | Effect::Heal { power } if *power < 0 => {
+                        self.warn(&ctx, "effect power is negative")
+                    }
+                    Effect::Status { turns: 0, .. } => self.warn(&ctx, "status lasts 0 turns"),
+                    _ => {}
+                }
+            }
+            match (s.kind, s.target) {
+                (StrategyKind::Attack, TargetSide::Ally) => {
+                    self.warn(&ctx, "attack strategy is aimed at allies")
+                }
+                (StrategyKind::Heal, TargetSide::Enemy) => {
+                    self.warn(&ctx, "heal strategy is aimed at enemies")
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // ----- rules/items.toml ----------------------------------------------------------------
+
+    fn items(&mut self) {
+        let pack = self.pack;
+        let promotion_items: BTreeSet<&str> = pack
+            .classes
+            .values()
+            .filter_map(|c| c.promote.as_ref().map(|p| p.item.as_str()))
+            .collect();
+        for i in pack.items.values() {
+            let ctx = format!("item {}", i.id);
+            if i.name.trim().is_empty() {
+                self.warn(&ctx, "name is empty");
+            }
+            for f in &i.families {
+                if !self.families.contains(f.as_str()) {
+                    self.error(&ctx, format!("unknown class family `{f}`"));
+                }
+            }
+            if let Some(s) = &i.strategy {
+                if pack.strategy(s).is_none() {
+                    self.error(&ctx, format!("casts unknown strategy `{s}`"));
+                }
+            }
+            let mut camp_effect = false;
+            for e in &i.effects {
+                match e {
+                    Effect::ChangeClass { to } => {
+                        camp_effect = true;
+                        if pack.class(to).is_none() {
+                            self.error(&ctx, format!("changes to unknown class `{to}`"));
+                        }
+                    }
+                    Effect::Promote => {
+                        camp_effect = true;
+                        if !promotion_items.contains(i.id.as_str()) {
+                            self.warn(&ctx, "no class is promoted with this item");
+                        }
+                    }
+                    Effect::Damage { .. } | Effect::Status { .. } => self.warn(
+                        &ctx,
+                        "`damage` and `status` effects do nothing on items (give the item a `strategy` instead)",
+                    ),
+                    Effect::Heal { .. } | Effect::Morale { .. } => {}
+                }
+            }
+            if i.kind == ItemKind::Consumable {
+                if i.effects.is_empty() && i.strategy.is_none() {
+                    self.warn(&ctx, "consumable has no effects and casts no strategy");
+                }
+                if camp_effect && i.battle_use {
+                    self.warn(&ctx, "class items are used in camp; `battle_use` has no effect on them");
+                }
+                let battle_effect = i.strategy.is_some()
+                    || i.effects
+                        .iter()
+                        .any(|e| matches!(e, Effect::Heal { .. } | Effect::Morale { .. }));
+                if battle_effect && !i.battle_use {
+                    self.warn(&ctx, "battle effects without `battle_use = true` can never be used");
+                }
+                if i.atk_pct != 0 || i.def_pct != 0 || i.move_bonus != 0 || i.regen_hp != 0 || i.regen_morale != 0
+                {
+                    self.warn(&ctx, "equipment bonuses are ignored on consumables");
+                }
+                if !i.families.is_empty() {
+                    self.warn(&ctx, "families are ignored on consumables");
+                }
+            } else {
+                if !i.effects.is_empty() || i.strategy.is_some() {
+                    self.warn(&ctx, "effects and strategies are ignored on equipment");
+                }
+                if i.battle_use {
+                    self.warn(&ctx, "`battle_use` is ignored on equipment");
+                }
+                if i.kind != ItemKind::Weapon && i.atk_pct != 0 {
+                    self.warn(&ctx, "atk_pct only counts on weapons");
+                }
+                if i.kind != ItemKind::Armor && i.def_pct != 0 {
+                    self.warn(&ctx, "def_pct only counts on armor");
+                }
+                if i.kind != ItemKind::Accessory && i.move_bonus != 0 {
+                    self.warn(&ctx, "move_bonus only counts on accessories");
+                }
+            }
+        }
+    }
+
+    // ----- officers.toml -------------------------------------------------------------------
+
+    fn officers(&mut self) {
+        let pack = self.pack;
+        let cap = pack.rules.level_cap;
+        for o in pack.officers.values() {
+            let ctx = format!("officer {}", o.id);
+            if o.name.trim().is_empty() {
+                self.warn(&ctx, "name is empty");
+            }
+            let family = match pack.class(&o.class) {
+                Some(c) => Some(c.family.as_str()),
+                None => {
+                    self.error(&ctx, format!("unknown class `{}`", o.class));
+                    None
+                }
+            };
+            if !self.level_ok(o.level) {
+                self.error(&ctx, format!("level {} is outside 1..={cap}", o.level));
+            }
+            for (stat, value) in [("str", o.strength), ("int", o.int), ("lead", o.lead)] {
+                if !(0..=100).contains(&value) {
+                    self.warn(&ctx, format!("{stat} {value} should be within 0..=100"));
+                }
+            }
+            self.equipment(&ctx, &o.equip, family);
+        }
+    }
+
+    /// Items exist and sit in the slot of their kind. The family restriction is only a warning
+    /// here: enemy officers may carry anything, and the camp enforces it for the player.
+    fn equipment(&mut self, ctx: &str, equip: &Equipment, family: Option<&str>) {
+        let slots = [
+            ("weapon", ItemKind::Weapon, &equip.weapon),
+            ("armor", ItemKind::Armor, &equip.armor),
+            ("accessory", ItemKind::Accessory, &equip.accessory),
+        ];
+        for (slot, kind, id) in slots {
+            let Some(id) = id else { continue };
+            match self.pack.item(id) {
+                None => self.error(ctx, format!("{slot} `{id}` does not exist")),
+                Some(item) if item.kind != kind => self.error(
+                    ctx,
+                    format!("`{id}` is a {} and cannot go in the {slot} slot", kind_name(item.kind)),
+                ),
+                Some(item) => {
+                    if let Some(f) = family {
+                        if !item.families.is_empty() && !item.families.iter().any(|x| x == f) {
+                            self.warn(ctx, format!("`{id}` is not meant for class family `{f}`"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- battles/*.toml ------------------------------------------------------------------
+
+    fn passable(&self, map: &BattleMap, p: Pos, move_type: &str) -> bool {
+        map.terrain_at(p)
+            .and_then(|t| self.pack.terrain(t))
+            .and_then(|t| t.move_cost(move_type))
+            .is_some()
+    }
+
+    fn deployable(&self, map: &BattleMap, p: Pos) -> bool {
+        if self.foot_defined {
+            self.passable(map, p, FOOT_MOVE_TYPE)
+        } else {
+            self.class_move_types.iter().any(|m| self.passable(map, p, m))
+        }
+    }
+
+    fn unit_class(&self, u: &UnitSpawn) -> Option<&'a ClassDef> {
+        let pack = self.pack;
+        let class = match &u.class {
+            Some(c) => c.as_str(),
+            None => pack.officer(u.officer.as_deref()?)?.class.as_str(),
+        };
+        pack.class(class)
+    }
+
+    fn battle(&mut self, b: &'a BattleDef) {
+        let pack = self.pack;
+        let ctx = format!("battle {}", b.id);
+        if b.name.trim().is_empty() {
+            self.warn(&ctx, "name is empty");
+        }
+        if b.turn_limit == 0 {
+            self.error(&ctx, "turn_limit must be at least 1");
+        }
+        for (glyph, terrain) in &b.map.legend {
+            if glyph.chars().count() != 1 {
+                self.error(&ctx, format!("map legend key `{glyph}` must be exactly one character"));
+            }
+            if pack.terrain(terrain).is_none() {
+                self.error(&ctx, format!("map legend maps `{glyph}` to unknown terrain `{terrain}`"));
+            }
+        }
+        let map = match BattleMap::parse(&b.map.rows, &b.map.legend, &pack.terrain) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                self.error(&ctx, format!("map: {e}"));
+                None
+            }
+        };
+        let map = map.as_ref();
+
+        // Names that conditions, events and AI targets may use.
+        let mut names: BTreeSet<&str> = self.player_officers.clone();
+        names.extend(b.deploy.required.iter().map(|s| s.as_str()));
+        for u in &b.units {
+            names.extend(u.tag.as_deref());
+            names.extend(u.officer.as_deref());
+        }
+
+        let mut occupied: BTreeSet<Pos> = BTreeSet::new();
+        self.deploy(&ctx, b, map, &mut occupied);
+        self.units(&ctx, b, map, &names, &mut occupied);
+
+        for c in &b.victory {
+            self.condition(&ctx, "victory", c, b, map, &names);
+        }
+        for c in &b.defeat {
+            self.condition(&ctx, "defeat", c, b, map, &names);
+        }
+        if let Some(bonus) = &b.bonus {
+            self.condition(&ctx, "bonus", &bonus.condition, b, map, &names);
+        }
+        let event_victory = b
+            .events
+            .iter()
+            .any(|e| e.actions.contains(&EventAction::Victory));
+        if b.victory.is_empty() && !event_victory {
+            self.error(&ctx, "no victory condition and no event grants victory");
+        }
+        if !b.units.iter().any(|u| u.side == Side::Enemy) {
+            self.warn(&ctx, "has no enemy units");
+        }
+
+        let groups: BTreeSet<&str> = b.units.iter().filter_map(|u| u.group.as_deref()).collect();
+        let mut spawned: BTreeSet<&str> = BTreeSet::new();
+        for (i, e) in b.events.iter().enumerate() {
+            let ectx = format!("{ctx} event #{}", i + 1);
+            self.trigger(&ectx, &e.trigger, b, map, &names);
+            if e.actions.is_empty() {
+                self.warn(&ectx, "has no actions");
+            }
+            for a in &e.actions {
+                if let EventAction::Spawn { group } = a {
+                    spawned.insert(group);
+                    if !groups.contains(group.as_str()) {
+                        self.error(&ectx, format!("spawns group `{group}`, but no unit belongs to it"));
+                    }
+                }
+                self.action(&ectx, a, map, &names);
+            }
+        }
+        for g in groups.difference(&spawned) {
+            self.warn(&ctx, format!("units of group `{g}` never appear: no event spawns the group"));
+        }
+
+        let mut treasure_tiles = BTreeSet::new();
+        for t in &b.treasures {
+            let tctx = format!("{ctx} treasure {}", at(t.pos));
+            if let Some(map) = map {
+                if !map.in_bounds(t.pos) {
+                    self.error(&tctx, "is outside the map");
+                }
+            }
+            if !treasure_tiles.insert(t.pos) {
+                self.error(&tctx, "another treasure is on the same tile");
+            }
+            if let Some(item) = &t.item {
+                if pack.item(item).is_none() {
+                    self.error(&tctx, format!("gives unknown item `{item}`"));
+                }
+            }
+            if t.gold < 0 {
+                self.error(&tctx, "gold must not be negative");
+            }
+            if t.item.is_none() && t.gold == 0 {
+                self.warn(&tctx, "gives neither an item nor gold");
+            }
+        }
+        if b.reward_gold < 0 {
+            self.error(&ctx, "reward_gold must not be negative");
+        }
+        for (what, scene) in [("intro", &b.intro), ("outro", &b.outro)] {
+            if let Some(scene) = scene {
+                if pack.scene(scene).is_none() {
+                    self.error(&ctx, format!("{what} scene `{scene}` does not exist"));
+                }
+            }
+        }
+    }
+
+    fn deploy(&mut self, ctx: &str, b: &BattleDef, map: Option<&BattleMap>, occupied: &mut BTreeSet<Pos>) {
+        let pack = self.pack;
+        let d = &b.deploy;
+        if d.max == 0 {
+            self.error(ctx, "deploy.max must be at least 1");
+        }
+        if d.max as usize > d.slots.len() {
+            self.error(
+                ctx,
+                format!("deploy.max is {} but only {} deploy slots exist", d.max, d.slots.len()),
+            );
+        }
+        let mut required = BTreeSet::new();
+        for o in &d.required {
+            match pack.officer(o) {
+                None => self.error(ctx, format!("required officer `{o}` does not exist")),
+                Some(_) if !required.insert(o.as_str()) => {
+                    self.warn(ctx, format!("required officer `{o}` is listed twice"))
+                }
+                Some(_) => {}
+            }
+            if d.forbidden.contains(o) {
+                self.error(ctx, format!("officer `{o}` is both required and forbidden"));
+            }
+        }
+        for o in &d.forbidden {
+            match pack.officer(o) {
+                None => self.error(ctx, format!("forbidden officer `{o}` does not exist")),
+                Some(def) if def.lord => {
+                    self.error(ctx, format!("the lord `{o}` is always deployed and cannot be forbidden"))
+                }
+                Some(_) => {}
+            }
+        }
+        // The lord is deployed implicitly, so it needs a place next to the required officers.
+        let mut must_deploy = required.clone();
+        for o in &pack.campaign.starting_officers {
+            if pack.officer(o).is_some_and(|def| def.lord) {
+                must_deploy.insert(o.as_str());
+            }
+        }
+        if must_deploy.len() > d.max as usize {
+            self.error(
+                ctx,
+                format!(
+                    "{} officers must be deployed (required officers and the lord) but deploy.max is {}",
+                    must_deploy.len(),
+                    d.max
+                ),
+            );
+        }
+        for slot in &d.slots {
+            let sctx = format!("{ctx} deploy slot {}", at(*slot));
+            if let Some(map) = map {
+                if !map.in_bounds(*slot) {
+                    self.error(&sctx, format!("is outside the {}x{} map", map.width, map.height));
+                } else if !self.deployable(map, *slot) {
+                    let terrain = map.terrain_at(*slot).unwrap_or("?");
+                    self.error(&sctx, format!("is on `{terrain}`, which foot units cannot enter"));
+                }
+            }
+            if !occupied.insert(*slot) {
+                self.error(&sctx, "is listed twice");
+            }
+        }
+    }
+
+    fn units(
+        &mut self,
+        ctx: &str,
+        b: &BattleDef,
+        map: Option<&BattleMap>,
+        names: &BTreeSet<&str>,
+        occupied: &mut BTreeSet<Pos>,
+    ) {
+        let pack = self.pack;
+        let mut tags = BTreeSet::new();
+        let mut officers = BTreeSet::new();
+        for (i, u) in b.units.iter().enumerate() {
+            let label = u
+                .tag
+                .as_deref()
+                .or(u.officer.as_deref())
+                .or(u.name.as_deref())
+                .unwrap_or("generic");
+            let uctx = format!("{ctx} unit #{} ({label})", i + 1);
+            match &u.officer {
+                Some(o) => {
+                    if pack.officer(o).is_none() {
+                        self.error(&uctx, format!("unknown officer `{o}`"));
+                    }
+                    if !officers.insert(o.as_str()) {
+                        self.error(&uctx, format!("officer `{o}` appears more than once in this battle"));
+                    }
+                    if b.deploy.required.contains(o) {
+                        self.error(&uctx, format!("officer `{o}` is also a required player officer"));
+                    }
+                    if u.stats.is_some() {
+                        self.warn(&uctx, "stats are ignored for named officers");
+                    }
+                }
+                None => {
+                    if u.class.is_none() {
+                        self.error(&uctx, "a generic unit needs a class");
+                    }
+                    if u.level.is_none() {
+                        self.error(&uctx, "a generic unit needs a level");
+                    }
+                    if u.name.is_none() {
+                        self.warn(&uctx, "a generic unit should have a display name");
+                    }
+                }
+            }
+            if let Some(c) = &u.class {
+                if pack.class(c).is_none() {
+                    self.error(&uctx, format!("unknown class `{c}`"));
+                }
+            }
+            if let Some(level) = u.level {
+                if !self.level_ok(level) {
+                    self.error(
+                        &uctx,
+                        format!("level {level} is outside 1..={}", pack.rules.level_cap),
+                    );
+                }
+            }
+            let class = self.unit_class(u);
+            if let Some(map) = map {
+                if !map.in_bounds(u.pos) {
+                    self.error(
+                        &uctx,
+                        format!("position {} is outside the {}x{} map", at(u.pos), map.width, map.height),
+                    );
+                } else if let Some(class) = class {
+                    if !self.passable(map, u.pos, &class.move_type) {
+                        let terrain = map.terrain_at(u.pos).unwrap_or("?");
+                        let msg = format!(
+                            "position {} is on `{terrain}`, which move type `{}` cannot enter",
+                            at(u.pos),
+                            class.move_type
+                        );
+                        if u.group.is_some() {
+                            self.warn(&uctx, format!("{msg}; the reinforcement will be shifted"));
+                        } else {
+                            self.error(&uctx, msg);
+                        }
+                    }
+                }
+                if let Some(p) = u.ai_pos {
+                    if !map.in_bounds(p) {
+                        self.error(&uctx, format!("ai_pos {} is outside the map", at(p)));
+                    }
+                }
+            }
+            if u.group.is_none() && !occupied.insert(u.pos) {
+                self.error(
+                    &uctx,
+                    format!("position {} is already taken by another unit or a deploy slot", at(u.pos)),
+                );
+            }
+            if let Some(tag) = &u.tag {
+                if tag.trim().is_empty() {
+                    self.error(&uctx, "tag must not be empty");
+                } else if !tags.insert(tag.as_str()) {
+                    self.error(&uctx, format!("duplicate tag `{tag}`"));
+                }
+                if pack.officer(tag).is_some() {
+                    self.warn(&uctx, format!("tag `{tag}` is also an officer id; references to it are ambiguous"));
+                }
+            }
+            if u.ai == AiMode::Target && u.ai_target.is_none() {
+                self.error(&uctx, "ai = \"target\" needs an ai_target");
+            }
+            if let Some(t) = &u.ai_target {
+                if !names.contains(t.as_str()) {
+                    self.error(&uctx, format!("ai_target `{t}` names no unit of this battle"));
+                }
+            }
+            if let Some(equip) = &u.equip {
+                self.equipment(&uctx, equip, class.map(|c| c.family.as_str()));
+            }
+            if let Some(item) = &u.drop {
+                if pack.item(item).is_none() {
+                    self.error(&uctx, format!("drops unknown item `{item}`"));
+                }
+            }
+        }
+    }
+
+    fn reference(&mut self, ctx: &str, names: &BTreeSet<&str>, what: &str, name: &str) {
+        if !names.contains(name) {
+            self.error(
+                ctx,
+                format!("{what} `{name}` matches no unit tag, officer of this battle or player officer"),
+            );
+        }
+    }
+
+    fn position(&mut self, ctx: &str, map: Option<&BattleMap>, p: Pos, radius: i32) {
+        if let Some(map) = map {
+            if !map.in_bounds(p) {
+                self.error(ctx, format!("position {} is outside the map", at(p)));
+            }
+        }
+        if radius < 0 {
+            self.error(ctx, "radius must not be negative");
+        }
+    }
+
+    fn condition(
+        &mut self,
+        ctx: &str,
+        what: &str,
+        c: &Condition,
+        b: &BattleDef,
+        map: Option<&BattleMap>,
+        names: &BTreeSet<&str>,
+    ) {
+        let cctx = format!("{ctx} {what}");
+        match c {
+            Condition::DefeatAll => {
+                if !b.units.iter().any(|u| u.side == Side::Enemy && u.group.is_none()) {
+                    self.error(&cctx, "defeat_all, but no enemy unit starts on the map");
+                }
+            }
+            Condition::DefeatCommander => {
+                if !b.units.iter().any(|u| u.side == Side::Enemy && u.commander) {
+                    self.error(&cctx, "defeat_commander, but no enemy unit is a commander");
+                }
+            }
+            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
+                self.reference(&cctx, names, "target", target)
+            }
+            Condition::Reach { who, pos, radius } => {
+                if let Some(who) = who {
+                    self.reference(&cctx, names, "who", who);
+                }
+                self.position(&cctx, map, *pos, *radius);
+            }
+            Condition::SurviveTurns { turns } => {
+                if *turns == 0 {
+                    self.error(&cctx, "survive_turns needs at least 1 turn");
+                } else if *turns > b.turn_limit {
+                    self.warn(
+                        &cctx,
+                        format!("survive_turns {turns} can never be met: turn_limit is {}", b.turn_limit),
+                    );
+                }
+            }
+        }
+    }
+
+    fn trigger(&mut self, ctx: &str, t: &Trigger, b: &BattleDef, map: Option<&BattleMap>, names: &BTreeSet<&str>) {
+        match t {
+            Trigger::TurnStart { turn, .. } => {
+                if *turn == 0 {
+                    self.error(ctx, "turn_start needs a turn of at least 1");
+                } else if *turn > b.turn_limit {
+                    self.warn(ctx, format!("turn {turn} is after turn_limit {}; it never fires", b.turn_limit));
+                }
+            }
+            Trigger::UnitDefeated { target } => self.reference(ctx, names, "target", target),
+            Trigger::Reach { who, pos, radius } => {
+                if let Some(who) = who {
+                    self.reference(ctx, names, "who", who);
+                }
+                self.position(ctx, map, *pos, *radius);
+            }
+            Trigger::Adjacent { a, b } => {
+                self.reference(ctx, names, "a", a);
+                self.reference(ctx, names, "b", b);
+                if a == b {
+                    self.warn(ctx, "adjacent trigger names the same unit twice");
+                }
+            }
+            Trigger::HpBelow { target, pct } => {
+                self.reference(ctx, names, "target", target);
+                if !(1..=100).contains(pct) {
+                    self.error(ctx, "hp_below pct must be within 1..=100");
+                }
+            }
+        }
+    }
+
+    fn action(&mut self, ctx: &str, a: &EventAction, map: Option<&BattleMap>, names: &BTreeSet<&str>) {
+        let pack = self.pack;
+        match a {
+            EventAction::Drama { scene } => {
+                if pack.scene(scene).is_none() {
+                    self.error(ctx, format!("plays unknown scene `{scene}`"));
+                }
+            }
+            EventAction::Spawn { .. } => {} // checked against the battle's groups by the caller
+            EventAction::SetAi {
+                target,
+                ai,
+                ai_target,
+                ai_pos,
+            } => {
+                self.reference(ctx, names, "target", target);
+                if let Some(t) = ai_target {
+                    self.reference(ctx, names, "ai_target", t);
+                }
+                if let Some(p) = ai_pos {
+                    self.position(ctx, map, *p, 0);
+                }
+                if *ai == AiMode::Advance && ai_pos.is_none() {
+                    self.warn(ctx, "set_ai to `advance` without an ai_pos keeps the unit's previous destination");
+                }
+            }
+            EventAction::Retreat { target } => self.reference(ctx, names, "target", target),
+            EventAction::LevelUp { target, amount } => {
+                self.reference(ctx, names, "target", target);
+                if *amount == 0 {
+                    self.warn(ctx, "level_up by 0 levels does nothing");
+                }
+            }
+            EventAction::GiveItem { item } => {
+                if pack.item(item).is_none() {
+                    self.error(ctx, format!("gives unknown item `{item}`"));
+                }
+            }
+            EventAction::SetFlag { flag, .. } => {
+                if flag.trim().is_empty() {
+                    self.error(ctx, "set_flag needs a flag name");
+                }
+            }
+            EventAction::GiveGold { .. } | EventAction::Victory | EventAction::Defeat => {}
+        }
+    }
+
+    // ----- dramas --------------------------------------------------------------------------
+
+    fn dramas(&mut self) {
+        let pack = self.pack;
+        for scene in pack.scenes.values() {
+            let ctx = format!("scene {}", scene.id);
+            for cmd in &scene.cmds {
+                match cmd {
+                    Cmd::Join(o) | Cmd::Leave(o) => {
+                        if pack.officer(o).is_none() {
+                            let word = if matches!(cmd, Cmd::Join(_)) { "join" } else { "leave" };
+                            self.error(&ctx, format!("@{word} names unknown officer `{o}`"));
+                        }
+                    }
+                    Cmd::Item(item) => {
+                        if pack.item(item).is_none() {
+                            self.error(&ctx, format!("@item names unknown item `{item}`"));
+                        }
+                    }
+                    Cmd::Say { speaker, .. } => {
+                        if looks_like_id(speaker) && pack.officer(speaker).is_none() {
+                            self.error(
+                                &ctx,
+                                format!("speaker `{speaker}` looks like an officer id, but no such officer exists"),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut used: BTreeSet<&str> = BTreeSet::new();
+        for node in &pack.campaign.nodes {
+            match node {
+                Node::Drama { scene, .. } => {
+                    used.insert(scene);
+                }
+                Node::Ending { scene: Some(scene), .. } => {
+                    used.insert(scene);
+                }
+                _ => {}
+            }
+        }
+        for b in pack.battles.values() {
+            used.extend(b.intro.as_deref());
+            used.extend(b.outro.as_deref());
+            for e in &b.events {
+                for a in &e.actions {
+                    if let EventAction::Drama { scene } = a {
+                        used.insert(scene);
+                    }
+                }
+            }
+        }
+        for id in pack.scenes.keys() {
+            if !used.contains(id.as_str()) {
+                self.warn(
+                    &format!("scene {id}"),
+                    "is never played: no campaign node or battle refers to it",
+                );
+            }
+        }
+    }
+
+    // ----- campaign.toml -------------------------------------------------------------------
+
+    fn campaign(&mut self) {
+        let pack = self.pack;
+        let c = &pack.campaign;
+        let ctx = "campaign";
+        if c.title.trim().is_empty() {
+            self.warn(ctx, "title is empty");
+        }
+        match c.node(&c.start) {
+            None => self.error(ctx, format!("start node `{}` does not exist", c.start)),
+            Some(Node::Branch { .. }) => self.error(
+                ctx,
+                "the start node must not be a branch (every flag is 0 when a game starts)",
+            ),
+            Some(_) => {}
+        }
+        let mut seen = BTreeSet::new();
+        let mut has_lord = false;
+        for o in &c.starting_officers {
+            match pack.officer(o) {
+                None => self.error(ctx, format!("starting officer `{o}` does not exist")),
+                Some(def) => has_lord |= def.lord,
+            }
+            if !seen.insert(o.as_str()) {
+                self.warn(ctx, format!("starting officer `{o}` is listed twice"));
+            }
+        }
+        if !has_lord {
+            self.error(ctx, "no starting officer is a lord (`lord = true`)");
+        }
+        for (item, count) in &c.starting_items {
+            if pack.item(item).is_none() {
+                self.error(ctx, format!("starting item `{item}` does not exist"));
+            }
+            if *count == 0 {
+                self.warn(ctx, format!("starting item `{item}` has a count of 0"));
+            }
+        }
+        if !(0..=pack.rules.gold_cap).contains(&c.starting_gold) {
+            self.warn(ctx, "starting_gold is outside 0..=gold_cap and will be clamped");
+        }
+
+        for node in &c.nodes {
+            let nctx = format!("campaign node {}", node.id());
+            match node {
+                Node::Drama { scene, .. } => {
+                    if pack.scene(scene).is_none() {
+                        self.error(&nctx, format!("scene `{scene}` does not exist"));
+                    }
+                }
+                Node::Camp { shop, battle, .. } => {
+                    let mut listed = BTreeSet::new();
+                    for item in shop {
+                        match pack.item(item) {
+                            None => self.error(&nctx, format!("shop item `{item}` does not exist")),
+                            Some(def) if def.price == 0 => self.warn(
+                                &nctx,
+                                format!("shop item `{item}` has price 0 and cannot be bought"),
+                            ),
+                            Some(_) => {}
+                        }
+                        if !listed.insert(item.as_str()) {
+                            self.warn(&nctx, format!("shop item `{item}` is listed twice"));
+                        }
+                    }
+                    if let Some(battle) = battle {
+                        if !pack.battles.contains_key(battle) {
+                            self.error(&nctx, format!("battle `{battle}` does not exist"));
+                        }
+                    }
+                }
+                Node::Battle { battle, .. } => {
+                    if !pack.battles.contains_key(battle) {
+                        self.error(&nctx, format!("battle `{battle}` does not exist"));
+                    }
+                }
+                Node::Branch { flag, .. } => {
+                    if flag.trim().is_empty() {
+                        self.error(&nctx, "branch needs a flag name");
+                    }
+                }
+                Node::Ending { scene, .. } => {
+                    if let Some(scene) = scene {
+                        if pack.scene(scene).is_none() {
+                            self.error(&nctx, format!("scene `{scene}` does not exist"));
+                        }
+                    }
+                }
+            }
+            for next in successors(node) {
+                if c.node(next).is_none() {
+                    self.error(&nctx, format!("continues to unknown node `{next}`"));
+                }
+            }
+        }
+
+        // Reachability from the start node.
+        let mut reached: BTreeSet<&str> = BTreeSet::new();
+        let mut queue = vec![c.start.as_str()];
+        while let Some(id) = queue.pop() {
+            let Some(node) = c.node(id) else { continue };
+            if reached.insert(node.id()) {
+                queue.extend(successors(node));
+            }
+        }
+        if c.node(&c.start).is_some() {
+            for node in &c.nodes {
+                if !reached.contains(node.id()) {
+                    self.warn(
+                        &format!("campaign node {}", node.id()),
+                        "is unreachable from the start node",
+                    );
+                }
+            }
+            let ending_reachable = c
+                .nodes
+                .iter()
+                .any(|n| matches!(n, Node::Ending { .. }) && reached.contains(n.id()));
+            if !ending_reachable {
+                self.warn(ctx, "no ending node is reachable from the start node");
+            }
+        }
+        self.branch_loops();
+
+        let used: BTreeSet<&str> = c
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Battle { battle, .. } => Some(battle.as_str()),
+                _ => None,
+            })
+            .collect();
+        for id in pack.battles.keys() {
+            if !used.contains(id.as_str()) {
+                self.warn(&format!("battle {id}"), "is not used by any campaign battle node");
+            }
+        }
+    }
+
+    /// Branch nodes that can lead back to themselves through other branch nodes only.
+    /// Flags do not change while branches are resolved, so such a loop is only safe if the
+    /// flag tests make it impossible to go all the way round; `advance` reports the loop at run
+    /// time otherwise.
+    fn branch_loops(&mut self) {
+        let c = &self.pack.campaign;
+        let branch_next = |id: &str| -> Vec<&str> {
+            match c.node(id) {
+                Some(n @ Node::Branch { .. }) => successors(n),
+                _ => Vec::new(),
+            }
+        };
+        let mut looping = Vec::new();
+        for node in &c.nodes {
+            if !matches!(node, Node::Branch { .. }) {
+                continue;
+            }
+            let mut seen = BTreeSet::new();
+            let mut stack = branch_next(node.id());
+            while let Some(id) = stack.pop() {
+                if id == node.id() {
+                    looping.push(node.id());
+                    break;
+                }
+                if seen.insert(id) {
+                    stack.extend(branch_next(id));
+                }
+            }
+        }
+        if !looping.is_empty() {
+            self.warn(
+                "campaign",
+                format!(
+                    "branch nodes {} can lead back to themselves; `advance` fails if the flags ever send it round the loop",
+                    looping.join(", ")
+                ),
+            );
+        }
+    }
+
+    // ----- flags ---------------------------------------------------------------------------
+
+    /// Flags that are tested somewhere but never set anywhere are always 0 (usually a typo).
+    fn flags(&mut self) {
+        let pack = self.pack;
+        let mut set: BTreeSet<&str> = BTreeSet::new();
+        let mut read: Vec<(String, &str)> = Vec::new();
+        for scene in pack.scenes.values() {
+            for cmd in &scene.cmds {
+                match cmd {
+                    Cmd::Set { flag, .. } => {
+                        set.insert(flag);
+                    }
+                    Cmd::If { cond, .. } => read.push((format!("scene {}", scene.id), &cond.flag)),
+                    _ => {}
+                }
+            }
+        }
+        for b in pack.battles.values() {
+            for e in &b.events {
+                for a in &e.actions {
+                    if let EventAction::SetFlag { flag, .. } = a {
+                        set.insert(flag);
+                    }
+                }
+            }
+        }
+        for node in &pack.campaign.nodes {
+            if let Node::Branch { id, flag, .. } = node {
+                read.push((format!("campaign node {id}"), flag));
+            }
+        }
+        let mut reported = BTreeSet::new();
+        for (ctx, flag) in read {
+            if !set.contains(flag) && reported.insert((ctx.clone(), flag)) {
+                self.warn(
+                    &ctx,
+                    format!("flag `{flag}` is tested but never set by any scene or battle event"),
+                );
+            }
+        }
+    }
+}

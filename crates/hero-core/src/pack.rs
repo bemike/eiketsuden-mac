@@ -5,13 +5,24 @@
 //!    file the pack needs.
 //! 2. The frontend reads those files (fetch on web, `std::fs` natively) into a [`FileSource`]
 //!    and calls [`Pack::load`], which parses everything synchronously.
+//!
+//! [`Pack::validate`] then cross-checks every reference; tools additionally run
+//! [`Pack::unknown_fields`] (typos in TOML keys) and, natively, [`Pack::missing_media`].
+//! The file format is documented for modders in `docs/MODDING.md`.
+
+mod lint;
+#[cfg(not(target_arch = "wasm32"))]
+mod media;
+mod validate;
 
 use crate::battledef::BattleDef;
 use crate::campaign::CampaignDef;
 use crate::data::{ClassDef, GameRules, Id, ItemDef, OfficerDef, StrategyDef, TerrainDef};
+use crate::map::BattleMap;
 use crate::script::Scene;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RulesFiles {
@@ -140,13 +151,224 @@ pub struct Pack {
     pub campaign: CampaignDef,
 }
 
+/// Name of the manifest file at the root of every pack.
+const MANIFEST_FILE: &str = "pack.toml";
+
+// Top-level layout of the list-style rules files. Each file holds an array of tables named
+// after the entity (`[[terrain]]`, `[[class]]`, ...); unknown top-level keys are rejected so
+// that a misspelt table name (`[[classes]]`) fails loudly instead of loading nothing.
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TerrainFile {
+    #[serde(default)]
+    terrain: Vec<TerrainDef>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClassesFile {
+    #[serde(default)]
+    class: Vec<ClassDef>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StrategiesFile {
+    #[serde(default)]
+    strategy: Vec<StrategyDef>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ItemsFile {
+    #[serde(default)]
+    item: Vec<ItemDef>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OfficersFile {
+    #[serde(default)]
+    officer: Vec<OfficerDef>,
+}
+
+/// Read a pack file, dropping a UTF-8 byte order mark (Windows editors like to add one).
+fn read(src: &dyn FileSource, file: &str) -> Result<String, PackError> {
+    let text = src.read_text(file)?;
+    Ok(match text.strip_prefix('\u{feff}') {
+        Some(rest) => rest.to_string(),
+        None => text,
+    })
+}
+
+fn parse_toml<T: DeserializeOwned>(file: &str, text: &str) -> Result<T, PackError> {
+    toml::from_str(text).map_err(|e| PackError::Parse {
+        file: file.to_string(),
+        msg: e.to_string().trim_end().to_string(),
+    })
+}
+
+fn parse_error(file: &str, msg: impl Into<String>) -> PackError {
+    PackError::Parse {
+        file: file.to_string(),
+        msg: msg.into(),
+    }
+}
+
+/// Key a list of definitions by id, rejecting empty and duplicate ids.
+fn index_by_id<T>(
+    file: &str,
+    what: &str,
+    defs: Vec<T>,
+    id: impl Fn(&T) -> &Id,
+) -> Result<BTreeMap<Id, T>, PackError> {
+    let mut map = BTreeMap::new();
+    for def in defs {
+        let key = id(&def).clone();
+        if key.trim().is_empty() {
+            return Err(parse_error(file, format!("{what} with an empty id")));
+        }
+        if map.contains_key(&key) {
+            return Err(parse_error(file, format!("duplicate {what} id `{key}`")));
+        }
+        map.insert(key, def);
+    }
+    Ok(map)
+}
+
+impl PackManifest {
+    /// Every listed path must be relative, use `/` and stay inside the pack, and no file may
+    /// be listed twice (each file has exactly one role).
+    fn check_paths(&self) -> Result<(), PackError> {
+        let mut seen = BTreeSet::new();
+        for path in self.text_files() {
+            let bad = path.trim().is_empty()
+                || path.starts_with('/')
+                || path.contains('\\')
+                || path.contains(':')
+                || path.split('/').any(|part| part == "..");
+            if bad {
+                return Err(parse_error(
+                    MANIFEST_FILE,
+                    format!("path `{path}` must be relative to the pack directory, use `/` and not contain `..`"),
+                ));
+            }
+            if !seen.insert(path.clone()) {
+                return Err(parse_error(MANIFEST_FILE, format!("file `{path}` is listed more than once")));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Pack {
     /// Parse `pack.toml` and every file it lists. Structural errors (bad TOML, duplicate ids,
     /// unparsable maps or dramas) fail here; cross-reference problems are reported by
     /// [`Pack::validate`].
     pub fn load(src: &dyn FileSource) -> Result<Pack, PackError> {
-        let _ = src;
-        todo!("W1b: Pack::load")
+        let manifest = PackManifest::parse(&read(src, MANIFEST_FILE)?)?;
+        manifest.check_paths()?;
+        let files = &manifest.rules;
+
+        let rules: GameRules = parse_toml(&files.game, &read(src, &files.game)?)?;
+
+        let terrain = parse_toml::<TerrainFile>(&files.terrain, &read(src, &files.terrain)?)?.terrain;
+        let mut terrain_ids = BTreeSet::new();
+        let mut glyphs = BTreeMap::new();
+        for t in &terrain {
+            if t.id.trim().is_empty() {
+                return Err(parse_error(&files.terrain, "terrain with an empty id"));
+            }
+            if !terrain_ids.insert(t.id.as_str()) {
+                return Err(parse_error(&files.terrain, format!("duplicate terrain id `{}`", t.id)));
+            }
+            if let Some(other) = glyphs.insert(t.glyph, t.id.as_str()) {
+                return Err(parse_error(
+                    &files.terrain,
+                    format!("terrain `{}` reuses glyph {:?} of terrain `{other}`", t.id, t.glyph),
+                ));
+            }
+        }
+
+        let classes = parse_toml::<ClassesFile>(&files.classes, &read(src, &files.classes)?)?.class;
+        let classes = index_by_id(&files.classes, "class", classes, |c| &c.id)?;
+        let strategies = parse_toml::<StrategiesFile>(&files.strategies, &read(src, &files.strategies)?)?.strategy;
+        let strategies = index_by_id(&files.strategies, "strategy", strategies, |s| &s.id)?;
+        let items = parse_toml::<ItemsFile>(&files.items, &read(src, &files.items)?)?.item;
+        let items = index_by_id(&files.items, "item", items, |i| &i.id)?;
+        let officers = parse_toml::<OfficersFile>(&manifest.officers, &read(src, &manifest.officers)?)?.officer;
+        let officers = index_by_id(&manifest.officers, "officer", officers, |o| &o.id)?;
+
+        let campaign: CampaignDef = parse_toml(&manifest.campaign, &read(src, &manifest.campaign)?)?;
+        let mut node_ids = BTreeSet::new();
+        for node in &campaign.nodes {
+            if node.id().trim().is_empty() {
+                return Err(parse_error(&manifest.campaign, "campaign node with an empty id"));
+            }
+            if !node_ids.insert(node.id()) {
+                return Err(parse_error(
+                    &manifest.campaign,
+                    format!("duplicate campaign node id `{}`", node.id()),
+                ));
+            }
+        }
+
+        let mut battles: BTreeMap<Id, BattleDef> = BTreeMap::new();
+        let mut battle_files: BTreeMap<Id, &str> = BTreeMap::new();
+        for file in &manifest.battles {
+            let battle: BattleDef = parse_toml(file, &read(src, file)?)?;
+            if battle.id.trim().is_empty() {
+                return Err(parse_error(file, "battle with an empty id"));
+            }
+            if let Some(first) = battle_files.get(&battle.id) {
+                return Err(parse_error(
+                    file,
+                    format!("duplicate battle id `{}` (first defined in {first})", battle.id),
+                ));
+            }
+            if let Some(key) = battle.map.legend.keys().find(|k| k.chars().count() != 1) {
+                return Err(parse_error(
+                    file,
+                    format!("map legend key `{key}` must be exactly one character"),
+                ));
+            }
+            BattleMap::parse(&battle.map.rows, &battle.map.legend, &terrain)
+                .map_err(|e| parse_error(file, format!("battle `{}` map: {e}", battle.id)))?;
+            battle_files.insert(battle.id.clone(), file);
+            battles.insert(battle.id.clone(), battle);
+        }
+
+        let mut scenes: BTreeMap<String, Scene> = BTreeMap::new();
+        let mut scene_files: BTreeMap<String, &str> = BTreeMap::new();
+        for file in &manifest.dramas {
+            let parsed = crate::script::parse_drama(file, &read(src, file)?).map_err(|e| {
+                parse_error(&e.file, format!("line {}: {}", e.line, e.msg))
+            })?;
+            for scene in parsed {
+                if let Some(first) = scene_files.get(&scene.id) {
+                    return Err(parse_error(
+                        file,
+                        format!("duplicate scene id `{}` (first defined in {first})", scene.id),
+                    ));
+                }
+                scene_files.insert(scene.id.clone(), file);
+                scenes.insert(scene.id.clone(), scene);
+            }
+        }
+
+        Ok(Pack {
+            manifest,
+            rules,
+            terrain,
+            classes,
+            strategies,
+            items,
+            officers,
+            battles,
+            scenes,
+            campaign,
+        })
     }
 
     /// Cross-check every reference in the pack (class/item/strategy/officer/terrain/scene/battle
@@ -154,7 +376,7 @@ impl Pack {
     /// unique unit tags, reachable campaign nodes, ...). Returns all findings; the pack is usable
     /// when no `Severity::Error` is present.
     pub fn validate(&self) -> Vec<Issue> {
-        todo!("W1b: Pack::validate")
+        validate::validate(self)
     }
 
     pub fn terrain(&self, id: &str) -> Option<&TerrainDef> {
