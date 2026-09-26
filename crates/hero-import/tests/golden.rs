@@ -344,7 +344,7 @@ fn write_known_answer_install(dir: &Path) {
     }
     let cell = vec![0x5au8; 128];
     write_ls11(dir, "HEXBCHR.R3", &vec![cell.clone(); 181]);
-    write_ls11(dir, "MMAPBGPL.R3", &[cell.clone()]);
+    write_ls11(dir, "MMAPBGPL.R3", std::slice::from_ref(&cell));
     write_ls11(dir, "SMAPBGPL.R3", &[cell.clone(), cell]);
     write_ls11(dir, "HEXBMAP.R3", &vec![vec![1, 2, 3]; 9]);
 
