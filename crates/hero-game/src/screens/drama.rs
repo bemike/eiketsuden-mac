@@ -29,7 +29,8 @@
 //! * a short cancel press or a right click opens the scene menu: 계속 / 최근 대사 / 빨리 넘기기 /
 //!   장면 건너뛰기 / 설정;
 //! * L, PageUp or the mouse wheel (up) open the backlog (최근 대사);
-//! * the buttons at the top right do the same for mouse and touch.
+//! * the buttons at the top right do the same for mouse and touch (in an overlay they sit below
+//!   the top bar of the screen underneath, e.g. the battle HUD).
 //!
 //! **Scene skip** (after a confirmation) runs the rest of the scene without showing it: side
 //! effects, music and the final background and portraits still apply, choices are still asked
@@ -643,23 +644,31 @@ impl Tool {
 }
 
 const TOOL_H: f32 = 14.0;
+/// Top of the buttons of a full-screen scene.
+const TOOL_TOP: f32 = 4.0;
+/// Top of the buttons of an overlay. The screen below an overlay keeps its top bar visible (the
+/// battle HUD bar with the turn, phase, weather and gold is 16 px high), so the buttons sit
+/// below it instead of covering it. Screens that push an overlay keep their top bar at most
+/// `OVERLAY_TOOL_TOP - 4` pixels high.
+pub const OVERLAY_TOOL_TOP: f32 = 20.0;
 
-/// Button rectangles laid out right to left from the top right corner; `width` measures a label.
-fn tool_layout(width: impl Fn(&str) -> f32) -> Vec<(Tool, Rect)> {
+/// Button rectangles laid out right to left from the top right corner, with their top at `top`;
+/// `width` measures a label.
+fn tool_layout(top: f32, width: impl Fn(&str) -> f32) -> Vec<(Tool, Rect)> {
     let mut x = VIRTUAL_W - 4.0;
     let mut out = Vec::new();
     for tool in Tool::ALL.into_iter().rev() {
         let w = (width(tool.label()) + 10.0).round();
         x -= w;
-        out.push((tool, Rect::new(x.round(), 4.0, w, TOOL_H)));
+        out.push((tool, Rect::new(x.round(), top, w, TOOL_H)));
         x -= 3.0;
     }
     out.reverse();
     out
 }
 
-fn tool_rects(gfx: &Gfx) -> Vec<(Tool, Rect)> {
-    tool_layout(|s| gfx.text_width(s, FontId::Small, 1))
+fn tool_rects(gfx: &Gfx, top: f32) -> Vec<(Tool, Rect)> {
+    tool_layout(top, |s| gfx.text_width(s, FontId::Small, 1))
 }
 
 // ----- the screen -----------------------------------------------------------------------------
@@ -810,6 +819,15 @@ impl DramaScreen {
         self.finish()
     }
 
+    /// Top of the toolbar buttons (lower in an overlay, see [`OVERLAY_TOOL_TOP`]).
+    fn tool_top(&self) -> f32 {
+        if self.end == DramaEnd::Pop {
+            OVERLAY_TOOL_TOP
+        } else {
+            TOOL_TOP
+        }
+    }
+
     fn spotlight(&self) -> Spotlight {
         match &self.current {
             Current::Text { spotlight, .. } => spotlight.clone(),
@@ -938,7 +956,7 @@ impl DramaScreen {
     /// Toolbar, menu and backlog keys. `Some` when the input was used.
     fn controls(&mut self, ctx: &mut Ctx) -> Option<Transition> {
         if let Some(p) = ctx.input.tap() {
-            let hit = tool_rects(&ctx.gfx)
+            let hit = tool_rects(&ctx.gfx, self.tool_top())
                 .into_iter()
                 .find(|(_, r)| r.contains(p));
             if let Some((tool, _)) = hit {
@@ -1202,7 +1220,7 @@ impl DramaScreen {
         let pointer = ctx.input.pointer();
         // Title cards and blacked-out moments stay uncluttered: the buttons recede.
         let quiet = matches!(self.current, Current::Title(_)) || self.stage.fade > 0.5;
-        for (tool, r) in tool_rects(gfx) {
+        for (tool, r) in tool_rects(gfx, self.tool_top()) {
             let hover = pointer.is_some_and(|p| r.contains(p));
             let on = tool == Tool::Fast && self.fast_now;
             let alpha = match (hover || on, quiet) {
@@ -1503,13 +1521,27 @@ mod tests {
 
     #[test]
     fn toolbar_fits_in_the_top_right_corner() {
-        let rects = tool_layout(|s| s.chars().count() as f32 * 10.0);
+        let rects = tool_layout(TOOL_TOP, |s| s.chars().count() as f32 * 10.0);
         assert_eq!(rects.len(), Tool::ALL.len());
         assert_eq!(rects[0].0, Tool::Backlog);
         assert!(rects.windows(2).all(|w| w[0].1.right() < w[1].1.x));
         let last = rects.last().unwrap().1;
         assert_eq!(last.right(), VIRTUAL_W - 4.0);
         assert!(rects.iter().all(|(_, r)| r.x > VIRTUAL_W / 3.0));
+        assert!(rects.iter().all(|(_, r)| r.y == TOOL_TOP));
+    }
+
+    #[test]
+    fn overlay_toolbar_stays_clear_of_the_battle_top_bar() {
+        // The battle HUD's top bar (`screens::battle::hud::TOP_BAR_H`) is 16 px high.
+        const BATTLE_TOP_BAR_H: f32 = 16.0;
+        let rects = tool_layout(OVERLAY_TOOL_TOP, |s| s.chars().count() as f32 * 10.0);
+        assert!(rects.iter().all(|(_, r)| r.y >= BATTLE_TOP_BAR_H + 2.0));
+        // Still above the stage portraits and clear of the message box.
+        assert!(rects.iter().all(|(_, r)| r.bottom() < slot_rect(2).y));
+        assert!(rects
+            .iter()
+            .all(|(_, r)| r.bottom() < DialogueBox::box_rect(true).y));
     }
 
     #[test]
