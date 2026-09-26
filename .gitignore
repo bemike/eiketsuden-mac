@@ -10,3 +10,6 @@ Thumbs.db
 /tools/assets/.cache/
 __pycache__/
 /.claude/
+
+# The owner's original game install (never commit KOEI files)
+/res/
