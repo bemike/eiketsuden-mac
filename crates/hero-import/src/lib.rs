@@ -39,6 +39,7 @@ pub mod table6;
 #[cfg(test)]
 mod testutil;
 pub mod text;
+pub mod tfdce;
 
 /// Lower-case hexadecimal rendering of bytes (hashes, header bytes).
 pub fn hex(bytes: &[u8]) -> String {

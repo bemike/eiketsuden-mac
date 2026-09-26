@@ -11,7 +11,8 @@
 //! The known answers come from the project's research notes (published facts about the Korean
 //! DOS/V build). A failure means either the decoder or the documented fact is wrong; every
 //! message names the fact that was checked. The published SHA-256 prefix of the decoded face 0
-//! is not checked because TF-DCE decoding is not implemented.
+//! is not checked: it hashes an undocumented output layout (see `tests/tfdce_golden.rs` for the
+//! portrait checks).
 //!
 //! [`checks_pass_on_a_synthetic_known_answer_install`] runs the same checks on a synthetic
 //! install built to the documented shapes (with this crate's own encoders), so the checks
@@ -337,7 +338,8 @@ fn write_known_answer_install(dir: &Path) {
     exe.extend(vec![0xcc; 64]);
     std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
 
-    let one = [0x11u8];
+    // A 64×80 TF-DCE image made by hand: planes 0–2 filled with 0x80, 0, 0, plane 3 cleared.
+    let one = [2u8, b'T', 8, 80, 0, 0x11, 0x01, 0xE4, 0, 0x80, 0, 0];
     for (name, count) in [("FACEDAT.R3", 240), ("PACKGRP.R3", 38)] {
         let payloads: Vec<&[u8]> = vec![&one[..]; count];
         std::fs::write(dir.join(name), table6::build(&payloads).unwrap()).unwrap();

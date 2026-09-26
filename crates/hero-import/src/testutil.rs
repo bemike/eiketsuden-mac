@@ -3,7 +3,7 @@
 
 use crate::image::IndexedImage;
 use crate::text::{build_messages, TextEncoding};
-use crate::{ls11, palette, planar, table6};
+use crate::{ls11, palette, planar, table6, tfdce};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -103,11 +103,17 @@ fn write_dos_v_install(dir: &Path, encoding: TextEncoding, lines: &[&str], disk_
     write(dir, "HEXBCHR.R3", &ls11::build(&[&s16, &s9, &other]));
     // Map chips: a sheet of 5 cells.
     write(dir, "HEXZCHP.R3", &ls11::build(&[&cells(5)]));
-    // Portraits: three opaque payloads in the 6-byte table.
+    // Portraits: three 64×80 TF-DCE images in the 6-byte table.
+    let faces = [
+        tfdce::fixture(8, 80, [0xFF, 0x00, 0xFF]),
+        tfdce::fixture(8, 80, [0x0F, 0xF0, 0x00]),
+        tfdce::fixture(8, 80, [0x00, 0x00, 0x00]),
+    ];
+    let faces: Vec<&[u8]> = faces.iter().map(Vec::as_slice).collect();
     write(
         dir,
         "FACEDAT.R3",
-        &table6::build(&[b"face-0", b"face-1", b""]).expect("small entries"),
+        &table6::build(&faces).expect("small entries"),
     );
 }
 

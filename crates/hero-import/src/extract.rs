@@ -5,13 +5,14 @@
 //! <out>/gfx/original/palettes.json        the palette bank of MAIN.EXE (9 slots × 16 colours)
 //! <out>/gfx/original/<archive>/<nnn>.png  cells of the sprite / chip archives (media key
 //!                                         `original/<archive>/<nnn>`)
+//! <out>/gfx/original/facedat/<nnn>.png    TF-DCE portraits of FACEDAT.R3
 //! <out>/text/<file>.json                  message files as UTF-8 JSON
 //! ```
 //!
 //! The game reads the folder with `--original <out>`: media keys are looked up there first,
 //! then in the data pack. Only the DOS/V editions can be extracted; every asset kind reports its
 //! own status (`extracted`, `partial`, `failed`, `unsupported`, `missing-source`) so an
-//! unsupported format (TF-DCE portraits, the `BAKDATA.R3` record layout) is an explicit result
+//! unsupported format (the `BAKDATA.R3` record layout) is an explicit result
 //! rather than a guess.
 //!
 //! The install is only read. The output folder must not lie inside it, and must be empty, new,
@@ -394,7 +395,7 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
     if selection.portraits {
         assets.insert(
             "portraits".to_string(),
-            portraits_report(&install, requested)?,
+            extract_portraits(&install, &mut output, requested)?,
         );
     }
     output.files.sort();
@@ -748,37 +749,103 @@ fn extract_sprites(
 
 // ----- portraits -----------------------------------------------------------------------------
 
-fn portraits_report(install: &InstallDir, requested: bool) -> Result<KindReport, ExtractError> {
-    let mut report = KindReport::new(Status::Unsupported, requested, "");
+/// Folder of the portrait PNGs inside [`GFX_DIR`] (media keys `original/facedat/<nnn>`).
+pub const PORTRAIT_DIR: &str = "facedat";
+
+/// The portrait palette: slot [`PALETTE_SLOT`] of `MAIN.EXE`'s bank. The portraits only use
+/// colours 0–7, which are the same in every slot but one; `None` (with an error in the
+/// report) when the bank is missing.
+fn portrait_palette(
+    install: &InstallDir,
+    report: &mut KindReport,
+) -> Result<Option<Palette16>, ExtractError> {
+    let exe = read_source(install, "MAIN.EXE", report)?;
+    Ok(match exe.as_deref().map(palette::find_bank) {
+        Some(Ok(bank)) => {
+            report.notes.push(format!(
+                "palette: MAIN.EXE bank at {:#x}, slot {PALETTE_SLOT}",
+                bank.offset
+            ));
+            Some(bank.slots[PALETTE_SLOT])
+        }
+        Some(Err(e)) => {
+            report
+                .errors
+                .push(format!("MAIN.EXE: {e}; portraits use a grey ramp"));
+            None
+        }
+        None => {
+            report
+                .errors
+                .push("MAIN.EXE missing: no palette, portraits use a grey ramp".into());
+            None
+        }
+    })
+}
+
+/// One portrait as a PNG.
+fn portrait_png(payload: &[u8], pal: &Palette16) -> Result<Vec<u8>, String> {
+    let image = crate::tfdce::decode(payload).map_err(|e| e.to_string())?;
+    let indexed = crate::planar::decode(&image.planar, image.width, image.height)
+        .map_err(|e| e.to_string())?;
+    encode_png(&indexed, pal, false).map_err(|e| e.to_string())
+}
+
+/// Decode every TF-DCE portrait of `FACEDAT.R3` into `gfx/original/facedat/<nnn>.png`.
+fn extract_portraits(
+    install: &InstallDir,
+    out: &mut Output,
+    requested: bool,
+) -> Result<KindReport, ExtractError> {
+    let mut report = KindReport::new(Status::Extracted, requested, "");
     let Some(data) = read_source(install, PORTRAIT_SOURCE, &mut report)? else {
         report.status = Status::MissingSource;
         report.summary = format!("{PORTRAIT_SOURCE} not in the install");
         return Ok(report);
     };
-    match table6::Table6::parse(&data) {
-        Ok(table) => {
-            report.summary = format!(
-                "{PORTRAIT_SOURCE}: {} entries (container valid); their TF-DCE compression is \
-                 not implemented",
-                table.len()
-            );
-            report.notes.extend([
-                "the research notes list TF-DCE's operations (literal runs, fills, 2-D and linear \
-                 back-references, cross-plane copies, move-to-front masks, nibble RLE) but not their \
-                 bit-level encoding, so a decoder would be guesswork"
-                    .to_string(),
-                "each portrait decodes to 64×80 pixels, 4 bpp planar (2560 bytes)".to_string(),
-            ]);
-        }
+    let table = match table6::Table6::parse(&data) {
+        Ok(table) => table,
         Err(e) => {
             report.status = Status::Failed;
             report.summary = format!("{PORTRAIT_SOURCE}: invalid container");
             report.errors.push(format!("{PORTRAIT_SOURCE}: {e}"));
+            return Ok(report);
+        }
+    };
+    let found_palette = portrait_palette(install, &mut report)?;
+    let pal = found_palette.unwrap_or_else(grey_ramp);
+    let mut written = 0;
+    for i in 0..table.len() {
+        let payload = table.get(i).unwrap_or_default();
+        match portrait_png(payload, &pal) {
+            Ok(png) => {
+                out.write(&format!("{GFX_DIR}/{PORTRAIT_DIR}/{i:03}.png"), &png)?;
+                written += 1;
+                report.outputs += 1;
+            }
+            Err(e) => report
+                .errors
+                .push(format!("{PORTRAIT_SOURCE} entry {i}: {e}")),
         }
     }
+    report.status = if written == 0 {
+        Status::Failed
+    } else if written < table.len() || found_palette.is_none() {
+        Status::Partial
+    } else {
+        Status::Extracted
+    };
+    report.summary = format!(
+        "{written} of {} portraits from {PORTRAIT_SOURCE} (TF-DCE)",
+        table.len()
+    );
+    report.notes.push(
+        "each image keeps the size its header gives (64×80 in the Korean build); colour index 0 \
+         is opaque"
+            .into(),
+    );
     Ok(report)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -852,11 +919,21 @@ mod tests {
         assert_eq!(palettes["offset"], "0xbba");
         assert_eq!(palettes["slots"].as_array().unwrap().len(), 9);
 
-        // Portraits: container found, codec unsupported (informational without --portraits).
+        // Portraits: three synthetic TF-DCE images decoded to PNG.
         let portraits = &index.assets["portraits"];
-        assert_eq!(portraits.status, Status::Unsupported);
-        assert!(portraits.summary.contains("3 entries"));
-        assert!(portraits.ok());
+        assert_eq!(portraits.status, Status::Extracted, "{portraits:#?}");
+        assert_eq!(portraits.outputs, 3);
+        assert!(portraits.summary.starts_with("3 of 3 portraits"));
+        let face = png::Decoder::new(std::io::Cursor::new(
+            std::fs::read(target.join("gfx/original/facedat/000.png")).unwrap(),
+        ));
+        let mut face = face.read_info().unwrap();
+        assert_eq!((face.info().width, face.info().height), (64, 80));
+        let mut pixels = vec![0; face.output_buffer_size()];
+        face.next_frame(&mut pixels).unwrap();
+        // Fixture face 0: planes 0 and 2 set, plane 1 clear → colour 5 everywhere.
+        assert!(pixels.iter().all(|&p| p == 5));
+        assert!(target.join("gfx/original/facedat/002.png").is_file());
 
         // The index lists every file and records provenance.
         let on_disk = read_json(&target.join(INDEX_FILE));
@@ -872,8 +949,14 @@ mod tests {
     }
 
     #[test]
-    fn explicit_unsupported_kind_fails() {
+    fn explicit_kind_that_fails_fails_the_run() {
         let src = korean();
+        // A portrait container whose single entry is not a TF-DCE image.
+        std::fs::write(
+            src.path().join("FACEDAT.R3"),
+            table6::build(&[b"not an image"]).unwrap(),
+        )
+        .unwrap();
         let out = TempDir::new("ex-out-portraits");
         let options = Options {
             selection: Some(Selection {
@@ -885,7 +968,10 @@ mod tests {
         let index = extract(src.path(), out.path(), &options).unwrap();
         assert!(!index.success());
         assert_eq!(index.assets.len(), 1);
-        assert!(!index.assets["portraits"].ok());
+        let portraits = &index.assets["portraits"];
+        assert_eq!(portraits.status, Status::Failed);
+        assert!(portraits.errors[0].starts_with("FACEDAT.R3 entry 0: TF-DCE"));
+        assert!(!portraits.ok());
     }
 
     #[test]
