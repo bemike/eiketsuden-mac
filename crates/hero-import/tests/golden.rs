@@ -21,7 +21,7 @@ use hero_import::edition::{identify, EditionId};
 use hero_import::install::InstallDir;
 use hero_import::ls11::Archive;
 use hero_import::text::{build_messages, parse_messages, TextEncoding};
-use hero_import::{extract, ls11, palette, probe, table6};
+use hero_import::{extract, ls11, palette, probe, sprites, table6};
 use std::path::{Path, PathBuf};
 
 const ENV: &str = "EIKETSU_ORIGINAL_DIR";
@@ -59,7 +59,43 @@ fn message_bytes(install: &InstallDir, name: &str) -> (usize, Vec<u8>) {
 
 // ----- checks --------------------------------------------------------------------------------
 
-/// Every LS11 archive and 6-byte table in the folder validates and decodes (any edition).
+/// Files of a specific copy that are known to be damaged, identified by SHA-256 (a hash of
+/// the owner's file, not game content), with the exact validation error they produce and the
+/// number of leading entries that still decode. A damaged copy cannot be repaired by a
+/// decoder; listing it keeps the other containers checked instead of hiding them behind one
+/// expected failure.
+///
+/// `OPGRP.R3` of the verified Korean copy: 6 bytes longer than its directory, and from about
+/// file offset 0x60400 (inside entry 27) the stored bytes stop being an LS11 stream (entry 27's
+/// picture decodes cleanly for its first rows, then breaks; every later compressed entry fails
+/// within its first bytes, and the "raw" entries after it are noise instead of `NPK016` files).
+const KNOWN_DAMAGED: [(&str, &str, &str, usize); 1] = [(
+    "OPGRP.R3",
+    "eed970e71f4dd7abbcf910aacf232ea37c94af935900c870b8e991fd6f0f6f2b",
+    "LS11: entries end at 0xb40aa but the file is 0xb40b0 bytes long",
+    27,
+)];
+
+/// For a known damaged file: the leading entries still decode when the trailing bytes are cut
+/// off, and the first damaged entry does not.
+fn check_known_damage(dir: &Path, name: &str, good_entries: usize) {
+    let data = std::fs::read(dir.join(name)).unwrap();
+    let archive = (0..16)
+        .find_map(|cut| Archive::parse(&data[..data.len() - cut]).ok())
+        .unwrap_or_else(|| panic!("{name}: no valid directory even without trailing bytes"));
+    for i in 0..good_entries {
+        archive
+            .decode(i)
+            .unwrap_or_else(|e| panic!("{name}: undamaged entry {i}: {e}"));
+    }
+    assert!(
+        archive.decode(good_entries).is_err(),
+        "{name}: entry {good_entries} decodes; the damage record is out of date"
+    );
+}
+
+/// Every LS11 archive and 6-byte table in the folder validates and decodes (any edition),
+/// except the files of [`KNOWN_DAMAGED`], which must fail exactly as recorded.
 fn check_every_container(dir: &Path) {
     let manifest = probe::probe(dir).expect("probe runs");
     eprintln!(
@@ -72,7 +108,14 @@ fn check_every_container(dir: &Path) {
     let mut failures = Vec::new();
     for f in &manifest.files {
         if let Some(l) = &f.ls11 {
-            if let Some(e) = l.error.as_ref().or(l.decode_error.as_ref()) {
+            let damaged = KNOWN_DAMAGED
+                .iter()
+                .find(|(name, sha, _, _)| f.path == *name && f.sha256 == *sha);
+            if let Some((name, _, error, good)) = damaged {
+                eprintln!("note: {name} is a known damaged copy: {error}");
+                assert_eq!(l.error.as_deref(), Some(*error), "{name}: damage changed");
+                check_known_damage(dir, name, *good);
+            } else if let Some(e) = l.error.as_ref().or(l.decode_error.as_ref()) {
                 failures.push(format!("{}: {e}", f.path));
             } else if !l.dictionary_is_permutation {
                 eprintln!("note: {}: dictionary is not a permutation", f.path);
@@ -89,14 +132,34 @@ fn check_every_container(dir: &Path) {
     );
 }
 
-/// Entry counts and data starts of the Korean build's containers.
-fn check_korean_containers(install: &InstallDir) {
-    // 6-byte tables: 240 portraits from 0x5A0, 38 common graphics from 0xE4.
+/// Entry counts and data starts of the Korean build's 6-byte tables: 240 portraits from 0x5A0,
+/// 38 common graphics from 0xE4.
+fn check_korean_tables(install: &InstallDir) {
     for (name, count, start) in [("FACEDAT.R3", 240, 0x5a0), ("PACKGRP.R3", 38, 0xe4)] {
         let data = read(install, name);
         let t = table6::Table6::parse(&data).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(t.len(), count, "{name} entry count");
         assert_eq!(t.entries()[0].offset, start, "{name} data start");
+    }
+}
+
+/// Entry counts, data starts and directory byte order of the Korean build's LS11 archives.
+fn check_korean_containers(install: &InstallDir) {
+    // The opening / ending archives spell the magic `Ls11` and store the directory
+    // little-endian; all their entries decode (OPGRP.R3 of the verified copy is damaged and
+    // covered by KNOWN_DAMAGED instead).
+    for (name, count) in [("END1GRP.R3", 72), ("END2GRP.R3", 25)] {
+        let data = read(install, name);
+        let archive = Archive::parse(&data).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(
+            archive.byte_order(),
+            ls11::ByteOrder::Little,
+            "{name} byte order"
+        );
+        assert_eq!(archive.len(), count, "{name} entry count");
+        archive
+            .decode_all()
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
     }
     for (name, count) in [
         ("HEXBCHR.R3", 181),
@@ -216,6 +279,67 @@ fn check_korean_palette(install: &InstallDir) {
     assert_eq!(bank.slots[5], bank.slots[8]);
 }
 
+/// Sprite archives: entry sizes match the geometries of `sprites::ARCHIVES`, the entry groups
+/// cover exactly the entries, and the palette bank has the verified structure.
+fn check_korean_sprites(install: &InstallDir) {
+    for (name, count, sizes) in [
+        ("HEXBCHR.R3", 181, &[2048usize, 1152][..]),
+        ("HEXICHR.R3", 78, &[4608][..]),
+        ("HEXZCHR.R3", 47, &[1024][..]),
+    ] {
+        let e = entries(install, name);
+        assert_eq!(e.len(), count, "{name} entry count");
+        assert!(
+            e.iter().all(|x| sizes.contains(&x.len())),
+            "{name}: entry sizes other than {sizes:?}"
+        );
+        let spec = sprites::archive(name).unwrap();
+        assert_eq!(
+            spec.groups.last().map(|g| g.last + 1),
+            Some(count),
+            "{name}: groups do not end at the last entry"
+        );
+    }
+    // HEXBCHR: 169 frames of 64×64, then 12 of 48×48.
+    let e = entries(install, "HEXBCHR.R3");
+    assert!(e[..169].iter().all(|x| x.len() == 2048));
+    assert!(e[169..].iter().all(|x| x.len() == 1152));
+    // Every entry of every sprite archive converts except the two text entries of HEXGRP.
+    let mut images = 0;
+    for spec in &sprites::ARCHIVES {
+        for (i, x) in entries(install, spec.file).iter().enumerate() {
+            match (spec.arrangement)(i, x.len()) {
+                Some(a) => {
+                    sprites::decode_entry(x, a)
+                        .unwrap_or_else(|e| panic!("{} entry {i}: {e}", spec.file));
+                    images += 1;
+                }
+                None => assert!(
+                    spec.file == "HEXGRP.R3" && (i == 1 || i == 2),
+                    "{} entry {i} ({} bytes) has no geometry",
+                    spec.file,
+                    x.len()
+                ),
+            }
+        }
+    }
+    assert_eq!(images, 314, "images from the sprite archives");
+    // Palette slot 4 is the 8-colour digital palette: every channel 0 or 255, and the
+    // [B][R][G] order puts blue at index 1, red at 2, green at 4.
+    let bank = palette::find_bank(&read(install, "MAIN.EXE")).expect("palette bank");
+    assert_eq!(bank.slots[4][1], [0, 0, 255]);
+    assert_eq!(bank.slots[4][2], [255, 0, 0]);
+    assert_eq!(bank.slots[4][4], [0, 255, 0]);
+    // Colours 0–7 are shared by every slot except the digital one.
+    for s in [0, 1, 2, 3, 5, 6, 7, 8] {
+        assert_eq!(
+            bank.slots[s][..8],
+            bank.slots[1][..8],
+            "slot {s} colours 0–7"
+        );
+    }
+}
+
 /// A default extraction of a DOS/V install reports no failure.
 fn check_extraction(dir: &Path, label: &str) {
     let out = std::env::temp_dir().join(format!(
@@ -238,9 +362,11 @@ fn check_extraction(dir: &Path, label: &str) {
 fn check_all_korean(dir: &Path) {
     let install = InstallDir::open(dir).expect("install folder is readable");
     check_korean_containers(&install);
+    check_korean_tables(&install);
     check_korean_map_geometry(&install);
     check_korean_scenario_text(&install);
     check_korean_palette(&install);
+    check_korean_sprites(&install);
 }
 
 // ----- gated tests on a real install ---------------------------------------------------------
@@ -277,11 +403,42 @@ fn golden_every_container_validates() {
     }
 }
 
-#[test]
-fn golden_korean_known_answers() {
-    if let Some(dir) = korean_dir("golden_korean_known_answers") {
-        check_all_korean(&dir);
+/// Run one Korean check on the real install (one test per topic, so a failure names the
+/// topic).
+fn korean_check(test: &str, check: fn(&InstallDir)) {
+    if let Some(dir) = korean_dir(test) {
+        check(&InstallDir::open(&dir).expect("install folder is readable"));
     }
+}
+
+#[test]
+fn golden_korean_ls11_archives() {
+    korean_check("golden_korean_ls11_archives", check_korean_containers);
+}
+
+#[test]
+fn golden_korean_table_containers() {
+    korean_check("golden_korean_table_containers", check_korean_tables);
+}
+
+#[test]
+fn golden_korean_map_geometry() {
+    korean_check("golden_korean_map_geometry", check_korean_map_geometry);
+}
+
+#[test]
+fn golden_korean_scenario_text() {
+    korean_check("golden_korean_scenario_text", check_korean_scenario_text);
+}
+
+#[test]
+fn golden_korean_palette() {
+    korean_check("golden_korean_palette", check_korean_palette);
+}
+
+#[test]
+fn golden_korean_sprites() {
+    korean_check("golden_korean_sprites", check_korean_sprites);
 }
 
 #[test]
@@ -333,7 +490,12 @@ fn write_known_answer_install(dir: &Path) {
     std::fs::write(dir.join("DISK1.R3I"), marker).unwrap();
 
     let mut exe = vec![0x90u8; PALETTE_OFFSET];
-    exe.extend(palette::build_bank(&[[[3, 7, 11]; 16]; palette::SLOTS]));
+    // Every slot the 8-colour digital palette (index bit 0 = blue, 1 = red, 2 = green), twice.
+    let digital: [[u8; 3]; 16] = std::array::from_fn(|c| {
+        let on = |bit: usize| if c & (1 << bit) != 0 { 15 } else { 0 };
+        [on(1), on(2), on(0)]
+    });
+    exe.extend(palette::build_bank(&[digital; palette::SLOTS]));
     exe.extend(vec![0xcc; 64]);
     std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
 
@@ -343,9 +505,31 @@ fn write_known_answer_install(dir: &Path) {
         std::fs::write(dir.join(name), table6::build(&payloads).unwrap()).unwrap();
     }
     let cell = vec![0x5au8; 128];
-    write_ls11(dir, "HEXBCHR.R3", &vec![cell.clone(); 181]);
+    let cells = |n: usize| cell.repeat(n);
+    let mut unit_frames = vec![cells(16); 169];
+    unit_frames.extend(vec![cells(9); 12]);
+    write_ls11(dir, "HEXBCHR.R3", &unit_frames);
+    write_ls11(dir, "HEXICHR.R3", &vec![cells(36); 78]);
+    write_ls11(dir, "HEXZCHR.R3", &vec![cells(8); 47]);
+    write_ls11(dir, "HEXZCHP.R3", &[cells(80), cells(174), cells(175)]);
+    write_ls11(dir, "HEXBCHP.R3", &[cells(224)]);
     write_ls11(dir, "MMAPBGPL.R3", std::slice::from_ref(&cell));
-    write_ls11(dir, "SMAPBGPL.R3", &[cell.clone(), cell]);
+    write_ls11(dir, "SMAPBGPL.R3", &[cell.clone(), cell.clone()]);
+    write_ls11(
+        dir,
+        "HEXGRP.R3",
+        &[cells(114), vec![0xb0; 1576], vec![0xb1; 2016]],
+    );
+    // Opening / ending archives with little-endian directories.
+    for (name, count) in [("END1GRP.R3", 72), ("END2GRP.R3", 25)] {
+        let parts: Vec<Vec<u8>> = (0..count).map(|i| vec![i as u8; 40]).collect();
+        let refs: Vec<&[u8]> = parts.iter().map(Vec::as_slice).collect();
+        std::fs::write(
+            dir.join(name),
+            ls11::build_with(ls11::ByteOrder::Little, &refs),
+        )
+        .unwrap();
+    }
     write_ls11(dir, "HEXBMAP.R3", &vec![vec![1, 2, 3]; 9]);
 
     let battle_map = |w: u8, h: u8| {
