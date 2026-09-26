@@ -104,6 +104,36 @@ a tab switch pages. Check it at a few window sizes after changing anything in `g
   `flow::battle_screen` for mid-battle saves). Until a screen is wired there, the node shows a
   development placeholder that says so and offers shortcuts to walk the campaign. A finished drama or
   camp screen returns `Transition::Flow(Flow::Advance)`, the battle screen
-  `Transition::Flow(Flow::BattleEnded(state))`; `Flow::Advance` autosaves.
+  `Transition::Flow(Flow::BattleEnded(state))`. Moving to another node autosaves, except onto an
+  `Ending`: the autosave keeps the last point before it, so 이어하기 retries instead of replaying the
+  ending.
 * Save slots (`saves`) and the save/load screen (`screens::saveload::SaveLoadScreen::save(session
   snapshot)`) are ready for the camp screen; `flow::Session::to_save` builds the snapshot.
+
+## Publishing
+
+Three workflows live in `.github/workflows`: `ci.yml` (format, clippy, tests, pack validation, battle
+simulation and the wasm build on every push and pull request), `pages.yml` (the web demo) and
+`release.yml` (release archives).
+
+**Web demo, one-time setup.** In the GitHub repository open **Settings → Pages → Build and
+deployment** and set **Source** to **GitHub Actions**. Until then the *Web demo (GitHub Pages)*
+workflow stops at its first step (`actions/configure-pages`) with an error saying Pages is not enabled;
+the default `GITHUB_TOKEN` cannot turn it on by itself. After changing the setting, re-run the workflow
+(**Actions → Web demo (GitHub Pages) → Run workflow**) or push to `main`. Every push to `main` then
+publishes the demo at `https://<owner>.github.io/<repository>/`
+(<https://jeiel85.github.io/eiketsuden-reloaded/> for the main repository).
+
+**Releases.** Push a tag `vX.Y.Z`:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The *Release* workflow builds Windows x64, Linux x64, macOS arm64 and macOS x64 archives
+(`eiketsuden-reloaded-<version>-<platform>`: the executable, `data/base`, `README.md`, `LICENSE` and
+`CREDITS.md`) and publishes them as a GitHub release with generated release notes. The package step
+fails if one of those files is missing. Keep `version` in the root `Cargo.toml` (shown on the title
+screen as `v…`) in step with the tag. Running the workflow by hand (**Run workflow**) builds the
+archives as workflow artifacts without creating a release.

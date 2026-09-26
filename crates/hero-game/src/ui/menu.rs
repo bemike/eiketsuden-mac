@@ -85,7 +85,7 @@ pub enum MenuEvent {
     Selected(usize),
     /// An adjustable item's value should change by `-1` or `+1`.
     Adjust(usize, i32),
-    /// Cancel was pressed (only when [`Menu::cancellable`]).
+    /// Cancel was pressed (only when [`Menu::cancellable`]; also for a menu without items).
     Cancelled,
 }
 
@@ -276,7 +276,16 @@ impl Menu {
 
     /// Handle this frame's input.
     pub fn update(&mut self, ctx: &mut Ctx) -> MenuEvent {
-        if !self.active || self.items.is_empty() {
+        if !self.active {
+            return MenuEvent::None;
+        }
+        if self.items.is_empty() {
+            // Nothing to move to or choose, but cancel still leaves: an empty list (a shop tab
+            // with nothing to sell, a side without units) must not trap keyboard players.
+            if self.cancellable && ctx.input.cancel() {
+                ctx.sfx(sfx::CANCEL);
+                return MenuEvent::Cancelled;
+            }
             return MenuEvent::None;
         }
         let input = &ctx.input;

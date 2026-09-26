@@ -248,6 +248,7 @@ dependencies = [
 name = "hero-game"
 version = "0.1.0"
 dependencies = [
+ "audrey",
  "hero-core",
  "macroquad",
  "sapp-jsutils",

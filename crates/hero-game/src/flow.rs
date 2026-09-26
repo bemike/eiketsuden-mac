@@ -20,7 +20,12 @@
 //! [`node_screen`] (and [`battle_screen`] for resuming a mid-battle save) is the **single place**
 //! where the drama, camp and battle screens are wired in.
 //!
-//! [`Flow::Advance`] autosaves into the autosave slot after moving to the next node.
+//! # Autosave
+//!
+//! Moving to another node ([`Flow::Advance`], a victory, a defeat with `on_defeat`) writes the
+//! autosave slot, **except when the new node is an `Ending`**: the autosave then keeps the last
+//! point before it, so 이어하기 (continue) retries the scene or battle that led to a bad ending
+//! instead of replaying the ending.
 
 use crate::app::{Ctx, Screen};
 use crate::platform::unix_now;
@@ -32,7 +37,7 @@ use crate::screens::error::ErrorScreen;
 use crate::screens::gameover::GameOverScreen;
 use crate::screens::title::TitleScreen;
 use hero_core::battle::{BattleState, Outcome};
-use hero_core::campaign::{CampaignState, Node};
+use hero_core::campaign::{CampaignError, CampaignState, Node};
 use hero_core::pack::Pack;
 use hero_core::save::{SaveGame, SAVE_VERSION};
 use std::rc::Rc;
@@ -47,11 +52,12 @@ pub enum Flow {
     Continue(Box<SaveGame>),
     /// Show the screen of the session's current campaign node.
     Node,
-    /// The current node is finished: advance the campaign (resolving branches), autosave, and
-    /// show the next node.
+    /// The current node is finished: advance the campaign (resolving branches), autosave (see
+    /// the module docs), and show the next node.
     Advance,
-    /// The battle screen finished a battle. Victory applies the result and advances; defeat goes
-    /// to the node's `on_defeat` or to the game over screen.
+    /// The battle screen finished a battle. Victory applies the result and advances; defeat
+    /// applies the result too (flags, levels, used consumables — MODDING.md) and goes to the
+    /// node's `on_defeat`, or ends the campaign on the game over screen when there is none.
     BattleEnded(Box<BattleState>),
     /// The campaign was lost.
     GameOver,
@@ -227,15 +233,44 @@ fn advance(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
         return no_session();
     };
     match session.campaign.advance(pack) {
-        Ok(_) => {
-            autosave(ctx);
-            show_current_node(ctx, pack)
-        }
+        Ok(_) => arrive(ctx, pack),
         Err(e) => Box::new(ErrorScreen::recoverable(
             "캠페인 오류",
             vec![format!("다음 단계로 진행할 수 없습니다: {e}")],
         )),
     }
+}
+
+/// The session's campaign has just moved to another node: autosave (unless the node is an
+/// ending, see the module docs) and show it.
+fn arrive(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
+    let save = ctx
+        .session
+        .as_ref()
+        .is_some_and(|s| autosaves_at(pack, &s.campaign.node));
+    if save {
+        autosave(ctx);
+    }
+    show_current_node(ctx, pack)
+}
+
+/// Whether arriving at campaign node `id` writes the autosave: every node except an `Ending`.
+fn autosaves_at(pack: &Pack, id: &str) -> bool {
+    !matches!(pack.campaign.node(id), Some(Node::Ending { .. }))
+}
+
+/// A lost battle whose node has an `on_defeat` link: keep what the battle changed (flags set by
+/// its events, levels, EXP, classes, equipment, used consumables — `apply_battle_result` adds
+/// found gold and items only for a victory), then jump to `on_defeat`, resolving branches with
+/// the updated flags. Returns the node that became current.
+fn apply_defeat(
+    campaign: &mut CampaignState,
+    pack: &Pack,
+    battle: &BattleState,
+    on_defeat: &str,
+) -> Result<String, CampaignError> {
+    campaign.apply_battle_result(pack, battle);
+    campaign.jump(pack, on_defeat)
 }
 
 fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn Screen> {
@@ -254,11 +289,13 @@ fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn S
                 _ => None,
             };
             match on_defeat {
-                Some(node) => {
-                    session.campaign.node = node;
-                    autosave(ctx);
-                    show_current_node(ctx, pack)
-                }
+                Some(node) => match apply_defeat(&mut session.campaign, pack, &state, &node) {
+                    Ok(_) => arrive(ctx, pack),
+                    Err(e) => Box::new(ErrorScreen::recoverable(
+                        "캠페인 오류",
+                        vec![format!("패배 후 진행할 수 없습니다: {e}")],
+                    )),
+                },
                 None => {
                     ctx.session = None;
                     Box::new(GameOverScreen::new())
@@ -341,6 +378,80 @@ mod tests {
             battles_won: Vec::new(),
             play_seconds: 10,
         }
+    }
+
+    #[test]
+    fn arriving_at_an_ending_keeps_the_previous_autosave() {
+        let pack = crate::screens::camp::test_pack();
+        assert!(autosaves_at(&pack, "c1_jade_belt"));
+        assert!(autosaves_at(&pack, "c1_camp_guangling"));
+        assert!(!autosaves_at(&pack, "c1_bad_end"));
+        let endings: Vec<&str> = pack
+            .campaign
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Ending { .. }))
+            .map(|n| n.id())
+            .collect();
+        assert!(!endings.is_empty());
+        assert!(endings.iter().all(|id| !autosaves_at(&pack, id)));
+
+        // The jade-belt scene: a careless answer resolves the branch to the bad ending, which
+        // must not replace the autosave made at the scene (the retry point).
+        let mut campaign = CampaignState::new_game(&pack);
+        campaign.node = "c1_jade_belt".into();
+        campaign.flags.insert("c1_exposed".into(), 1);
+        let next = campaign.advance(&pack).unwrap();
+        assert_eq!(next, "c1_bad_end");
+        assert!(!autosaves_at(&pack, &next));
+        campaign.node = "c1_jade_belt".into();
+        campaign.flags.insert("c1_exposed".into(), 0);
+        let next = campaign.advance(&pack).unwrap();
+        assert_eq!(next, "c1_camp_guangling");
+        assert!(autosaves_at(&pack, &next));
+    }
+
+    #[test]
+    fn a_defeat_keeps_the_battle_result_and_follows_on_defeat() {
+        use hero_core::battle::DefeatReason;
+        use hero_core::battledef::Side;
+
+        let pack = crate::screens::camp::test_pack();
+        let mut campaign = CampaignState::new_game(&pack);
+        campaign.add_item("bean", 3);
+        let gold = campaign.gold;
+        let mut battle = BattleState::new(&pack, "p1_sishui", &campaign, 7).unwrap();
+        battle.outcome = Some(Outcome::Defeat(DefeatReason::LordRetreated));
+        // During the lost battle: an event set a flag, one bean was used, an officer levelled
+        // up, and gold and an item were found (those are kept only after a victory).
+        battle.flags.insert("c1_exposed".into(), 1);
+        battle.inventory.insert("bean".into(), 2);
+        let unit = battle
+            .units
+            .iter_mut()
+            .find(|u| u.side == Side::Player && u.officer.is_some())
+            .expect("a deployed officer");
+        unit.level += 1;
+        let (officer, level) = (unit.officer.clone().unwrap(), unit.level);
+        battle.gold_found = 300;
+        battle.items_found.push("wine".into());
+
+        let before = campaign.clone();
+        let mut broken = campaign.clone();
+        assert!(apply_defeat(&mut broken, &pack, &battle, "no_such_node").is_err());
+        assert_eq!(broken.node, before.node);
+
+        // `on_defeat` leads to a branch on the flag the battle set.
+        let node = apply_defeat(&mut campaign, &pack, &battle, "c1_br_exposed").unwrap();
+        assert_eq!(node, "c1_bad_end");
+        assert_eq!(campaign.node, "c1_bad_end");
+        assert_eq!(campaign.flag("c1_exposed"), 1);
+        assert_eq!(campaign.item_count("bean"), 2);
+        let state = campaign.roster.iter().find(|o| o.id == officer).unwrap();
+        assert_eq!(state.level, level);
+        assert_eq!(campaign.gold, gold);
+        assert_eq!(campaign.item_count("wine"), before.item_count("wine"));
+        assert!(!campaign.battles_won.contains(&battle.battle_id));
     }
 
     #[test]
