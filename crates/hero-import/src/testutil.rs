@@ -2,8 +2,8 @@
 //! No byte of the original game is involved; the text is made up.
 
 use crate::image::IndexedImage;
-use crate::text::{build_messages, TextEncoding};
-use crate::{ls11, palette, planar, table6, tfdce};
+use crate::text::{build_sections, dialogue_bytes, TextEncoding};
+use crate::{bakdata, ippan, ls11, palette, planar, scenario, table6, tfdce};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -53,11 +53,28 @@ pub fn palette_slots() -> [[[u8; 3]; 16]; palette::SLOTS] {
     std::array::from_fn(|s| std::array::from_fn(|c| [c as u8, (15 - c) as u8, s as u8]))
 }
 
-fn scene_bytecode(offsets: &[u16]) -> Vec<u8> {
-    let mut out: Vec<u8> = offsets.iter().flat_map(|o| o.to_le_bytes()).collect();
-    out.extend_from_slice(&0xffffu16.to_le_bytes());
-    out.extend(vec![0x2a; 64]);
-    out
+/// A chapter's scene: `[string][dialogue]` in the message section and a script that shows
+/// both (music, narration, dialogue, end), plus a talk trigger for officer 1 in a second block.
+fn fixture_scene(
+    enc: &dyn Fn(&str) -> Vec<u8>,
+    narration: &str,
+    lines: [&str; 2],
+) -> (Vec<u8>, Vec<u8>) {
+    let mut section = enc(narration);
+    section.push(0);
+    let dialogue_at = section.len() as u16;
+    section.extend(dialogue_bytes(&[(0, enc(lines[0])), (1, enc(lines[1]))]));
+    let [lo, hi] = dialogue_at.to_le_bytes();
+    let script = vec![0x38, 0x02, 0x08, 0x00, 0x00, 0x00, lo, hi, 0x12, 0xff];
+    let talk = vec![0x00, lo, hi, 0xff];
+    let scene = scenario::build_scene(&[
+        vec![([0; 8], script)],
+        vec![
+            ([0; 8], vec![0x0f, 0x00, 0xff]),
+            ([0x03, 0x01, 0x01, 0, 0, 0, 0, 0], talk),
+        ],
+    ]);
+    (section, scene)
 }
 
 fn write(dir: &Path, name: &str, bytes: &[u8]) {
@@ -65,7 +82,13 @@ fn write(dir: &Path, name: &str, bytes: &[u8]) {
 }
 
 /// Write a DOS/V-style install whose text uses `encoding`, with `lines` as dialogue.
-fn write_dos_v_install(dir: &Path, encoding: TextEncoding, lines: &[&str], disk_header: &[u8]) {
+fn write_dos_v_install(
+    dir: &Path,
+    encoding: TextEncoding,
+    lines: &[&str],
+    names: [&str; 3],
+    disk_header: &[u8],
+) {
     let enc = |s: &str| encoding.encode(s).expect("fixture text is encodable");
     write(dir, "DISK1.R3I", disk_header);
 
@@ -75,28 +98,34 @@ fn write_dos_v_install(dir: &Path, encoding: TextEncoding, lines: &[&str], disk_
     exe.extend(vec![0xcc; 1000]);
     write(dir, "MAIN.EXE", &exe);
 
-    // SNR0M: one scene, raw; the second block imitates a speaker-id prefix (id 5, high byte 0).
-    let scene0: Vec<Vec<u8>> = vec![enc(lines[0]), vec![5], enc(lines[1]), enc(lines[2])];
-    write(dir, "SNR0M.R3", &build_messages(&[scene0]));
+    // SNR0: one scene, messages stored raw.
+    let (m0, d0) = fixture_scene(&enc, lines[0], [lines[1], lines[2]]);
+    write(dir, "SNR0M.R3", &build_sections(&[m0]));
+    write(dir, "SNR0D.R3", &ls11::build(&[&d0]));
+    // SNR1: two scenes, messages wrapped in a single-entry LS11 archive.
+    let (m1, d1) = fixture_scene(&enc, lines[3], [lines[0], lines[1]]);
+    let (m2, d2) = fixture_scene(&enc, lines[2], [lines[3], lines[0]]);
+    write(dir, "SNR1M.R3", &ls11::build(&[&build_sections(&[m1, m2])]));
+    write(dir, "SNR1D.R3", &ls11::build(&[&d1, &d2]));
+    // IPPAN0 / IPPAN0M: one chapter, one town whose default group says both lines.
+    let (index, pool) = ippan::build(&[(
+        vec![vec![(125, vec![0, 1])]],
+        vec![enc(lines[2]), enc(lines[3])],
+    )]);
+    write(dir, "IPPAN0.R3", &index);
+    write(dir, "IPPAN0M.R3", &pool);
     write(
         dir,
-        "SNR0D.R3",
-        &ls11::build(&[&scene_bytecode(&[0x16, 0x41, 0x103])]),
+        "BAKDATA.R3",
+        &bakdata::build(
+            encoding,
+            &[
+                (names[0], [91, 75, 64], 0, 1),
+                (names[1], [100, 98, 80], 6, 1),
+            ],
+            &[(names[2], 255, 12, 0)],
+        ),
     );
-    // SNR1M: two scenes, wrapped in a single-entry LS11 archive.
-    let snr1m = build_messages(&[
-        vec![enc(lines[3]), enc(lines[0])],
-        vec![enc(lines[1]), vec![], enc(lines[2])],
-    ]);
-    write(dir, "SNR1M.R3", &ls11::build(&[&snr1m]));
-    let (a, b) = (scene_bytecode(&[4]), scene_bytecode(&[4, 9]));
-    write(dir, "SNR1D.R3", &ls11::build(&[&a, &b]));
-    write(
-        dir,
-        "IPPAN0M.R3",
-        &build_messages(&[vec![enc(lines[2]), enc(lines[3])]]),
-    );
-    write(dir, "BAKDATA.R3", &ls11::build(&[&enc(lines[0])]));
 
     // Unit sprites: a 4×4-cell sprite, a 3×3-cell sprite and a non-cell entry.
     let (s16, s9, other) = (cells(16), cells(9), vec![1u8; 100]);
@@ -137,7 +166,13 @@ pub fn write_korean_install(dir: &Path) {
         .encode("DOS/V 삼국지영걸전 1 Ver 1.00 Rel 1.00")
         .expect("encodable");
     header.extend_from_slice(&[0x1a, 0, 0, 0]);
-    write_dos_v_install(dir, TextEncoding::EucKr, &KOREAN_LINES, &header);
+    write_dos_v_install(
+        dir,
+        TextEncoding::EucKr,
+        &KOREAN_LINES,
+        ["유비", "관우", "청룡언월도"],
+        &header,
+    );
 }
 
 /// A synthetic Traditional-Chinese DOS install (identified by its Big5 text).
@@ -146,6 +181,7 @@ pub fn write_chinese_install(dir: &Path) {
         dir,
         TextEncoding::Big5,
         &CHINESE_LINES,
+        ["劉備", "關羽", "青龍偃月刀"],
         b"DOS/V disk 1\x1a\0\0\0",
     );
 }

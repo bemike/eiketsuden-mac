@@ -21,8 +21,9 @@
 use hero_import::edition::{identify, EditionId};
 use hero_import::install::InstallDir;
 use hero_import::ls11::Archive;
-use hero_import::text::{build_messages, parse_messages, TextEncoding};
-use hero_import::{extract, ls11, maps, palette, probe, sprites, table6};
+use hero_import::scenario::{self, ArgKind, Operands};
+use hero_import::text::{build_messages, parse_messages, split_strings, TextEncoding};
+use hero_import::{bakdata, extract, ls11, maps, palette, probe, sprites, table6};
 use std::path::{Path, PathBuf};
 
 const ENV: &str = "EIKETSU_ORIGINAL_DIR";
@@ -286,9 +287,10 @@ fn check_korean_maps(install: &InstallDir) {
     }
 }
 
-/// Scene counts, message tables, the prologue's offset table, sizes and block counts.
+/// Scene counts, message tables, the prologue's block table, sizes, and the verified text
+/// layout: every scene's script decodes, every text operand resolves (dialogues end with FFFF,
+/// strings with NUL) and together they cover every byte of every message section.
 fn check_korean_scenario_text(install: &InstallDir) {
-    let mut blocks = 0;
     for (n, scenes) in [1usize, 5, 4, 5, 3].into_iter().enumerate() {
         let d = entries(install, &format!("SNR{n}D.R3"));
         assert_eq!(d.len(), scenes, "SNR{n}D.R3 scene count");
@@ -300,16 +302,43 @@ fn check_korean_scenario_text(install: &InstallDir) {
         );
         let parsed = parse_messages(&m).unwrap_or_else(|e| panic!("SNR{n}M.R3: {e}"));
         assert_eq!(parsed.sections.len(), scenes);
-        blocks += parsed.block_count();
+        for (i, (data, section)) in d.iter().zip(&parsed.sections).enumerate() {
+            let scene = scenario::parse_scene(data).unwrap_or_else(|e| panic!("SNR{n}D {i}: {e}"));
+            let mut covered = vec![false; section.bytes.len()];
+            for instr in scene.instructions() {
+                for arg in instr.operands.args() {
+                    let off = arg.value as usize;
+                    let at =
+                        || format!("SNR{n} scene {i} {} at {:#x}", instr.mnemonic, instr.offset);
+                    match arg.kind {
+                        ArgKind::Dialogue => {
+                            let (_, end) = section
+                                .dialogue_at(off)
+                                .unwrap_or_else(|e| panic!("{}: {e}", at()));
+                            covered[off..end].fill(true);
+                        }
+                        ArgKind::Message => {
+                            let s = section
+                                .string_at(off)
+                                .unwrap_or_else(|e| panic!("{}: {e}", at()));
+                            covered[off..=off + s.len()].fill(true);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let missing = covered.iter().filter(|&&c| !c).count();
+            assert_eq!(missing, 0, "SNR{n}M section {i}: bytes no script refers to");
+        }
     }
-    // Event-offset table of the prologue's only scene.
+    // Block table of the prologue's only scene.
     let scene = &entries(install, "SNR0D.R3")[0];
     let table: Vec<u16> = scene
         .chunks_exact(2)
         .map(|w| u16::from_le_bytes([w[0], w[1]]))
         .take_while(|&v| v != 0xffff)
         .collect();
-    assert_eq!(table, PROLOGUE_OFFSETS, "SNR0D scene 0 offset table");
+    assert_eq!(table, PROLOGUE_OFFSETS, "SNR0D scene 0 block table");
     // Sizes (the notes do not say whether they are file or message sizes; either matches).
     for (name, size) in [("SNR0M.R3", 10_920), ("IPPAN0M.R3", 37_580)] {
         let (file_len, message) = message_bytes(install, name);
@@ -319,15 +348,141 @@ fn check_korean_scenario_text(install: &InstallDir) {
             "{name}: {file_len} bytes on disk, {message_len} message bytes, documented {size}"
         );
     }
-    // Block counts published by another project, whose counting method is not documented:
-    // a mismatch here may be a counting difference rather than a decoding error.
+    // IPPAN0M.R3 is a pool of 653 NUL-terminated strings (count published by another project).
     let (_, ippan) = message_bytes(install, "IPPAN0M.R3");
-    let ippan_blocks = parse_messages(&ippan).unwrap().block_count();
+    let pool = split_strings(&ippan).expect("IPPAN0M.R3 ends with a NUL");
+    assert_eq!(pool.len(), 653, "IPPAN0M.R3 strings");
+}
+
+/// Facts of the verified copy that the synthetic install does not reproduce: totals, the
+/// wrapped section bases of SNR3M, the first battles of the prologue and BAKDATA.R3.
+fn check_korean_scenario_facts(install: &InstallDir) {
+    let names = bakdata::parse(&read(install, "BAKDATA.R3"), TextEncoding::EucKr)
+        .expect("BAKDATA.R3 layout");
+    let (mut blocks, mut records, mut instructions) = (0, 0, 0);
+    let (mut dialogues, mut lines, mut strings) = (0, 0, 0);
+    for n in 0..5 {
+        let d = entries(install, &format!("SNR{n}D.R3"));
+        let (_, m) = message_bytes(install, &format!("SNR{n}M.R3"));
+        let parsed = parse_messages(&m).unwrap();
+        if n == 3 {
+            let bases: Vec<usize> = parsed.sections.iter().map(|s| s.base).collect();
+            assert!(
+                bases[3] > 0xffff && bases[4] > bases[3],
+                "SNR3M bases {bases:x?}"
+            );
+            assert_eq!(bases[3] & 0xffff, 0x1029, "SNR3M section 3 stored base");
+        }
+        for (data, section) in d.iter().zip(&parsed.sections) {
+            let scene = scenario::parse_scene(data).unwrap();
+            blocks += scene.blocks.len();
+            records += scene.blocks.iter().map(|b| b.records.len()).sum::<usize>();
+            let mut seen_d = std::collections::BTreeSet::new();
+            let mut seen_s = std::collections::BTreeSet::new();
+            for instr in scene.instructions() {
+                instructions += 1;
+                for arg in instr.operands.args() {
+                    match arg.kind {
+                        ArgKind::Dialogue if seen_d.insert(arg.value) => {
+                            let (l, _) = section.dialogue_at(arg.value as usize).unwrap();
+                            lines += l.len();
+                            assert!(l.iter().all(|l| (l.speaker as usize) < bakdata::OFFICERS));
+                        }
+                        ArgKind::Message => {
+                            seen_s.insert(arg.value);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            dialogues += seen_d.len();
+            strings += seen_s.len();
+        }
+    }
     assert_eq!(
-        (blocks, ippan_blocks),
-        (5_677, 653),
-        "NUL-terminated blocks in SNR0M–SNR4M and IPPAN0M"
+        (blocks, records, instructions),
+        (225, 2144, 14_404),
+        "blocks, trigger records, instructions (decoded per record)"
     );
+    assert_eq!(
+        (dialogues, lines, strings),
+        (2_619, 4_783, 901),
+        "distinct dialogues, their lines, distinct strings"
+    );
+
+    // Published facts (research notes: campaign / mechanics): the prologue's first two
+    // battles last 30 turns and are won by defeating Hua Xiong and Lü Bu (PC levels 5 and 6);
+    // Tao Qian and Gongsun Zan join them only when talked to (flag-conditional slots).
+    let prologue = scenario::parse_scene(&entries(install, "SNR0D.R3")[0]).unwrap();
+    let setups: Vec<_> = prologue
+        .instructions()
+        .filter_map(|i| match &i.operands {
+            Operands::BattleSetup { header, units } => Some((header.clone(), units.clone())),
+            _ => None,
+        })
+        .collect();
+    let rosters: Vec<_> = prologue
+        .instructions()
+        .filter_map(|i| match &i.operands {
+            Operands::Roster { friendly, units } => Some((*friendly, units.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(setups.len(), 2, "prologue battle set-ups");
+    assert_eq!(names.officer_name(0), Some("유비"));
+    for (((header, units), (friendly, enemies)), (boss, level)) in
+        setups.iter().zip(&rosters).zip([("화웅", 5), ("여포", 6)])
+    {
+        assert_eq!(header.turn_limit, 30);
+        let target = header.defeat_to_win.expect("victory officer");
+        assert_eq!(names.officer_name(target), Some(boss));
+        assert_eq!(
+            header.lose_if_defeated,
+            Some(0),
+            "defeat when Liu Bei retreats"
+        );
+        let conditional: Vec<&str> = units
+            .iter()
+            .filter(|u| u.requires_flag.is_some())
+            .map(|u| names.officer_name(u.person).unwrap())
+            .collect();
+        assert_eq!(conditional, ["공손찬", "도겸"]);
+        assert!(!friendly);
+        let b = enemies
+            .iter()
+            .find(|u| u.person == target)
+            .expect("boss unit");
+        assert_eq!(b.level, Some(level), "{boss} level");
+        assert_eq!(b.class, Some(6), "{boss} is light cavalry");
+    }
+
+    // IPPAN0.R3 / IPPAN0M.R3: four chapter chunks that tile both files (the chunk offsets and
+    // lengths equal the table in MAIN.EXE) and reference every one of the 653 strings.
+    let (index, pool) = (
+        read(install, "IPPAN0.R3"),
+        message_bytes(install, "IPPAN0M.R3").1,
+    );
+    let chapters = hero_import::ippan::parse(&index, &pool).expect("IPPAN0 layout");
+    let shape: Vec<(usize, usize, usize)> = chapters
+        .iter()
+        .map(|c| (c.len, c.pool_base, c.lines.iter().flatten().count()))
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            (957, 0, 181),
+            (785, 11_301, 161),
+            (1047, 20_619, 188),
+            (851, 31_291, 123)
+        ]
+    );
+
+    // BAKDATA.R3: Cao Cao LEAD 98 / WAR 75, Jiang Wei INT 94 (published stats).
+    let find = |name: &str| names.officers.iter().find(|o| o.name == name).unwrap();
+    let cao = find("조조");
+    assert_eq!((cao.leadership, cao.war), (98, 75));
+    assert_eq!(find("강유").intelligence, 94);
+    assert_eq!(names.items.len(), 64);
 }
 
 const PROLOGUE_OFFSETS: [u16; 10] = [
@@ -504,6 +659,11 @@ fn golden_korean_scenario_text() {
 }
 
 #[test]
+fn golden_korean_scenario_facts() {
+    korean_check("golden_korean_scenario_facts", check_korean_scenario_facts);
+}
+
+#[test]
 fn golden_korean_palette() {
     korean_check("golden_korean_palette", check_korean_palette);
 }
@@ -660,25 +820,42 @@ fn write_known_answer_install(dir: &Path) {
     write_ls11(dir, "SMAP.R3", &(0..12).map(city).collect::<Vec<_>>());
     write_ls11(dir, "PMAP.R3", &(0..23).map(city).collect::<Vec<_>>());
 
-    // Scenario: SNR0M is exactly 10,920 bytes with 1,000 blocks; 5,677 blocks in total.
-    for (n, scenes) in [1usize, 5, 4, 5, 3].into_iter().enumerate() {
-        let mut bytecode: Vec<Vec<u8>> = (0..scenes).map(|_| vec![0xff, 0xff, 0x2a]).collect();
+    // Scenario: SNR0M is exactly 10,920 bytes (1,000 strings), each scene's script narrates
+    // every string of its section, the prologue's blocks start at the verified offsets.
+    let chapters = [
+        (0, 1, 1000),
+        (1, 5, 1200),
+        (2, 4, 1100),
+        (3, 5, 1300),
+        (4, 3, 1077),
+    ];
+    for (n, scenes, count) in chapters {
+        let text: Vec<Vec<Vec<u8>>> = if n == 0 {
+            vec![blocks(1000, 10_920 - 2)]
+        } else {
+            sections(scenes, count)
+        };
+        let file = build_messages(&text);
         if n == 0 {
-            bytecode[0] = PROLOGUE_OFFSETS
-                .iter()
-                .chain(&[0xffff])
-                .flat_map(|v| v.to_le_bytes())
-                .collect();
+            assert_eq!(file.len(), 10_920);
         }
+        let bytecode: Vec<Vec<u8>> = text
+            .iter()
+            .map(|items| {
+                let mut at = 0u16;
+                let offsets: Vec<u16> = items
+                    .iter()
+                    .map(|s| {
+                        let o = at;
+                        at += s.len() as u16 + 1;
+                        o
+                    })
+                    .collect();
+                let blocks: &[u16] = if n == 0 { &PROLOGUE_OFFSETS } else { &[4] };
+                narrating_scene(blocks, &offsets)
+            })
+            .collect();
         write_ls11(dir, &format!("SNR{n}D.R3"), &bytecode);
-    }
-    let snr0m = build_messages(&[blocks(1000, 10_920 - 2)]);
-    assert_eq!(snr0m.len(), 10_920);
-    std::fs::write(dir.join("SNR0M.R3"), snr0m).unwrap();
-    let rest = [(1, 5, 1200), (2, 4, 1100), (3, 5, 1300), (4, 3, 1077)];
-    assert_eq!(1000 + rest.iter().map(|r| r.2).sum::<usize>(), 5_677);
-    for (n, scenes, count) in rest {
-        let file = build_messages(&sections(scenes, count));
         // Chapter 2 is stored LS11-wrapped, like some message files may be.
         if n == 2 {
             write_ls11(dir, "SNR2M.R3", &[file]);
@@ -686,9 +863,36 @@ fn write_known_answer_install(dir: &Path) {
             std::fs::write(dir.join(format!("SNR{n}M.R3")), file).unwrap();
         }
     }
-    let ippan = build_messages(&[blocks(653, 37_580 - 2)]);
+    let ippan: Vec<u8> = blocks(653, 37_580)
+        .into_iter()
+        .flat_map(|b| b.into_iter().chain([0]))
+        .collect();
     assert_eq!(ippan.len(), 37_580);
     std::fs::write(dir.join("IPPAN0M.R3"), ippan).unwrap();
+}
+
+/// A scene whose blocks start at `blocks` (the first right after the table); every block has
+/// one unconditional record, the last one's script narrates each string offset in turn.
+fn narrating_scene(blocks: &[u16], strings: &[u16]) -> Vec<u8> {
+    let mut out: Vec<u8> = blocks.iter().flat_map(|b| b.to_le_bytes()).collect();
+    out.extend([0xff, 0xff]);
+    for (i, &block) in blocks.iter().enumerate() {
+        assert!(out.len() <= block as usize, "fixture blocks overlap");
+        out.resize(block as usize, 0);
+        out.extend([0u8; 8]);
+        out.extend(20u16.to_le_bytes());
+        out.extend([0xff; 10]);
+        if i + 1 == blocks.len() {
+            for s in strings {
+                out.push(0x08);
+                out.extend(s.to_le_bytes());
+            }
+        } else {
+            out.push(0x12);
+        }
+        out.push(0xff);
+    }
+    out
 }
 
 #[test]

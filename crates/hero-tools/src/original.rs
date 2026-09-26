@@ -61,9 +61,10 @@ fn render_edition(out: &mut String, edition: &Edition) {
 fn support_line(id: EditionId) -> &'static str {
     match id {
         EditionId::KoreanDos | EditionId::ChineseDos => {
-            "text, sprites and portraits can be extracted (`hero-tools original extract`: unit \
-             frames, map icons, chips, battle UI icons, palettes, contact sheets and TF-DCE \
-             portraits); opening / ending pictures and officer names are not read yet"
+            "text, sprites and portraits can be extracted (`hero-tools original extract`: \
+             scenario scripts and dialogue, BAKDATA officers / items / townsfolk, unit frames, \
+             map icons, chips, battle UI icons, palettes, contact sheets and TF-DCE portraits), \
+             and so can battle, campaign and town maps; opening / ending pictures are not read yet"
         }
         EditionId::Steam2017 => {
             "not extractable yet: the Steam container format is unknown. Sharing this manifest \
@@ -184,7 +185,7 @@ pub fn render_extract(dir: &Path, out_dir: &Path, index: &Index) -> String {
 mod tests {
     use super::*;
     use hero_import::text::{build_messages, TextEncoding};
-    use hero_import::{ls11, palette, table6};
+    use hero_import::{ls11, palette, scenario, table6};
     use std::path::PathBuf;
 
     struct Temp(PathBuf);
@@ -214,9 +215,11 @@ mod tests {
         let mut exe = b"MZ".to_vec();
         exe.extend(palette::build_bank(&[[[1, 2, 3]; 16]; palette::SLOTS]));
         std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
-        let text = build_messages(&[vec![enc("가나다라"), enc("마바사")]]);
+        // One scene whose script narrates the section's only string.
+        let text = build_messages(&[vec![enc("가나다라마바사")]]);
         std::fs::write(dir.join("SNR0M.R3"), text).unwrap();
-        std::fs::write(dir.join("SNR0D.R3"), ls11::build(&[b"\x16\0\xff\xff"])).unwrap();
+        let scene = scenario::build_scene(&[vec![([0; 8], vec![0x08, 0, 0, 0xff])]]);
+        std::fs::write(dir.join("SNR0D.R3"), ls11::build(&[&scene])).unwrap();
         std::fs::write(dir.join("HEXBCHR.R3"), ls11::build(&[&[0x55; 128 * 9]])).unwrap();
         // One 8×1 TF-DCE image: planes 0–2 filled with 0x80, 0, 0 (methods 1, 1, 1, 0).
         let face: &[u8] = &[2, b'T', 1, 1, 0, 0x11, 0x01, 0xE4, 0, 0x80, 0, 0];
@@ -259,7 +262,7 @@ mod tests {
         let out = tmp.0.join("overlay");
         assert_eq!(run_extract(&game, &out, None, None), Ok(true));
         assert!(out.join("index.json").is_file());
-        assert!(out.join("text/snr0m.json").is_file());
+        assert!(out.join("text/snr0.json").is_file());
         assert!(out.join("gfx/original/hexbchr/000.png").is_file());
 
         // Portraits alone.

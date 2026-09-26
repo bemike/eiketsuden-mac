@@ -387,7 +387,8 @@ mod tests {
         );
         assert_eq!(file("extra/readme.txt").size, 5);
         assert_eq!(file("extra/readme.txt").sha256, crate::sha256_hex(b"hello"));
-        assert_eq!(m.summary.ls11_archives, 6);
+        // SNR0D, SNR1M, SNR1D, HEXBCHR, HEXZCHP (BAKDATA.R3 is stored raw, as in the real copy).
+        assert_eq!(m.summary.ls11_archives, 5);
         assert_eq!(m.summary.ls11_failures, 0);
         assert_eq!(m.summary.table6_containers, 1);
 
