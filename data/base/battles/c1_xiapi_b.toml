@@ -63,21 +63,21 @@ side = "enemy"
 officer = "chen_gong"
 level = 17
 pos = [18, 16]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "xu_si"
 level = 16
 pos = [11, 16]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "wang_kai"
 level = 15
 pos = [19, 15]
-ai = "defensive"
+ai = "guard"
 
 # The three wavering officers (see the defection events).
 [[units]]
@@ -110,7 +110,7 @@ name = "보병대"
 class = "long_infantry"
 level = 14
 pos = [13, 13]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
@@ -118,7 +118,7 @@ name = "보병대"
 class = "long_infantry"
 level = 14
 pos = [16, 13]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
@@ -190,7 +190,7 @@ name = "군악대"
 class = "band"
 level = 14
 pos = [15, 15]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
@@ -198,7 +198,7 @@ name = "궁병대"
 class = "archer"
 level = 14
 pos = [12, 15]
-ai = "defensive"
+ai = "guard"
 
 # --- The sortie: Lü Bu leaves the city when the gate opens ----------------------------------------
 
@@ -208,7 +208,7 @@ officer = "lu_bu"
 class = "heavy_cavalry"
 level = 21
 pos = [14, 12]
-ai = "aggressive"
+ai = "defensive"
 commander = true
 drop = "sky_piercer"
 group = "sortie"
@@ -219,7 +219,7 @@ name = "여포 친위대"
 class = "heavy_cavalry"
 level = 16
 pos = [13, 12]
-ai = "aggressive"
+ai = "defensive"
 group = "sortie"
 
 [[units]]
@@ -228,7 +228,7 @@ name = "여포 친위대"
 class = "heavy_cavalry"
 level = 16
 pos = [16, 12]
-ai = "aggressive"
+ai = "defensive"
 group = "sortie"
 
 # --- Cao Cao's besieging army (allied): holds the southern lines until the gate opens ------------

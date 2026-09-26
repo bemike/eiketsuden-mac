@@ -12,14 +12,15 @@
 # duel (+1 level); Zhang Fei cannot duel Lü Bu here. Treasures: 방천화극 and 적토마.
 # (design) The engine cannot change terrain, so the city stays sealed behind its moat and the
 # "drawbridge" is Lü Bu's sortie: when the gate opens, Lü Bu and his guard appear on the bank before
-# it. Every defector's men gather inside the walls as allied units; the gate opens when all three
-# groups stand together (hou_band + song_band call out pair_band, which joins wei_band), and on turn
-# 30 the men inside rise anyway. Hou Cheng brings the Red Hare with him (novel) and Lü Bu drops his
-# halberd; the two outer treasuries hold rice and a 원대서. Cao Cao's besieging army stands in the
-# south from the start but only holds its lines until the gate opens; its officers keep the same
-# levels whatever was chosen at Xiaopei (Cao Cao himself holds his post until then). Officers are a
-# level below the PC values and squads Lv14 (PC about 15-16), and two of the four cavalry squads
-# guard their camps, because the Cao army only holds its lines before the gate opens.
+# it and fall on whoever comes within reach. Every defector's men gather inside the walls as allied
+# units; the gate opens when all three groups stand together (hou_band + song_band call out
+# pair_band, which joins wei_band), and on turn 30 the men inside rise anyway. Hou Cheng brings the
+# Red Hare with him (novel) and Lü Bu drops his halberd; the two outer treasuries hold rice and a
+# 원대서. Cao Cao's besieging army stands in the south from the start but only holds its lines until
+# the gate opens; its officers keep the same levels whatever was chosen at Xiaopei (Cao Cao himself
+# holds his post until then). Officers are a level below the PC values and squads Lv14 (PC about
+# 15-16). The besieged army holds its camps (guard) and only two cavalry squads ride out, so the
+# army can take the camps one at a time and win over the three officers before the gate opens.
 #
 # Map: the flooded city fills the north, ringed by its moat; outer camps with forts guard the west,
 # the east and the south-centre, and the army comes up the southern road.
@@ -92,21 +93,21 @@ side = "enemy"
 officer = "chen_gong"
 level = 17
 pos = [18, 16]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "xu_si"
 level = 16
 pos = [11, 16]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "wang_kai"
 level = 15
 pos = [19, 15]
-ai = "defensive"
+ai = "guard"
 
 # The three wavering officers (see the defection events).
 [[units]]
@@ -139,7 +140,7 @@ name = "보병대"
 class = "long_infantry"
 level = 14
 pos = [13, 13]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
@@ -147,7 +148,7 @@ name = "보병대"
 class = "long_infantry"
 level = 14
 pos = [16, 13]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
@@ -219,7 +220,7 @@ name = "군악대"
 class = "band"
 level = 14
 pos = [15, 15]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
@@ -227,7 +228,7 @@ name = "궁병대"
 class = "archer"
 level = 14
 pos = [12, 15]
-ai = "defensive"
+ai = "guard"
 
 # --- The sortie: Lü Bu leaves the city when the gate opens ----------------------------------------
 
@@ -237,7 +238,7 @@ officer = "lu_bu"
 class = "heavy_cavalry"
 level = 21
 pos = [14, 12]
-ai = "aggressive"
+ai = "defensive"
 commander = true
 drop = "sky_piercer"
 group = "sortie"
@@ -248,7 +249,7 @@ name = "여포 친위대"
 class = "heavy_cavalry"
 level = 16
 pos = [13, 12]
-ai = "aggressive"
+ai = "defensive"
 group = "sortie"
 
 [[units]]
@@ -257,7 +258,7 @@ name = "여포 친위대"
 class = "heavy_cavalry"
 level = 16
 pos = [16, 12]
-ai = "aggressive"
+ai = "defensive"
 group = "sortie"
 
 # --- Cao Cao's besieging army (allied): holds the southern lines until the gate opens ------------
