@@ -1,90 +1,147 @@
-# 영걸전 Reloaded (Eiketsuden Reloaded)
+<div align="center">
 
-An open-source reimplementation of the 1995 tactical RPG *Sangokushi Eiketsuden* (三國志英傑傳),
-following the rules of its PC version. In the spirit of OpenRCT2 and OpenTTD it has its own engine,
-written from scratch in Rust with [macroquad](https://github.com/not-fl3/macroquad), and its own,
-openly licensed content. It runs natively on Windows, Linux and macOS and in the browser
-(WebAssembly).
+# 영걸전 Reloaded
 
-유비·관우·장비와 함께 반동탁 연합에서 서주 공방전까지 싸우는 턴제 전략 RPG입니다. 원작 PC판의 전투
-규칙을 재현하고, 이야기와 대사는 퍼블릭 도메인 소설 『삼국지연의』를 바탕으로 새로 썼습니다.
+**삼국지 영걸전(1995) 스타일 전술 SRPG의 오픈소스 재구현**<br>
+*An open-source reimplementation of the classic Three Kingdoms tactics RPG "Sangokushi Eiketsuden"*
 
-**Play in the browser:** <https://jeiel85.github.io/eiketsuden-reloaded/> ·
-**Downloads:** [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases)
+[![CI](https://github.com/jeiel85/eiketsuden-reloaded/actions/workflows/ci.yml/badge.svg)](https://github.com/jeiel85/eiketsuden-reloaded/actions/workflows/ci.yml)
+[![Web demo](https://img.shields.io/badge/%EB%B0%94%EB%A1%9C_%ED%94%8C%EB%A0%88%EC%9D%B4-Web_demo-c8402f)](https://jeiel85.github.io/eiketsuden-reloaded/)
+[![License: GPL-3.0](https://img.shields.io/badge/code-GPL--3.0--or--later-blue)](LICENSE)
+[![Media: CC0 / CC-BY / OFL / PD](https://img.shields.io/badge/media-CC0%20%C2%B7%20CC--BY%20%C2%B7%20OFL%20%C2%B7%20PD-green)](CREDITS.md)
 
-> **Not affiliated with KOEI TECMO.** This is an independent fan project. It is not made, endorsed
-> or supported by KOEI TECMO GAMES CO., LTD. No material of the original game — no graphics, music,
-> sound, text, data or code — is included in this repository or in its releases. The name
-> "Eiketsuden" (英傑伝) is used only to say which game this project reimplements; "Sangokushi
-> Eiketsuden" and KOEI TECMO are trademarks of their respective owners. See
-> [DECISIONS.md](docs/DECISIONS.md) (D3, D5) and [CREDITS.md](CREDITS.md).
->
-> 이 프로젝트는 KOEI TECMO와 관계없는 독립 팬 프로젝트이며, 원작의 그래픽·음악·효과음·텍스트·데이터·
-> 코드를 포함하지 않습니다.
+**[▶ 브라우저에서 바로 플레이](https://jeiel85.github.io/eiketsuden-reloaded/)** ·
+**[⬇ Windows / macOS / Linux 다운로드](https://github.com/jeiel85/eiketsuden-reloaded/releases)** ·
+[English](#english)
 
-## What is in it
 
-* The prologue (the coalition against Dong Zhuo) and chapter 1 (from Jieqiao to the struggle for
-  Xuzhou): 21 battles with branches in the campaign, 118 officers, dramas between the battles, camps
-  with shops, equipment and deployment.
-* Battles with the original's rules: terrain, zones of control, class affinities, strategies,
-  morale and confusion, items, experience and class changes, weather, events and the enemy AI
-  ([RULES.md](docs/RULES.md)).
-* Everything the player sees comes from a data pack (`data/base`) of plain TOML files and `.drama`
-  scripts, so it can be modded ([MODDING.md](docs/MODDING.md)).
-* Save slots and an autosave, Korean text with Hangul and Hanja, keyboard, mouse and touch controls.
+</div>
 
-## Playing
+## 소개
 
-Download the archive for your system from the releases page, unpack it and start `eiketsuden`
-(`eiketsuden.exe` on Windows). Keep the `data` folder next to the executable. The Windows and macOS
-builds are not code-signed, so the system may ask for confirmation before the first start.
+1995년 KOEI의 『삼국지 영걸전』은 유비의 일대기를 따라가는 턴제 전술 RPG였습니다. **영걸전 Reloaded**는 그 게임을
+오늘날의 Windows · macOS · Linux · 웹 브라우저에서 다시 즐길 수 있도록 **엔진을 처음부터 새로 만든** 프로젝트입니다.
+[OpenRCT2](https://openrct2.io/)가 롤러코스터 타이쿤 2를, [OpenTTD](https://www.openttd.org/)가 트랜스포트 타이쿤을
+되살린 것과 같은 방식입니다.
 
-| action | keys | mouse / touch |
-|---|---|---|
-| confirm | Z, Enter, Space | click / tap |
-| cancel, menu | X, Esc, Backspace | right click |
-| move the cursor | arrow keys, WASD | pointer, drag to scroll |
-| fullscreen (native) | F11, Alt+Enter | |
+* **원작 규칙 재현** — PC판(국내 DOS판)의 규칙을 팬 커뮤니티가 역분석한 공식 그대로 옮겼습니다.
+  공격력·방어력 `(Lv+10)×(사기/10 + 400/(140−능력치) + 병종 보정)`, 확정 데미지 `(공격 − 방어/2)×지형`,
+  병종 상성(방어 ±25%), 무력/150 확률의 반격, 사기와 혼란, 책략 명중·위력 공식, 날씨(비 오면 화계 불가) 등.
+  자세한 내용은 [docs/RULES.md](docs/RULES.md).
+* **19개 병종, 책략 37종, 아이템 63종, 무장 118명**
+* **서장 + 제1장 수록** — 사수관·호로관부터 계교, 북해, 서주, 산채 토벌, 회남, 하비, 광릉까지 전투 21개와
+  분기(선택지·선택 전투·배드 엔딩 포함), 장면 119개. 대사는 퍼블릭 도메인인 『삼국지연의』를 바탕으로 모두 새로 썼습니다.
+* **라이선스 청정** — 원작의 그래픽·음악·대사·실행 파일은 한 바이트도 들어 있지 않습니다. 픽셀 아트는 CC0 에셋과
+  자체 제작, 초상화는 청대 삽화집 『增像全圖三國演義』(퍼블릭 도메인), 배경은 중국 고화(퍼블릭 도메인), 음악은
+  CC-BY/CC0 곡입니다. 출처는 [CREDITS.md](CREDITS.md)에 모두 있습니다.
+* **원작 데이터 가져오기 (실험적)** — OpenRCT2처럼, 정품을 가진 사용자는 자기 PC의 원작 파일을 읽어 쓸 수 있습니다.
+  [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)
+* **모딩** — 규칙·무장·전투 맵·캠페인·대사가 모두 사람이 읽을 수 있는 TOML과 `.drama` 스크립트입니다.
+  [docs/MODDING.md](docs/MODDING.md)
 
-In a scene, holding Ctrl, Tab or a cancel key fast-forwards and L or PageUp shows the recent lines.
 
-## Building from source
+## 플레이하기
 
-Requirements: Rust 1.85 or newer. On Linux also `libx11-dev libxi-dev libgl1-mesa-dev
-libasound2-dev`.
-
-```sh
-cargo run --release -p hero-game                     # play
-cargo run --release -p hero-tools -- validate data/base   # check a data pack
-cargo run --release -p hero-tools -- simulate data/base   # AI vs AI run of every battle
-```
-
-The web build needs the `wasm32-unknown-unknown` target and Python 3 to serve it locally:
-
-```sh
-rustup target add wasm32-unknown-unknown
-pwsh tools/web/build.ps1 -Serve 8080    # or: tools/web/build.sh --serve 8080
-```
-
-Then open <http://localhost:8080/>. [DEVELOPING.md](docs/DEVELOPING.md) has the details: data pack
-lookup, where saves live, the UI gallery, how the web build fits together and how releases and the
-web demo are published.
-
-## Documentation
-
-| document | contents |
+| 방법 | |
 |---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | crates (`hero-core`, `hero-game`, `hero-tools`) and how they fit |
-| [RULES.md](docs/RULES.md) | the battle rules |
-| [MODDING.md](docs/MODDING.md) | data pack formats: rules, officers, battles, campaign, dramas |
-| [ASSETS.md](docs/ASSETS.md) | media keys, formats and the asset pipeline |
-| [DEVELOPING.md](docs/DEVELOPING.md) | building, running, the web build, publishing |
-| [DECISIONS.md](docs/DECISIONS.md) | decisions that are hard to reverse, with their reasons |
+| 웹 | <https://jeiel85.github.io/eiketsuden-reloaded/> — 설치 없이 최신 Chrome · Edge · Firefox · Safari에서 실행. 기록은 브라우저 저장소(localStorage)에 남습니다. |
+| Windows | [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases)에서 `…-windows-x64.zip`을 받아 압축을 풀고 `eiketsuden.exe` 실행 (`data` 폴더를 실행 파일 옆에 그대로 두세요) |
+| macOS | `…-macos-arm64.tar.gz`(Apple Silicon) 또는 `…-macos-x64.tar.gz`(Intel). 서명되지 않은 앱이라 처음 실행 시 Finder에서 우클릭 → 열기 |
+| Linux | `…-linux-x64.tar.gz`를 풀고 `./eiketsuden` 실행 |
 
-## License
+### 조작
 
-* Engine code: [GPL-3.0-or-later](LICENSE).
-* Base pack text (`data/base`): CC BY-SA 4.0, as stated in `data/base/pack.toml`.
-* Graphics, music, sound effects and fonts: each under its own open licence, with sources, authors
-  and licences listed in [CREDITS.md](CREDITS.md).
+| 동작 | 키보드 | 마우스 / 터치 |
+|---|---|---|
+| 결정 | Z · Enter · Space | 왼쪽 클릭 · 탭 |
+| 취소 / 메뉴 | X · Esc · Backspace | 오른쪽 클릭 |
+| 커서 이동 | 방향키 · WASD | 마우스 이동 · 드래그로 화면 이동 |
+| 행동 가능한 부대 순환 | Tab · Q · E | — |
+| 대사 빨리 넘기기 / 최근 대사 | Ctrl · Tab 누르고 있기 / L | 화면 오른쪽 위 버튼 |
+| 전체 화면 (데스크톱) | F11 · Alt+Enter | — |
+
+## 직접 빌드하기
+
+Rust(stable, 1.85+)가 필요합니다. Linux에서는 `libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev`도 설치하세요.
+
+```bash
+cargo run --release -p hero-game
+```
+
+웹 빌드(WebAssembly)는 `rustup target add wasm32-unknown-unknown` 후:
+
+```bash
+tools/web/build.sh --serve 8080
+```
+
+Windows PowerShell에서는 `pwsh tools/web/build.ps1 -Serve 8080`. 자세한 내용은 [docs/DEVELOPING.md](docs/DEVELOPING.md).
+
+데이터 팩 도구:
+
+```bash
+cargo run --release -p hero-tools -- validate data/base
+```
+
+`simulate data/base`는 모든 전투를 AI 대 AI로 돌려 봅니다.
+
+## 구조
+
+| 경로 | 내용 |
+|---|---|
+| `crates/hero-core` | 규칙, 전투 엔진과 AI, 데이터 팩 로딩·검증, 캠페인, 드라마 스크립트, 세이브 (그래픽·OS 의존 없음) |
+| `crates/hero-game` | 게임 실행 파일 (macroquad, 네이티브 + WebAssembly) |
+| `crates/hero-tools` | `validate` · `simulate` · `info` · `original` 명령줄 도구 |
+| `crates/hero-import` | 원작 데이터 임포터 (실험적, 클린룸 구현) |
+| `data/base` | 기본 데이터 팩: 규칙, 무장, 캠페인, 전투, 대사, 그래픽, 음악 |
+| `tools/assets` | 에셋 파이프라인 (출처 URL·SHA-256 고정, 결정적 빌드) |
+
+설계 문서: [ARCHITECTURE](docs/ARCHITECTURE.md) · [RULES](docs/RULES.md) · [MODDING](docs/MODDING.md) ·
+[ASSETS](docs/ASSETS.md) · [DECISIONS](docs/DECISIONS.md)
+
+## 로드맵
+
+* 제2장(관도 ~ 장판파) 이후 캠페인, 원작의 IF 루트(촉한의 천하통일)까지
+* 원작 데이터 임포터: 초상화(TF-DCE) 디코딩, 전투 맵, Steam판 지원 (정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
+* 캠페인 경로를 따라가는 밸런스 시뮬레이션, 영어 번역
+
+## 라이선스 · 크레딧 · 고지
+
+* 코드: [GPL-3.0-or-later](LICENSE)
+* 텍스트 콘텐츠(시나리오·대사): CC-BY-SA-4.0
+* 미디어: 각 원작자의 라이선스(CC0 / CC-BY / OFL / 퍼블릭 도메인) — [CREDITS.md](CREDITS.md)
+
+> **KOEI TECMO와 관계없는 독립 팬 프로젝트입니다.** KOEI TECMO GAMES가 만들거나 승인·지원하는 게임이 아닙니다.
+> 이 저장소와 배포물에는 원작의 그래픽·음악·효과음·텍스트·데이터·코드가 **들어 있지 않습니다.**
+> "영걸전(英傑伝)"이라는 이름은 이 프로젝트가 어떤 게임을 재구현하는지 밝히기 위해서만 씁니다.
+> 『삼국지』, 『삼국지 영걸전』과 KOEI TECMO는 각 권리자의 상표입니다. 원작의 규칙과 수치는 사실 정보로서 재현했습니다.
+> 결정 근거는 [DECISIONS.md](docs/DECISIONS.md)(D3, D5)에 있습니다.
+
+---
+
+## English
+
+**Eiketsuden Reloaded** is an open-source reimplementation of KOEI's 1995 tactical RPG *Sangokushi Eiketsuden*
+(Romance of the Three Kingdoms: Eiketsuden), in the spirit of OpenRCT2 and OpenTTD: a new engine written from
+scratch in Rust with [macroquad](https://github.com/not-fl3/macroquad), running natively on Windows, macOS and
+Linux and in the browser via WebAssembly.
+
+* Faithful PC-version rules (reverse-engineered formulas for attack/defense, deterministic damage, class
+  affinity, counters, morale and confusion, strategies, weather) — see [docs/RULES.md](docs/RULES.md).
+* Prologue and Chapter 1 of Liu Bei's campaign: 21 battles with branches, 119 scenes of newly written
+  Korean dialogue based on the public-domain novel.
+* License-clean content only: no KOEI graphics, music, text or code. CC0 pixel art (Ninja Adventure and
+  others), public-domain Qing-dynasty portrait illustrations and Chinese paintings, CC-BY/CC0 music
+  ([CREDITS.md](CREDITS.md)).
+* Optional, experimental importer for players who own the original game
+  ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)), and a fully data-driven, moddable format
+  ([docs/MODDING.md](docs/MODDING.md)).
+
+**Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
+[Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`
+
+The game text is currently Korean only.
+
+> **Not affiliated with KOEI TECMO.** This is an independent fan project; it is not made, endorsed or supported by
+> KOEI TECMO GAMES CO., LTD. No material of the original game (graphics, music, sound, text, data or code) is
+> included in this repository or its releases. The name "Eiketsuden" is used only to say which game this project
+> reimplements; *Sangokushi*, *Sangokushi Eiketsuden* and KOEI TECMO are trademarks of their respective owners.
