@@ -6,7 +6,18 @@
 //! `(n << 2) | (n >> 2)`. The bank is located by that signature, never by a hard-coded offset
 //! (the Korean build has it at file offset `0x38DF0`; other builds differ).
 //!
-//! Which slot belongs to which screen is not documented; extraction reports the slot it used.
+//! # Verified on the Korean DOS/V `MAIN.EXE`
+//!
+//! * The bank is at file offset `0x38DF0` = data-segment offset `0x1050` (the MZ header is
+//!   `0x6A00` bytes, DGROUP is paragraph `0x313A`). The channel order `[B][R][G]` is confirmed
+//!   by slot 4, which is the 8-colour digital palette (index 1 = blue, 2 = red, 4 = green in
+//!   the PC-98 order), and by the unit sprites, whose skin, hair and steel come out right.
+//! * The set-palette routine (image offset `0x118CE`) copies slot `n` from `0x1050 + 48·n`.
+//!   Its callers pass either a constant (slot 4) or the low nibble of a game-state byte that is
+//!   loaded from scenario / map data, so **the slot is chosen at run time**, not per file.
+//! * Colours 0–7 are the same in slots 0–3 and 5–8 (outline, UI and unit colours); colours
+//!   8–15 vary and tint the terrain. [`SLOT_NOTES`] records what each slot looks like on the
+//!   map graphics; the extractor uses a fixed, visually checked slot per archive.
 
 use crate::image::Palette16;
 use std::fmt;
@@ -19,6 +30,20 @@ pub const SLOT_BYTES: usize = 48;
 pub const BANK_BYTES: usize = SLOTS * SLOT_BYTES;
 /// The bytes that follow the bank.
 pub const TERMINATOR: [u8; 4] = [0x80, 0x40, 0x20, 0x10];
+
+/// What each slot of the Korean DOS/V bank looks like, from rendering the map and sprite
+/// archives with it (observations, not names taken from the program).
+pub const SLOT_NOTES: [&str; SLOTS] = [
+    "town: fits the city-map cells (SMAPBGPL: green grass, blue water, orange roofs)",
+    "green fields: fits battle backgrounds, battle chips and the campaign-map cells",
+    "arid / autumn: browns and ochres",
+    "green fields, brighter variant of slot 1",
+    "8-colour digital palette (every channel 0 or 15), set by a constant in the program",
+    "brown variant (identical to slot 8)",
+    "brown variant",
+    "brown variant",
+    "brown variant (identical to slot 5)",
+];
 
 /// The palette bank could not be located unambiguously.
 #[derive(Debug, Clone, PartialEq, Eq)]
