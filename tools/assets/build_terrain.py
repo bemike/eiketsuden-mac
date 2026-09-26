@@ -363,9 +363,7 @@ def wall_cell(m: int) -> Image.Image:
             for y in range(10, T):
                 if y == T - 1:
                     c = SHADE
-                elif y in (12,):
-                    c = MORTAR
-                elif (y < 12 and (x + 1) % 6 == 0) or (y > 12 and (x + 4) % 6 == 0):
+                elif y in (12,) or (y < 12 and (x + 1) % 6 == 0) or (y > 12 and (x + 4) % 6 == 0):
                     c = MORTAR
                 else:
                     c = FACE
@@ -582,7 +580,7 @@ def build_terrain(src: Sources, pack: Path) -> list[str]:
     atlas = Atlas(columns=16)
     blank = atlas.add(new(T, T))  # (0, 0) stays empty so unused/transparent cells share it
     assert blank == [0, 0]
-    lines = [HEADER, "\ntile_size = 16\nimage = \"terrain.png\"\n"]
+    lines = [HEADER, '\ntile_size = 16\nimage = "terrain.png"\n']
     all_tiles = tiles(kit)
     missing = [t for t in TERRAIN_IDS if t not in {tile.key for tile in all_tiles}]
     if missing:

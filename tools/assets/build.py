@@ -18,7 +18,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from assetlib import PACK_DIR, Sources, SourceError
+from assetlib import PACK_DIR, SourceError, Sources
 from build_audio import build_fonts, build_sfx
 from build_fx import build_fx
 from build_terrain import build_terrain
@@ -62,6 +62,11 @@ def run(steps: list[str], out: Path) -> list[str]:
             written.extend(files)
     finally:
         src.close()
+    if set(steps) == set(STEPS):
+        # sources.toml, fetch.py and CREDITS.md must only list what the pack really uses
+        unused = sorted(set(src.meta) - src.used)
+        if unused:
+            raise SourceError(f"sources pinned in sources.toml but not used by any step: {', '.join(unused)}")
     return written
 
 

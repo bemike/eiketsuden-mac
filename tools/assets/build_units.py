@@ -284,9 +284,27 @@ kdaaaakbbkaaaadk
 
 # NA red horse -> coat colours.
 HORSE_COATS: dict[str, dict[str, str]] = {
-    "bay": {"#d14b34": "#a3754e", "#8f3e56": "#695953", "#f2ad7d": "#d2b37d", "#cf736d": "#c8966b", "#5f7160": "#3b3643"},
-    "black": {"#d14b34": "#4e484a", "#8f3e56": "#3b3643", "#f2ad7d": "#8d977f", "#cf736d": "#5f7160", "#5f7160": OUTLINE},
-    "white": {"#d14b34": "#f2eaf1", "#8f3e56": "#abc2bc", "#f2ad7d": "#ffcba9", "#cf736d": "#d3a2c0", "#5f7160": "#8d977f"},
+    "bay": {
+        "#d14b34": "#a3754e",
+        "#8f3e56": "#695953",
+        "#f2ad7d": "#d2b37d",
+        "#cf736d": "#c8966b",
+        "#5f7160": "#3b3643",
+    },
+    "black": {
+        "#d14b34": "#4e484a",
+        "#8f3e56": "#3b3643",
+        "#f2ad7d": "#8d977f",
+        "#cf736d": "#5f7160",
+        "#5f7160": OUTLINE,
+    },
+    "white": {
+        "#d14b34": "#f2eaf1",
+        "#8f3e56": "#abc2bc",
+        "#f2ad7d": "#ffcba9",
+        "#cf736d": "#d3a2c0",
+        "#5f7160": "#8d977f",
+    },
 }
 
 

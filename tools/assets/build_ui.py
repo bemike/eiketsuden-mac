@@ -83,17 +83,21 @@ ICONS: dict[str, Callable[[Sources], Image.Image]] = {
     "water": lambda s: art.icon("drop"),
     "earth": lambda s: s.na("Items/Resource/Rock.png"),
     "heal": lambda s: _mw_ui(s, 2, 8),
-    "morale_up": lambda s: recolor(_mw_ui(s, 2, 4), ramp_mapping(MW_ARROW, ["#1f4a22", "#2f7a36", "#4fa843", "#8fd65e"])),
-    "morale_down": lambda s: recolor(_mw_ui(s, 3, 4), ramp_mapping(MW_ARROW, ["#2e2f52", "#4a5270", "#6f76b8", "#a9aee8"])),
-    "confuse": lambda s: recolor(_mw_ui(s, 1, 7), ramp_mapping(MW_QUESTION, ["#6b2c4c", "#a5608b", "#c784ae", "#efb8dc"])),
+    "morale_up": lambda s: recolor(
+        _mw_ui(s, 2, 4), ramp_mapping(MW_ARROW, ["#1f4a22", "#2f7a36", "#4fa843", "#8fd65e"])
+    ),
+    "morale_down": lambda s: recolor(
+        _mw_ui(s, 3, 4), ramp_mapping(MW_ARROW, ["#2e2f52", "#4a5270", "#6f76b8", "#a9aee8"])
+    ),
+    "confuse": lambda s: recolor(
+        _mw_ui(s, 1, 7), ramp_mapping(MW_QUESTION, ["#6b2c4c", "#a5608b", "#c784ae", "#efb8dc"])
+    ),
     "lord": lambda s: art.icon("crown"),
     "commander": lambda s: art.icon("helmet"),
     # item icons
     "item_sword": lambda s: s.na("Items/Weapons/Sword2/Sprite.png"),
     "item_blade": lambda s: s.na("Items/Weapons/BigSword/Sprite.png"),
-    "item_spear": lambda s: s.na("Items/Weapons/Lance/SpriteInHand.png").transpose(
-        Image.Transpose.FLIP_TOP_BOTTOM
-    ),
+    "item_spear": lambda s: s.na("Items/Weapons/Lance/SpriteInHand.png").transpose(Image.Transpose.FLIP_TOP_BOTTOM),
     "item_halberd": lambda s: s.na("Items/Weapons/Fork/Sprite.png"),
     "item_axe": lambda s: s.na("Items/Weapons/Axe/Sprite.png"),
     "item_bow": lambda s: s.na("Items/Weapons/Bow/Sprite.png").transpose(Image.Transpose.ROTATE_90),

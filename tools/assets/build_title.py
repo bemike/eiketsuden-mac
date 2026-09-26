@@ -76,6 +76,7 @@ ARMY = [
 # Banners beside the commanders and on the castle: (side row in flags.png, column, row, frame).
 BANNERS = [(0, 5, 10, 0), (2, 21, 10, 1), (2, 24, 7, 2), (2, 26, 7, 3), (1, 12, 4, 2)]
 
+
 def compose(pack: Path) -> Image.Image:
     tileset = Tileset(pack / "gfx" / "tiles" / "terrain.toml")
     ts = tileset.size

@@ -129,9 +129,7 @@ def units_preview(pack: Path, out: Path) -> None:
     if not units_path.exists():
         return
     specs, sheets = load_units(pack)
-    blocks = []
-    for key, spec in specs.items():
-        blocks.append((key, [sheets[key, side] for side in SIDES]))
+    blocks = [(key, [sheets[key, side] for side in SIDES]) for key in specs]
     bw = max(s.width for _, ss in blocks for s in ss)
     bh = max(s.height for _, ss in blocks for s in ss)
     cols = 6

@@ -47,17 +47,6 @@ file = "toens-medieval-strategy-v1.0.zip"
 size = 458373
 sha256 = "e53985a2e8a3e9b79017fd68e4552e5663b651ab738ee441e468dfbe0a81fac0"
 
-[sources.dualr_vehicles]
-title = "16x16 fantasy pixel art vehicles"
-author = "DualR (commissioned by OpenGameArt.org)"
-license = "CC-BY-3.0"
-license_url = "https://creativecommons.org/licenses/by/3.0/"
-homepage = "https://opengameart.org/content/16x16-fantasy-pixel-art-vehicles"
-url = "https://opengameart.org/sites/default/files/fullsheet.png"
-file = "dualr-fullsheet.png"
-size = 5044
-sha256 = "60addb65a3aa738e3e9ee345bdb2e30bb8e00668edd1ff6f219dc64c1d79184d"
-
 [sources.chinese_icons]
 title = "Chinese Icons"
 author = "Pixel Archer"
