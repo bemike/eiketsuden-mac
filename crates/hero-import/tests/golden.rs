@@ -96,7 +96,7 @@ fn check_korean_containers(install: &InstallDir) {
         let data = read(install, name);
         let t = table6::Table6::parse(&data).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(t.len(), count, "{name} entry count");
-        assert_eq!(t.entries()[0].offset, start, "{name} data start");
+        assert_eq!(t.data_start(), start, "{name} data start");
     }
     for (name, count) in [
         ("HEXBCHR.R3", 181),
