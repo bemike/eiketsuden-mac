@@ -15,7 +15,7 @@
 //!    (`C`), yes/no confirmation (`Y`), next sample (`N`).
 //! 4. **게이지·숫자** — HP/MP/EXP/morale gauges, number and time formatting, toast (`T`) and
 //!    banner (`B`).
-//! 5. **화면** — opens the real screens (title, settings, credits, error, placeholder, game over,
+//! 5. **화면** — opens the real screens (title, settings, credits, error, game over,
 //!    the game itself) and exercises the audio manager.
 
 use super::backdrop::draw_backdrop;
@@ -23,7 +23,6 @@ use super::credits::CreditsScreen;
 use super::error::ErrorScreen;
 use super::gameover::GameOverScreen;
 use super::loading::{LoadingScreen, Target};
-use super::placeholder::PlaceholderScreen;
 use super::settings::SettingsScreen;
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::AssetState;
@@ -45,7 +44,6 @@ use crate::ui::window::{
     draw_portrait, draw_side_arrow, draw_small_arrow, draw_sprite, draw_window, draw_window_ex,
     inset, WindowStyle,
 };
-use hero_core::campaign::Node;
 use macroquad::prelude::*;
 
 const TABS: [&str; 5] = ["글꼴", "창·메뉴", "대화", "게이지·숫자", "화면"];
@@ -162,7 +160,6 @@ enum ScreenItem {
     Settings,
     Credits,
     Error,
-    Placeholder,
     GameOver,
     StartGame,
     MusicTitle,
@@ -180,7 +177,6 @@ impl ScreenItem {
             ScreenItem::Settings => "설정 (오버레이)",
             ScreenItem::Credits => "제작진",
             ScreenItem::Error => "오류 화면",
-            ScreenItem::Placeholder => "개발용 대체 화면",
             ScreenItem::GameOver => "게임 오버",
             ScreenItem::StartGame => "데이터 팩을 불러와 게임 시작",
             ScreenItem::MusicTitle => "배경음: title",
@@ -282,7 +278,6 @@ impl GalleryScreen {
             ScreenItem::Settings,
             ScreenItem::Credits,
             ScreenItem::Error,
-            ScreenItem::Placeholder,
             ScreenItem::GameOver,
             ScreenItem::StartGame,
             ScreenItem::MusicTitle,
@@ -547,13 +542,6 @@ impl GalleryScreen {
                     "technical detail: example error text for bug reports".into(),
                 ],
             )),
-            ScreenItem::Placeholder => {
-                Transition::push(PlaceholderScreen::for_node(&Node::Drama {
-                    id: "gallery_drama".into(),
-                    scene: "prologue".into(),
-                    next: "gallery_camp".into(),
-                }))
-            }
             ScreenItem::GameOver => Transition::push(GameOverScreen::new()),
             ScreenItem::StartGame => Transition::replace(LoadingScreen::new(Target::Game)),
             ScreenItem::MusicTitle => {

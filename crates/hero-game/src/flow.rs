@@ -15,24 +15,21 @@
 //! | `Ending` | drama screen for `scene` (if any), then | `Flow::Ending { title }` |
 //! | `Branch` | — resolved by `CampaignState::advance` | — |
 //!
-//! # Plugging in the campaign screens
+//! # Campaign screens
 //!
 //! [`node_screen`] (and [`battle_screen`] for resuming a mid-battle save) is the **single place**
-//! where the drama, camp and battle screens are wired in. Until a screen exists, these functions
-//! return a [`PlaceholderScreen`] that clearly says the screen is not implemented in this build
-//! and offers developer shortcuts (advance to the next node, save, back to title). The integrator
-//! replaces each placeholder arm with the real screen's constructor; nothing else in the flow
-//! needs to change.
+//! where the drama, camp and battle screens are wired in.
 //!
 //! [`Flow::Advance`] autosaves into the autosave slot after moving to the next node.
 
 use crate::app::{Ctx, Screen};
 use crate::platform::unix_now;
 use crate::saves::{self, SaveSlot};
+use crate::screens::camp::CampScreen;
 use crate::screens::credits::CreditsScreen;
+use crate::screens::drama::DramaScreen;
 use crate::screens::error::ErrorScreen;
 use crate::screens::gameover::GameOverScreen;
-use crate::screens::placeholder::PlaceholderScreen;
 use crate::screens::title::TitleScreen;
 use hero_core::battle::{BattleState, Outcome};
 use hero_core::campaign::{CampaignState, Node};
@@ -279,16 +276,22 @@ fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn S
 pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Screen> {
     let _ = pack;
     match node {
-        // Integration: DramaScreen for `scene`, returning `Flow::Advance` when it ends.
-        Node::Drama { .. } => Box::new(PlaceholderScreen::for_node(node)),
-        // Integration: CampScreen (shop / equipment / deploy / save), returning `Flow::Advance`.
-        Node::Camp { .. } => Box::new(PlaceholderScreen::for_node(node)),
+        Node::Drama { scene, .. } => Box::new(DramaScreen::node(ctx, scene)),
+        Node::Camp {
+            title,
+            shop,
+            battle,
+            ..
+        } => Box::new(CampScreen::new(title, shop, battle.as_deref())),
         Node::Battle { battle, .. } => crate::screens::battle::BattleScreen::start(ctx, battle),
         Node::Ending {
             scene: None, title, ..
         } => Box::new(CreditsScreen::ending(title.clone())),
-        // Integration: DramaScreen for `scene`, then `Flow::Ending { title }`.
-        Node::Ending { .. } => Box::new(PlaceholderScreen::for_node(node)),
+        Node::Ending {
+            scene: Some(scene),
+            title,
+            ..
+        } => Box::new(DramaScreen::ending(ctx, scene, title.clone())),
         Node::Branch { id, .. } => Box::new(ErrorScreen::recoverable(
             "캠페인 오류",
             vec![format!("분기 노드 `{id}`는 화면을 가질 수 없습니다.")],

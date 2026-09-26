@@ -3,13 +3,13 @@
 
 pub mod backdrop;
 pub mod battle;
+pub mod camp;
 pub mod credits;
 pub mod drama;
 pub mod error;
 pub mod gallery;
 pub mod gameover;
 pub mod loading;
-pub mod placeholder;
 pub mod saveload;
 pub mod settings;
 pub mod title;
