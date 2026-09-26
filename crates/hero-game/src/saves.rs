@@ -1,5 +1,11 @@
 //! Save slots on top of the [`KeyValueStore`]: one autosave slot and [`MANUAL_SLOTS`] manual
-//! slots, each holding one [`SaveGame`] JSON document (`hero_core::save`).
+//! slots per data pack, each holding one [`SaveGame`] JSON document (`hero_core::save`).
+//!
+//! Every pack has its own set of slots (the storage key contains the pack id, see
+//! [`SaveSlot::key`]), so playing another pack (a mod, the original mode) never overwrites the
+//! saves of the base pack. Saves written before the slots were split per pack live under the
+//! shared keys `save_auto` / `save_1` … `save_8`; [`migrate_legacy`] moves them to the slots of
+//! the pack they belong to when that pack is loaded.
 //!
 //! The screens use [`list`] for the slot overview, [`write()`] / [`read`] / [`delete`] for the
 //! actions and [`latest`] for the title screen's "continue".
@@ -25,11 +31,32 @@ impl SaveSlot {
         std::iter::once(SaveSlot::Auto).chain((1..=MANUAL_SLOTS).map(SaveSlot::Manual))
     }
 
-    /// Storage key of the slot.
-    pub fn key(self) -> String {
+    /// Storage key of the slot for the pack `pack_id`.
+    ///
+    /// A pack id that is itself a valid key fragment (lowercase ASCII letters, digits, `_`,
+    /// `-`, at most [`MAX_PLAIN_PACK_ID`] bytes) is used as is: `save_base_auto`, `save_base_3`.
+    /// Any other id is replaced by a stable 64-bit hash behind a different prefix
+    /// (`save-0123456789abcdef_auto`), so the two forms never collide. Within each form the key
+    /// is unique per (pack, slot): the slot suffix contains no `_`, so it is always the text
+    /// after the last `_`.
+    pub fn key(self, pack_id: &str) -> String {
+        let suffix = self.suffix();
+        if is_plain_pack_id(pack_id) {
+            format!("save_{pack_id}_{suffix}")
+        } else {
+            format!("save-{:016x}_{suffix}", fnv1a64(pack_id.as_bytes()))
+        }
+    }
+
+    /// Key used before the slots were split per pack (shared by every pack).
+    fn legacy_key(self) -> String {
+        format!("save_{}", self.suffix())
+    }
+
+    fn suffix(self) -> String {
         match self {
-            SaveSlot::Auto => "save_auto".into(),
-            SaveSlot::Manual(n) => format!("save_{n}"),
+            SaveSlot::Auto => "auto".into(),
+            SaveSlot::Manual(n) => n.to_string(),
         }
     }
 
@@ -47,6 +74,26 @@ impl SaveSlot {
             SaveSlot::Manual(n) => (1..=MANUAL_SLOTS).contains(&n),
         }
     }
+}
+
+/// Longest pack id that is used verbatim in a storage key (`save_` + id + `_auto` stays within
+/// the 64-byte key limit of `platform::storage`).
+pub const MAX_PLAIN_PACK_ID: usize = 50;
+
+fn is_plain_pack_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_PLAIN_PACK_ID
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
+/// FNV-1a, 64 bit: a stable hash (the std hashers are not guaranteed to be stable across
+/// releases, and the key must not change between versions of the game).
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 /// What the slot list shows for a save.
@@ -146,13 +193,14 @@ pub fn read(
         return Err(SaveSlotError::InvalidSlot(slot));
     }
     let json = store
-        .get(&slot.key())
+        .get(&slot.key(pack_id))
         .map_err(SaveSlotError::Storage)?
         .ok_or(SaveSlotError::Empty(slot))?;
     SaveGame::from_json(&json, pack_id).map_err(SaveSlotError::Save)
 }
 
-/// Write a save into a slot (replacing its content atomically).
+/// Write a save into a slot of its own pack (`save.pack_id`), replacing that slot's content
+/// atomically. The slots of other packs are never touched.
 pub fn write(
     store: &mut dyn KeyValueStore,
     slot: SaveSlot,
@@ -162,15 +210,62 @@ pub fn write(
         return Err(SaveSlotError::InvalidSlot(slot));
     }
     store
-        .set(&slot.key(), &save.to_json())
+        .set(&slot.key(&save.pack_id), &save.to_json())
         .map_err(SaveSlotError::Storage)
 }
 
-pub fn delete(store: &mut dyn KeyValueStore, slot: SaveSlot) -> Result<(), SaveSlotError> {
+/// Delete a slot of the pack `pack_id`.
+pub fn delete(
+    store: &mut dyn KeyValueStore,
+    slot: SaveSlot,
+    pack_id: &str,
+) -> Result<(), SaveSlotError> {
     if !slot.is_valid() {
         return Err(SaveSlotError::InvalidSlot(slot));
     }
-    store.remove(&slot.key()).map_err(SaveSlotError::Storage)
+    store
+        .remove(&slot.key(pack_id))
+        .map_err(SaveSlotError::Storage)
+}
+
+/// Move the saves of `pack_id` from the shared pre-split keys (`save_auto`, `save_1` …) into
+/// the pack's own slots. Returns how many saves were moved.
+///
+/// A legacy save is moved only when its `pack_id` field names this pack; saves of other packs,
+/// unreadable documents and saves whose new slot is already taken stay where they are (they are
+/// never deleted). The document is copied verbatim, so a save written by a newer game version
+/// keeps its content. The legacy key is removed only after the copy succeeded; on a storage
+/// error the remaining saves are retried the next time the pack is loaded.
+pub fn migrate_legacy(
+    store: &mut dyn KeyValueStore,
+    pack_id: &str,
+) -> Result<usize, SaveSlotError> {
+    let mut moved = 0;
+    for slot in SaveSlot::all() {
+        let legacy = slot.legacy_key();
+        let Some(json) = store.get(&legacy).map_err(SaveSlotError::Storage)? else {
+            continue;
+        };
+        let owner = serde_json::from_str::<serde_json::Value>(&json)
+            .ok()
+            .and_then(|v| v.get("pack_id")?.as_str().map(str::to_owned));
+        if owner.as_deref() != Some(pack_id) {
+            continue;
+        }
+        let key = slot.key(pack_id);
+        match store.get(&key).map_err(SaveSlotError::Storage)? {
+            None => {
+                store.set(&key, &json).map_err(SaveSlotError::Storage)?;
+                moved += 1;
+            }
+            // An earlier migration copied it but could not remove the legacy key.
+            Some(current) if current == json => {}
+            // The slot was written since; keep both rather than guess which one matters.
+            Some(_) => continue,
+        }
+        store.remove(&legacy).map_err(SaveSlotError::Storage)?;
+    }
+    Ok(moved)
 }
 
 /// The most recently saved loadable slot of `pack_id` (for "continue").
@@ -228,8 +323,8 @@ mod tests {
         let all: Vec<_> = SaveSlot::all().collect();
         assert_eq!(all.len(), 1 + MANUAL_SLOTS as usize);
         assert_eq!(all[0], SaveSlot::Auto);
-        assert_eq!(SaveSlot::Manual(3).key(), "save_3");
-        assert_eq!(SaveSlot::Auto.key(), "save_auto");
+        assert_eq!(SaveSlot::Manual(3).key("base"), "save_base_3");
+        assert_eq!(SaveSlot::Auto.key("base"), "save_base_auto");
         let mut store = MemoryStore::default();
         assert_eq!(
             write(&mut store, SaveSlot::Manual(9), &save("x", 1, "base")),
@@ -251,7 +346,9 @@ mod tests {
             &save("다른 팩", 300, "other"),
         )
         .unwrap();
-        store.set("save_7", "garbage").unwrap();
+        store
+            .set(&SaveSlot::Manual(7).key("base"), "garbage")
+            .unwrap();
 
         let loaded = read(&store, SaveSlot::Manual(2), "base").unwrap();
         assert_eq!(loaded.label, "탁현");
@@ -265,15 +362,134 @@ mod tests {
         assert_eq!(infos[0].summary().unwrap().label, "자동");
         assert_eq!(infos[0].summary().unwrap().play_seconds, 3600);
         assert_eq!(infos[1].status, SlotStatus::Empty);
-        assert!(matches!(infos[5].status, SlotStatus::Unreadable(_)));
+        // The other pack's save lives in the other pack's slots.
+        assert_eq!(infos[5].status, SlotStatus::Empty);
         assert!(matches!(infos[7].status, SlotStatus::Unreadable(_)));
+        assert_eq!(
+            read(&store, SaveSlot::Manual(5), "other").unwrap().label,
+            "다른 팩"
+        );
 
         // The other pack's newer save is ignored.
         assert_eq!(latest(&store, "base"), Some(SaveSlot::Auto));
         assert!(any(&store, "base"));
 
-        delete(&mut store, SaveSlot::Auto).unwrap();
+        delete(&mut store, SaveSlot::Auto, "base").unwrap();
         assert_eq!(latest(&store, "base"), Some(SaveSlot::Manual(2)));
+        assert_eq!(latest(&store, "other"), Some(SaveSlot::Manual(5)));
+    }
+
+    /// Regression: the autosave of one pack used to overwrite the autosave of every other pack
+    /// (all packs shared `save_auto`).
+    #[test]
+    fn packs_do_not_share_slots() {
+        let mut store = MemoryStore::default();
+        write(&mut store, SaveSlot::Auto, &save("기본", 100, "base")).unwrap();
+        write(&mut store, SaveSlot::Auto, &save("원작", 200, "original")).unwrap();
+        assert_eq!(read(&store, SaveSlot::Auto, "base").unwrap().label, "기본");
+        assert_eq!(
+            read(&store, SaveSlot::Auto, "original").unwrap().label,
+            "원작"
+        );
+        delete(&mut store, SaveSlot::Auto, "original").unwrap();
+        assert_eq!(read(&store, SaveSlot::Auto, "base").unwrap().label, "기본");
+    }
+
+    #[test]
+    fn keys_are_valid_and_distinct_for_any_pack_id() {
+        let long = "a".repeat(MAX_PLAIN_PACK_ID + 1);
+        let ids = [
+            "base",
+            "base_auto",
+            "base-1",
+            "Base",
+            "원작",
+            "mod.balance",
+            &long,
+            &long[..MAX_PLAIN_PACK_ID],
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for id in ids {
+            for slot in SaveSlot::all() {
+                let key = slot.key(id);
+                crate::platform::storage::validate_key(&key)
+                    .unwrap_or_else(|e| panic!("{id:?} {slot:?}: {e}"));
+                assert!(seen.insert(key.clone()), "duplicate key {key}");
+                assert_ne!(key, slot.legacy_key());
+            }
+        }
+        // Stable across runs and versions.
+        assert_eq!(SaveSlot::Auto.key("원작"), SaveSlot::Auto.key("원작"));
+        assert!(SaveSlot::Auto.key("Base").starts_with("save-"));
+        // A hashed id still round-trips through write/read.
+        let mut store = MemoryStore::default();
+        write(&mut store, SaveSlot::Manual(1), &save("x", 1, "원작")).unwrap();
+        assert_eq!(
+            read(&store, SaveSlot::Manual(1), "원작").unwrap().label,
+            "x"
+        );
+    }
+
+    #[test]
+    fn legacy_saves_move_to_their_own_pack() {
+        let mut store = MemoryStore::default();
+        store
+            .set("save_auto", &save("옛 자동", 10, "base").to_json())
+            .unwrap();
+        store
+            .set("save_2", &save("옛 기록", 20, "base").to_json())
+            .unwrap();
+        store
+            .set("save_3", &save("다른 팩", 30, "other").to_json())
+            .unwrap();
+        store.set("save_4", "garbage").unwrap();
+        // Slot 5 already has a new save of this pack: the legacy one must not replace it.
+        store
+            .set("save_5", &save("옛 5", 40, "base").to_json())
+            .unwrap();
+        write(&mut store, SaveSlot::Manual(5), &save("새 5", 50, "base")).unwrap();
+
+        assert_eq!(migrate_legacy(&mut store, "base").unwrap(), 2);
+        assert_eq!(
+            read(&store, SaveSlot::Auto, "base").unwrap().label,
+            "옛 자동"
+        );
+        assert_eq!(
+            read(&store, SaveSlot::Manual(2), "base").unwrap().label,
+            "옛 기록"
+        );
+        assert_eq!(
+            read(&store, SaveSlot::Manual(5), "base").unwrap().label,
+            "새 5"
+        );
+        assert_eq!(store.get("save_auto").unwrap(), None);
+        assert_eq!(store.get("save_2").unwrap(), None);
+        // Other packs' saves, unreadable data and conflicts stay untouched.
+        assert!(store.get("save_3").unwrap().is_some());
+        assert!(store.get("save_4").unwrap().is_some());
+        assert!(store.get("save_5").unwrap().is_some());
+
+        // Idempotent; the other pack picks its save up when it is loaded.
+        assert_eq!(migrate_legacy(&mut store, "base").unwrap(), 0);
+        assert_eq!(migrate_legacy(&mut store, "other").unwrap(), 1);
+        assert_eq!(
+            read(&store, SaveSlot::Manual(3), "other").unwrap().label,
+            "다른 팩"
+        );
+    }
+
+    #[test]
+    fn legacy_copy_left_behind_by_a_failed_remove_is_cleaned_up() {
+        let mut store = MemoryStore::default();
+        let json = save("옛 자동", 10, "base").to_json();
+        store.set("save_auto", &json).unwrap();
+        store.set(&SaveSlot::Auto.key("base"), &json).unwrap();
+        assert_eq!(migrate_legacy(&mut store, "base").unwrap(), 0);
+        assert_eq!(store.get("save_auto").unwrap(), None);
+        assert_eq!(
+            read(&store, SaveSlot::Auto, "base").unwrap().label,
+            "옛 자동"
+        );
     }
 
     #[test]

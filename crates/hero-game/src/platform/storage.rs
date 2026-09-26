@@ -1,6 +1,6 @@
 //! Key/value persistence for save games and settings.
 //!
-//! Keys are short identifiers (`settings`, `save_auto`, `save_3`; lowercase ASCII letters,
+//! Keys are short identifiers (`settings`, `save_base_auto`, `save_base_3`; lowercase ASCII letters,
 //! digits, `_` and `-`). Values are UTF-8 text (JSON documents).
 //!
 //! * Natively each key is a file `<key>.json` in the user data directory
