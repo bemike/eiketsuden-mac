@@ -1,0 +1,8 @@
+# Scenes of the extension: `b01_outro` replaces the scene of the same id in mini.
+
+== b01_outro
+@narr 적이 산으로 달아났다.
+
+== b03_intro
+@bg field
+liu_bei: 산길을 지나야 한다.

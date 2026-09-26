@@ -145,7 +145,7 @@ impl<'a> Validator<'a> {
     // ----- rules/game.toml -----------------------------------------------------------------
 
     fn rules(&mut self) {
-        let ctx = self.pack.manifest.rules.game.clone();
+        let ctx = self.pack.files.game.source_path();
         let r = &self.pack.rules;
         if r.level_cap == 0 {
             self.error(&ctx, "level_cap must be at least 1");
@@ -225,7 +225,7 @@ impl<'a> Validator<'a> {
     fn terrain(&mut self) {
         let pack = self.pack;
         if pack.terrain.is_empty() {
-            self.error(&pack.manifest.rules.terrain, "no terrain is defined");
+            self.error(&pack.files.terrain.source_path(), "no terrain is defined");
         }
         let strategy_elements: BTreeSet<&str> = pack
             .strategies
