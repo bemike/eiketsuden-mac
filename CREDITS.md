@@ -157,9 +157,10 @@ described at the top of this section. The CC0 tracks need no attribution; we giv
 
 **Modification of the fonts:** Galmuri lacks some Traditional Chinese characters of the pack's text
 (officer names such as 荀彧, 龐統, 張郃, 許褚, 吳蘭, 蔣琬, names of later chapters such as 李傕, 郭汜,
-貂蟬, and a few words of the item and credits texts). `tools/assets/build_fonts.py` copies exactly
-those glyphs, unscaled and moved onto Galmuri's Hanja grid, from Fusion Pixel Font into Galmuri; no
-other glyph, metric or table of Galmuri is changed. Neither licence reserves a font name, so the
+貂蟬, 昌豨, and a few words of the item and credits texts). `tools/assets/build_fonts.py` copies exactly
+those glyphs, unscaled and moved onto Galmuri's Hanja grid, from Fusion Pixel Font into Galmuri. 豨,
+which Fusion Pixel's 10 px font lacks, is composed for Galmuri9 from Galmuri9's own 豬 and 稀 (the
+豕 and 希 halves). No other glyph, metric or table of Galmuri is changed. Neither licence reserves a font name, so the
 files keep the names the game loads (`Galmuri11.ttf`, `Galmuri9.ttf`), but as Modified Versions under
 the OFL they are renamed inside the font to **Galmuri11 ER** and **Galmuri9 ER**; their copyright and
 description records name both sources. They are distributed under the SIL Open Font License 1.1.

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from assetlib import SourceError, load_sources
 from build_backgrounds import HIGHLIGHT_MAX, _tone_curve
-from build_fonts import EXTRA_HANJA, pack_hanja
+from build_fonts import EXTRA_HANJA, outline, pack_hanja, pixel_glyph, pixels
 from build_music import Track, _filters
 from build_portraits import SIZE, Portrait, check_table
 
@@ -156,6 +156,32 @@ class FontTextTest(unittest.TestCase):
         self.assertTrue(set(EXTRA_HANJA) <= chars)
         self.assertFalse(set("此字型是免費的") & (chars - set(EXTRA_HANJA)))
         self.assertNotIn("유", chars)
+
+
+def glyph_pixels(filled: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    """Rasterise pixel_glyph(filled) back to pixels."""
+    coords, ends, _ = pixel_glyph(filled).getCoordinates(None)
+    contours, start = [], 0
+    for end in ends:
+        contours.append([tuple(p) for p in coords[start : end + 1]])
+        start = end + 1
+    return pixels(contours)
+
+
+class PixelGlyphTest(unittest.TestCase):
+    def test_round_trip_keeps_holes_and_diagonal_contacts(self) -> None:
+        ring = {(c, r) for c in range(3) for r in range(3)} - {(1, 1)}  # a hole in the middle
+        diagonal = {(5, 0), (6, 1), (7, 0)}  # pixels touching only at corners
+        for filled in (ring, diagonal, ring | diagonal, {(0, 0)}):
+            with self.subTest(sorted(filled)):
+                self.assertEqual(glyph_pixels(filled), filled)
+
+    def test_outline_is_the_union_boundary(self) -> None:
+        loops = outline({(0, 0), (1, 0), (0, 1), (1, 1)})
+        self.assertEqual(loops, [[(0, 0), (0, 2), (2, 2), (2, 0)]])  # one clockwise square
+        ring = outline({(c, r) for c in range(3) for r in range(3)} - {(1, 1)})
+        self.assertEqual(len(ring), 2)  # the outer edge and the hole
+        self.assertEqual(len(outline({(0, 0), (1, 1)})), 2)  # corner contact: two separate loops
 
 
 if __name__ == "__main__":

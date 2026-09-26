@@ -230,6 +230,8 @@ not by listening; the cuts are listed in `build_music.py`.
 
 `Galmuri11.ttf` and `Galmuri9.ttf` are Galmuri with the CJK ideographs of the pack's text that Galmuri
 lacks copied from Fusion Pixel Font (12 px and 10 px Korean builds, same pixel grid). The step scans
-the pack's `*.toml`, `*.drama` and `credits.txt`, so rerun it when new Hanja appear in the text. The
+the pack's `*.toml`, `*.drama` and `credits.txt`, so rerun it when new Hanja appear in the text. A
+character the donor lacks too stops the build unless its `FontJob` composes it from the pixel columns
+of two glyphs Galmuri has (so far only 豨 in Galmuri9: 豕 of 豬 beside 希 of 稀). The
 fonts are renamed "Galmuri11 ER" / "Galmuri9 ER" inside (OFL Modified Versions); the file names
 stay because the game loads them by name.

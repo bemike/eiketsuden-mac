@@ -49,6 +49,6 @@ Ninja Adventure Asset Pack — Pixel-Boy, AAA (CC0)
 ## 글꼴
 Galmuri — 이민서 (quiple), SIL Open Font License 1.1
 Fusion Pixel Font — TakWolf, SIL Open Font License 1.1
-Galmuri에 없는 한자를 Fusion Pixel Font에서 옮겨 온 수정판(Galmuri11 ER, Galmuri9 ER)을 씁니다.
+Galmuri에 없는 한자를 Fusion Pixel Font에서 옮겨 오거나 Galmuri의 글자를 조합해 채운 수정판(Galmuri11 ER, Galmuri9 ER)을 씁니다.
 
 자세한 출처와 라이선스는 CREDITS.md에 있습니다.

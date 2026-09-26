@@ -1,4 +1,4 @@
-The Hanja added to Galmuri11.ttf and Galmuri9.ttf (see CREDITS.md) come from Fusion Pixel
+The Hanja copied into Galmuri11.ttf and Galmuri9.ttf (see CREDITS.md) come from Fusion Pixel
 Font 2026.09.01 (https://github.com/TakWolf/fusion-pixel-font), which is licensed as
 follows and itself includes glyphs of the fonts whose licences follow it.
 
