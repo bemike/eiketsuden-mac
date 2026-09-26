@@ -1,0 +1,543 @@
+# 제1장 1막 — 북방의 전란 (계교 전투). Scenes of the base pack's chapter 1, act 1.
+#
+# Original text written for Eiketsuden Reloaded after the public-domain novel (chapter 7: Yuan Shao
+# takes Ji province, the war between Yuan Shao and Gongsun Zan, the battle at the Jie bridge, Zhao
+# Yun). The Xindu, Guangchuan, Julu and Qinghe battles are prelude battles of the game; their story
+# is ours. Campaign scenes set their own background and music; scenes played inside a battle
+# (intro, events, outro) leave both alone so the dialogue appears over the battle map.
+# Flags: c1_route_a = 1 Xindu / 2 Guangchuan, c1_route_b = 1 Julu / 2 Qinghe.
+
+# ---------------------------------------------------------------------------------------------------
+# Pingyuan: Jian Yong joins, war in the north
+# ---------------------------------------------------------------------------------------------------
+
+== c1_pingyuan
+@bg black
+@bgm tension
+@title 제1장
+    북방의 전란
+@narr 초평 2년(191년). 연합군이 흩어진 뒤, 천하의 제후들은
+    저마다 땅을 넓히려고 칼끝을 서로에게 돌렸다.
+@bg town
+@bgm peace
+@narr 평원현. 현령이 된 유비는 백성을 돌보며 조용히 때를 기다리고 있었다.
+@show liu_bei left
+@show zhang_fei right
+zhang_fei: 형님, 오늘도 밭둑만 돌다 오셨소? 이러다 창에 녹이 슬겠구려.
+liu_bei: 백성의 밥그릇이 채워져야 나라도 서는 법일세. 창은 쓸 때가 오면 쓰면 되네.
+@hide right
+@narr 그때, 누더기 도포를 걸친 사내 하나가 관아 마당으로 성큼성큼 들어섰다.
+@show jian_yong right
+jian_yong: 현덕! 돗자리 장수가 현령 나리가 되었다기에 구경하러 왔네.
+liu_bei: 헌화 아닌가! 탁현을 떠난 뒤로 소식이 끊겨 걱정했네.
+jian_yong: 떠돌이 입에 풀칠하느라 바빴지. 헌데 자네 곁에 붙어 있으면
+    밥은 굶지 않을 것 같아서 말일세. 나 같은 한량도 쓸 데가 있겠나?
+liu_bei: 자네의 말솜씨라면 열 개의 창보다 낫지. 반갑게 맞이하겠네.
+@join jian_yong
+@hide right
+@show guan_yu right
+guan_yu: 형님, 북평에서 급한 전령이 왔습니다.
+@hide all
+전령: 원소가 꾀를 부려 한복에게서 기주를 빼앗았습니다!
+    그 과정에서 백규 공의 아우 공손월 장군이 원소의 복병에게 목숨을 잃었습니다.
+    공께서 크게 노하시어 원소를 치기로 하셨으니, 현덕 공께서도 힘을 보태 주십시오!
+@show liu_bei left
+@show guan_yu right
+liu_bei: 백규 형님이 부르시는데 어찌 가만히 있겠나. 곧 북평으로 떠나세.
+guan_yu: 원소의 군세는 하북에서 가장 큽니다. 단단히 채비해야 할 것입니다.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Beiping: Gongsun Zan's council, first choice (Xindu or Guangchuan)
+# ---------------------------------------------------------------------------------------------------
+
+== c1_beiping
+@bg camp
+@bgm camp
+@narr 북평. 흰 말을 탄 기병들이 진영 곳곳을 오갔다.
+@show gongsun_zan right
+@show liu_bei left
+gongsun_zan: 현덕, 와 주었구려! 원소 놈이 아우를 죽였으니 이 원한은 반드시 갚아야겠네.
+liu_bei: 형님의 슬픔이 곧 저의 슬픔입니다. 무엇을 하면 되겠습니까?
+gongsun_zan: 본대는 계교에서 원소와 맞붙을 걸세. 그 전에 양쪽 날개를 꺾어 두어야 하네.
+    서쪽의 신도성은 원소에게 굴복하지 않고 버티고 있는데,
+    순우경이 대군으로 성을 에워싸 오늘내일하는 형편일세.
+gongsun_zan: 동쪽의 광천에서는 원소의 모사 봉기가 목책을 세우고
+    청하 들판의 마을을 털어 군량을 긁어모으고 있네.
+gongsun_zan: 두 곳 다 내버려 둘 수 없지만 군사가 모자라네. 어느 쪽을 맡아 주겠나?
+@hide right
+@show zhang_fei right
+zhang_fei: 형님, 순우경이 제법 이름난 장수라지요? 신도로 갑시다! 성도 구하고 공도 세우고!
+@hide right
+@show jian_yong right
+jian_yong: 광천 쪽이 한결 수월할 걸세. 봉기는 붓은 잘 놀려도 창은 서툰 선비라더군.
+    다만 들판이 넓어 쉴 곳이 멀다는 게 흠이지.
+@hide right
+@narr 【신도는 적이 강하지만 성에 이르기만 해도 이길 수 있고, 수비대장이 동료가 됩니다.
+    광천은 적이 약하지만 쉴 마을이 멀고, 그곳 사람 둘이 동료가 됩니다.】
+@choice
+  - 신도성을 구하러 간다 -> xindu
+  - 광천의 봉기를 친다 -> guangchuan
+@label xindu
+@set c1_route_a = 1
+@show liu_bei left
+liu_bei: 성 안의 백성들이 굶주리며 버티고 있을 것입니다. 신도로 가겠습니다.
+@show gongsun_zan right
+gongsun_zan: 역시 현덕이오. 성이 떨어지기 전에 서둘러 주시오!
+@goto done
+@label guangchuan
+@set c1_route_a = 2
+@show liu_bei left
+liu_bei: 약탈당하는 마을을 두고 볼 수 없습니다. 광천으로 가겠습니다.
+@show gongsun_zan right
+gongsun_zan: 좋소. 봉기의 목책을 부수고 청하의 백성들을 구해 주시오.
+@label done
+@hide all
+@narr 【북평의 도구상에서 술, 콩, 농무서를 살 수 있습니다.】
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Xindu (battles/c1_xindu.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== xindu_intro
+@narr 신도. 성벽 곳곳이 검게 그을렸지만 성문 위에는 아직 한나라 깃발이 나부끼고 있었다.
+@show chunyu_qiong right
+chunyu_qiong: 성안의 쥐새끼들이 제법 오래 버티는구나. 사흘 안에 성문을 부숴라!
+@hide right
+@show yue_lin right
+yue_lin: 원소군이 물러가지 않는다……. 성안의 쌀도 곧 바닥난다.
+    누구든 좋으니 저 포위를 뚫어 줄 이가 있다면…….
+@hide right
+@show liu_bei left
+liu_bei: 성이 아직 버티고 있구나. 한시라도 빨리 성문까지 길을 열자!
+@hide left
+@show zhang_fei left
+zhang_fei: 길은 이 장비가 열겠소. 저기 북쪽 길에 버티고 선 놈이 순우경이오?
+@hide all
+@narr 【순우경을 물리치거나 유비가 신도 성문에 이르면 승리합니다.
+    성문에 이르면 살아남은 전원이 경험치 50을 더 얻습니다.】
+@narr 【장비를 순우경의 옆 칸으로 보내면 일기토가 벌어져 전투가 끝납니다.
+    숲을 가로지르는 좁은 길은 기병이 지날 수 없으니, 기병은 남북의 큰길을 이용하세요.】
+
+== xindu_chunyu_moves
+@show chunyu_qiong right
+chunyu_qiong: 저 촌뜨기들이 아직도 성문에 닿지 못했단 말이냐?
+    답답하구나. 내가 직접 쓸어 주마!
+@hide all
+@narr 【순우경이 움직이기 시작했다!】
+
+== xindu_duel
+@show zhang_fei left
+@show chunyu_qiong right
+zhang_fei: 순우경! 연인 장익덕이 여기 있다! 성을 에워싸고 굶기는 것도 싸움이라 부르느냐!
+chunyu_qiong: 호로관에서 여포와 겨뤘다는 그 장비냐? 소문만 요란하겠지!
+@sfx hit_heavy
+@wait 300
+@sfx hit
+@wait 300
+@narr 창과 창이 스무 번 남짓 부딪치자, 순우경의 팔이 저려 오기 시작했다.
+@sfx hit_heavy
+chunyu_qiong: 크윽……! 이놈의 힘은 사람이 아니로구나! 물러나라, 모두 물러나라!
+@hide right
+@sfx retreat
+@narr 순우경이 말머리를 돌리자, 신도를 에워쌌던 원소군이 한꺼번에 무너졌다.
+@hide all
+
+== xindu_outro
+@narr 포위가 풀리자 신도의 성문이 활짝 열렸다.
+@show yue_lin right
+yue_lin: 구원군이시오? 조금만 늦었어도 성안의 사람들은 모두 굶어 죽었을 것이오.
+@show liu_bei left
+liu_bei: 평원 현령 유비라 하오. 성을 끝까지 지켜 낸 것은 그대들이오.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Guangchuan (battles/c1_guangchuan.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== guangchuan_intro
+@narr 광천. 불타 버린 마을들 사이로 원소군의 목책이 서 있었다.
+@show feng_ji right
+feng_ji: 평원의 유비가 왔다고? 공손찬의 사냥개 노릇을 하는 자로구나.
+    기병을 남쪽으로 돌려라. 넓은 들판에서 지치게 만든 뒤 에워싸면 그만이다.
+@hide right
+@show liu_bei left
+liu_bei: 마을이 모두 털렸구나……. 쉴 곳이 멀다. 서둘지 말고 한 덩어리로 움직이세.
+@hide left
+@show guan_yu left
+guan_yu: 형님, 봉기는 목책 안의 성채에 있습니다. 소장이 그자를 붙잡겠습니다.
+@hide all
+@narr 【봉기를 물리치면 승리합니다. 관우를 봉기의 옆 칸으로 보내면 일기토가 벌어져
+    전투가 끝납니다. 마을이 멀리 떨어져 있으니 병력 관리에 주의하세요.】
+
+== guangchuan_duel
+@show guan_yu left
+@show feng_ji right
+guan_yu: 봉기라 했느냐. 백성의 곡식을 빼앗는 것이 원본초의 병법이더냐!
+feng_ji: 군량 없이 어찌 싸움을 하느냐? 수염만 긴 무부가 병법을 논하다니 가소롭다!
+@sfx hit_heavy
+@wait 400
+@narr 청룡언월도가 허공을 가르자, 봉기의 투구 끈이 끊어져 땅에 떨어졌다.
+feng_ji: 히, 힉……! 말로 할 일을 칼로 하는 자와는 상대하지 않겠다!
+@hide right
+@sfx retreat
+@narr 봉기는 투구도 줍지 못한 채 달아났고, 목책 안의 원소군도 뿔뿔이 흩어졌다.
+@hide all
+
+== guangchuan_outro
+@narr 목책이 불타고, 숨어 있던 광천 사람들이 하나둘 모습을 드러냈다.
+@show liu_bei left
+liu_bei: 빼앗긴 곡식은 모두 마을에 돌려주게. 우리 군사는 한 톨도 손대지 말게.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# After the first battle: recruits, then the second choice
+# ---------------------------------------------------------------------------------------------------
+
+== c1_after_xindu
+@bg castle
+@bgm camp
+@narr 신도성. 성안 사람들이 남은 곡식을 털어 유비의 군사를 대접했다.
+@show yue_lin right
+@show liu_bei left
+yue_lin: 신도 수비대장 악린이오. 원소는 항복하면 벼슬을 주겠다 했지만
+    백성을 굶기는 자에게 성문을 열 수는 없었소.
+liu_bei: 그 굳은 뜻에 머리가 숙여지오. 신도는 이제 공손찬 공의 군사가 지킬 것이오.
+yue_lin: …… 그렇다면 이 몸은 갈 곳이 없어졌구려.
+    유 현령, 그대의 군에 이 두 주먹을 보태도 되겠소?
+liu_bei: 나야말로 바라던 바요!
+@join yue_lin
+@hide right
+@show jian_yong right
+jian_yong: 말수 적은 사내가 하나 늘었군. 우리 군은 장비 하나로도 충분히 시끄러운데 말이야.
+@hide all
+@narr 【신도의 도구상에서 술, 콩, 상약, 초열서, 소용돌이서, 낙석서를 살 수 있습니다.】
+
+== c1_after_guangchuan
+@bg village
+@bgm camp
+@narr 광천. 되찾은 곡식 수레가 마을로 돌아가자 사람들이 길가에 나와 절을 했다.
+@show tian_yu right
+@show liu_bei left
+tian_yu: 어양 사람 전예, 자는 국양이라 합니다. 공손 장군의 진영에서
+    현덕 공의 이야기를 듣고 따라왔다가, 마을 사람들과 함께 봉기의 군사와 싸웠습니다.
+liu_bei: 나이가 어린데도 담이 크구려. 싸움터를 보는 눈도 예사롭지 않고.
+tian_yu: 현덕 공을 모시고 싶습니다. 말고삐라도 잡게 해 주십시오.
+liu_bei: 말고삐가 아니라 창을 맡기겠네. 함께 가세.
+@join tian_yu
+@hide right
+@show lian_biao right
+lian_biao: 에헴. 이왕 받아 주시는 김에 하나 더 받으시지요.
+liu_bei: 그대는?
+lian_biao: 염표라 합니다. 저 뒷산에서 무리를 거느리던 산적이지요.
+    봉기 놈이 우리 산채의 곡식까지 털어 가는 바람에 이를 갈고 있었습니다.
+    백성의 곡식을 돌려주는 장수는 처음 보았소. 우리 무리를 써 주십시오.
+@hide left
+@show zhang_fei left
+zhang_fei: 형님, 산적을 들이다니요! 도둑놈을 어찌 믿는단 말이오?
+@hide left
+@show liu_bei left
+liu_bei: 익덕, 굶주림이 사람을 도적으로 만드는 세상일세.
+    바른 길을 가겠다는 사람을 어찌 내칠 수 있겠나.
+@join lian_biao
+@hide all
+
+== c1_second_choice
+@bg camp
+@bgm tension
+@narr 공손찬의 전령이 다시 달려왔다. 계교의 결전을 앞두고 남은 적은 두 갈래였다.
+전령: 서쪽 거록에는 원소군의 명장 장합이 안량, 고람과 함께 진을 쳤습니다.
+    그 너머 성채에서는 원소에게 쫓겨난 기주의 충신들이 구원을 기다린다 합니다.
+전령: 동쪽 청하에서는 원소군의 노장 국의가 다리 하나를 틀어막고 있습니다.
+    엄강 장군이 그곳으로 향했으니 함께 쳐 달라는 공의 말씀입니다.
+@show liu_bei left
+@show guan_yu right
+guan_yu: 거록의 장합은 만만치 않은 장수입니다. 허나 그곳을 치면
+    계교에서 장합의 군사를 다시 보지 않아도 되겠지요.
+liu_bei: 청하는 쉬운 길이지만, 그만큼 계교의 싸움이 무거워지겠구려.
+@hide all
+@narr 【거록은 적이 강하지만 유비가 서쪽 성채에 이르면 전원 경험치 50을 더 얻고,
+    기주의 충신 두 사람이 동료가 됩니다. 청하는 수월하지만 동료가 늘지 않고,
+    계교 전투에 장합과 안량이 나타납니다.】
+@choice
+  - 거록으로 가서 장합과 싸운다 -> julu
+  - 청하로 가서 국의를 친다 -> qinghe
+@label julu
+@set c1_route_b = 1
+@show liu_bei left
+liu_bei: 구원을 기다리는 사람들이 있다면 가야지. 거록으로 가세.
+@goto done
+@label qinghe
+@set c1_route_b = 2
+@show liu_bei left
+liu_bei: 엄강 장군 혼자 싸우게 둘 수는 없네. 청하로 가세.
+@label done
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Julu (battles/c1_julu.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== julu_intro
+@narr 거록. 장수 서쪽 기슭의 낡은 성채에 기주의 충신들이 숨어 있었다.
+@show zhang_he right
+zhang_he: 공손찬의 원군이 왔다고? 서두를 것 없다. 적이 성채로 향하는 것을 확인한 뒤
+    옆구리를 치면 된다. 본대는 아래 마을에서 움직이지 마라.
+@if c1_route_a != 2 -> skip_feng
+@hide right
+@show feng_ji right
+feng_ji: 광천에서 잃은 투구 값은 오늘 받아 내야겠군. 유비의 목으로 말이야!
+@label skip_feng
+@hide right
+@show tian_kai right
+tian_kai: 현덕, 청주에서 온 전해일세. 단경 장군과 함께 길을 열 테니 성채로 가 주게.
+    거기 모인 사람들을 구해야 기주 사람들의 마음을 얻을 수 있네.
+@show liu_bei left
+liu_bei: 알겠습니다. 모두 서쪽 성채를 향해 나아가세!
+@hide all
+@narr 【장합을 물리치거나 유비가 서쪽 성채에 이르면 승리합니다.
+    성채에 이르면 살아남은 전원이 경험치 50을 더 얻습니다.】
+@narr 【장비를 안량의 옆 칸으로 보내면 일기토가 벌어집니다. 아래 마을의 장합은
+    적이 가까이 오거나 유비가 성채에 가까워지면 움직이기 시작합니다.】
+
+== julu_bandits
+@narr 북서쪽 산기슭에서 도적 떼가 함성을 지르며 쏟아져 내려왔다.
+산적두목: 원소 나리께서 머릿수대로 상을 내리신단다! 성채로 가는 놈들을 모조리 막아라!
+@hide all
+
+== julu_loyalists
+@narr 남동쪽 들판에서 한 무리의 군사가 달려왔다.
+@show geng_wu left
+@show guan_chun right
+geng_wu: 기주의 경무와 관순이오! 원소에게 쫓겨 숨어 지냈지만, 오늘은 싸우러 왔소!
+guan_chun: 한복 공을 속여 기주를 빼앗은 원소를 어찌 주인으로 섬기겠소. 힘을 보태겠소!
+@hide all
+
+== julu_zhang_he_fort
+@show zhang_he right
+zhang_he: 유비가 성채로 향한다. 지금이다! 유비의 앞을 막아라!
+@hide all
+@narr 【장합이 유비를 노리고 움직이기 시작했다!】
+
+== julu_zhang_he_moves
+@show zhang_he right
+zhang_he: 기다리는 것도 여기까지다. 본대, 앞으로!
+@hide all
+@narr 【장합이 움직이기 시작했다!】
+
+== julu_duel
+@show zhang_fei left
+@show yan_liang right
+yan_liang: 하북의 안량이 네 목을 거두어 주마!
+zhang_fei: 하북에는 목청 큰 놈밖에 없느냐! 덤벼라!
+@sfx hit_heavy
+@wait 300
+@sfx hit_heavy
+@narr 두 장수의 창이 서른 합 넘게 맞부딪쳤다. 장비의 창끝이 안량의 어깨를 스쳤다.
+yan_liang: 제법이로구나……. 오늘은 여기까지다! 다음에는 목을 내놓을 각오를 해라!
+@hide right
+@sfx retreat
+@hide all
+
+== julu_outro
+@narr 장합의 군사가 물러가고, 서쪽 성채에 한나라 깃발이 올랐다.
+@show liu_bei left
+@show tian_kai right
+tian_kai: 현덕, 수고했네. 장합이 빠진 원소군은 날개 하나를 잃은 셈이야.
+liu_bei: 이제 계교로 가서 백규 형님과 힘을 합치겠습니다.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Qinghe (battles/c1_qinghe.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== qinghe_intro
+@narr 청하. 좁은 다리 하나가 강을 가로지르고, 그 너머 마을에 원소군이 목책을 둘렀다.
+@show qu_yi right
+qu_yi: 공손찬의 백마 기병도 다리 하나를 건너려면 한 줄로 서야지.
+    나는 여기서 한 걸음도 움직이지 않는다. 오는 놈부터 차례로 베어라.
+@hide right
+@show yan_gang right
+yan_gang: 현덕 공, 엄강이오! 국의 그 늙은이의 목은 내가 먼저 따겠소! 뒤를 부탁하오!
+@show liu_bei left
+liu_bei: 엄 장군, 서두르지 마시오! 혼자 다리를 건너면 위험하오!
+@hide all
+@narr 【국의를 물리치면 승리합니다. 관우를 국의의 옆 칸으로 보내면 일기토가 벌어져
+    전투가 끝납니다. 국의는 성채에서 움직이지 않습니다.】
+
+== qinghe_yan_gang_falls
+@show yan_gang center
+yan_gang: 크윽……! 공손 장군, 먼저 가오…….
+@hide center
+@sfx retreat
+@narr 엄강이 말에서 떨어졌다. 앞장서 달려들던 백마 기병들이 흩어졌다.
+@show liu_bei left
+liu_bei: 엄 장군……! 그대의 뜻은 우리가 잇겠소!
+@hide all
+
+== qinghe_bandits
+@narr 북동쪽 산에서 도적 떼가 내려와 군의 뒤를 노렸다.
+@show liu_bei left
+liu_bei: 뒤에서 적이 온다! 뒤쪽을 맡을 사람을 남겨 두게!
+@hide all
+
+== qinghe_duel
+@show guan_yu left
+@show qu_yi right
+qu_yi: 수염 긴 장수로구나. 백전을 치른 이 국의 앞에서 이름이나 대 보거라.
+guan_yu: 하동의 관운장이다. 네 백 번의 싸움도 오늘로 끝이다.
+@sfx hit_heavy
+@wait 400
+@sfx hit_heavy
+@narr 국의는 방패를 들어 막았지만, 두 번째 칼날에 방패가 둘로 쪼개졌다.
+qu_yi: 이, 이런 칼이 있다니……! 성채를 버려라, 물러난다!
+@hide right
+@sfx retreat
+@hide all
+
+== qinghe_outro
+@narr 국의가 달아나자 청하의 다리를 막던 원소군도 흩어졌다.
+@show liu_bei left
+@show guan_yu right
+guan_yu: 형님, 다리를 되찾았습니다. 허나 거록의 장합은 아직 온전합니다.
+liu_bei: 계교에서 만나게 되겠지. 모두 단단히 마음먹게.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# After the second battle
+# ---------------------------------------------------------------------------------------------------
+
+== c1_after_julu
+@bg camp
+@bgm camp
+@narr 거록의 성채. 숨어 있던 기주의 관리와 백성들이 유비의 군사를 맞았다.
+@show geng_wu right
+@show liu_bei left
+geng_wu: 원소가 기주를 삼킬 때 우리는 끝까지 반대했소. 그 탓에 쫓기는 몸이 되었지만
+    한 번도 후회한 적은 없소.
+liu_bei: 옳은 말을 하다 쫓겨난 분들을 이제야 뵙습니다.
+@hide right
+@show guan_chun right
+guan_chun: 현덕 공, 우리 두 사람도 데려가 주시오. 원소의 천하가 오는 것을 막고 싶소.
+liu_bei: 두 분의 곧은 마음이 우리 군의 기둥이 될 것입니다.
+@join geng_wu
+@join guan_chun
+@hide all
+@narr 계교의 결전이 코앞이다. 이제 쉬어 갈 도구상도 없다.
+@narr 【계교 전투에 나설 부대를 정비합니다. 이번에는 물건을 살 수 없습니다.】
+
+== c1_after_qinghe
+@bg camp
+@bgm camp
+@narr 청하의 다리를 건너 계교로 향하는 길. 엄강의 부하들이 흰 말을 끌고 뒤따랐다.
+@show liu_bei left
+@show zhang_fei right
+zhang_fei: 형님, 엄강 장군의 원수는 계교에서 원소 놈에게 갚읍시다!
+liu_bei: 그래야지. 허나 장합과 안량이 고스란히 남아 있네. 쉽지 않은 싸움이 될 걸세.
+@hide all
+@narr 【계교 전투에 나설 부대를 정비합니다. 이번에는 물건을 살 수 없습니다.】
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Jieqiao (battles/c1_jieqiao_a.toml, c1_jieqiao_b.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== jieqiao_intro
+@narr 계교. 청하 물줄기에 걸린 다리를 사이에 두고 두 군세가 맞섰다.
+    먼저 다리를 건넌 공손찬은 원소군의 반격에 밀려 다리 북쪽으로 쫓겨 오고 있었다.
+@show yuan_shao right
+yuan_shao: 공손찬의 백마 기병도 별것 아니로구나. 문추, 공손찬의 목을 가져오너라!
+@hide right
+@show wen_chou right
+wen_chou: 맡겨 주십시오! 백마를 탄 늙은이를 쫓는 것쯤이야!
+@if c1_route_b != 2 -> skip_rematch
+@if c1_route_a != 1 -> skip_rematch
+@hide right
+@show chunyu_qiong right
+chunyu_qiong: 신도에서의 치욕을 씻을 때가 왔다. 장비, 이번에는 물러나지 않는다!
+@label skip_rematch
+@hide right
+@show gongsun_zan right
+gongsun_zan: 이, 이럴 수가……. 현덕! 문추가 다리를 건너 쫓아온다! 도와주게!
+@hide right
+@show zhao_yun right
+zhao_yun: 공손 장군, 제가 막겠습니다! 상산의 조자룡이 여기 있다!
+@show liu_bei left
+liu_bei: 저 흰 옷의 젊은 장수는 누구인가? 혼자서 적진을 가르는구나…….
+@hide all
+@narr 【원소를 물리치거나 유비가 원소군 본진의 군량고를 차지하면 승리합니다.
+    군량고를 차지하면 살아남은 전원이 경험치 50을 더 얻습니다.】
+@narr 【장비를 문추의 옆 칸으로 보내면 일기토가 벌어집니다. 다리 남쪽의 보물고에
+    손을 대면 원소가 본진을 나서니, 그 틈을 노리는 것도 방법입니다.】
+
+== jieqiao_general_falls
+@show wen_chou right
+wen_chou: 공손찬의 방패가 되겠다고? 가소롭다!
+@sfx hit_heavy
+@narr 공손찬을 감싸던 부장이 문추의 창에 꿰뚫려 말에서 떨어졌다.
+@hide all
+
+== jieqiao_yuan_advances
+@show yuan_shao right
+yuan_shao: 보물고를 털렸다고? 공손찬의 떨거지들이 감히!
+    본진은 곽도에게 맡기고 내가 직접 나서겠다. 남쪽 성채까지 전진하라!
+@hide all
+@narr 【원소가 본진을 나섰다!】
+
+== jieqiao_yuan_retakes_fort
+@show yuan_shao right
+yuan_shao: 진림이 쓰러지고 남쪽 성채를 빼앗겼다고? 그 성채를 내주면 본진이 드러난다!
+    내가 직접 나서겠다. 남쪽 성채를 되찾아라!
+@hide all
+@narr 【원소가 본진을 나섰다!】
+
+== jieqiao_yuan_returns
+@show yuan_shao right
+yuan_shao: 유비의 군사가 본진 가까이 왔다고? 군량고를 내줄 수는 없다! 모두 돌아가라!
+@hide all
+
+== jieqiao_duel
+@show zhang_fei left
+@show wen_chou right
+wen_chou: 장비라 했느냐. 하북 제일의 창을 받아 보아라!
+zhang_fei: 하북 제일? 연인의 장익덕 앞에서 그런 소리가 나오느냐!
+@sfx hit_heavy
+@wait 300
+@sfx hit
+@wait 300
+@sfx hit_heavy
+@narr 장팔사모가 문추의 창을 휘감아 튕겨 냈다. 문추의 말이 비틀거리며 뒷걸음쳤다.
+wen_chou: 이, 이놈……! 오늘은 이만 물러나 주마!
+@hide right
+@sfx retreat
+@hide all
+
+== jieqiao_outro
+@narr 원소군이 물러가고, 계교의 다리 위에 공손찬의 흰 깃발이 다시 섰다.
+@show gongsun_zan right
+@show liu_bei left
+gongsun_zan: 현덕, 자네가 아니었다면 오늘 나는 이 강가에 뼈를 묻었을 걸세.
+liu_bei: 형님께서 무사하시니 다행입니다.
+@hide all
+
+== c1_after_jieqiao
+@bg camp
+@bgm peace
+@narr 싸움이 끝난 저녁, 공손찬의 진영.
+@show zhao_yun right
+@show liu_bei left
+zhao_yun: 현덕 공이시지요. 상산 진정 사람 조운, 자는 자룡이라 합니다.
+liu_bei: 오늘 그대가 적진을 가르는 모습을 보았소. 어디서 그런 무예를 익혔소?
+zhao_yun: 본래 원소를 찾아갔으나 그에게는 백성을 구할 뜻이 없어 보였습니다.
+    그래서 공손 장군을 따랐는데…… 이곳에서도 제가 찾던 주인은 아직 보지 못했습니다.
+liu_bei: …… 난세에 참된 주인을 찾기란 쉽지 않은 일이지요.
+zhao_yun: 현덕 공 같은 분이라면 목숨을 바쳐도 아깝지 않을 텐데요.
+@hide all
+@narr 얼마 뒤, 장안의 조정에서 사자가 내려와 원소와 공손찬에게 화해를 명했다.
+    두 사람은 마지못해 군사를 물렸다.
+@show liu_bei left
+@show zhao_yun right
+liu_bei: 자룡, 그대와 헤어지는 것이 몹시 아쉽구려.
+zhao_yun: 지금은 공손 장군께 입은 은혜가 있어 떠날 수 없습니다.
+    허나 언젠가 반드시 다시 뵙겠습니다.
+@hide all
+@narr 유비는 조운의 손을 오래도록 놓지 못했다. 두 사람은 눈물을 머금고 헤어졌다.

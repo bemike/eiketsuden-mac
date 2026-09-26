@@ -3,19 +3,28 @@
 
 id = "base"
 name = "영걸전 Reloaded 기본 팩"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Eiketsuden Reloaded contributors"]
 license = "CC-BY-SA-4.0 (text) / see CREDITS.md (media)"
-description = "원작의 PC판 규칙을 따르는 기본 규칙과 서장(반동탁 연합: 사수관·호로관 전투). 이야기와 대사는 『삼국지연의』를 바탕으로 새로 썼다."
+description = "원작의 PC판 규칙을 따르는 기본 규칙과 서장(반동탁 연합), 제1장(계교에서 서주 공방전까지). 이야기와 대사는 『삼국지연의』를 바탕으로 새로 썼다."
 
 officers = "officers.toml"
 campaign = "campaign.toml"
 battles = [
+  # Prologue
   "battles/p1_sishui.toml",
   "battles/p2_hulao.toml",
+  # Chapter 1, act 1: Jieqiao
+  "battles/c1_xindu.toml",
+  "battles/c1_guangchuan.toml",
+  "battles/c1_julu.toml",
+  "battles/c1_qinghe.toml",
+  "battles/c1_jieqiao_a.toml",
+  "battles/c1_jieqiao_b.toml",
 ]
 dramas = [
   "dramas/prologue.drama",
+  "dramas/c1_act1.drama",
 ]
 
 [rules]

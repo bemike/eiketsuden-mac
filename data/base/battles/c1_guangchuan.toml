@@ -1,0 +1,149 @@
+# Chapter 1, act 1 (계교 전투), first choice B: 광천 전투 (Guangchuan). Game-original prelude to
+# Jieqiao (novel chapter 7): Yuan Shao's strategist Feng Ji raids the Qinghe plain from a stockade.
+#
+# PC original: 30 turns, 4 deployable officers, no allies; enemy Feng Ji (infantry) with two
+# infantry squads, two cavalry squads, an archer squad and three bandit squads; the cavalry comes
+# from the south, infantry and bandits from the west, and the villages lie far from the start.
+# Levels: the console levels less three (the PC offset of the neighbouring battles), so Feng Ji 6
+# and squads 1-4.
+# Victory: rout Feng Ji (200 gold). Guan Yu next to Feng Ji starts a duel that ends the battle
+# (+1 level). Treasuries (PC): a bean and 100 gold. Two local fighters join after the battle
+# (tian_yu and lian_biao replace the original's invented officers).
+#
+# Map: an open plain. Feng Ji's palisaded stockade with a fort lies in the west, its gate facing
+# east; the army starts in the north-east corner, far from the villages in the west and south.
+
+id = "c1_guangchuan"
+name = "광천 전투"
+location = "191년, 기주 청하국 광천"
+objective = "적장 봉기를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 30
+reward_gold = 200
+intro = "guangchuan_intro"
+outro = "guangchuan_outro"
+victory = [{ type = "defeat_unit", target = "feng_ji" }]
+
+[map]
+theme = "field"
+rows = '''
+^^^^,,..TT......,,^^^^^^
+^$,,..,..TT..,....,,,^^^
+^,,..v...,,.....T..,..,^
+,,.....,,...TT.......,,,
+,.......,,...TTT.......,
+.|||||||..,.....,..,....
+.|,,..,|..,,..T.....,...
+.|,....|....TTT..,..,...
+.|.f..._.____...,.......
+.|,....|..,....TT...,...
+.|,,..,|...,...TT..,,...
+.|||||||....,.......,...
+,,.....,.....,,.......,,
+,..TT..,,.....TT.....,,,
+..TTT....,,...TT...,,..^
+.v.......,.....,,..,,.^^
+,,,..TT....v.....,.,.$^^
+^^^,,,,....,,,,....^^^^^
+'''
+
+[deploy]
+max = 4
+slots = [[20, 1], [19, 2], [21, 2], [20, 3], [22, 3]]
+
+# --- Feng Ji's raiders ----------------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "feng_ji"
+level = 6
+pos = [3, 8]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 3
+pos = [5, 7]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 4
+pos = [9, 6]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 4
+pos = [9, 10]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 2
+pos = [11, 3]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 2
+pos = [10, 8]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 3
+pos = [12, 13]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 1
+pos = [12, 17]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 1
+pos = [15, 16]
+ai = "aggressive"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel: Guan Yu next to Feng Ji ends the battle (PC).
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "feng_ji" }
+actions = [
+  { type = "drama", scene = "guangchuan_duel" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "retreat", target = "feng_ji" },
+  { type = "victory" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [1, 1]
+item = "bean"
+
+[[treasures]]
+pos = [21, 16]
+gold = 100

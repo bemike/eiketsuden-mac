@@ -1,17 +1,36 @@
 # Campaign flow of the base pack (`CampaignDef` in crates/hero-core/src/campaign.rs).
 #
-# Version 0.1 contains the prologue (서장): the anti-Dong Zhuo coalition, Sishui Pass and Hulao Pass.
-# The ending node below is a temporary end of this slice; chapter 1 will continue from `after_hulao`.
+# Version 0.2 contains the prologue (서장: the anti-Dong Zhuo coalition, Sishui Pass and Hulao Pass)
+# and chapter 1 (제1장, acts 1-1 to 1-5). The ending node at the bottom is a temporary end of this
+# slice; chapter 2 will continue from `c1_finale`.
 #
 # Money: the PC original starts with Cao Cao handing Liu Bei 500 gold in the Chenliu camp. We keep that
 # as a drama event (`@gold +500` in prologue_chenliu), so a new game starts with 0 gold and reaches the
 # first shop with exactly 500. The Chenliu shop (scorch scrolls, wine, beans) is the prologue's only
 # shop, as in the original.
+#
+# Shops follow the town shops of the PC original (namu.wiki "삼국지 영걸전/도구상"):
+#   북평 wine, bean, fog scroll
+#   신도 wine, bean, salve, scorch / whirlpool / rockfall scrolls (only on the Xindu route)
+#   북해 the Xindu list plus bombs
+#   서주 wine, bean, salve, great-encourage and great-aid scrolls
+#   소패 long spear, repeater, horse armour, martial manual, scorch / whirlpool / rockfall scrolls
+#   하비 bean, wheat, great-encourage and great-aid scrolls, bombs
+#   허창 long spear, repeater, horse armour, martial manual, wine, fine wine, bean, salve
+# Camps without a shop are the original's consecutive battles with no town in between (Jieqiao after
+# the second prelude battle, the Guangchuan route's second camp).
+#
+# Flags set by chapter 1 (dramas unless noted):
+#   c1_route_a      1 Xindu / 2 Guangchuan          c1_route_b      1 Julu / 2 Qinghe
 
 title = "유비전"
 start = "prologue_opening"
 starting_officers = ["liu_bei", "guan_yu", "zhang_fei"]
 starting_gold = 0
+
+# ===================================================================================================
+# Prologue
+# ===================================================================================================
 
 [[node]]
 type = "drama"
@@ -62,10 +81,199 @@ next = "after_hulao"
 type = "drama"
 id = "after_hulao"
 scene = "prologue_coalition_breaks"
-next = "prologue_end"
+next = "c1_pingyuan"
+
+# ===================================================================================================
+# Chapter 1, act 1: 북방의 전란 (Jieqiao)
+#   [Xindu | Guangchuan] -> [Julu | Qinghe] -> Jieqiao (roster by the second choice)
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_pingyuan"
+scene = "c1_pingyuan"
+next = "c1_beiping"
+
+[[node]]
+type = "drama"
+id = "c1_beiping"
+scene = "c1_beiping"
+next = "c1_br_first"
+
+[[node]]
+type = "branch"
+id = "c1_br_first"
+flag = "c1_route_a"
+cmp = "=="
+value = 1
+then = "c1_camp_xindu"
+else = "c1_camp_guangchuan"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xindu"
+title = "북평 — 신도 구원 출진 준비"
+shop = ["wine", "bean", "scroll_fog"]
+battle = "c1_xindu"
+next = "c1_battle_xindu"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xindu"
+battle = "c1_xindu"
+next = "c1_after_xindu"
+
+[[node]]
+type = "drama"
+id = "c1_after_xindu"
+scene = "c1_after_xindu"
+next = "c1_second_choice"
+
+[[node]]
+type = "camp"
+id = "c1_camp_guangchuan"
+title = "북평 — 광천 토벌 출진 준비"
+shop = ["wine", "bean", "scroll_fog"]
+battle = "c1_guangchuan"
+next = "c1_battle_guangchuan"
+
+[[node]]
+type = "battle"
+id = "c1_battle_guangchuan"
+battle = "c1_guangchuan"
+next = "c1_after_guangchuan"
+
+[[node]]
+type = "drama"
+id = "c1_after_guangchuan"
+scene = "c1_after_guangchuan"
+next = "c1_second_choice"
+
+[[node]]
+type = "drama"
+id = "c1_second_choice"
+scene = "c1_second_choice"
+next = "c1_br_second"
+
+[[node]]
+type = "branch"
+id = "c1_br_second"
+flag = "c1_route_b"
+cmp = "=="
+value = 1
+then = "c1_br_julu"
+else = "c1_br_qinghe"
+
+# The Xindu route passes the Xindu shop; the Guangchuan route has no town before the next battle.
+[[node]]
+type = "branch"
+id = "c1_br_julu"
+flag = "c1_route_a"
+cmp = "=="
+value = 1
+then = "c1_camp_julu_xindu"
+else = "c1_camp_julu"
+
+[[node]]
+type = "branch"
+id = "c1_br_qinghe"
+flag = "c1_route_a"
+cmp = "=="
+value = 1
+then = "c1_camp_qinghe_xindu"
+else = "c1_camp_qinghe"
+
+[[node]]
+type = "camp"
+id = "c1_camp_julu_xindu"
+title = "신도 — 거록 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_julu"
+next = "c1_battle_julu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_julu"
+title = "광천 — 거록 출진 준비"
+battle = "c1_julu"
+next = "c1_battle_julu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_qinghe_xindu"
+title = "신도 — 청하 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_qinghe"
+next = "c1_battle_qinghe"
+
+[[node]]
+type = "camp"
+id = "c1_camp_qinghe"
+title = "광천 — 청하 출진 준비"
+battle = "c1_qinghe"
+next = "c1_battle_qinghe"
+
+[[node]]
+type = "battle"
+id = "c1_battle_julu"
+battle = "c1_julu"
+next = "c1_after_julu"
+
+[[node]]
+type = "drama"
+id = "c1_after_julu"
+scene = "c1_after_julu"
+next = "c1_camp_jieqiao_a"
+
+[[node]]
+type = "camp"
+id = "c1_camp_jieqiao_a"
+title = "계교 — 결전 준비"
+battle = "c1_jieqiao_a"
+next = "c1_battle_jieqiao_a"
+
+[[node]]
+type = "battle"
+id = "c1_battle_jieqiao_a"
+battle = "c1_jieqiao_a"
+next = "c1_after_jieqiao"
+
+[[node]]
+type = "battle"
+id = "c1_battle_qinghe"
+battle = "c1_qinghe"
+next = "c1_after_qinghe"
+
+[[node]]
+type = "drama"
+id = "c1_after_qinghe"
+scene = "c1_after_qinghe"
+next = "c1_camp_jieqiao_b"
+
+[[node]]
+type = "camp"
+id = "c1_camp_jieqiao_b"
+title = "계교 — 결전 준비"
+battle = "c1_jieqiao_b"
+next = "c1_battle_jieqiao_b"
+
+[[node]]
+type = "battle"
+id = "c1_battle_jieqiao_b"
+battle = "c1_jieqiao_b"
+next = "c1_after_jieqiao"
+
+[[node]]
+type = "drama"
+id = "c1_after_jieqiao"
+scene = "c1_after_jieqiao"
+next = "c1_finale"
+
+# ===================================================================================================
+# End of the 0.2 slice
+# ===================================================================================================
 
 [[node]]
 type = "ending"
-id = "prologue_end"
-scene = "prologue_to_be_continued"
-title = "서장 완료"
+id = "c1_finale"
+title = "제1장 완료"
