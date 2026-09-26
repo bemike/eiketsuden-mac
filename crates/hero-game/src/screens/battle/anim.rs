@@ -711,16 +711,32 @@ pub struct EventPlayer {
     queue: VecDeque<Beat>,
     current: Option<Beat>,
     blocked: bool,
+    /// A batch was pushed and [`EventPlayer::take_finished`] has not reported it yet.
+    unsettled: bool,
 }
 
 impl EventPlayer {
     pub fn push(&mut self, beats: Vec<Beat>) {
         self.queue.extend(beats);
+        self.unsettled = true;
     }
 
     /// Nothing is playing or waiting.
     pub fn is_idle(&self) -> bool {
         self.current.is_none() && self.queue.is_empty() && !self.blocked
+    }
+
+    /// Whether the pushed batches have all played out since the last report; `true` once per
+    /// time the queue runs dry. The queue can run dry during [`EventPlayer::update`], at
+    /// [`EventPlayer::resume`] (a batch whose last beat is a drama ends when the overlay closes,
+    /// with no update in between) or right away (a batch with nothing to animate), so the
+    /// screen asks this instead of watching `is_idle` around `update`.
+    pub fn take_finished(&mut self) -> bool {
+        let finished = self.unsettled && self.is_idle();
+        if finished {
+            self.unsettled = false;
+        }
+        finished
     }
 
     /// Waiting for a drama overlay to close.
@@ -1490,12 +1506,59 @@ mod tests {
         assert!(hit < retreat);
         assert!(!cues.contains(&Cue::Jingle(true)));
 
+        assert!(!player.take_finished());
+
         player.resume();
         cues.clear();
         run(&mut player, &mut scene, &mut cues, 2000);
         assert!(player.is_idle());
         assert_eq!(cues, vec![Cue::Jingle(true)]);
         assert_eq!(scene.outcome, None);
+        assert!(player.take_finished());
+        assert!(!player.take_finished());
+    }
+
+    /// Regression: a batch whose last beat is a drama (a `reach` event running `[drama]` after
+    /// a move) runs dry when the overlay closes, without another `update`. The screen must
+    /// still learn that it finished, or the move never opens the command menu (soft lock in
+    /// `Mode::Walking`).
+    #[test]
+    fn a_batch_ending_in_a_drama_finishes_when_resumed() {
+        let (pack, state) = testutil::sishui();
+        let mut scene = Scene::new(&state);
+        let gy = state.find_unit("guan_yu").unwrap();
+        let start = state.units[gy].pos;
+        let ev = vec![
+            BattleEvent::Moved {
+                unit: gy,
+                path: vec![start, start.offset(0, -1)],
+            },
+            BattleEvent::Drama {
+                scene: "sishui_duel".into(),
+            },
+        ];
+        let mut player = EventPlayer::default();
+        assert!(!player.take_finished(), "nothing was pushed");
+        player.push(plan(&ev, &state, &pack, &BTreeMap::new()));
+        assert!(!player.take_finished());
+        let mut cues = Vec::new();
+        run(&mut player, &mut scene, &mut cues, 600);
+        assert!(player.is_blocked());
+        assert_eq!(cues.last(), Some(&Cue::Drama("sishui_duel".into())));
+        assert!(!player.take_finished(), "the drama is still open");
+
+        player.resume();
+        assert!(player.is_idle());
+        assert!(player.take_finished());
+        assert!(!player.take_finished(), "reported once");
+    }
+
+    #[test]
+    fn a_batch_with_nothing_to_animate_finishes_at_once() {
+        let mut player = EventPlayer::default();
+        player.push(Vec::new());
+        assert!(player.take_finished());
+        assert!(!player.take_finished());
     }
 
     #[test]

@@ -494,7 +494,7 @@ impl BattleScreen {
                 self.store_session(ctx);
                 self.events
                     .push(anim::plan(&events, &self.state, &self.pack, &self.meta.fx));
-                if self.events.is_idle() {
+                if self.events.take_finished() {
                     // Nothing to animate (a plain wait): show the result right away.
                     self.events_done();
                 }
@@ -549,6 +549,15 @@ impl BattleScreen {
             }
         }
         out
+    }
+
+    /// Run [`BattleScreen::events_done`] and rebuild the menus once the queued batches have
+    /// played out, however the queue ran dry (see [`EventPlayer::take_finished`]).
+    fn settle_events(&mut self, ctx: &Ctx) {
+        if self.events.take_finished() {
+            self.events_done();
+            self.refresh_mode_menu(ctx);
+        }
     }
 
     /// The animation queue ran dry: snap the views to the state and continue the flow.
@@ -1382,6 +1391,8 @@ impl Screen for BattleScreen {
             Stage::Battle => {}
         }
 
+        // A batch whose last beat was a drama ran dry when the overlay closed (`resume`).
+        self.settle_events(ctx);
         // Animations first; input waits until they are done.
         if !self.events.is_idle() {
             let skip = ctx.input.confirm();
@@ -1393,10 +1404,7 @@ impl Screen for BattleScreen {
             if skip {
                 ctx.input.consume();
             }
-            if self.events.is_idle() {
-                self.events_done();
-                self.refresh_mode_menu(ctx);
-            }
+            self.settle_events(ctx);
             return t;
         }
         if self.state.outcome.is_some() {
