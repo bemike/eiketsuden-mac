@@ -7,9 +7,10 @@
 > which palette slot each screen uses (chosen at run time from data), several opcodes and trigger flags, town
 > object ids, some `BAKDATA` bytes, the 16-colour `PACKGRP` palettes. Not decoded: the `NPK016` codec and
 > the opening/ending pictures and palettes, `MARK`/`SSCCHR`, the `MAIN.EXE` rule tables, OPL2 music, saves,
-> Steam and PC-98 containers. Remaining steps to a playable original mode: a pack converter (original files →
-> keys of a layered pack), the original-style UI, rule tables, conversion of the bytecode to our event
-> format, and OPL2 music.
+> Steam and PC-98 containers. Original mode so far: `hero-tools original pack` writes a layered pack with the
+> portraits, unit sheets and a 32-px tileset learned from the battle maps. Remaining steps to a playable
+> original mode: the original maps themselves (a picture layer in the engine), conversion of the bytecode to our
+> event format, rule tables, the original-style UI and OPL2 music.
 
 형식의 세부는 [FORMATS.md](FORMATS.md), 사용자용 로드맵은 [../ORIGINAL_DATA.md §7](../ORIGINAL_DATA.md#7-로드맵-정직한-현황)에
 있습니다. 기준: 한국어 DOS/V 사본 하나, 2026-09. 실물에서 모든 골든 테스트와 전체 추출(모든 종류 `extracted`)이 통과합니다.
@@ -72,17 +73,20 @@
 ## 4. 플레이 가능한 원작 모드까지 남은 단계
 
 원작 모드는 임포터가 사용자의 정품에서 변환한 결과를 **기본 팩을 확장하는 레이어드 팩**(`extends = "../base"`)으로
-쓰는 방식입니다([../ORIGINAL_DATA.md §8](../ORIGINAL_DATA.md#8-원작-모드-계획--아직-구현되지-않음), [../DECISIONS.md](../DECISIONS.md) D8).
-지금 임포터는 미디어 오버레이만 쓰고 팩은 쓰지 않습니다.
+쓰는 방식입니다([../ORIGINAL_DATA.md §8](../ORIGINAL_DATA.md#8-원작-모드-부분-구현), [../DECISIONS.md](../DECISIONS.md) D8).
 
-1. **팩 변환기** — 추출물(`original/...` 키)을 팩의 키와 규칙으로 옮기는 매핑.
-   * 얼굴: `BAKDATA` 무장의 얼굴 번호로 무장별 초상화 키 연결(대응은 이미 해독됨).
-   * 유닛: 병종 번호 순서의 `HEXBCHR`/`HEXZCHR` 묶음 → 병종별 스프라이트 시트와 색인 파일(프레임 크기 48/64/96 px, 32 px 아이콘).
-   * 맵: 칩 뱅크(80 + 174/175셀) → 타일셋, 칩 격자 → 그림 층, **지형 격자 → 규칙 층**(칩 통계가 아니라 맵의 지형 바이트).
-     32 px 칸 = 유닛 격자.
-   * 대사·무장·아이템: JSON → 팩의 TOML·대사 형식.
-   * 제약: 팩의 캔버스를 `[640, 480]`(원작 VGA)로, 오버레이가 아니라 색인 파일과 함께 팩으로 넣어야 크기가 다른 시트가
-     잘리지 않음.
+1. **팩 변환기** — 추출물을 팩의 키와 규칙으로 옮기는 매핑. **부분 완료**(`hero-tools original pack`,
+   `crates/hero-import/src/pack.rs`, 사용법·매핑 규칙은 [../ORIGINAL_DATA.md §4.5](../ORIGINAL_DATA.md#45-원작-모드-팩-만들기)).
+   * 얼굴: **완료**. 기본 팩 무장 118명 중 105명(이름 대응 + 별칭 2 + 읽기 구분 1). 나머지 13명은 기본 팩이 새로 만든
+     인물이거나 이 판본에 없는 이름.
+   * 유닛: **완료**(맵 아이콘). `HEXZCHR` 19병종 × 두 색 → 32×32 시트와 `units.toml`. 어느 색이 아군인지는 여전히
+     미해독이라 초록 = 아군·우군으로 **선택**(2절). 전투 장면용 `HEXBCHR`/`HEXICHR`(48/64/96 px)는 엔진에 전투 장면
+     연출이 없어 쓰지 않음.
+   * 지형 타일셋: **완료**(학습). 원작 맵 58개에서 지형 × 이웃 마스크별 최빈 2×2 칩 칸을 골라 `tile_size = 32`의
+     타일셋으로. 기본 팩 맵을 원작 칩으로 그릴 뿐이라 경계가 원작 맵만큼 매끄럽지 않음.
+   * **남음 — 원작 맵**: 칩 격자 → 그림 층, **지형 격자 → 규칙 층**(칩 통계가 아니라 맵의 지형 바이트). 엔진의
+     맵 정의에 그림 층이 없어 먼저 추가해야 하고, 쓰는 곳(원작 전투)이 2단계에서 생기므로 함께 진행.
+   * **남음 — 대사·무장·아이템**: JSON → 팩의 TOML·대사 형식(2단계와 함께).
 2. **시나리오 변환** — 해독한 바이트코드(트리거 그룹·명령)를 우리 이벤트·드라마 형식으로 옮기는 변환기(KOEI 바이트코드를
    실행 중에 해석하지 않음). 선행: 좌표축, 맵 번호 → 맵 파일 대응, 남은 명령 의미.
 3. **규칙 표** — `MAIN.EXE` 규칙 표를 코드 서명으로 찾아 팩 규칙 파일로 변환(값은 사용자의 파일에서만 읽음).

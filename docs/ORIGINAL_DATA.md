@@ -9,9 +9,9 @@ OpenRCT2가 사용자의 RCT2 데이터를 읽는 방식과 같습니다.
 
 | 구성 요소 | 위치 |
 |---|---|
-| 라이브러리 | `crates/hero-import` (프로브·컨테이너·텍스트·그래픽·추출) |
-| 명령줄 | `hero-tools original probe` / `hero-tools original extract` |
-| 게임 연동 | `eiketsuden --original <폴더>` 또는 환경 변수 `EIKETSUDEN_ORIGINAL` (네이티브 전용) |
+| 라이브러리 | `crates/hero-import` (프로브·컨테이너·텍스트·그래픽·추출·원작 모드 팩) |
+| 명령줄 | `hero-tools original probe` / `extract` / `pack` |
+| 게임 연동 | 원작 모드 팩: `eiketsuden --data data/original`(4.5절). 미디어 오버레이: `eiketsuden --original <폴더>` 또는 환경 변수 `EIKETSUDEN_ORIGINAL` (네이티브 전용) |
 | 분석 자료 | [reverse-engineering/](reverse-engineering/README.md) — 형식 명세([FORMATS](reverse-engineering/FORMATS.md))·방법론([METHOD](reverse-engineering/METHOD.md))·현황([STATUS](reverse-engineering/STATUS.md)) |
 
 ## 1. 법적·윤리적 원칙
@@ -149,9 +149,8 @@ eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINA
 * **현재 한계**: 추출물의 키(`original/...`)는 기본 팩이 쓰는 키(`portraits/liu_bei`, `units/archer_player` 등)와
   다르므로, 오버레이를 켜도 기본 게임 화면이 자동으로 원작 그림으로 바뀌지는 않습니다. 팩(모드)이 `original/...`
   키를 참조하거나, 오버레이 폴더 안에 팩과 같은 키 이름으로 파일을 두면(예: `gfx/portraits/liu_bei.png`) 그 파일이
-  우선합니다. 원작 레이아웃을 기본 팩 키로 옮기는 매핑은 얼굴 번호 ↔ 무장 대응과 맵 칩 매핑 이후의 과제입니다.
-  이 오버레이는 미디어만 바꾸는 임시 경로이고, 장기 목표인 "원작 모드"는 기본 팩을 확장하는 팩으로 계획되어
-  있습니다(8절).
+  우선합니다. 원작 그림을 기본 팩의 키로 옮겨 게임 화면에 쓰는 것은 오버레이가 아니라 원작 모드 팩(4.5절)이
+  합니다. 이 오버레이는 추출물을 살펴보거나 모드가 `original/...` 키를 직접 참조할 때 쓰는 경로입니다.
 * **오버레이가 바꾸지 않는 것**: 오버레이는 이미지·사운드와 `gfx/ui/icons.toml`만 바꿉니다. 전투 화면의 색인
   파일(`gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml`)은 오버레이에 같은 이름으로 두어도
   읽지 않고 팩의 것을 그대로 씁니다. 그래서 프레임·타일 크기가 다른 시트(원작의 48×48/64×64 유닛 스프라이트,
@@ -159,6 +158,33 @@ eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINA
   이런 시트는 오버레이가 아니라 색인 파일과 함께 레이어드 팩(8절)으로 넣어야 합니다.
 * **웹 빌드는 지원하지 않습니다.** 브라우저에는 로컬 폴더를 읽는 경로가 없어 `--original`이 없습니다
   (향후 File System Access API/OPFS로 검토).
+
+### 4.5 원작 모드 팩 만들기
+
+```sh
+hero-tools original pack "D:/Games/영걸전/GAME" --out data/original [--base data/base] [--edition korean-dos]
+eiketsuden --data data/original
+```
+
+* 기본 팩을 확장하는 **레이어드 팩**(8절)을 씁니다: `pack.toml`(`id = "original"`, `extends` = 기본 팩까지의 상대 경로,
+  `canvas = [640, 480]`), 변환 기록 `original-pack.json`, 그리고 변환된 미디어만. `--base`를 생략하면 `--out` 옆의
+  `base` 폴더를 기본 팩으로 씁니다. 두 폴더는 같은 드라이브에 있어야 합니다(`extends`는 상대 경로만 허용).
+* 쓴 뒤에 `hero-tools validate`와 같은 검사를 돌려 결과를 보여 주고, 변환에 실패한 종류가 있거나 팩에 오류가 있으면
+  종료 코드 1을 돌려줍니다. 출력 폴더는 새 폴더·빈 폴더·이전에 이 명령이 쓴 팩(`original-pack.json`)만 허용합니다.
+* `MAIN.EXE`의 팔레트를 찾지 못하면 그림을 쓰지 않습니다(오버레이와 달리 회색 대체 그림으로 플레이하게 두지 않음).
+* 들어가는 것(한국어 DOS/V 실물 기준, 기본 팩 0.2.0 위):
+
+  | 종류 | 원본 | 결과 | 매핑 규칙 |
+  |---|---|---|---|
+  | 얼굴 | `BAKDATA` + `FACEDAT` | `gfx/portraits/<무장>.png` 105/118명 | 기본 팩 무장과 `BAKDATA` 무장을 **이름**으로 대응(중문판은 한자 이름). 표기가 다른 2명(장료=장요, 기령=기영)은 별칭 표, 이름이 겹치는 우금(于禁/牛金)은 일본어 읽기(`ｳｷﾝ`)로 구분. 기본 팩이 새로 만든 인물 등 대응이 없는 13명은 기본 팩 얼굴 그대로이며 `original-pack.json`에 사유와 함께 기록 |
+  | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3 + `units.toml`(32×32 프레임) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **초록 = 아군·우군, 주황 = 적군은 선택**입니다(어느 색이 누구인지는 미해독, STATUS 2절) |
+  | 지형 타일 | `HEXZMAP` + `HEXZCHP` | `gfx/tiles/terrain.png`·`terrain.toml`(`tile_size = 32`) | 원작 맵의 2×2 칩 칸(32 px, 유닛이 움직이는 격자) = 엔진 타일 하나. 지형마다, 이웃 마스크(`auto` 층의 4비트)마다 **원작 맵 58개에서 가장 자주 나오는 칸**을 고름. 맵에 없는 마스크는 가장 가까운 관찰 마스크를 빌리고, 이웃과 무관한 지형(평지·마을·병영 등)은 가장 흔한 칸 하나. 원작에 없는 `road`는 평지 칸 |
+
+* **한계**: 전투 맵의 **배치**는 여전히 기본 팩의 것입니다. 원작 칩으로 기본 팩 맵을 다시 그린 것이라 원작 맵처럼
+  이어지지 않는 경계(초원·산지의 네모난 가장자리)가 보입니다. 원작 맵 자체(그림 층 + 지형 규칙 층)는 시나리오
+  변환(STATUS 4절 2단계)과 함께 들어갑니다. 대사·규칙·음악·전투 장면 연출도 아직 기본 팩 것입니다.
+* **공유 금지**: 팩 안의 그림은 원작 데이터에서 변환한 것입니다. `data/original/`은 `.gitignore`에 있으며, 자기 PC에서만
+  쓰세요.
 
 ## 5. 매니페스트 공유로 돕기 (특히 Steam판)
 
@@ -223,8 +249,9 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 | P7 음악 | OPL2 시퀀스 → FM 합성 | 미착수 (합성기 라이선스·크기 검토 필요) |
 | P8 Steam / PC-98 | Steam 컨테이너(매니페스트 수집 후), 디스크 이미지 리더, Shift-JIS·OPN 변형 | 미착수 — **Steam 매니페스트가 선행 조건**. 암호화가 있으면 법률 검토 전 중단 |
 | P9 세이브 | `ESAVE/MSAVE` 가져오기 | 선택 사항 |
+| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋(4.5절). 원작 맵·시나리오·규칙·UI·음악은 미착수 |
 
-## 8. 원작 모드 (계획 — 아직 구현되지 않음)
+## 8. 원작 모드 (부분 구현)
 
 OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레이어가 보유한 원작의 에셋으로 게임을 그리는
 **원작 모드**입니다. 원작 모드는 별도 실행 경로가 아니라 **기본 팩을 확장하는 레이어드 팩**으로 설계합니다
@@ -234,16 +261,14 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   파일만 적고, 규칙 파일·무장·캠페인은 자식이 적으면 부모 것을 대체하며, 전투·대사 장면은 합쳐지고(같은 id는
   자식이 우선), 미디어는 자식 폴더를 먼저, 없으면 부모 폴더를 찾습니다. `[presentation] canvas = [w, h]`로 팩의
   가상 캔버스 크기를 적을 수 있습니다(기본 480×270, 320×200..1280×800, 자식이 적지 않으면 상속).
-* **계획**: 임포터(`hero-tools original ...`)가 사용자의 정품에서 읽은 결과를 기본 팩 옆의 로컬 폴더
-  `data/original/`(`.gitignore`에 이미 등록)에 **팩**으로 씁니다. 그 `pack.toml`은 `extends = "../base"`와
-  `[presentation] canvas = [640, 480]`(원작의 VGA 화면)을 적고, 변환에 성공한 것만 담습니다. 변환되지 않은
-  나머지(규칙, 맵, 시나리오, 음악, 아직 매핑되지 않은 그림)는 체인을 통해 기본 팩에서 옵니다. 그래서 원작
-  모드는 에셋 하나하나가 변환될 때마다 조금씩 원작에 가까워질 수 있습니다. 실행은 `eiketsuden --data data/original`
-  형태가 될 것입니다.
-* **아직 없는 것**: 임포터는 현재 4절의 미디어 오버레이만 쓰며 팩을 쓰지 않습니다. 원작 파일(16×16 4bpp 칩,
-  48×48/64×64 유닛 스프라이트, 64×80 얼굴, 32–80 × 22–48 칩의 전투 맵)을 팩의 키와 규칙으로 옮기는 **매핑은
-  정해지지 않았고, 추측하지 않습니다.** 얼굴 번호 ↔ 무장 대응, 맵 칩 대응(P4), 규칙·무장 표(P5), 시나리오(P6)가 규명되는
-  순서대로 팩에 들어갈 항목이 늘어납니다.
+* **구현됨 (4.5절)**: `hero-tools original pack`이 사용자의 정품에서 읽은 결과를 기본 팩 옆의 로컬 폴더
+  `data/original/`(`.gitignore`에 등록)에 **팩**으로 씁니다. 그 `pack.toml`은 `extends = "../base"`와
+  `[presentation] canvas = [640, 480]`(원작의 VGA 화면)을 적고, 변환에 성공한 것만 담습니다: 무장 얼굴, 19병종의
+  유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋. 변환되지 않은 나머지(규칙, 맵 배치, 시나리오,
+  대사, 음악, UI)는 체인을 통해 기본 팩에서 옵니다. 실행은 `eiketsuden --data data/original`입니다.
+* **아직 없는 것**: 원작 맵 자체(칩 격자 = 그림 층, 지형 격자 = 규칙 층; 엔진의 그림 층 지원이 필요), 시나리오
+  변환(P6), `MAIN.EXE` 규칙 표(P5), 원작 배치의 UI(`PACKGRP`), 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
+  넣지 않고, 규명되는 순서대로 팩에 들어갈 항목이 늘어납니다([STATUS 4절](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계)).
 * **제약**: `extends`는 상대 경로만 허용하므로(웹 빌드와 폴더 이동을 위해) 원작 모드 팩은 기본 팩과 같은 드라이브,
   예컨대 `data/original/`에 둡니다. 브라우저는 로컬 폴더를 읽을 수 없으므로 웹 빌드에는 원작 모드가 없습니다.
   세이브는 최상위 팩의 `id`를 기억하므로 원작 모드의 세이브는 기본 팩의 세이브와 섞이지 않습니다.
@@ -319,7 +344,7 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   the overlay first, then in the pack. The extracted keys live under `original/...` and do not replace the base
   pack's own keys automatically yet. The overlay replaces images, sounds and `gfx/ui/icons.toml` only: the
   battle index files (`units.toml`, `terrain.toml`, `fx.toml`) always come from the pack, so sheets with other
-  frame or tile sizes belong in a layered pack (section 8), not in the overlay.
+  frame or tile sizes belong in a layered pack (section 8, `original pack`), not in the overlay.
 * **Help wanted**: run `probe` on a Steam install (`steamapps/common/Eiketsuden1`) and attach the manifest to an
   issue. A manifest contains relative paths, sizes, SHA-256, the first 16 bytes of each file and container
   summaries — no game content, no absolute paths.
@@ -330,10 +355,14 @@ was used, and the repository and CI contain no original bytes (tests use synthet
 * **Roadmap**: P4 maps done (per-map palette slot and the town object ids open); P5 partly done (`BAKDATA`
   decoded; the `MAIN.EXE` rule tables open); P6 partly done (bytecode decoded and extracted; conversion to the
   game's event format open); P7 OPL2 music and P8 Steam/PC-98 open.
-* **Original mode (planned, not implemented)**: the goal is a pack the importer writes to `data/original/`
-  (git-ignored) with `extends = "../base"` and `[presentation] canvas = [640, 480]`, holding only what was
-  converted from the player's copy; everything else keeps coming from the base pack through the layered-pack
-  chain (`extends`, which exists: see MODDING.md "Layered packs"), so the mode can grow asset by asset. The
-  importer does not write such a pack yet, and no mapping from original files to the pack's keys has been
-  decided. `extends` is relative only, so the pack lives next to the base pack; there is no original mode on
-  the web. The remaining steps are listed in [STATUS.md](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계).
+* **Original mode (partly implemented)**: `hero-tools original pack <dir> --out data/original` writes a layered
+  pack (`id = "original"`, `extends` the base pack, `canvas = [640, 480]`, git-ignored) holding what can be mapped
+  onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. It holds officer
+  portraits (matched to the base pack's officers by name, with two spelling aliases and one reading used to tell
+  two officers of the same name apart; 105 of 118 on the verified copy), unit sheets of all 19 classes from the
+  `HEXZCHR` map icons (32×32 frames; green for the player and allies, orange for enemies is a choice, the colour
+  assignment is not decoded) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
+  neighbour mask the 2×2-chip block the maps show most often). Everything else (map layouts, rules, scenario,
+  dialogue, UI, music) still comes from the base pack. `extends` is relative only, so the pack lives next to the
+  base pack; there is no original mode on the web. The remaining steps are listed in
+  [STATUS.md](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계).

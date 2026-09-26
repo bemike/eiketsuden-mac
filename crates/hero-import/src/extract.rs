@@ -147,7 +147,7 @@ pub struct KindReport {
 }
 
 impl KindReport {
-    fn new(status: Status, requested: bool, summary: impl Into<String>) -> KindReport {
+    pub(crate) fn new(status: Status, requested: bool, summary: impl Into<String>) -> KindReport {
         KindReport {
             status,
             requested,
@@ -169,7 +169,7 @@ impl KindReport {
     }
 
     /// Status from how many files were found, converted and failed.
-    fn settle(&mut self, found: usize, failed: usize) {
+    pub(crate) fn settle(&mut self, found: usize, failed: usize) {
         self.status = if found == 0 {
             Status::MissingSource
         } else if failed == 0 {
@@ -255,10 +255,12 @@ impl fmt::Display for ExtractError {
             ),
             ExtractError::OutputNotEmpty(path) => write!(
                 f,
-                "the output folder {} is not empty and holds no previous extraction \
-                 ({INDEX_FILE}); choose an empty or new folder (if an earlier extraction \
-                 into it was interrupted, delete the folder and run again)",
-                path.display()
+                "the output folder {} is not empty and holds no previous run of the importer \
+                 ({INDEX_FILE} of an extraction, {} of an original pack); choose an empty or \
+                 new folder (if an earlier run into it was interrupted, delete the folder and \
+                 run again)",
+                path.display(),
+                crate::pack::PACK_INDEX
             ),
             ExtractError::Output { path, message } => {
                 write!(f, "{}: {message}", path.display())
@@ -275,7 +277,7 @@ impl From<InstallError> for ExtractError {
     }
 }
 
-fn output_error(path: &Path, e: impl fmt::Display) -> ExtractError {
+pub(crate) fn output_error(path: &Path, e: impl fmt::Display) -> ExtractError {
     ExtractError::Output {
         path: path.to_path_buf(),
         message: e.to_string(),
@@ -283,13 +285,13 @@ fn output_error(path: &Path, e: impl fmt::Display) -> ExtractError {
 }
 
 /// Files written into the output folder.
-struct Output {
-    root: PathBuf,
-    files: Vec<String>,
+pub(crate) struct Output {
+    pub(crate) root: PathBuf,
+    pub(crate) files: Vec<String>,
 }
 
 impl Output {
-    fn write(&mut self, rel: &str, bytes: &[u8]) -> Result<(), ExtractError> {
+    pub(crate) fn write(&mut self, rel: &str, bytes: &[u8]) -> Result<(), ExtractError> {
         let path = self.root.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| output_error(parent, e))?;
@@ -299,7 +301,11 @@ impl Output {
         Ok(())
     }
 
-    fn write_json(&mut self, rel: &str, value: &impl Serialize) -> Result<(), ExtractError> {
+    pub(crate) fn write_json(
+        &mut self,
+        rel: &str,
+        value: &impl Serialize,
+    ) -> Result<(), ExtractError> {
         let mut bytes =
             serde_json::to_vec_pretty(value).map_err(|e| output_error(&self.root.join(rel), e))?;
         bytes.push(b'\n');
@@ -314,8 +320,14 @@ fn safe_relative(rel: &str) -> Option<PathBuf> {
     ok.then(|| path.to_path_buf())
 }
 
-/// Check the output folder and remove the files of a previous extraction.
-fn prepare_output(source: &Path, out: &Path) -> Result<(), ExtractError> {
+/// Check the output folder and remove the files of a previous run: the folder must be new,
+/// empty, or hold an `index_file` whose `format` is `format` (the files it lists are removed).
+pub(crate) fn prepare_output(
+    source: &Path,
+    out: &Path,
+    index_file: &str,
+    format: &str,
+) -> Result<(), ExtractError> {
     let overlap = lies_inside(out, source)
         .and_then(|inside| {
             if inside {
@@ -341,13 +353,13 @@ fn prepare_output(source: &Path, out: &Path) -> Result<(), ExtractError> {
     if entries.next().is_none() {
         return Ok(());
     }
-    let index_path = out.join(INDEX_FILE);
+    let index_path = out.join(index_file);
     let previous: PreviousIndex = match std::fs::read(&index_path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map_err(|_| ExtractError::OutputNotEmpty(out.to_path_buf()))?,
         Err(_) => return Err(ExtractError::OutputNotEmpty(out.to_path_buf())),
     };
-    if previous.format != FORMAT {
+    if previous.format != format {
         return Err(ExtractError::OutputNotEmpty(out.to_path_buf()));
     }
     for rel in &previous.files {
@@ -379,7 +391,7 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
     let Some(encoding) = edition.id.text_encoding() else {
         return Err(ExtractError::NotExtractable(Box::new(edition)));
     };
-    prepare_output(source, out)?;
+    prepare_output(source, out, INDEX_FILE, FORMAT)?;
 
     let (selection, requested) = match options.selection {
         Some(s) => (s, true),
@@ -429,7 +441,7 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
     Ok(index)
 }
 
-fn read_source(
+pub(crate) fn read_source(
     install: &InstallDir,
     name: &str,
     report: &mut KindReport,
@@ -2695,72 +2707,10 @@ mod tests {
         assert!(err.to_string().contains("unsafe path"), "{err}");
     }
 
-    /// A Korean install with every map archive: two battle maps (the second on chip set 2)
-    /// and their names, scene strips, one campaign map and one town and palace screen each.
-    fn write_map_install(dir: &Path) {
-        testutil::write_korean_install(dir);
-        let names: Vec<Vec<u8>> = maps::TERRAIN_IDS
-            .iter()
-            .map(|s| s.as_bytes().to_vec())
-            .collect();
-        let refs: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
-        let mut exe = maps::build_exe_fixture(
-            &maps::ExeFixture {
-                second_set_maps: &[1],
-                backdrop: [0; maps::TERRAIN_COUNT],
-                ground: [5; maps::TERRAIN_COUNT],
-                terrain_names: &refs,
-                campaign_sizes: [(16, 4); maps::CHAPTERS],
-            },
-            0,
-        );
-        exe.extend(palette::build_bank(&testutil::palette_slots()));
-        std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
-        let ls11 = |name: &str, entries: &[Vec<u8>]| {
-            let refs: Vec<&[u8]> = entries.iter().map(Vec::as_slice).collect();
-            std::fs::write(dir.join(name), ls11::build(&refs)).unwrap();
-        };
-        ls11(
-            "HEXZCHP.R3",
-            &[testutil::cells(80), testutil::cells(2), testutil::cells(3)],
-        );
-        let map = |chip: u8, terrain: u8| {
-            maps::BattleMap {
-                width: 4,
-                height: 2,
-                chips: vec![0, 1, chip, chip, 2, 3, chip, chip],
-                terrain: vec![1, terrain],
-            }
-            .encode()
-        };
-        ls11(
-            "HEXZMAP.R3",
-            &[
-                map(81, 8),
-                map(82, 3),
-                b"\xb0\xa1\n\xb0\xa2 1\r\n\r\n\x1a".to_vec(),
-            ],
-        );
-        ls11("HEXBCHP.R3", &[testutil::cells(4)]);
-        ls11("HEXBMAP.R3", &[vec![3; 230], vec![1; 528]]);
-        ls11("MMAPBGPL.R3", &[testutil::cells(2)]);
-        let mut campaign = vec![1u8; 64];
-        campaign.extend([0x7f, 0xff]);
-        ls11("MMAP.R3", &[campaign]);
-        ls11("SMAPBGPL.R3", &[testutil::cells(2), testutil::cells(3)]);
-        let mut town = vec![1u8; 640];
-        town.extend(vec![maps::WALK_BLOCKED; 620]);
-        town[640 + 32] = maps::WALK_OPEN;
-        town[640 + 33] = 9;
-        town.extend([1, 7, 2, 3]);
-        ls11("SMAP.R3", std::slice::from_ref(&town));
-        ls11("PMAP.R3", &[town]);
-    }
-
     #[test]
     fn extracts_maps() {
         let src = TempDir::new("maps-src");
-        write_map_install(src.path());
+        testutil::write_map_install(src.path());
         let out = TempDir::new("maps-out");
         let options = Options {
             selection: Some(Selection {
