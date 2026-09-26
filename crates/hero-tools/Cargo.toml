@@ -1,6 +1,6 @@
 [package]
 name = "hero-tools"
-description = "Command line tools for Eiketsuden Reloaded data packs (validate, simulate)"
+description = "Command line tools for Eiketsuden Reloaded data packs (validate, simulate, info)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

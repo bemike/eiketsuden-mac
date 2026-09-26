@@ -1,13 +1,35 @@
 //! Campaign flow (`campaign.toml`) and the persistent army state carried between battles.
 
-use crate::data::{Equipment, Id, ItemKind};
+use crate::battle::{BattleState, Outcome};
+use crate::battledef::Side;
+use crate::data::{Effect, Equipment, Id, ItemDef, ItemKind, OfficerDef};
 use crate::pack::Pack;
 use crate::script::Compare;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 
 fn ne() -> Compare {
     Compare::Ne
+}
+
+/// `cmp` of a branch node: an operator (`==`, `!=`, `<`, `<=`, `>`, `>=`) or the
+/// [`Compare`] variant name (`Eq`, `Ge`, ... in any case).
+fn de_compare<'de, D: Deserializer<'de>>(d: D) -> Result<Compare, D::Error> {
+    let s = String::deserialize(d)?;
+    Ok(match s.to_ascii_lowercase().as_str() {
+        "==" | "eq" => Compare::Eq,
+        "!=" | "ne" => Compare::Ne,
+        "<" | "lt" => Compare::Lt,
+        "<=" | "le" => Compare::Le,
+        ">" | "gt" => Compare::Gt,
+        ">=" | "ge" => Compare::Ge,
+        _ => {
+            return Err(D::Error::custom(format!(
+                "unknown comparison `{s}`, expected one of ==, !=, <, <=, >, >="
+            )))
+        }
+    })
 }
 
 /// One step of the campaign. Nodes are visited in order of their `next` links.
@@ -42,7 +64,7 @@ pub enum Node {
     Branch {
         id: Id,
         flag: String,
-        #[serde(default = "ne")]
+        #[serde(default = "ne", deserialize_with = "de_compare")]
         cmp: Compare,
         #[serde(default)]
         value: i64,
@@ -128,9 +150,51 @@ pub enum CampaignError {
     #[error("item `{0}` cannot be sold")]
     CannotSell(Id),
     #[error("item `{item}` cannot be used on `{officer}`: {reason}")]
-    CannotUse { item: Id, officer: Id, reason: String },
+    CannotUse {
+        item: Id,
+        officer: Id,
+        reason: String,
+    },
     #[error("unknown campaign node `{0}`")]
     UnknownNode(Id),
+    /// The item has no price (treasure / event item).
+    #[error("item `{0}` is not for sale")]
+    CannotBuy(Id),
+    /// Branch nodes starting at this node lead back to themselves for the current flags.
+    #[error("campaign branches starting at `{0}` loop forever")]
+    BranchLoop(Id),
+}
+
+impl OfficerState {
+    /// Initial state of an officer joining the army (level, class, stats and equipment
+    /// from `officers.toml`, no EXP).
+    fn from_def(def: &OfficerDef) -> OfficerState {
+        OfficerState {
+            id: def.id.clone(),
+            class: def.class.clone(),
+            level: def.level,
+            exp: 0,
+            strength: def.strength,
+            int: def.int,
+            lead: def.lead,
+            equip: def.equip.clone(),
+        }
+    }
+}
+
+/// The equipment slot an item of `kind` goes into (`None` for consumables).
+fn slot_mut(equip: &mut Equipment, kind: ItemKind) -> Option<&mut Option<Id>> {
+    match kind {
+        ItemKind::Weapon => Some(&mut equip.weapon),
+        ItemKind::Armor => Some(&mut equip.armor),
+        ItemKind::Accessory => Some(&mut equip.accessory),
+        ItemKind::Consumable => None,
+    }
+}
+
+/// Whether a class family may equip `item` (an empty `families` list allows everyone).
+fn family_allows(item: &ItemDef, family: &str) -> bool {
+    item.families.is_empty() || item.families.iter().any(|f| f == family)
 }
 
 /// Everything that persists between battles; stored in save games.
@@ -157,9 +221,36 @@ pub struct CampaignState {
 
 impl CampaignState {
     /// Fresh state for a new game: starting officers (at their `officers.toml` level/class/equipment),
-    /// starting gold and items, positioned at `campaign.start`.
+    /// starting gold and items, positioned at `campaign.start`. Unknown officer and item ids are
+    /// skipped; [`Pack::validate`] reports them as errors.
     pub fn new_game(pack: &Pack) -> CampaignState {
-        todo!("W1b: CampaignState::new_game {}", pack.manifest.id)
+        let campaign = &pack.campaign;
+        let mut state = CampaignState {
+            node: campaign.start.clone(),
+            roster: Vec::new(),
+            inventory: BTreeMap::new(),
+            gold: 0,
+            flags: BTreeMap::new(),
+            deployed: Vec::new(),
+            battles_won: Vec::new(),
+            play_seconds: 0,
+        };
+        for def in campaign
+            .starting_officers
+            .iter()
+            .filter_map(|id| pack.officer(id))
+        {
+            if state.officer(&def.id).is_none() {
+                state.roster.push(OfficerState::from_def(def));
+            }
+        }
+        for (item, count) in &campaign.starting_items {
+            if pack.item(item).is_some() {
+                state.add_item(item, *count);
+            }
+        }
+        state.add_gold(pack, campaign.starting_gold);
+        state
     }
 
     pub fn officer(&self, id: &str) -> Option<&OfficerState> {
@@ -174,63 +265,342 @@ impl CampaignState {
         self.flags.get(name).copied().unwrap_or(0)
     }
 
-    /// Add an officer to the army (no-op if already present).
+    /// Number of unequipped copies of `item`.
+    pub fn item_count(&self, item: &str) -> u32 {
+        self.inventory.get(item).copied().unwrap_or(0)
+    }
+
+    /// Add an officer to the army (no-op if already present). A (re)joining officer starts
+    /// from their `officers.toml` definition.
     pub fn join(&mut self, pack: &Pack, officer: &str) -> Result<(), CampaignError> {
-        todo!("W1b: join {officer} {}", pack.manifest.id)
+        if self.officer(officer).is_some() {
+            return Ok(());
+        }
+        let def = pack
+            .officer(officer)
+            .ok_or_else(|| CampaignError::UnknownOfficer(officer.to_string()))?;
+        self.roster.push(OfficerState::from_def(def));
+        Ok(())
     }
 
     /// Remove an officer from the army, returning their equipment to the inventory.
     pub fn leave(&mut self, officer: &str) -> Result<(), CampaignError> {
-        todo!("W1b: leave {officer}")
+        let index = self
+            .roster
+            .iter()
+            .position(|o| o.id == officer)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
+        let state = self.roster.remove(index);
+        for item in state.equip.iter() {
+            self.add_item(item, 1);
+        }
+        self.deployed.retain(|d| d != officer);
+        Ok(())
     }
 
     pub fn add_item(&mut self, item: &str, count: u32) {
-        *self.inventory.entry(item.to_string()).or_insert(0) += count;
+        if count > 0 {
+            let n = self.inventory.entry(item.to_string()).or_insert(0);
+            *n = n.saturating_add(count);
+        }
     }
 
+    /// Take one copy of `item` out of the inventory.
     pub fn remove_item(&mut self, item: &str) -> Result<(), CampaignError> {
-        todo!("W1b: remove_item {item}")
+        match self.inventory.get_mut(item) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                if *n == 0 {
+                    self.inventory.remove(item);
+                }
+                Ok(())
+            }
+            _ => Err(CampaignError::NotOwned(item.to_string())),
+        }
     }
 
     /// Change gold, clamped to `0..=rules.gold_cap`.
     pub fn add_gold(&mut self, pack: &Pack, amount: i64) {
-        todo!("W1b: add_gold {amount} {}", pack.manifest.id)
+        let cap = pack.rules.gold_cap.max(0);
+        self.gold = self.gold.saturating_add(amount).clamp(0, cap);
     }
 
+    /// Buy one copy of `item` for its price (items with price 0 are not for sale). Which
+    /// items a camp offers is up to the frontend (`Node::Camp::shop`).
     pub fn buy(&mut self, pack: &Pack, item: &str) -> Result<(), CampaignError> {
-        todo!("W1b: buy {item} {}", pack.manifest.id)
+        let def = pack
+            .item(item)
+            .ok_or_else(|| CampaignError::UnknownItem(item.to_string()))?;
+        if def.price == 0 {
+            return Err(CampaignError::CannotBuy(item.to_string()));
+        }
+        let price = i64::from(def.price);
+        if self.gold < price {
+            return Err(CampaignError::NotEnoughGold {
+                need: price,
+                have: self.gold,
+            });
+        }
+        self.gold -= price;
+        self.add_item(item, 1);
+        Ok(())
     }
 
     /// Sell for half the price (items with price 0 cannot be sold).
     pub fn sell(&mut self, pack: &Pack, item: &str) -> Result<(), CampaignError> {
-        todo!("W1b: sell {item} {}", pack.manifest.id)
+        let def = pack
+            .item(item)
+            .ok_or_else(|| CampaignError::UnknownItem(item.to_string()))?;
+        if def.price == 0 {
+            return Err(CampaignError::CannotSell(item.to_string()));
+        }
+        self.remove_item(item)?;
+        self.add_gold(pack, i64::from(def.price / 2));
+        Ok(())
     }
 
     /// Equip an inventory item on an officer; the previously equipped item of that slot
     /// goes back to the inventory. Checks `ItemDef::families` against the officer's class family.
     pub fn equip(&mut self, pack: &Pack, officer: &str, item: &str) -> Result<(), CampaignError> {
-        todo!("W1b: equip {officer} {item} {}", pack.manifest.id)
+        let state = self
+            .officer(officer)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
+        let def = pack
+            .item(item)
+            .ok_or_else(|| CampaignError::UnknownItem(item.to_string()))?;
+        if def.kind == ItemKind::Consumable {
+            return Err(CampaignError::NotEquipment(item.to_string()));
+        }
+        if self.item_count(item) == 0 {
+            return Err(CampaignError::NotOwned(item.to_string()));
+        }
+        let family = pack.class(&state.class).map_or("", |c| c.family.as_str());
+        if !family_allows(def, family) {
+            return Err(CampaignError::CannotEquip {
+                item: item.to_string(),
+                family: family.to_string(),
+            });
+        }
+        self.remove_item(item)?;
+        let previous = self
+            .officer_mut(officer)
+            .and_then(|o| slot_mut(&mut o.equip, def.kind))
+            .and_then(|slot| slot.replace(item.to_string()));
+        if let Some(previous) = previous {
+            self.add_item(&previous, 1);
+        }
+        Ok(())
     }
 
+    /// Put the item of `slot` back into the inventory. Unequipping an empty slot (or
+    /// `Consumable`, which is not a slot) changes nothing.
     pub fn unequip(&mut self, officer: &str, slot: ItemKind) -> Result<(), CampaignError> {
-        todo!("W1b: unequip {officer} {slot:?}")
+        let state = self
+            .officer_mut(officer)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
+        if let Some(item) = slot_mut(&mut state.equip, slot).and_then(Option::take) {
+            self.add_item(&item, 1);
+        }
+        Ok(())
     }
 
     /// Use a camp consumable (class-up `Promote` / `ChangeClass` items) on an officer.
     /// Checks the promotion level and item, `OfficerDef::fixed_class`, then consumes the item.
-    pub fn use_item(&mut self, pack: &Pack, officer: &str, item: &str) -> Result<(), CampaignError> {
-        todo!("W1b: use_item {officer} {item} {}", pack.manifest.id)
+    /// Level, EXP and stats are kept; equipment the new class family may not use goes back to
+    /// the inventory.
+    pub fn use_item(
+        &mut self,
+        pack: &Pack,
+        officer: &str,
+        item: &str,
+    ) -> Result<(), CampaignError> {
+        let state = self
+            .officer(officer)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
+        let def = pack
+            .item(item)
+            .ok_or_else(|| CampaignError::UnknownItem(item.to_string()))?;
+        if self.item_count(item) == 0 {
+            return Err(CampaignError::NotOwned(item.to_string()));
+        }
+        let cannot = |reason: String| CampaignError::CannotUse {
+            item: item.to_string(),
+            officer: officer.to_string(),
+            reason,
+        };
+        let effect = def
+            .effects
+            .iter()
+            .find(|e| matches!(e, Effect::Promote | Effect::ChangeClass { .. }));
+        let new_class = match effect {
+            Some(Effect::Promote) => {
+                let class = pack
+                    .class(&state.class)
+                    .ok_or_else(|| cannot(format!("unknown class `{}`", state.class)))?;
+                let promotion = class
+                    .promote
+                    .as_ref()
+                    .ok_or_else(|| cannot(format!("class `{}` has no promotion", class.id)))?;
+                if promotion.item != item {
+                    return Err(cannot(format!(
+                        "class `{}` is promoted with `{}`",
+                        class.id, promotion.item
+                    )));
+                }
+                if state.level < promotion.level {
+                    return Err(cannot(format!(
+                        "promotion needs level {} (the officer is level {})",
+                        promotion.level, state.level
+                    )));
+                }
+                promotion.to.clone()
+            }
+            Some(Effect::ChangeClass { to }) => {
+                if pack.officer(officer).is_some_and(|o| o.fixed_class) {
+                    return Err(cannot("the officer cannot change class".into()));
+                }
+                if state.class == *to {
+                    return Err(cannot(format!("the officer already is `{to}`")));
+                }
+                to.clone()
+            }
+            _ => return Err(cannot("the item has no effect outside battle".into())),
+        };
+        let family = pack
+            .class(&new_class)
+            .ok_or_else(|| cannot(format!("unknown class `{new_class}`")))?
+            .family
+            .clone();
+        self.remove_item(item)?;
+        let mut returned = Vec::new();
+        if let Some(state) = self.officer_mut(officer) {
+            state.class = new_class;
+            let slots = [
+                &mut state.equip.weapon,
+                &mut state.equip.armor,
+                &mut state.equip.accessory,
+            ];
+            for slot in slots {
+                let allowed = slot
+                    .as_deref()
+                    .and_then(|id| pack.item(id))
+                    .is_none_or(|equipped| family_allows(equipped, &family));
+                if !allowed {
+                    returned.extend(slot.take());
+                }
+            }
+        }
+        for id in returned {
+            self.add_item(&id, 1);
+        }
+        Ok(())
     }
 
     /// Resolve the node after the current one. Branch nodes are evaluated immediately
-    /// (following chains of branches); returns the new current node id.
+    /// (following chains of branches); returns the new current node id. On an `Ending` node
+    /// nothing changes; when the current node is itself a branch, it is resolved.
+    /// Victory continues to a battle's `next`; after a defeat, [`CampaignState::jump`] to the
+    /// battle's `on_defeat` node instead.
     pub fn advance(&mut self, pack: &Pack) -> Result<Id, CampaignError> {
-        todo!("W1b: advance {}", pack.manifest.id)
+        let node = pack
+            .campaign
+            .node(&self.node)
+            .ok_or_else(|| CampaignError::UnknownNode(self.node.clone()))?;
+        let next = match node {
+            Node::Drama { next, .. } | Node::Camp { next, .. } | Node::Battle { next, .. } => {
+                next.as_str()
+            }
+            Node::Branch { id, .. } => id.as_str(),
+            Node::Ending { .. } => return Ok(self.node.clone()),
+        };
+        let target = self.resolve(pack, next)?;
+        self.node = target.clone();
+        Ok(target)
+    }
+
+    /// Make `node` the current node, resolving branch chains; returns the node that became
+    /// current. Used for a battle's `on_defeat` link. The state is unchanged on error.
+    pub fn jump(&mut self, pack: &Pack, node: &str) -> Result<Id, CampaignError> {
+        let target = self.resolve(pack, node)?;
+        self.node = target.clone();
+        Ok(target)
+    }
+
+    /// Follow branch nodes from `start` to the first non-branch node.
+    fn resolve(&self, pack: &Pack, start: &str) -> Result<Id, CampaignError> {
+        let nodes = &pack.campaign;
+        let mut id = start;
+        // A chain of distinct branches is at most as long as the node list.
+        for _ in 0..=nodes.nodes.len() {
+            match nodes.node(id) {
+                None => return Err(CampaignError::UnknownNode(id.to_string())),
+                Some(Node::Branch {
+                    flag,
+                    cmp,
+                    value,
+                    then,
+                    otherwise,
+                    ..
+                }) => {
+                    id = if cmp.eval(self.flag(flag), *value) {
+                        then
+                    } else {
+                        otherwise
+                    };
+                }
+                Some(node) => return Ok(node.id().to_string()),
+            }
+        }
+        Err(CampaignError::BranchLoop(start.to_string()))
     }
 
     /// Apply a finished battle: copy level/exp/class/stat changes of deployed officers back,
     /// add won gold/items, record the victory and set any flags the battle set.
-    pub fn apply_battle_result(&mut self, pack: &Pack, battle: &crate::battle::BattleState) {
-        todo!("W1b: apply_battle_result {} {}", pack.manifest.id, battle.battle_id)
+    ///
+    /// * Player units with an officer in the roster copy level, EXP, class, str/int/lead and
+    ///   equipment back (HP, MP and morale are per battle).
+    /// * Battle consumables (`battle_use = true`) are taken from `battle.inventory`, which the
+    ///   battle used them from; all other inventory entries are kept.
+    /// * Flags set by battle events are merged in.
+    /// * Only a victory adds `gold_found` / `items_found` (RULES.md §10) and records the
+    ///   battle in `battles_won`.
+    pub fn apply_battle_result(&mut self, pack: &Pack, battle: &BattleState) {
+        for unit in battle.units.iter().filter(|u| u.side == Side::Player) {
+            let Some(state) = unit.officer.as_deref().and_then(|id| self.officer_mut(id)) else {
+                continue;
+            };
+            state.level = unit.level;
+            state.exp = unit.exp;
+            state.class = unit.class.clone();
+            state.strength = unit.strength;
+            state.int = unit.int;
+            state.lead = unit.lead;
+            state.equip = unit.equip.clone();
+        }
+
+        let battle_item = |id: &str| {
+            pack.item(id)
+                .is_some_and(|d| d.kind == ItemKind::Consumable && d.battle_use)
+        };
+        self.inventory.retain(|id, _| !battle_item(id));
+        for (id, count) in &battle.inventory {
+            if battle_item(id) {
+                self.add_item(id, *count);
+            }
+        }
+
+        for (flag, value) in &battle.flags {
+            self.flags.insert(flag.clone(), *value);
+        }
+
+        if battle.outcome == Some(Outcome::Victory) {
+            self.add_gold(pack, battle.gold_found);
+            for item in &battle.items_found {
+                self.add_item(item, 1);
+            }
+            if !self.battles_won.contains(&battle.battle_id) {
+                self.battles_won.push(battle.battle_id.clone());
+            }
+        }
     }
 }

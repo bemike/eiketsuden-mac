@@ -1,0 +1,101 @@
+[[class]]
+id = "short_infantry"
+name = "단병"
+hanja = "短兵"
+family = "infantry"
+tier = 1
+move = 4
+move_type = "foot"
+range = "adjacent4"
+atk = 8
+def = 8
+hp = 500
+hp_growth = 50
+generic = [40, 30, 50]
+sprite = "short_infantry"
+strategies = [{ level = 6, id = "fire" }]
+promote = { to = "long_infantry", level = 15, item = "long_spear" }
+
+[[class]]
+id = "long_infantry"
+name = "장병"
+hanja = "長兵"
+family = "infantry"
+tier = 2
+move = 4
+move_type = "foot"
+range = "adjacent8"
+atk = 12
+def = 12
+hp = 500
+hp_growth = 50
+generic = [40, 30, 50]
+sprite = "long_infantry"
+strategies = [{ level = 20, id = "heal" }]
+
+[[class]]
+id = "light_cavalry"
+name = "경기병"
+family = "cavalry"
+tier = 1
+move = 6
+move_type = "horse"
+range = "adjacent4"
+atk = 12
+def = 6
+hp = 500
+hp_growth = 60
+generic = [50, 30, 40]
+sprite = "light_cavalry"
+provokes_counter = true
+
+[[class]]
+id = "archer"
+name = "궁병"
+family = "archer"
+tier = 1
+move = 4
+move_type = "foot"
+range = "archer"
+atk = 6
+def = 8
+hp = 500
+hp_growth = 40
+generic = [40, 50, 30]
+sprite = "archer"
+
+[[class]]
+id = "bandit"
+name = "산적"
+family = "bandit"
+tier = 1
+move = 4
+move_type = "special"
+range = "adjacent4"
+atk = 10
+def = 8
+hp = 800
+hp_growth = 40
+generic = [50, 40, 30]
+sprite = "bandit"
+strategies = [{ level = 3, id = "rockfall" }]
+can_counter = true
+provokes_counter = true
+
+[[class]]
+id = "sorcerer"
+name = "주술사"
+family = "support"
+tier = 1
+move = 4
+move_type = "foot"
+range = [[0, -1], [0, 1], [-1, 0], [1, 0]]
+atk = 4
+def = 4
+hp = 300
+hp_growth = 50
+generic = [5, 80, 50]
+sprite = "sorcerer"
+strategies = [{ level = 1, id = "heal" }, { level = 1, id = "confuse" }]
+strategy_guard = true
+support_exp = 12

@@ -1,0 +1,106 @@
+id = "b01"
+name = "들판 전투"
+location = "184년 탁현"
+objective = "적장 장보를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 20
+reward_gold = 200
+intro = "b01_intro"
+outro = "b01_outro"
+victory = [{ type = "defeat_commander" }]
+defeat = [{ type = "unit_retreated", target = "militia" }]
+bonus = { condition = { type = "defeat_unit", target = "deng_mao" }, exp = 30, desc = "등무를 물리쳐라" }
+
+# x = column, y = row; [0, 0] is the top-left tile.
+[map]
+theme = "field"
+rows = """
+^^^.......
+^^..TT..v.
+^...TT....
+..........
+~~~=~~~~~~
+..........
+..........
+cc........
+"""
+
+[deploy]
+max = 3
+slots = [[1, 6], [2, 6], [3, 6], [2, 7]]
+
+[[units]]
+side = "enemy"
+officer = "zhang_bao"
+pos = [1, 1]
+ai = "guard"
+commander = true
+tag = "boss"
+drop = "war_manual"
+
+[[units]]
+side = "enemy"
+officer = "deng_mao"
+pos = [4, 3]
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 3
+pos = [5, 2]
+
+[[units]]
+side = "enemy"
+name = "황건 궁병"
+class = "archer"
+level = 3
+stats = [40, 50, 30]
+pos = [7, 3]
+ai = "target"
+ai_target = "liu_bei"
+
+[[units]]
+side = "ally"
+name = "의용병"
+class = "short_infantry"
+level = 3
+pos = [8, 6]
+ai = "hold"
+tag = "militia"
+
+[[units]]
+side = "enemy"
+name = "황건 기병"
+class = "light_cavalry"
+level = 4
+pos = [9, 0]
+ai = "advance"
+ai_pos = [3, 4]
+group = "rein"
+
+[[events]]
+trigger = { type = "turn_start", turn = 3, side = "enemy" }
+actions = [{ type = "spawn", group = "rein" }, { type = "drama", scene = "b01_rein" }]
+
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "boss" }
+actions = [{ type = "drama", scene = "b01_duel" }]
+
+[[events]]
+trigger = { type = "unit_defeated", target = "boss" }
+actions = [{ type = "set_flag", flag = "captives", value = 2 }]
+
+[[events]]
+trigger = { type = "hp_below", target = "militia", pct = 50 }
+actions = [{ type = "set_ai", target = "militia", ai = "flee" }]
+
+[[events]]
+trigger = { type = "reach", who = "liu_bei", pos = [8, 1], radius = 1 }
+actions = [{ type = "give_item", item = "fire_scroll" }]
+
+[[treasures]]
+pos = [8, 1]
+item = "red_horse"
+gold = 50

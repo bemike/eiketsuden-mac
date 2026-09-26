@@ -1,0 +1,44 @@
+# Story scenes of the mini test pack (original text written for the tests).
+
+== oath
+@bg village
+@bgm peace
+@title 제1장 맹세
+@narr 난세가 시작되었다.
+    작은 마을에 세 사람이 모였다.
+@show liu_bei left
+@show 장비 right
+liu_bei: 함께 백성을 지키자.
+장비: 좋소, 형님!
+@choice
+  - 적을 끝까지 쫓는다 -> pursue
+  - 마을을 지킨다 -> guard
+@label pursue
+@set pursue = 1
+@goto recruit
+@label guard
+@set pursue = 0
+@label recruit
+@if pursue -> skip_gift
+@gold +100
+@item bean
+@label skip_gift
+@join jian_yong
+jian_yong: 저도 힘을 보태겠습니다.
+@hide all
+@fade out
+@end
+
+== mercy
+@bg camp
+@set captives -= 1
+관우: 포로들을 풀어 주었습니다.
+
+== retreat
+@bg field
+@narr 군은 물러나 다시 힘을 모았다.
+
+== epilogue
+@bg palace
+@bgm ending
+@narr 이야기는 계속된다.

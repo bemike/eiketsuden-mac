@@ -1,0 +1,58 @@
+# Move types: foot (infantry, archers, support), horse (cavalry), special (bandits).
+
+[[terrain]]
+id = "plain"
+name = "평지"
+glyph = "."
+elements = ["fire"]
+cost = { foot = 1, horse = 1, special = 1 }
+
+[[terrain]]
+id = "forest"
+name = "숲"
+glyph = "T"
+defense = 20
+elements = ["fire", "earth"]
+boost = ["fire"]
+cost = { foot = 2, special = 1 }
+
+[[terrain]]
+id = "mountain"
+name = "산지"
+glyph = "^"
+defense = 30
+elements = ["earth"]
+cost = { special = 2 }
+
+[[terrain]]
+id = "river"
+name = "강"
+glyph = "~"
+
+[[terrain]]
+id = "bridge"
+name = "다리"
+glyph = "="
+cost = { foot = 1, horse = 1, special = 1 }
+
+[[terrain]]
+id = "village"
+name = "마을"
+glyph = "v"
+defense = 10
+heal_hp = 10
+heal_morale = 5
+elements = ["fire"]
+cost = { foot = 1, horse = 1, special = 1 }
+
+[[terrain]]
+id = "castle"
+name = "성내"
+glyph = "c"
+defense = 10
+cost = { foot = 1, horse = 1, special = 1 }
+
+[[terrain]]
+id = "wall"
+name = "성벽"
+glyph = "#"

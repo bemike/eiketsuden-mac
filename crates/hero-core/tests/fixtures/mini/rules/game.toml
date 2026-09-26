@@ -1,0 +1,30 @@
+level_cap = 50
+exp_per_level = 100
+gold_cap = 9999
+mp_cap = 200
+morale_start = 100
+morale_loss_pct = 50
+confuse_morale = 30
+exp_attack = [[-99, 1], [-5, 4], [0, 8], [5, 12]]
+exp_kill = [[-99, 4], [-5, 16], [0, 32], [5, 48]]
+exp_commander = 20
+exp_support = 8
+counter_divisor = 150
+counter_damage_pct = 50
+
+[weather]
+clear = 60
+cloudy = 25
+rain = 15
+
+[affinity.infantry]
+archer = 75
+cavalry = 125
+
+[affinity.archer]
+cavalry = 75
+infantry = 125
+
+[affinity.cavalry]
+infantry = 75
+archer = 125

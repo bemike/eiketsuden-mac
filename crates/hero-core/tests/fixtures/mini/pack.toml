@@ -1,0 +1,19 @@
+# Tiny, self-consistent pack used by the hero-core and hero-tools tests.
+# It must stay free of validation errors AND warnings: tests build broken copies of it in memory.
+id = "mini"
+name = "Mini test pack"
+version = "0.1.0"
+authors = ["Eiketsuden Reloaded contributors"]
+license = "CC0-1.0"
+description = "Two battles, a branching campaign and a few drama scenes for automated tests."
+officers = "officers.toml"
+campaign = "campaign.toml"
+battles = ["battles/b01.toml", "battles/b02.toml"]
+dramas = ["dramas/story.drama", "dramas/battles.drama"]
+
+[rules]
+game = "rules/game.toml"
+terrain = "rules/terrain.toml"
+classes = "rules/classes.toml"
+strategies = "rules/strategies.toml"
+items = "rules/items.toml"

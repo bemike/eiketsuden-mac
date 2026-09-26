@@ -1,0 +1,66 @@
+[[officer]]
+id = "liu_bei"
+name = "유비"
+hanja = "劉備"
+courtesy = "현덕"
+class = "short_infantry"
+level = 5
+str = 72
+int = 75
+lead = 78
+lord = true
+fixed_class = true
+equip = { weapon = "bronze_sword" }
+
+[[officer]]
+id = "guan_yu"
+name = "관우"
+hanja = "關羽"
+courtesy = "운장"
+class = "short_infantry"
+level = 15
+str = 97
+int = 75
+lead = 95
+
+[[officer]]
+id = "zhang_fei"
+name = "장비"
+hanja = "張飛"
+courtesy = "익덕"
+class = "light_cavalry"
+level = 6
+str = 98
+int = 30
+lead = 90
+
+[[officer]]
+id = "jian_yong"
+name = "간옹"
+hanja = "簡雍"
+class = "sorcerer"
+level = 4
+str = 30
+int = 70
+lead = 40
+portrait = "jianyong"
+
+[[officer]]
+id = "zhang_bao"
+name = "장보"
+hanja = "張寶"
+class = "bandit"
+level = 7
+str = 60
+int = 50
+lead = 60
+
+[[officer]]
+id = "deng_mao"
+name = "등무"
+hanja = "鄧茂"
+class = "bandit"
+level = 5
+str = 55
+int = 20
+lead = 40
