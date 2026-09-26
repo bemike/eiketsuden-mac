@@ -449,6 +449,7 @@ pub fn pack_with(def: BattleDef) -> Pack {
             campaign: String::new(),
             battles: Vec::new(),
             dramas: Vec::new(),
+            presentation: Default::default(),
         },
         rules: rules(),
         terrain: terrains(),
