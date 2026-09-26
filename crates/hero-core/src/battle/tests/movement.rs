@@ -31,7 +31,10 @@ fn terrain_costs_and_impassable_tiles() {
 
     let cav = add(&mut st, &pack, Side::Player, "cavalry", 1, p(0, 3));
     let r = st.movement_range(&pack, cav);
-    assert!(!r.contains(p(1, 1)) && !r.contains(p(2, 1)), "horses cannot enter forest");
+    assert!(
+        !r.contains(p(1, 1)) && !r.contains(p(2, 1)),
+        "horses cannot enter forest"
+    );
     assert!(r.contains(p(4, 3)));
 }
 
@@ -91,18 +94,44 @@ fn move_action_validation_and_events() {
     let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
     let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
     assert_eq!(
-        st.apply(&pack, Action::Move { unit: foe, to: p(6, 7) }),
+        st.apply(
+            &pack,
+            Action::Move {
+                unit: foe,
+                to: p(6, 7)
+            }
+        ),
         Err(ActionError::NotYourTurn(foe))
     );
     assert_eq!(
-        st.apply(&pack, Action::Move { unit: me, to: p(5, 0) }),
+        st.apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(5, 0)
+            }
+        ),
         Err(ActionError::Unreachable)
     );
     assert_eq!(
-        st.apply(&pack, Action::Move { unit: 9, to: p(1, 0) }),
+        st.apply(
+            &pack,
+            Action::Move {
+                unit: 9,
+                to: p(1, 0)
+            }
+        ),
         Err(ActionError::NoSuchUnit(9))
     );
-    let ev = st.apply(&pack, Action::Move { unit: me, to: p(2, 1) }).unwrap();
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(2, 1),
+            },
+        )
+        .unwrap();
     assert_eq!(
         ev,
         vec![BattleEvent::Moved {
@@ -113,13 +142,25 @@ fn move_action_validation_and_events() {
     assert_eq!(st.units[me].pos, p(2, 1));
     assert_eq!(st.units[me].facing, Dir::Right);
     assert!(st.units[me].moved && !st.units[me].acted);
-    assert!(st.movement_range(&pack, me).tiles.is_empty(), "empty after moving");
+    assert!(
+        st.movement_range(&pack, me).tiles.is_empty(),
+        "empty after moving"
+    );
     assert_eq!(
-        st.apply(&pack, Action::Move { unit: me, to: p(2, 2) }),
+        st.apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(2, 2)
+            }
+        ),
         Err(ActionError::AlreadyMoved(me))
     );
     st.apply(&pack, Action::Wait { unit: me }).unwrap();
-    assert_eq!(st.apply(&pack, Action::Wait { unit: me }), Err(ActionError::AlreadyActed(me)));
+    assert_eq!(
+        st.apply(&pack, Action::Wait { unit: me }),
+        Err(ActionError::AlreadyActed(me))
+    );
     // Enemy ranges can be inspected during the player phase.
     assert!(st.movement_range(&pack, foe).contains(p(7, 3)));
 }
@@ -145,7 +186,15 @@ fn treasure_ends_the_move_and_goes_to_player_units_only() {
         "enemies walk over treasures"
     );
 
-    let ev = st.apply(&pack, Action::Move { unit: me, to: p(2, 0) }).unwrap();
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(2, 0),
+            },
+        )
+        .unwrap();
     assert!(ev.contains(&BattleEvent::TreasureFound {
         unit: me,
         item: Some("jade".into()),
@@ -170,7 +219,10 @@ fn named_attack_shapes() {
         let mut st = state(&pack);
         let a = add(&mut st, &pack, Side::Player, "archer", 1, p(4, 4));
         assert_eq!(st.attack_tiles(&pack, a, p(4, 4)).len(), n, "{shape}");
-        assert!(st.attack_tiles(&pack, a, p(0, 0)).len() < n, "{shape} is clipped");
+        assert!(
+            st.attack_tiles(&pack, a, p(0, 0)).len() < n,
+            "{shape} is clipped"
+        );
     }
     // Archers hit at distance exactly 2, only hostile units.
     pack.classes.get_mut("archer").unwrap().range = RangeSpec::Named("archer".into());
@@ -183,7 +235,13 @@ fn named_attack_shapes() {
     assert_eq!(st.attack_targets(&pack, a, p(4, 4)), vec![far, diag]);
     assert!(!st.attack_targets(&pack, a, p(4, 4)).contains(&near));
     assert_eq!(
-        st.apply(&pack, Action::Attack { unit: a, target: near }),
+        st.apply(
+            &pack,
+            Action::Attack {
+                unit: a,
+                target: near
+            }
+        ),
         Err(ActionError::OutOfRange)
     );
     // From another tile the shape moves with the unit.

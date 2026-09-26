@@ -1,7 +1,9 @@
 //! Unit values (§2), physical attacks and counters (§4), EXP and levels (§7), retreat (§11).
 
 use crate::battle::testkit::*;
-use crate::battle::{Action, ActionError, ActiveStatus, AttackForecast, BattleEvent, CounterForecast, UnitState};
+use crate::battle::{
+    Action, ActionError, ActiveStatus, AttackForecast, BattleEvent, CounterForecast, UnitState,
+};
 use crate::battledef::Side;
 use crate::data::{Equipment, RangeSpec, StatusKind};
 
@@ -22,7 +24,10 @@ fn cao_cao_worked_example() {
     assert_eq!(st.defense_power(&pack, cao), 1965);
     // Morale enters both directly.
     st.units[cao].morale = 50;
-    assert_eq!(st.attack_power(&pack, cao), 52 * (50 + 61 + 160) / 10 * 120 / 100);
+    assert_eq!(
+        st.attack_power(&pack, cao),
+        52 * (50 + 61 + 160) / 10 * 120 / 100
+    );
 }
 
 #[test]
@@ -66,7 +71,9 @@ fn damage_terrain_and_morale_loss() {
         },
         "forest removes 20%"
     );
-    let ev = st.apply(&pack, Action::Attack { unit: a, target: d }).unwrap();
+    let ev = st
+        .apply(&pack, Action::Attack { unit: a, target: d })
+        .unwrap();
     assert_eq!(
         ev[0],
         BattleEvent::Strike {
@@ -94,7 +101,11 @@ fn class_affinity_is_plus_minus_25_percent() {
     assert_eq!((adv.affinity, adv.damage), (75, 268 - 224 * 75 / 100 / 2));
     let dis = st.forecast_attack(&pack, arc, inf);
     assert_eq!((dis.affinity, dis.damage), (125, 268 - 268 * 125 / 100 / 2));
-    assert_eq!(st.forecast_attack(&pack, inf, band).affinity, 100, "no affinity for support classes");
+    assert_eq!(
+        st.forecast_attack(&pack, inf, band).affinity,
+        100,
+        "no affinity for support classes"
+    );
 }
 
 #[test]
@@ -110,11 +121,22 @@ fn counter_attack_conditions_and_forecast() {
         AttackForecast {
             damage: 190,
             affinity: 75,
-            counter: Some(CounterForecast { damage: 36, chance: 33 })
+            counter: Some(CounterForecast {
+                damage: 36,
+                chance: 33
+            })
         }
     );
-    assert_eq!(st.forecast_attack(&pack, inf, bandit).counter, None, "infantry never provokes");
-    assert_eq!(st.forecast_attack(&pack, cav, foot).counter, None, "infantry cannot counter");
+    assert_eq!(
+        st.forecast_attack(&pack, inf, bandit).counter,
+        None,
+        "infantry never provokes"
+    );
+    assert_eq!(
+        st.forecast_attack(&pack, cav, foot).counter,
+        None,
+        "infantry cannot counter"
+    );
     // The defender must survive.
     st.units[bandit].hp = 150;
     assert_eq!(st.forecast_attack(&pack, cav, bandit).counter, None);
@@ -139,7 +161,15 @@ fn counter_strikes_back_and_can_defeat_the_attacker() {
     let cav = add(&mut st, &pack, Side::Player, "cavalry", 1, p(3, 3));
     let bandit = add(&mut st, &pack, Side::Enemy, "bandit", 1, p(3, 4));
     add(&mut st, &pack, Side::Enemy, "bandit", 1, p(7, 7));
-    let ev = st.apply(&pack, Action::Attack { unit: cav, target: bandit }).unwrap();
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: cav,
+                target: bandit,
+            },
+        )
+        .unwrap();
     assert_eq!(
         ev,
         vec![
@@ -157,7 +187,10 @@ fn counter_strikes_back_and_can_defeat_the_attacker() {
                 morale_loss: 6,
                 counter: true
             },
-            BattleEvent::ExpGained { unit: cav, amount: 6 },
+            BattleEvent::ExpGained {
+                unit: cav,
+                amount: 6
+            },
         ]
     );
     assert_eq!(st.units[cav].hp, 564);
@@ -171,9 +204,20 @@ fn counter_strikes_back_and_can_defeat_the_attacker() {
     st.units[boss].hp = 10;
     st.units[boss].commander = true;
     st.phase = Side::Enemy;
-    let ev = st.apply(&pack, Action::Attack { unit: boss, target: me }).unwrap();
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: boss,
+                target: me,
+            },
+        )
+        .unwrap();
     assert!(ev.contains(&BattleEvent::Retreated { unit: boss }));
-    assert!(ev.contains(&BattleEvent::ExpGained { unit: me, amount: 38 + 20 }));
+    assert!(ev.contains(&BattleEvent::ExpGained {
+        unit: me,
+        amount: 38 + 20
+    }));
     assert_eq!(st.units[boss].state, UnitState::Retreated);
     assert_eq!(st.units[me].hp, 500 - 190);
 }
@@ -183,10 +227,20 @@ fn counter_chance_is_rolled() {
     let pack = pack(OPEN_MAP);
     let mut counters = 0;
     for seed in 0..200 {
-        let mut st = crate::battle::BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let mut st =
+            crate::battle::BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed)
+                .unwrap();
         let cav = add(&mut st, &pack, Side::Player, "cavalry", 1, p(3, 3));
         let bandit = add(&mut st, &pack, Side::Enemy, "bandit", 1, p(3, 4));
-        let ev = st.apply(&pack, Action::Attack { unit: cav, target: bandit }).unwrap();
+        let ev = st
+            .apply(
+                &pack,
+                Action::Attack {
+                    unit: cav,
+                    target: bandit,
+                },
+            )
+            .unwrap();
         counters += ev
             .iter()
             .filter(|e| matches!(e, BattleEvent::Strike { counter: true, .. }))
@@ -204,19 +258,34 @@ fn attack_validation() {
     let gone = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(0, 1));
     add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
     assert_eq!(
-        st.apply(&pack, Action::Attack { unit: a, target: friend }),
+        st.apply(
+            &pack,
+            Action::Attack {
+                unit: a,
+                target: friend
+            }
+        ),
         Err(ActionError::InvalidTarget)
     );
     st.units[gone].state = UnitState::Retreated;
     assert_eq!(
-        st.apply(&pack, Action::Attack { unit: a, target: gone }),
+        st.apply(
+            &pack,
+            Action::Attack {
+                unit: a,
+                target: gone
+            }
+        ),
         Err(ActionError::NoSuchUnit(gone))
     );
     st.units[a].statuses.push(ActiveStatus {
         status: StatusKind::Confused,
         turns: 1,
     });
-    assert_eq!(st.apply(&pack, Action::Wait { unit: a }), Err(ActionError::Confused(a)));
+    assert_eq!(
+        st.apply(&pack, Action::Wait { unit: a }),
+        Err(ActionError::Confused(a))
+    );
 }
 
 #[test]
@@ -228,15 +297,37 @@ fn exp_for_attacks_and_kills_with_drop() {
     let weak = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(4, 3));
     let b = add(&mut st, &pack, Side::Player, "infantry", 1, p(5, 4));
     add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
-    let ev = st.apply(&pack, Action::Attack { unit: a, target: high }).unwrap();
-    assert!(ev.contains(&BattleEvent::ExpGained { unit: a, amount: 12 }), "level +5 -> 12");
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: a,
+                target: high,
+            },
+        )
+        .unwrap();
+    assert!(
+        ev.contains(&BattleEvent::ExpGained {
+            unit: a,
+            amount: 12
+        }),
+        "level +5 -> 12"
+    );
     assert_eq!(st.units[a].exp, 12);
 
     st.units[weak].hp = 50;
     st.units[weak].commander = true;
     st.units[weak].drop = Some("bean".into());
     st.units[b].pos = p(5, 3);
-    let ev = st.apply(&pack, Action::Attack { unit: b, target: weak }).unwrap();
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: b,
+                target: weak,
+            },
+        )
+        .unwrap();
     assert_eq!(
         &ev[1..],
         &[
@@ -245,7 +336,10 @@ fn exp_for_attacks_and_kills_with_drop() {
                 unit: weak,
                 item: "bean".into()
             },
-            BattleEvent::ExpGained { unit: b, amount: 38 + 20 },
+            BattleEvent::ExpGained {
+                unit: b,
+                amount: 38 + 20
+            },
         ]
     );
     assert_eq!(st.items_found, vec!["bean".to_string()]);
@@ -259,8 +353,18 @@ fn enemies_gain_no_exp() {
     let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
     let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 4));
     st.phase = Side::Enemy;
-    let ev = st.apply(&pack, Action::Attack { unit: foe, target: me }).unwrap();
-    assert!(!ev.iter().any(|e| matches!(e, BattleEvent::ExpGained { .. })));
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: foe,
+                target: me,
+            },
+        )
+        .unwrap();
+    assert!(!ev
+        .iter()
+        .any(|e| matches!(e, BattleEvent::ExpGained { .. })));
     assert_eq!(st.units[foe].exp, 0);
 }
 
@@ -274,7 +378,9 @@ fn level_up_keeps_remainder_and_learns() {
     set_stats(&mut st, &pack, a, [50, 40, 50]);
     st.units[a].exp = 95;
     st.units[a].hp = 100;
-    let ev = st.apply(&pack, Action::Attack { unit: a, target: d }).unwrap();
+    let ev = st
+        .apply(&pack, Action::Attack { unit: a, target: d })
+        .unwrap();
     assert_eq!(
         &ev[1..],
         &[
@@ -304,7 +410,9 @@ fn level_cap_holds_exp_below_a_level() {
     let a = add(&mut st, &pack, Side::Player, "infantry", 2, p(3, 3));
     let d = add(&mut st, &pack, Side::Enemy, "infantry", 2, p(3, 4));
     st.units[a].exp = 99;
-    let ev = st.apply(&pack, Action::Attack { unit: a, target: d }).unwrap();
+    let ev = st
+        .apply(&pack, Action::Attack { unit: a, target: d })
+        .unwrap();
     assert!(!ev.iter().any(|e| matches!(e, BattleEvent::LevelUp { .. })));
     assert_eq!((st.units[a].level, st.units[a].exp), (2, 99));
 }
@@ -321,8 +429,13 @@ fn confused_unit_routed_by_morale_loss_gives_no_kill_exp() {
         status: StatusKind::Confused,
         turns: 1,
     });
-    let ev = st.apply(&pack, Action::Attack { unit: a, target: d }).unwrap();
+    let ev = st
+        .apply(&pack, Action::Attack { unit: a, target: d })
+        .unwrap();
     assert!(ev.contains(&BattleEvent::Retreated { unit: d }));
-    assert!(ev.contains(&BattleEvent::ExpGained { unit: a, amount: 6 }), "attack EXP only: {ev:?}");
+    assert!(
+        ev.contains(&BattleEvent::ExpGained { unit: a, amount: 6 }),
+        "attack EXP only: {ev:?}"
+    );
     assert!(st.units[d].hp > 0);
 }

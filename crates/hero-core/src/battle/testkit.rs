@@ -22,7 +22,13 @@ use std::collections::BTreeMap;
 
 pub const BATTLE: &str = "test";
 
-fn terrain(id: &str, glyph: char, defense: i32, elements: &[&str], costs: &[(&str, u8)]) -> TerrainDef {
+fn terrain(
+    id: &str,
+    glyph: char,
+    defense: i32,
+    elements: &[&str],
+    costs: &[(&str, u8)],
+) -> TerrainDef {
     TerrainDef {
         id: id.into(),
         name: id.into(),
@@ -40,11 +46,23 @@ fn terrain(id: &str, glyph: char, defense: i32, elements: &[&str], costs: &[(&st
 fn terrains() -> Vec<TerrainDef> {
     let mut forest = terrain("forest", 'T', 20, &["fire"], &[("foot", 2), ("bandit", 1)]);
     forest.boost = vec!["fire".into()];
-    let mut village = terrain("village", 'v', 0, &[], &[("foot", 1), ("horse", 1), ("bandit", 1)]);
+    let mut village = terrain(
+        "village",
+        'v',
+        0,
+        &[],
+        &[("foot", 1), ("horse", 1), ("bandit", 1)],
+    );
     village.heal_hp = 10;
     village.heal_morale = 10;
     vec![
-        terrain("plain", '.', 0, &["fire", "water"], &[("foot", 1), ("horse", 1), ("bandit", 1)]),
+        terrain(
+            "plain",
+            '.',
+            0,
+            &["fire", "water"],
+            &[("foot", 1), ("horse", 1), ("bandit", 1)],
+        ),
         forest,
         terrain("mountain", '^', 30, &["earth"], &[("bandit", 2)]),
         terrain("river", '~', 0, &[], &[]),
@@ -81,7 +99,10 @@ pub fn class(id: &str, family: &str, move_points: u8, move_type: &str, range: &s
 }
 
 fn learn(level: u32, id: &str) -> Learn {
-    Learn { level, id: id.into() }
+    Learn {
+        level,
+        id: id.into(),
+    }
 }
 
 fn classes() -> BTreeMap<String, ClassDef> {
@@ -126,7 +147,14 @@ fn classes() -> BTreeMap<String, ClassDef> {
         .collect()
 }
 
-fn strategy(id: &str, mp: i32, area: Area, target: TargetSide, element: Option<&str>, effects: Vec<Effect>) -> StrategyDef {
+fn strategy(
+    id: &str,
+    mp: i32,
+    area: Area,
+    target: TargetSide,
+    element: Option<&str>,
+    effects: Vec<Effect>,
+) -> StrategyDef {
     StrategyDef {
         id: id.into(),
         name: id.into(),
@@ -151,10 +179,38 @@ fn strategies() -> BTreeMap<String, StrategyDef> {
     use Area::*;
     use TargetSide::*;
     [
-        strategy("fire", 4, Single, Enemy, Some("fire"), vec![Effect::Damage { power: 200 }]),
-        strategy("big_fire", 16, Cross, Enemy, Some("fire"), vec![Effect::Damage { power: 200 }]),
-        strategy("flood", 6, Single, Enemy, Some("water"), vec![Effect::Damage { power: 300 }]),
-        strategy("rock", 8, Single, Enemy, Some("earth"), vec![Effect::Damage { power: 400 }]),
+        strategy(
+            "fire",
+            4,
+            Single,
+            Enemy,
+            Some("fire"),
+            vec![Effect::Damage { power: 200 }],
+        ),
+        strategy(
+            "big_fire",
+            16,
+            Cross,
+            Enemy,
+            Some("fire"),
+            vec![Effect::Damage { power: 200 }],
+        ),
+        strategy(
+            "flood",
+            6,
+            Single,
+            Enemy,
+            Some("water"),
+            vec![Effect::Damage { power: 300 }],
+        ),
+        strategy(
+            "rock",
+            8,
+            Single,
+            Enemy,
+            Some("earth"),
+            vec![Effect::Damage { power: 400 }],
+        ),
         strategy(
             "confuse",
             8,
@@ -166,10 +222,38 @@ fn strategies() -> BTreeMap<String, StrategyDef> {
                 turns: 1,
             }],
         ),
-        strategy("provoke", 4, Single, Enemy, None, vec![Effect::Morale { amount: -20 }]),
-        strategy("heal", 6, Single, Ally, None, vec![Effect::Heal { power: 200 }]),
-        strategy("heal_all", 24, AllInRange, Ally, None, vec![Effect::Heal { power: 200 }]),
-        strategy("cheer", 4, Single, Ally, None, vec![Effect::Morale { amount: 20 }]),
+        strategy(
+            "provoke",
+            4,
+            Single,
+            Enemy,
+            None,
+            vec![Effect::Morale { amount: -20 }],
+        ),
+        strategy(
+            "heal",
+            6,
+            Single,
+            Ally,
+            None,
+            vec![Effect::Heal { power: 200 }],
+        ),
+        strategy(
+            "heal_all",
+            24,
+            AllInRange,
+            Ally,
+            None,
+            vec![Effect::Heal { power: 200 }],
+        ),
+        strategy(
+            "cheer",
+            4,
+            Single,
+            Ally,
+            None,
+            vec![Effect::Morale { amount: 20 }],
+        ),
     ]
     .into_iter()
     .map(|s| (s.id.clone(), s))
@@ -314,7 +398,12 @@ pub fn battle(rows: &str) -> BattleDef {
             max: 4,
             required: Vec::new(),
             forbidden: Vec::new(),
-            slots: vec![Pos::new(0, 0), Pos::new(1, 0), Pos::new(2, 0), Pos::new(3, 0)],
+            slots: vec![
+                Pos::new(0, 0),
+                Pos::new(1, 0),
+                Pos::new(2, 0),
+                Pos::new(3, 0),
+            ],
         },
         units: Vec::new(),
         victory: vec![Condition::DefeatAll],
@@ -419,7 +508,14 @@ pub fn state(pack: &Pack) -> BattleState {
 }
 
 /// Place a generic unit (class `generic` stats, full HP/MP, morale 100). Returns its id.
-pub fn add(st: &mut BattleState, pack: &Pack, side: Side, class_id: &str, level: u32, pos: Pos) -> UnitId {
+pub fn add(
+    st: &mut BattleState,
+    pack: &Pack,
+    side: Side,
+    class_id: &str,
+    level: u32,
+    pos: Pos,
+) -> UnitId {
     let c = &pack.classes[class_id];
     let [strength, int, lead] = c.generic;
     let id = st.units.len();

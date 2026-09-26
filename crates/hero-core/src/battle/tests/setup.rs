@@ -2,7 +2,7 @@
 
 use crate::battle::testkit::*;
 use crate::battle::{BattleError, BattleEvent, BattleState, UnitState, Weather};
-use crate::battledef::{AiMode, EventAction, EventDef, Side, Trigger, TreasureDef, UnitSpawn};
+use crate::battledef::{AiMode, EventAction, EventDef, Side, TreasureDef, Trigger, UnitSpawn};
 use crate::data::Equipment;
 use crate::geom::Pos;
 
@@ -57,7 +57,10 @@ fn deployed_officers_take_slots_in_order_with_campaign_progress() {
     assert_eq!(l.pos, p(1, 0));
     assert!(l.lord);
     assert_eq!(st.move_points(&pack, 0), 8, "cavalry 6 + horse 2");
-    assert_eq!((st.turn, st.phase, st.weather), (1, Side::Player, Weather::Clear));
+    assert_eq!(
+        (st.turn, st.phase, st.weather),
+        (1, Side::Player, Weather::Clear)
+    );
 }
 
 #[test]
@@ -72,7 +75,11 @@ fn fallback_deploys_required_then_lord_then_roster_up_to_max() {
         .map(|id| officer_state(&pack, id))
         .collect();
     let st = BattleState::new(&pack, BATTLE, &campaign(roster, &[]), 1).unwrap();
-    let ids: Vec<_> = st.units.iter().map(|u| u.officer.clone().unwrap()).collect();
+    let ids: Vec<_> = st
+        .units
+        .iter()
+        .map(|u| u.officer.clone().unwrap())
+        .collect();
     assert_eq!(ids, ["jian_yong", "liu_bei", "guan_yu"]);
 }
 
@@ -99,8 +106,15 @@ fn spawns_use_class_or_officer_stats_and_groups_start_hidden() {
     let st = state(&pack);
 
     let u = &st.units[0];
-    assert_eq!((u.side, u.name.as_str(), u.level), (Side::Enemy, "infantry", 3));
-    assert_eq!([u.strength, u.int, u.lead], [50, 30, 50], "class generic stats");
+    assert_eq!(
+        (u.side, u.name.as_str(), u.level),
+        (Side::Enemy, "infantry", 3)
+    );
+    assert_eq!(
+        [u.strength, u.int, u.lead],
+        [50, 30, 50],
+        "class generic stats"
+    );
     assert_eq!(u.hp, 540);
     let c = &st.units[1];
     assert_eq!([c.strength, c.int, c.lead], [80, 10, 20]);
@@ -125,21 +139,33 @@ fn setup_errors() {
         Err(BattleError::UnknownBattle("nope".into()))
     );
     let camp = campaign(vec![officer_state(&pack, "liu_bei")], &["guan_yu"]);
-    assert!(matches!(BattleState::new(&pack, BATTLE, &camp, 1), Err(BattleError::Setup(_))));
+    assert!(matches!(
+        BattleState::new(&pack, BATTLE, &camp, 1),
+        Err(BattleError::Setup(_))
+    ));
 
     let mut def = battle(OPEN_MAP);
     def.units = vec![spawn(Side::Enemy, p(0, 0))];
     let pack = pack_with(def);
     let camp = campaign(vec![officer_state(&pack, "liu_bei")], &["liu_bei"]);
     let err = BattleState::new(&pack, BATTLE, &camp, 1).unwrap_err();
-    assert!(matches!(err, BattleError::Setup(ref m) if m.contains("both start")), "{err}");
+    assert!(
+        matches!(err, BattleError::Setup(ref m) if m.contains("both start")),
+        "{err}"
+    );
 
     let mut def = battle(OPEN_MAP);
     def.deploy.slots.truncate(1);
     let pack = pack_with(def);
-    let roster = vec![officer_state(&pack, "liu_bei"), officer_state(&pack, "guan_yu")];
+    let roster = vec![
+        officer_state(&pack, "liu_bei"),
+        officer_state(&pack, "guan_yu"),
+    ];
     let camp = campaign(roster, &["liu_bei", "guan_yu"]);
-    assert!(matches!(BattleState::new(&pack, BATTLE, &camp, 1), Err(BattleError::Setup(_))));
+    assert!(matches!(
+        BattleState::new(&pack, BATTLE, &camp, 1),
+        Err(BattleError::Setup(_))
+    ));
 }
 
 #[test]
@@ -193,7 +219,9 @@ fn begin_plays_intro_then_starts_turn_one() {
     assert_eq!(
         ev,
         vec![
-            BattleEvent::Drama { scene: "intro".into() },
+            BattleEvent::Drama {
+                scene: "intro".into()
+            },
             BattleEvent::PhaseStart {
                 side: Side::Player,
                 turn: 1

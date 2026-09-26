@@ -21,9 +21,14 @@ impl<'a> Board<'a> {
     }
 
     /// Like [`Board::new`] but pretending unit `moved.0` stands on `moved.1`.
-    pub fn with_moved(state: &BattleState, pack: &'a Pack, moved: Option<(UnitId, Pos)>) -> Board<'a> {
+    pub fn with_moved(
+        state: &BattleState,
+        pack: &'a Pack,
+        moved: Option<(UnitId, Pos)>,
+    ) -> Board<'a> {
         let map = &state.map;
-        let palette: Vec<Option<&'a TerrainDef>> = map.terrain_ids.iter().map(|id| pack.terrain(id)).collect();
+        let palette: Vec<Option<&'a TerrainDef>> =
+            map.terrain_ids.iter().map(|id| pack.terrain(id)).collect();
         let terrain = map
             .tiles
             .iter()
@@ -52,7 +57,8 @@ impl<'a> Board<'a> {
     }
 
     pub fn index(&self, p: Pos) -> Option<usize> {
-        (p.x >= 0 && p.y >= 0 && p.x < self.width && p.y < self.height).then(|| (p.y * self.width + p.x) as usize)
+        (p.x >= 0 && p.y >= 0 && p.x < self.width && p.y < self.height)
+            .then(|| (p.y * self.width + p.x) as usize)
     }
 
     pub fn pos_of(&self, i: usize) -> Pos {

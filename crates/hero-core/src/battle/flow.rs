@@ -26,7 +26,9 @@ impl BattleState {
             return ev;
         }
         if let Some(scene) = &self.def(pack).intro {
-            ev.push(BattleEvent::Drama { scene: scene.clone() });
+            ev.push(BattleEvent::Drama {
+                scene: scene.clone(),
+            });
         }
         if !self.start_phase(pack, Side::Player, &mut ev) {
             self.end_phase(pack, &mut ev);
@@ -67,7 +69,10 @@ impl BattleState {
         let key = Some((self.turn, side));
         let played = self.has_active(side);
         if played {
-            ev.push(BattleEvent::PhaseStart { side, turn: self.turn });
+            ev.push(BattleEvent::PhaseStart {
+                side,
+                turn: self.turn,
+            });
         }
         if side == Side::Player {
             self.roll_weather(pack, ev);
@@ -83,7 +88,10 @@ impl BattleState {
         self.settle_with(pack, key, true, ev);
         if self.outcome.is_none() && self.has_active(side) {
             // Reinforcements arrived through a `turn_start` event: the phase is played.
-            ev.push(BattleEvent::PhaseStart { side, turn: self.turn });
+            ev.push(BattleEvent::PhaseStart {
+                side,
+                turn: self.turn,
+            });
             self.clear_flags(side);
             return true;
         }
@@ -194,7 +202,11 @@ impl BattleState {
         let low = pack.rules.confuse_morale;
         for id in 0..self.units.len() {
             let u = &self.units[id];
-            if !u.is_active() || u.side != side || u.morale > low || u.has_status(StatusKind::Confused) {
+            if !u.is_active()
+                || u.side != side
+                || u.morale > low
+                || u.has_status(StatusKind::Confused)
+            {
                 continue;
             }
             let chance = (low - u.morale).saturating_mul(3).saturating_add(10);
@@ -211,7 +223,13 @@ impl BattleState {
         self.settle_with(pack, None, false, ev);
     }
 
-    fn settle_with(&mut self, pack: &Pack, phase: Option<PhaseKey>, only_turn_start: bool, ev: &mut Vec<BattleEvent>) {
+    fn settle_with(
+        &mut self,
+        pack: &Pack,
+        phase: Option<PhaseKey>,
+        only_turn_start: bool,
+        ev: &mut Vec<BattleEvent>,
+    ) {
         if self.outcome.is_some() {
             return;
         }
@@ -226,7 +244,13 @@ impl BattleState {
     /// Fire every event whose trigger holds (§9). Passes repeat while events keep firing
     /// (their actions may make other triggers true, e.g. spawns); an event fires at most once
     /// per check, and never again after it fired when `once`.
-    fn fire_events(&mut self, pack: &Pack, phase: Option<PhaseKey>, only_turn_start: bool, ev: &mut Vec<BattleEvent>) {
+    fn fire_events(
+        &mut self,
+        pack: &Pack,
+        phase: Option<PhaseKey>,
+        only_turn_start: bool,
+        ev: &mut Vec<BattleEvent>,
+    ) {
         let events = &self.def(pack).events;
         if self.fired.len() < events.len() {
             self.fired.resize(events.len(), false);
@@ -262,7 +286,10 @@ impl BattleState {
 
     /// Ids of every unit a reference (tag or officer id) names.
     fn matching<'s>(&'s self, reference: &'s str) -> impl Iterator<Item = UnitId> + 's {
-        self.units.iter().filter(move |u| u.matches(reference)).map(|u| u.id)
+        self.units
+            .iter()
+            .filter(move |u| u.matches(reference))
+            .map(|u| u.id)
     }
 
     /// At least one unit matches and all matching units have retreated.
@@ -293,9 +320,10 @@ impl BattleState {
             Trigger::Reach { who, pos, radius } => self.someone_near(who.as_deref(), *pos, *radius),
             Trigger::Adjacent { a, b } => self.matching(a).any(|x| {
                 self.units[x].is_active()
-                    && self
-                        .matching(b)
-                        .any(|y| self.units[y].is_active() && self.units[x].pos.manhattan(self.units[y].pos) == 1)
+                    && self.matching(b).any(|y| {
+                        self.units[y].is_active()
+                            && self.units[x].pos.manhattan(self.units[y].pos) == 1
+                    })
             }),
             Trigger::HpBelow { target, pct } => self.matching(target).any(|id| {
                 let u = &self.units[id];
@@ -306,7 +334,9 @@ impl BattleState {
 
     fn run_action(&mut self, pack: &Pack, action: &EventAction, ev: &mut Vec<BattleEvent>) {
         match action {
-            EventAction::Drama { scene } => ev.push(BattleEvent::Drama { scene: scene.clone() }),
+            EventAction::Drama { scene } => ev.push(BattleEvent::Drama {
+                scene: scene.clone(),
+            }),
             EventAction::Spawn { group } => self.spawn_group(pack, group, ev),
             EventAction::SetAi {
                 target,
@@ -342,7 +372,9 @@ impl BattleState {
                 }
             }
             EventAction::GiveItem { item } => self.items_found.push(item.clone()),
-            EventAction::GiveGold { amount } => self.gold_found = self.gold_found.saturating_add(*amount),
+            EventAction::GiveGold { amount } => {
+                self.gold_found = self.gold_found.saturating_add(*amount)
+            }
             EventAction::SetFlag { flag, value } => {
                 self.flags.insert(flag.clone(), *value);
             }
@@ -393,7 +425,12 @@ impl BattleState {
         self.map
             .positions()
             .filter(|&p| board.unit_at(p).is_none())
-            .filter(|&p| board.terrain(p).and_then(|t| t.move_cost(move_type)).is_some())
+            .filter(|&p| {
+                board
+                    .terrain(p)
+                    .and_then(|t| t.move_cost(move_type))
+                    .is_some()
+            })
             .min_by_key(|&p| (p.manhattan(want), p.y, p.x))
     }
 
@@ -406,12 +443,16 @@ impl BattleState {
     fn condition_holds(&self, cond: &Condition, completed_turns: u32) -> bool {
         match cond {
             Condition::DefeatAll => !self.has_active(Side::Enemy),
-            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => self.all_retreated(target),
+            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
+                self.all_retreated(target)
+            }
             Condition::DefeatCommander => self
                 .units
                 .iter()
                 .any(|u| u.side == Side::Enemy && u.commander && u.state == UnitState::Retreated),
-            Condition::Reach { who, pos, radius } => self.someone_near(who.as_deref(), *pos, *radius),
+            Condition::Reach { who, pos, radius } => {
+                self.someone_near(who.as_deref(), *pos, *radius)
+            }
             Condition::SurviveTurns { turns } => completed_turns >= *turns,
         }
     }
@@ -430,7 +471,12 @@ impl BattleState {
 
     /// Victory / defeat check (§9): the lord retreating always loses; the bonus objective is
     /// updated first; victory is checked before defeat.
-    pub(super) fn check_outcome(&mut self, pack: &Pack, completed_turns: u32, ev: &mut Vec<BattleEvent>) {
+    pub(super) fn check_outcome(
+        &mut self,
+        pack: &Pack,
+        completed_turns: u32,
+        ev: &mut Vec<BattleEvent>,
+    ) {
         if self.outcome.is_some() {
             return;
         }
@@ -440,9 +486,17 @@ impl BattleState {
         }
         self.update_bonus(pack, completed_turns, ev);
         let def = self.def(pack);
-        if def.victory.iter().any(|c| self.condition_holds(c, completed_turns)) {
+        if def
+            .victory
+            .iter()
+            .any(|c| self.condition_holds(c, completed_turns))
+        {
             self.win(pack, ev);
-        } else if def.defeat.iter().any(|c| self.condition_holds(c, completed_turns)) {
+        } else if def
+            .defeat
+            .iter()
+            .any(|c| self.condition_holds(c, completed_turns))
+        {
             self.lose(DefeatReason::Condition, ev);
         }
     }
@@ -465,7 +519,9 @@ impl BattleState {
         }
         ev.push(BattleEvent::Victory);
         if let Some(scene) = &def.outro {
-            ev.push(BattleEvent::Drama { scene: scene.clone() });
+            ev.push(BattleEvent::Drama {
+                scene: scene.clone(),
+            });
         }
     }
 

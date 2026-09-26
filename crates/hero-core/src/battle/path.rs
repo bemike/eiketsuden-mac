@@ -19,7 +19,14 @@ impl BattleState {
     /// * Equal-cost ties keep the path found first; neighbours are expanded up, down, left,
     ///   right and the queue is ordered by (cost, insertion order), so the result is
     ///   deterministic.
-    pub(super) fn reach(&self, pack: &Pack, board: &Board, id: UnitId, from: Pos, points: i32) -> MoveRange {
+    pub(super) fn reach(
+        &self,
+        pack: &Pack,
+        board: &Board,
+        id: UnitId,
+        from: Pos,
+        points: i32,
+    ) -> MoveRange {
         let mut range = MoveRange {
             origin: from,
             tiles: BTreeMap::new(),
@@ -33,7 +40,11 @@ impl BattleState {
         let n = board.len();
 
         let mut stop = vec![false; n];
-        for other in self.units.iter().filter(|o| o.is_active() && o.side.is_hostile(unit.side)) {
+        for other in self
+            .units
+            .iter()
+            .filter(|o| o.is_active() && o.side.is_hostile(unit.side))
+        {
             for p in other.pos.neighbors4() {
                 if let Some(i) = board.index(p) {
                     stop[i] = true;
@@ -72,7 +83,10 @@ impl BattleState {
                 if blocked {
                     continue;
                 }
-                let Some(step) = board.terrain_at_index(j).and_then(|t| t.move_cost(move_type)) else {
+                let Some(step) = board
+                    .terrain_at_index(j)
+                    .and_then(|t| t.move_cost(move_type))
+                else {
                     continue;
                 };
                 let nc = c + step as i32;

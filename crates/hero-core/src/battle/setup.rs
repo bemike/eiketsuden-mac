@@ -19,7 +19,12 @@ fn setup_err(msg: String) -> BattleError {
     BattleError::Setup(msg)
 }
 
-pub(super) fn build(pack: &Pack, battle: &str, campaign: &CampaignState, seed: u64) -> Result<BattleState, BattleError> {
+pub(super) fn build(
+    pack: &Pack,
+    battle: &str,
+    campaign: &CampaignState,
+    seed: u64,
+) -> Result<BattleState, BattleError> {
     let def = pack
         .battles
         .get(battle)
@@ -53,7 +58,10 @@ pub(super) fn build(pack: &Pack, battle: &str, campaign: &CampaignState, seed: u
     let mut occupied: BTreeMap<Pos, UnitId> = BTreeMap::new();
     for u in &units {
         if !map.in_bounds(u.pos) {
-            return Err(setup_err(format!("unit `{}` is placed outside the map at {:?}", u.name, u.pos)));
+            return Err(setup_err(format!(
+                "unit `{}` is placed outside the map at {:?}",
+                u.name, u.pos
+            )));
         }
         if u.is_active() {
             if let Some(other) = occupied.insert(u.pos, u.id) {
@@ -87,17 +95,26 @@ pub(super) fn build(pack: &Pack, battle: &str, campaign: &CampaignState, seed: u
 
 /// Officers taking part: the deploy screen's choice, or required officers, the lord and then
 /// roster order up to `deploy.max` (skipping forbidden officers and officers not in the army).
-fn deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Result<Vec<Id>, BattleError> {
+fn deployment(
+    pack: &Pack,
+    def: &BattleDef,
+    campaign: &CampaignState,
+) -> Result<Vec<Id>, BattleError> {
     let in_army = |id: &str| campaign.roster.iter().any(|o| o.id == id);
     let forbidden = |id: &str| def.deploy.forbidden.iter().any(|f| f == id);
     let mut out: Vec<Id> = Vec::new();
     if !campaign.deployed.is_empty() {
         for id in &campaign.deployed {
             if !in_army(id) {
-                return Err(setup_err(format!("deployed officer `{id}` is not in the army")));
+                return Err(setup_err(format!(
+                    "deployed officer `{id}` is not in the army"
+                )));
             }
             if forbidden(id) {
-                return Err(setup_err(format!("officer `{id}` may not be deployed in battle `{}`", def.id)));
+                return Err(setup_err(format!(
+                    "officer `{id}` may not be deployed in battle `{}`",
+                    def.id
+                )));
             }
             if out.contains(id) {
                 return Err(setup_err(format!("officer `{id}` is deployed twice")));
@@ -106,7 +123,8 @@ fn deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Result<
         }
         return Ok(out);
     }
-    let allowed = |id: &str, out: &[Id]| in_army(id) && !forbidden(id) && !out.iter().any(|o| o == id);
+    let allowed =
+        |id: &str, out: &[Id]| in_army(id) && !forbidden(id) && !out.iter().any(|o| o == id);
     for id in &def.deploy.required {
         if allowed(id, &out) {
             out.push(id.clone());
@@ -136,13 +154,21 @@ fn check_equipment(pack: &Pack, who: &str, equip: &Equipment) -> Result<(), Batt
     }
 }
 
-fn officer_unit(pack: &Pack, id: UnitId, state: &OfficerState, slot: Pos) -> Result<Unit, BattleError> {
+fn officer_unit(
+    pack: &Pack,
+    id: UnitId,
+    state: &OfficerState,
+    slot: Pos,
+) -> Result<Unit, BattleError> {
     let od = pack
         .officer(&state.id)
         .ok_or_else(|| setup_err(format!("unknown officer `{}`", state.id)))?;
-    let class = pack
-        .class(&state.class)
-        .ok_or_else(|| setup_err(format!("officer `{}` has unknown class `{}`", state.id, state.class)))?;
+    let class = pack.class(&state.class).ok_or_else(|| {
+        setup_err(format!(
+            "officer `{}` has unknown class `{}`",
+            state.id, state.class
+        ))
+    })?;
     check_equipment(pack, &state.id, &state.equip)?;
     let level = state.level.max(1);
     let hp = max_hp(class, level);
@@ -231,7 +257,9 @@ fn spawn_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn) -> Result<Unit, BattleErr
         .ok_or_else(|| setup_err(format!("unit `{who}` has unknown class `{class_id}`")))?;
     check_equipment(pack, &who, &equip)?;
     if let Some(item) = sp.drop.as_deref().filter(|i| pack.item(i).is_none()) {
-        return Err(setup_err(format!("unit `{who}` drops unknown item `{item}`")));
+        return Err(setup_err(format!(
+            "unit `{who}` drops unknown item `{item}`"
+        )));
     }
     let level = level.max(1);
     let [strength, int, lead] = stats;

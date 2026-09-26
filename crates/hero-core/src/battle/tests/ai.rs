@@ -64,7 +64,13 @@ fn prefers_a_kill() {
     st.units[weak].hp = 50;
     enemy_phase(&mut st);
     let plan = st.ai_actions(&pack, foe);
-    assert_eq!(last(&plan), &Action::Attack { unit: foe, target: weak });
+    assert_eq!(
+        last(&plan),
+        &Action::Attack {
+            unit: foe,
+            target: weak
+        }
+    );
 }
 
 #[test]
@@ -76,7 +82,11 @@ fn approaches_when_nothing_is_in_reach() {
     enemy_phase(&mut st);
     let plan = st.ai_actions(&pack, foe);
     let to = move_target(&plan).expect("moves");
-    assert_eq!(to.manhattan(p(7, 7)), 14 - 4, "a full move towards the enemy");
+    assert_eq!(
+        to.manhattan(p(7, 7)),
+        14 - 4,
+        "a full move towards the enemy"
+    );
     assert_eq!(last(&plan), &Action::Wait { unit: foe });
     play(&mut st, &pack, plan);
 }
@@ -130,7 +140,9 @@ fn uses_a_strategy_when_it_beats_attacking() {
         }
     );
     // Without INT the strategies are weak (and without MP unusable): attack instead.
-    assert!(matches!(last(&st.ai_actions(&pack, dull)), Action::Attack { target: t, .. } if *t == target));
+    assert!(
+        matches!(last(&st.ai_actions(&pack, dull)), Action::Attack { target: t, .. } if *t == target)
+    );
 }
 
 #[test]
@@ -143,7 +155,10 @@ fn hold_never_moves() {
     enemy_phase(&mut st);
     assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
     st.units[target].pos = p(3, 4);
-    assert_eq!(st.ai_actions(&pack, foe), vec![Action::Attack { unit: foe, target }]);
+    assert_eq!(
+        st.ai_actions(&pack, foe),
+        vec![Action::Attack { unit: foe, target }]
+    );
 }
 
 #[test]
@@ -223,7 +238,10 @@ fn target_mode_goes_for_its_target() {
     enemy_phase(&mut st);
     assert_eq!(
         st.ai_actions(&pack, hunter),
-        vec![Action::Attack { unit: hunter, target: decoy }],
+        vec![Action::Attack {
+            unit: hunter,
+            target: decoy
+        }],
         "aggressive: the easy kill"
     );
     st.units[hunter].ai = AiMode::Target;
@@ -234,7 +252,13 @@ fn target_mode_goes_for_its_target() {
     assert_eq!(last(&plan), &Action::Wait { unit: hunter });
     // Once in reach it attacks the target.
     st.units[liu].pos = p(5, 4);
-    assert_eq!(last(&st.ai_actions(&pack, hunter)), &Action::Attack { unit: hunter, target: liu });
+    assert_eq!(
+        last(&st.ai_actions(&pack, hunter)),
+        &Action::Attack {
+            unit: hunter,
+            target: liu
+        }
+    );
 }
 
 #[test]
@@ -248,7 +272,13 @@ fn advance_heads_for_its_position() {
     enemy_phase(&mut st);
     assert_eq!(
         st.ai_actions(&pack, foe),
-        vec![Action::Move { unit: foe, to: p(4, 0) }, Action::Wait { unit: foe }]
+        vec![
+            Action::Move {
+                unit: foe,
+                to: p(4, 0)
+            },
+            Action::Wait { unit: foe }
+        ]
     );
     // At its destination it holds the position.
     st.units[foe].pos = p(7, 0);
@@ -265,7 +295,11 @@ fn player_side_simulation_uses_healing_items() {
     add(&mut st, &pack, Side::Enemy, "infantry", 1, p(0, 7));
     st.units[me].mp = 0;
     st.units[hurt].hp = 100;
-    assert_eq!(st.next_ai_unit(), None, "the player phase is not AI-controlled");
+    assert_eq!(
+        st.next_ai_unit(),
+        None,
+        "the player phase is not AI-controlled"
+    );
     let plan = st.ai_actions(&pack, me);
     assert!(
         matches!(last(&plan), Action::UseItem { item, target, .. } if item == "bean" && *target == hurt),
@@ -368,7 +402,9 @@ fn skirmish_pack() -> Pack {
                 side: Side::Enemy,
             },
             once: true,
-            actions: vec![EventAction::Spawn { group: "rein".into() }],
+            actions: vec![EventAction::Spawn {
+                group: "rein".into(),
+            }],
         },
         EventDef {
             trigger: Trigger::HpBelow {
@@ -408,13 +444,22 @@ fn ai_versus_ai_battles_finish() {
         while !st.is_over() {
             let before = (st.turn, st.phase);
             st.run_ai_phase(&pack);
-            assert!(st.is_over() || (st.turn, st.phase) != before, "the phase must advance");
+            assert!(
+                st.is_over() || (st.turn, st.phase) != before,
+                "the phase must advance"
+            );
             phases += 1;
-            assert!(phases <= 3 * 20, "seed {seed}: the turn limit must end the battle");
+            assert!(
+                phases <= 3 * 20,
+                "seed {seed}: the turn limit must end the battle"
+            );
         }
         println!("seed {seed}: {:?} on turn {}", st.outcome, st.turn);
         assert!(st.outcome.is_some());
-        assert!(st.units.iter().all(|u| u.hp >= 0 && u.hp <= u.max_hp && (0..=100).contains(&u.morale)));
+        assert!(st
+            .units
+            .iter()
+            .all(|u| u.hp >= 0 && u.hp <= u.max_hp && (0..=100).contains(&u.morale)));
         // The finished battle still round-trips through a save.
         let json = serde_json::to_string(&st).unwrap();
         assert_eq!(serde_json::from_str::<BattleState>(&json).unwrap(), st);
@@ -445,7 +490,14 @@ fn plans_one_unit_quickly_on_a_crowded_30x30_map() {
         let class = classes[i % classes.len()];
         let (x, row) = ((i % 10) as i32 * 3, (i / 10) as i32);
         add(&mut st, &pack, Side::Player, class, 12, p(x, 12 + row));
-        enemies.push(add(&mut st, &pack, Side::Enemy, class, 12, p(x + 1, 16 + row)));
+        enemies.push(add(
+            &mut st,
+            &pack,
+            Side::Enemy,
+            class,
+            12,
+            p(x + 1, 16 + row),
+        ));
     }
     enemy_phase(&mut st);
     let start = std::time::Instant::now();
@@ -462,6 +514,9 @@ fn plans_one_unit_quickly_on_a_crowded_30x30_map() {
     println!("one plan: {elapsed:?}; all 20 enemies: {total:?}");
     if !cfg!(debug_assertions) {
         assert!(elapsed.as_millis() < 50, "planning took {elapsed:?}");
-        assert!(total.as_millis() < 20 * 50, "planning 20 units took {total:?}");
+        assert!(
+            total.as_millis() < 20 * 50,
+            "planning 20 units took {total:?}"
+        );
     }
 }

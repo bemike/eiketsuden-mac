@@ -24,8 +24,13 @@ pub(super) fn max_mp(rules: &GameRules, level: u32, int: i32) -> i32 {
 
 /// `(level + 10) * (morale + s(stat) + coef * 10) / 10`, then `* pct / 100` when `pct > 0`.
 fn power(level: u32, morale: i32, stat: i32, coef: i32, pct: i32) -> i32 {
-    let base = (level as i64 + 10) * (morale as i64 + stat_term(stat) as i64 + coef as i64 * 10) / 10;
-    let v = if pct > 0 { base * pct as i64 / 100 } else { base };
+    let base =
+        (level as i64 + 10) * (morale as i64 + stat_term(stat) as i64 + coef as i64 * 10) / 10;
+    let v = if pct > 0 {
+        base * pct as i64 / 100
+    } else {
+        base
+    };
     v.clamp(0, i32::MAX as i64) as i32
 }
 

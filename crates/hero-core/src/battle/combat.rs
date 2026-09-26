@@ -42,8 +42,10 @@ impl BattleState {
 
     /// Defender DEF multiplier (percent) for this attacker/defender pair.
     pub(super) fn affinity(&self, pack: &Pack, attacker: UnitId, defender: UnitId) -> i32 {
-        pack.rules
-            .affinity_pct(&self.class_of(pack, attacker).family, &self.class_of(pack, defender).family)
+        pack.rules.affinity_pct(
+            &self.class_of(pack, attacker).family,
+            &self.class_of(pack, defender).family,
+        )
     }
 
     /// Damage of one strike with explicit morale values and defender tile.
@@ -65,18 +67,33 @@ impl BattleState {
     }
 
     /// Counter damage: a normal strike by `counterer` times `counter_damage_pct`, at least 1.
-    pub(super) fn counter_damage(&self, pack: &Pack, counterer: UnitId, counterer_morale: i32, victim: UnitId) -> i32 {
+    pub(super) fn counter_damage(
+        &self,
+        pack: &Pack,
+        counterer: UnitId,
+        counterer_morale: i32,
+        victim: UnitId,
+    ) -> i32 {
         let v = &self.units[victim];
         let dmg = self.strike_damage(pack, counterer, counterer_morale, victim, v.morale, v.pos);
-        ((dmg as i64 * pack.rules.counter_damage_pct as i64 / 100).max(1)).min(i32::MAX as i64) as i32
+        ((dmg as i64 * pack.rules.counter_damage_pct as i64 / 100).max(1)).min(i32::MAX as i64)
+            as i32
     }
 
     /// Whether `def` would counter an attack from `att` standing on `att_pos` (all conditions
     /// of §4 except the survival of the defender and the chance roll).
-    pub(super) fn counter_applies(&self, pack: &Pack, att: UnitId, att_pos: Pos, def: UnitId) -> bool {
+    pub(super) fn counter_applies(
+        &self,
+        pack: &Pack,
+        att: UnitId,
+        att_pos: Pos,
+        def: UnitId,
+    ) -> bool {
         let d = &self.units[def];
         let dc = self.class_of(pack, def);
-        if !(dc.can_counter && self.class_of(pack, att).provokes_counter) || att_pos.chebyshev(d.pos) != 1 {
+        if !(dc.can_counter && self.class_of(pack, att).provokes_counter)
+            || att_pos.chebyshev(d.pos) != 1
+        {
             return false;
         }
         let delta = Pos::new(att_pos.x - d.pos.x, att_pos.y - d.pos.y);
@@ -124,7 +141,13 @@ impl BattleState {
         Ok(())
     }
 
-    pub(super) fn act_move(&mut self, pack: &Pack, unit: UnitId, to: Pos, ev: &mut Vec<BattleEvent>) -> Result<(), ActionError> {
+    pub(super) fn act_move(
+        &mut self,
+        pack: &Pack,
+        unit: UnitId,
+        to: Pos,
+        ev: &mut Vec<BattleEvent>,
+    ) -> Result<(), ActionError> {
         self.check_actor(unit)?;
         if self.units[unit].moved {
             return Err(ActionError::AlreadyMoved(unit));
@@ -171,7 +194,13 @@ impl BattleState {
         }
     }
 
-    pub(super) fn act_attack(&mut self, pack: &Pack, unit: UnitId, target: UnitId, ev: &mut Vec<BattleEvent>) -> Result<(), ActionError> {
+    pub(super) fn act_attack(
+        &mut self,
+        pack: &Pack,
+        unit: UnitId,
+        target: UnitId,
+        ev: &mut Vec<BattleEvent>,
+    ) -> Result<(), ActionError> {
         self.check_actor(unit)?;
         let t = self
             .units
@@ -181,7 +210,10 @@ impl BattleState {
         if !t.side.is_hostile(self.units[unit].side) {
             return Err(ActionError::InvalidTarget);
         }
-        if !self.attack_tiles(pack, unit, self.units[unit].pos).contains(&t.pos) {
+        if !self
+            .attack_tiles(pack, unit, self.units[unit].pos)
+            .contains(&t.pos)
+        {
             return Err(ActionError::OutOfRange);
         }
         self.do_attack(pack, unit, target, ev);
@@ -195,7 +227,14 @@ impl BattleState {
         self.units[def].facing = Dir::towards(d_pos, a_pos);
         self.units[att].acted = true;
 
-        let damage = self.strike_damage(pack, att, self.units[att].morale, def, self.units[def].morale, d_pos);
+        let damage = self.strike_damage(
+            pack,
+            att,
+            self.units[att].morale,
+            def,
+            self.units[def].morale,
+            d_pos,
+        );
         let loss = self.take_damage(pack, def, damage);
         ev.push(BattleEvent::Strike {
             attacker: att,
@@ -229,7 +268,11 @@ impl BattleState {
 
         // EXP amounts use the levels from before any level up of this exchange.
         let att_exp = self.combat_exp(pack, att, def, def_killed);
-        let def_exp = if countered { self.combat_exp(pack, def, att, att_killed) } else { 0 };
+        let def_exp = if countered {
+            self.combat_exp(pack, def, att, att_killed)
+        } else {
+            0
+        };
         self.gain_exp(pack, att, att_exp, ev);
         self.gain_exp(pack, def, def_exp, ev);
     }
@@ -248,7 +291,8 @@ impl BattleState {
     /// unit's `drop` item. Returns whether the unit retreated.
     pub(super) fn retreat_if_beaten(&mut self, id: UnitId, ev: &mut Vec<BattleEvent>) -> bool {
         let u = &self.units[id];
-        let beaten = u.is_active() && (u.hp == 0 || (u.morale == 0 && u.has_status(StatusKind::Confused)));
+        let beaten =
+            u.is_active() && (u.hp == 0 || (u.morale == 0 && u.has_status(StatusKind::Confused)));
         if beaten {
             self.retreat(id, true, ev);
         }
@@ -270,7 +314,13 @@ impl BattleState {
     }
 
     /// EXP for damaging (or defeating) `target` (§7.1).
-    pub(super) fn combat_exp(&self, pack: &Pack, earner: UnitId, target: UnitId, defeated: bool) -> u32 {
+    pub(super) fn combat_exp(
+        &self,
+        pack: &Pack,
+        earner: UnitId,
+        target: UnitId,
+        defeated: bool,
+    ) -> u32 {
         let rules = &pack.rules;
         let t = &self.units[target];
         let diff = t.level as i64 - self.units[earner].level as i64;
@@ -285,7 +335,13 @@ impl BattleState {
 
     /// Add EXP and level up while enough is collected (§7.2). Only the player's army keeps
     /// progress between battles, so only player units gain EXP *(design)*.
-    pub(super) fn gain_exp(&mut self, pack: &Pack, id: UnitId, amount: u32, ev: &mut Vec<BattleEvent>) {
+    pub(super) fn gain_exp(
+        &mut self,
+        pack: &Pack,
+        id: UnitId,
+        amount: u32,
+        ev: &mut Vec<BattleEvent>,
+    ) {
         if amount == 0 || self.units[id].side != Side::Player {
             return;
         }
@@ -308,7 +364,13 @@ impl BattleState {
     }
 
     /// Grant whole levels (duel rewards); EXP is kept. Stops at the level cap.
-    pub(super) fn gain_levels(&mut self, pack: &Pack, id: UnitId, levels: u32, ev: &mut Vec<BattleEvent>) {
+    pub(super) fn gain_levels(
+        &mut self,
+        pack: &Pack,
+        id: UnitId,
+        levels: u32,
+        ev: &mut Vec<BattleEvent>,
+    ) {
         for _ in 0..levels {
             if self.units[id].level >= pack.rules.level_cap {
                 break;
@@ -343,7 +405,10 @@ impl BattleState {
         });
         for s in pack.known_strategies(&class.id, level) {
             if !known_before.contains(&s) {
-                ev.push(BattleEvent::Learned { unit: id, strategy: s });
+                ev.push(BattleEvent::Learned {
+                    unit: id,
+                    strategy: s,
+                });
             }
         }
     }

@@ -54,7 +54,12 @@ impl BattleState {
     }
 
     /// Whether `target` is a valid unit for `s` cast by `caster`.
-    pub(super) fn is_strategy_target(&self, caster: UnitId, s: &StrategyDef, target: UnitId) -> bool {
+    pub(super) fn is_strategy_target(
+        &self,
+        caster: UnitId,
+        s: &StrategyDef,
+        target: UnitId,
+    ) -> bool {
         let (c, t) = (&self.units[caster], &self.units[target]);
         t.is_active()
             && match s.target {
@@ -77,7 +82,10 @@ impl BattleState {
         let mut out: Vec<UnitId> = Vec::new();
         let mut gated = false;
         let mut consider = |p: Pos, out: &mut Vec<UnitId>| {
-            if let Some(u) = board.unit_at(p).filter(|&u| self.is_strategy_target(caster, s, u)) {
+            if let Some(u) = board
+                .unit_at(p)
+                .filter(|&u| self.is_strategy_target(caster, s, u))
+            {
                 if !self.element_allows(s, board.terrain(p)) {
                     gated = true;
                 } else if !out.contains(&u) {
@@ -119,7 +127,13 @@ impl BattleState {
         Ok(out)
     }
 
-    pub(super) fn strategy_aims(&self, pack: &Pack, id: UnitId, strategy: &str, from: Pos) -> Vec<Pos> {
+    pub(super) fn strategy_aims(
+        &self,
+        pack: &Pack,
+        id: UnitId,
+        strategy: &str,
+        from: Pos,
+    ) -> Vec<Pos> {
         let Some(s) = pack.strategy(strategy) else {
             return Vec::new();
         };
@@ -162,9 +176,11 @@ impl BattleState {
         terrain: Option<&TerrainDef>,
     ) -> i32 {
         let (c, t) = (&self.units[caster], &self.units[target]);
-        let mut raw = power as i64 + 2 * int_term(c.int, c.level, 50) - int_term(t.int, t.level, 50);
+        let mut raw =
+            power as i64 + 2 * int_term(c.int, c.level, 50) - int_term(t.int, t.level, 50);
         let boosted = s.element.as_deref().is_some_and(|e| {
-            terrain.is_some_and(|tt| tt.boost.iter().any(|b| b == e)) || (e == WATER && self.weather == Weather::Rain)
+            terrain.is_some_and(|tt| tt.boost.iter().any(|b| b == e))
+                || (e == WATER && self.weather == Weather::Rain)
         });
         if boosted {
             raw = raw * 125 / 100;
@@ -209,7 +225,11 @@ impl BattleState {
     /// Confuse a unit (keeping the longer duration); returns whether it was newly confused.
     pub(super) fn confuse(&mut self, id: UnitId, turns: u8) -> bool {
         let u = &mut self.units[id];
-        match u.statuses.iter_mut().find(|s| s.status == StatusKind::Confused) {
+        match u
+            .statuses
+            .iter_mut()
+            .find(|s| s.status == StatusKind::Confused)
+        {
             Some(s) => {
                 s.turns = s.turns.max(turns);
                 false
@@ -224,7 +244,13 @@ impl BattleState {
         }
     }
 
-    pub(super) fn strategy_forecast(&self, pack: &Pack, caster: UnitId, strategy: &str, aim: Pos) -> Vec<StrategyForecast> {
+    pub(super) fn strategy_forecast(
+        &self,
+        pack: &Pack,
+        caster: UnitId,
+        strategy: &str,
+        aim: Pos,
+    ) -> Vec<StrategyForecast> {
         let Some(s) = pack.strategy(strategy) else {
             return Vec::new();
         };
@@ -242,10 +268,14 @@ impl BattleState {
                 for e in &s.effects {
                     match e {
                         Effect::Damage { power } => {
-                            amount += self.strategy_damage_base(pack, caster, s, *power, t, terrain) as i64;
+                            amount += self.strategy_damage_base(pack, caster, s, *power, t, terrain)
+                                as i64;
                         }
                         Effect::Heal { power } => {
-                            let heal = self.strategy_heal(caster, *power, t).min(tu.max_hp - tu.hp).max(0);
+                            let heal = self
+                                .strategy_heal(caster, *power, t)
+                                .min(tu.max_hp - tu.hp)
+                                .max(0);
                             amount -= heal as i64;
                         }
                         _ => {}
@@ -275,7 +305,11 @@ impl BattleState {
         let unknown = || ActionError::UnknownStrategy(strategy.to_string());
         let s = pack.strategy(strategy).ok_or_else(unknown)?;
         let u = &self.units[unit];
-        if !pack.known_strategies(&u.class, u.level).iter().any(|k| k == strategy) {
+        if !pack
+            .known_strategies(&u.class, u.level)
+            .iter()
+            .any(|k| k == strategy)
+        {
             return Err(unknown());
         }
         if u.mp < s.mp {
@@ -288,7 +322,15 @@ impl BattleState {
     }
 
     /// Resolve a validated strategy (MP already paid): hit rolls, effects, retreats and EXP.
-    fn cast(&mut self, pack: &Pack, caster: UnitId, s: &StrategyDef, aim: Pos, targets: &[UnitId], ev: &mut Vec<BattleEvent>) {
+    fn cast(
+        &mut self,
+        pack: &Pack,
+        caster: UnitId,
+        s: &StrategyDef,
+        aim: Pos,
+        targets: &[UnitId],
+        ev: &mut Vec<BattleEvent>,
+    ) {
         let from = self.units[caster].pos;
         if aim != from {
             self.units[caster].facing = Dir::towards(from, aim);
@@ -406,9 +448,16 @@ impl BattleState {
 
     /// Check that `user` can use `item` now (player side, in the inventory, battle-usable,
     /// supported effects).
-    pub(super) fn battle_item<'a>(&self, pack: &'a Pack, user: UnitId, item: &str) -> Result<BattleItem<'a>, ActionError> {
+    pub(super) fn battle_item<'a>(
+        &self,
+        pack: &'a Pack,
+        user: UnitId,
+        item: &str,
+    ) -> Result<BattleItem<'a>, ActionError> {
         let bad = || ActionError::BadItem(item.to_string());
-        if self.units[user].side != Side::Player || self.inventory.get(item).copied().unwrap_or(0) == 0 {
+        if self.units[user].side != Side::Player
+            || self.inventory.get(item).copied().unwrap_or(0) == 0
+        {
             return Err(bad());
         }
         let def = pack.item(item).filter(|d| d.battle_use).ok_or_else(bad)?;
@@ -437,7 +486,10 @@ impl BattleState {
             Ok(BattleItem::Direct(_)) => {
                 let mut v = vec![id];
                 for p in u.pos.neighbors4() {
-                    if let Some(o) = self.unit_at(p).filter(|&o| !self.units[o].side.is_hostile(u.side)) {
+                    if let Some(o) = self
+                        .unit_at(p)
+                        .filter(|&o| !self.units[o].side.is_hostile(u.side))
+                    {
                         v.push(o);
                     }
                 }
@@ -457,7 +509,10 @@ impl BattleState {
                         .into_iter()
                         .filter_map(|p| board.unit_at(p))
                         .filter(|&o| self.is_strategy_target(id, s, o))
-                        .filter(|&o| self.strategy_area(&board, id, s, u.pos, self.units[o].pos).is_ok())
+                        .filter(|&o| {
+                            self.strategy_area(&board, id, s, u.pos, self.units[o].pos)
+                                .is_ok()
+                        })
                         .collect(),
                 }
             }

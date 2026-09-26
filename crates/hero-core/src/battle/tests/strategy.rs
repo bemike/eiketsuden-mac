@@ -77,7 +77,11 @@ fn hit_chance_follows_int_and_level_with_strategy_guard() {
     };
     // damage = 200 + 2 * (50 * 10 / 50 + 50) - (int * 10 / 50 + int)
     assert_eq!(forecast(foe), (75, 260), "100 - 100 * 55 / (4 * 55)");
-    assert_eq!(forecast(band), (50, 130), "strategy_guard: INT doubled for evasion, damage halved");
+    assert_eq!(
+        forecast(band),
+        (50, 130),
+        "strategy_guard: INT doubled for evasion, damage halved"
+    );
     assert_eq!(forecast(dull), (100, 320));
     assert_eq!(forecast(sage).0, 0, "power 220 >= 4 * 55");
 }
@@ -98,19 +102,33 @@ fn strategy_damage_terrain_boost_and_weather() {
     for t in [wood, open] {
         set_stats(&mut st, &pack, t, [50, 0, 50]);
     }
-    let amount = |st: &BattleState, s: &str, t: UnitId| st.forecast_strategy(&pack, c, s, st.units[t].pos)[0].amount;
+    let amount = |st: &BattleState, s: &str, t: UnitId| {
+        st.forecast_strategy(&pack, c, s, st.units[t].pos)[0].amount
+    };
     assert_eq!(amount(&st, "fire", open), 320);
     assert_eq!(amount(&st, "fire", wood), 400, "fire in forest +25%");
     assert_eq!(amount(&st, "flood", open), 420);
-    assert!(st.forecast_strategy(&pack, c, "flood", p(1, 1)).is_empty(), "no water in forests");
-    assert_eq!(st.strategy_targets(&pack, c, "fire", p(2, 1)), vec![p(1, 1), p(2, 2)]);
-    assert_eq!(st.strategy_targets(&pack, c, "flood", p(2, 1)), vec![p(2, 2)]);
+    assert!(
+        st.forecast_strategy(&pack, c, "flood", p(1, 1)).is_empty(),
+        "no water in forests"
+    );
+    assert_eq!(
+        st.strategy_targets(&pack, c, "fire", p(2, 1)),
+        vec![p(1, 1), p(2, 2)]
+    );
+    assert_eq!(
+        st.strategy_targets(&pack, c, "flood", p(2, 1)),
+        vec![p(2, 2)]
+    );
 
     // Rain: fire is impossible, water deals +25%.
     let mut rain = st.clone();
     rain.weather = Weather::Rain;
     assert!(rain.strategy_targets(&pack, c, "fire", p(2, 1)).is_empty());
-    assert_eq!(rain.apply(&pack, cast(c, "fire", p(2, 2))), Err(ActionError::WrongTerrain));
+    assert_eq!(
+        rain.apply(&pack, cast(c, "fire", p(2, 2))),
+        Err(ActionError::WrongTerrain)
+    );
     assert_eq!(amount(&rain, "flood", open), 525);
 
     // The cast deals the forecast plus at most 1/50 random bonus and costs morale.
@@ -124,7 +142,10 @@ fn strategy_damage_terrain_boost_and_weather() {
     assert_eq!((h.morale, st.units[wood].morale), (-loss, 100 - loss));
     assert_eq!(st.units[c].mp, 25 - 4);
     assert!(st.units[c].acted);
-    assert_eq!(exp_events(&ev), vec![BattleEvent::ExpGained { unit: c, amount: 6 }]);
+    assert_eq!(
+        exp_events(&ev),
+        vec![BattleEvent::ExpGained { unit: c, amount: 6 }]
+    );
 }
 
 #[test]
@@ -151,12 +172,18 @@ fn element_gate_needs_a_matching_tile() {
         Err(ActionError::WrongTerrain),
         "mountains allow only earth"
     );
-    assert_eq!(st.strategy_targets(&pack, c, "fire", p(0, 1)), vec![p(1, 2)]);
+    assert_eq!(
+        st.strategy_targets(&pack, c, "fire", p(0, 1)),
+        vec![p(1, 2)]
+    );
     assert_eq!(
         st.apply(&pack, cast(bandit, "rock", st.units[on_plain].pos)),
         Err(ActionError::WrongTerrain)
     );
-    assert_eq!(st.strategy_targets(&pack, bandit, "rock", p(2, 2)), vec![p(1, 1)]);
+    assert_eq!(
+        st.strategy_targets(&pack, bandit, "rock", p(2, 2)),
+        vec![p(1, 1)]
+    );
     let ev = st.apply(&pack, cast(bandit, "rock", p(1, 1))).unwrap();
     assert_eq!(hits(&ev).len(), 1);
 }
@@ -188,7 +215,11 @@ fn cross_area_hits_the_aim_and_its_neighbours_on_matching_tiles() {
     let ev = st.apply(&pack, cast(c, "big_fire", p(2, 1))).unwrap();
     let hits = hits(&ev);
     let hit_units: Vec<UnitId> = hits.iter().map(|h| h.unit).collect();
-    assert_eq!(hit_units, vec![centre, north, wood], "village arm skipped, friends and caster unaffected");
+    assert_eq!(
+        hit_units,
+        vec![centre, north, wood],
+        "village arm skipped, friends and caster unaffected"
+    );
     assert!(hits.iter().all(|h| h.success));
     // caster 2 * (30 * 20 / 50 + 30) = 84: 284 on plain, 355 in the forest
     assert!((284..=289).contains(&hits[0].damage) && (284..=289).contains(&hits[1].damage));
@@ -198,7 +229,10 @@ fn cross_area_hits_the_aim_and_its_neighbours_on_matching_tiles() {
     assert_eq!(st.units[c].mp, mp - 16);
     assert_eq!(
         exp_events(&ev),
-        vec![BattleEvent::ExpGained { unit: c, amount: 18 }],
+        vec![BattleEvent::ExpGained {
+            unit: c,
+            amount: 18
+        }],
         "attack EXP per damaged unit"
     );
 }
@@ -219,23 +253,35 @@ fn all_in_range_heal_covers_friends_in_reach() {
     st.units[ally].morale = 20;
     st.units[far].hp = 10;
 
-    assert_eq!(st.strategy_targets(&pack, band, "heal_all", p(3, 3)), vec![p(3, 3)]);
+    assert_eq!(
+        st.strategy_targets(&pack, band, "heal_all", p(3, 3)),
+        vec![p(3, 3)]
+    );
     assert_eq!(
         st.apply(&pack, cast(band, "heal_all", p(3, 4))),
         Err(ActionError::OutOfRange),
         "all_in_range is aimed at the caster"
     );
     let forecast = st.forecast_strategy(&pack, band, "heal_all", p(3, 3));
-    assert_eq!(forecast.iter().map(|f| (f.unit, f.chance, f.amount)).collect::<Vec<_>>(), [
-        (full, 100, 0),
-        (band, 100, 0),
-        (hurt, 100, -100),
-        (ally, 100, -184)
-    ]);
+    assert_eq!(
+        forecast
+            .iter()
+            .map(|f| (f.unit, f.chance, f.amount))
+            .collect::<Vec<_>>(),
+        [
+            (full, 100, 0),
+            (band, 100, 0),
+            (hurt, 100, -100),
+            (ally, 100, -184)
+        ]
+    );
 
     let ev = st.apply(&pack, cast(band, "heal_all", p(3, 3))).unwrap();
     // 200 + 2 * (70 * 10 / 50 + 70) = 368, capped at the missing HP, halved below 30 morale.
-    let heal = |unit, healed| StrategyHit { healed, ..hit(unit) };
+    let heal = |unit, healed| StrategyHit {
+        healed,
+        ..hit(unit)
+    };
     assert_eq!(
         ev,
         vec![
@@ -243,9 +289,17 @@ fn all_in_range_heal_covers_friends_in_reach() {
                 caster: band,
                 strategy: "heal_all".into(),
                 target: p(3, 3),
-                hits: vec![heal(full, 0), heal(band, 0), heal(hurt, 100), heal(ally, 184)],
+                hits: vec![
+                    heal(full, 0),
+                    heal(band, 0),
+                    heal(hurt, 100),
+                    heal(ally, 184)
+                ],
             },
-            BattleEvent::ExpGained { unit: band, amount: 8 },
+            BattleEvent::ExpGained {
+                unit: band,
+                amount: 8
+            },
         ],
         "support EXP once per cast; class support_exp is for single targets"
     );
@@ -269,14 +323,30 @@ fn single_target_support_strategies() {
         Err(ActionError::OutOfRange)
     );
     let ev = st.apply(&pack, cast(band, "heal", p(3, 4))).unwrap();
-    assert_eq!(hits(&ev), vec![StrategyHit { healed: 368, ..hit(friend) }]);
+    assert_eq!(
+        hits(&ev),
+        vec![StrategyHit {
+            healed: 368,
+            ..hit(friend)
+        }]
+    );
     assert_eq!(
         exp_events(&ev),
-        vec![BattleEvent::ExpGained { unit: band, amount: 12 }],
+        vec![BattleEvent::ExpGained {
+            unit: band,
+            amount: 12
+        }],
         "class support_exp"
     );
     let ev = st.apply(&pack, cast(other, "cheer", p(3, 4))).unwrap();
-    assert_eq!(hits(&ev), vec![StrategyHit { morale: 10, ..hit(friend) }], "clamped at 100");
+    assert_eq!(
+        hits(&ev),
+        vec![StrategyHit {
+            morale: 10,
+            ..hit(friend)
+        }],
+        "clamped at 100"
+    );
     assert_eq!(st.units[friend].morale, 100);
 }
 
@@ -292,11 +362,31 @@ fn morale_down_is_shifted_by_the_level_difference() {
         set_stats(&mut st, &pack, t, [50, 0, 50]);
     }
     let ev = st.apply(&pack, cast(veteran, "provoke", p(3, 4))).unwrap();
-    assert_eq!(hits(&ev), vec![StrategyHit { morale: -23, ..hit(a) }], "Lv5x vs Lv2x: -20 -> -23");
+    assert_eq!(
+        hits(&ev),
+        vec![StrategyHit {
+            morale: -23,
+            ..hit(a)
+        }],
+        "Lv5x vs Lv2x: -20 -> -23"
+    );
     assert_eq!(st.units[a].morale, 77);
-    assert_eq!(exp_events(&ev), vec![BattleEvent::ExpGained { unit: veteran, amount: 8 }]);
+    assert_eq!(
+        exp_events(&ev),
+        vec![BattleEvent::ExpGained {
+            unit: veteran,
+            amount: 8
+        }]
+    );
     let ev = st.apply(&pack, cast(rookie, "provoke", p(5, 6))).unwrap();
-    assert_eq!(hits(&ev), vec![StrategyHit { morale: -20, ..hit(b) }], "same decade: no shift");
+    assert_eq!(
+        hits(&ev),
+        vec![StrategyHit {
+            morale: -20,
+            ..hit(b)
+        }],
+        "same decade: no shift"
+    );
 }
 
 #[test]
@@ -345,11 +435,24 @@ fn confusion_disables_the_target_and_routs_it_at_zero_morale() {
 
     // Confused at 0 morale: the unit retreats at once, with no defeat EXP.
     let ev = st.apply(&pack, cast(c2, "confuse", p(5, 4))).unwrap();
-    assert!(ev.contains(&BattleEvent::Retreated { unit: beaten }), "{ev:?}");
-    assert_eq!(exp_events(&ev), vec![BattleEvent::ExpGained { unit: c2, amount: 8 }]);
+    assert!(
+        ev.contains(&BattleEvent::Retreated { unit: beaten }),
+        "{ev:?}"
+    );
+    assert_eq!(
+        exp_events(&ev),
+        vec![BattleEvent::ExpGained {
+            unit: c2,
+            amount: 8
+        }]
+    );
     assert_eq!(st.units[beaten].state, UnitState::Retreated);
     assert!(st.units[beaten].hp > 0);
-    assert_eq!(st.items_found, vec!["bean".to_string()], "a routed unit still drops its item");
+    assert_eq!(
+        st.items_found,
+        vec!["bean".to_string()],
+        "a routed unit still drops its item"
+    );
 
     // The confused unit skips the next enemy phase ...
     st.apply(&pack, Action::EndPhase).unwrap();
@@ -359,7 +462,13 @@ fn confusion_disables_the_target_and_routs_it_at_zero_morale() {
     assert!(st.ai_actions(&pack, foe).is_empty());
     assert_eq!(st.move_points(&pack, foe), 0);
     assert_eq!(
-        st.apply(&pack, Action::Move { unit: foe, to: p(3, 5) }),
+        st.apply(
+            &pack,
+            Action::Move {
+                unit: foe,
+                to: p(3, 5)
+            }
+        ),
         Err(ActionError::Confused(foe))
     );
     // ... and recovers at the start of the one after.
@@ -412,25 +521,40 @@ fn strategy_validation_leaves_the_state_untouched() {
         Err(ActionError::UnknownStrategy("flood".into())),
         "learned at level 3"
     );
-    assert_eq!(st.apply(&pack, cast(c, "fire", p(3, 6))), Err(ActionError::OutOfRange));
-    assert_eq!(st.apply(&pack, cast(c, "fire", p(3, 5))), Err(ActionError::OutOfRange));
+    assert_eq!(
+        st.apply(&pack, cast(c, "fire", p(3, 6))),
+        Err(ActionError::OutOfRange)
+    );
+    assert_eq!(
+        st.apply(&pack, cast(c, "fire", p(3, 5))),
+        Err(ActionError::OutOfRange)
+    );
     assert_eq!(
         st.apply(&pack, cast(c, "fire", st.units[friend].pos)),
         Err(ActionError::InvalidTarget)
     );
-    assert_eq!(st.apply(&pack, cast(c, "fire", p(4, 3))), Err(ActionError::InvalidTarget));
+    assert_eq!(
+        st.apply(&pack, cast(c, "fire", p(4, 3))),
+        Err(ActionError::InvalidTarget)
+    );
     assert_eq!(st, before);
 
     st.units[c].mp = 3;
     assert!(st.usable_strategies(&pack, c).is_empty());
-    assert_eq!(st.apply(&pack, cast(c, "fire", p(3, 4))), Err(ActionError::NotEnoughMp));
+    assert_eq!(
+        st.apply(&pack, cast(c, "fire", p(3, 4))),
+        Err(ActionError::NotEnoughMp)
+    );
     st.units[c].mp = 8;
     st.units[c].statuses.push(ActiveStatus {
         status: StatusKind::Confused,
         turns: 1,
     });
     assert!(st.usable_strategies(&pack, c).is_empty());
-    assert_eq!(st.apply(&pack, cast(c, "fire", p(3, 4))), Err(ActionError::Confused(c)));
+    assert_eq!(
+        st.apply(&pack, cast(c, "fire", p(3, 4))),
+        Err(ActionError::Confused(c))
+    );
 }
 
 #[test]
@@ -449,11 +573,26 @@ fn healing_items_and_their_targets() {
     st.units[friend].morale = 20;
 
     assert_eq!(st.item_targets(&pack, u, "bean"), vec![u, friend, ally]);
-    assert!(st.item_targets(&pack, u, "spear").is_empty(), "camp-only item");
-    assert_eq!(st.apply(&pack, use_item(u, "bean", distant)), Err(ActionError::OutOfRange));
-    assert_eq!(st.apply(&pack, use_item(u, "bean", foe)), Err(ActionError::InvalidTarget));
-    assert_eq!(st.apply(&pack, use_item(u, "spear", u)), Err(ActionError::BadItem("spear".into())));
-    assert_eq!(st.apply(&pack, use_item(u, "sword", u)), Err(ActionError::BadItem("sword".into())));
+    assert!(
+        st.item_targets(&pack, u, "spear").is_empty(),
+        "camp-only item"
+    );
+    assert_eq!(
+        st.apply(&pack, use_item(u, "bean", distant)),
+        Err(ActionError::OutOfRange)
+    );
+    assert_eq!(
+        st.apply(&pack, use_item(u, "bean", foe)),
+        Err(ActionError::InvalidTarget)
+    );
+    assert_eq!(
+        st.apply(&pack, use_item(u, "spear", u)),
+        Err(ActionError::BadItem("spear".into()))
+    );
+    assert_eq!(
+        st.apply(&pack, use_item(u, "sword", u)),
+        Err(ActionError::BadItem("sword".into()))
+    );
 
     let ev = st.apply(&pack, use_item(u, "bean", friend)).unwrap();
     assert_eq!(
@@ -484,11 +623,17 @@ fn healing_items_and_their_targets() {
     );
     assert_eq!(st.units[friend].morale, 50);
     assert_eq!(st.inventory.get("wine"), None, "used up");
-    assert_eq!(st.apply(&pack, use_item(distant, "wine", distant)), Err(ActionError::BadItem("wine".into())));
+    assert_eq!(
+        st.apply(&pack, use_item(distant, "wine", distant)),
+        Err(ActionError::BadItem("wine".into()))
+    );
 
     // The inventory belongs to the player: other sides cannot use it.
     st.phase = Side::Enemy;
-    assert_eq!(st.apply(&pack, use_item(foe, "bean", foe)), Err(ActionError::BadItem("bean".into())));
+    assert_eq!(
+        st.apply(&pack, use_item(foe, "bean", foe)),
+        Err(ActionError::BadItem("bean".into()))
+    );
 }
 
 #[test]
@@ -517,7 +662,10 @@ fn strategy_scrolls_cast_without_mp_and_earn_exp() {
     let h = &hits(&ev)[0];
     // 200 + 2 * (30 * 1 / 50 + 30) = 260
     assert!(h.success && (260..=265).contains(&h.damage), "{h:?}");
-    assert_eq!(exp_events(&ev), vec![BattleEvent::ExpGained { unit: u, amount: 6 }]);
+    assert_eq!(
+        exp_events(&ev),
+        vec![BattleEvent::ExpGained { unit: u, amount: 6 }]
+    );
     assert_eq!(st.units[u].mp, 0);
     assert!(st.inventory.is_empty());
 }

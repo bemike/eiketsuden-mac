@@ -31,12 +31,17 @@ impl BattleState {
         }
         self.units
             .iter()
-            .find(|u| u.is_active() && u.side == side && !u.acted && !u.has_status(StatusKind::Confused))
+            .find(|u| {
+                u.is_active() && u.side == side && !u.acted && !u.has_status(StatusKind::Confused)
+            })
             .map(|u| u.id)
     }
 
     pub(super) fn plan_ai(&self, pack: &Pack, id: UnitId) -> Vec<Action> {
-        if id >= self.units.len() || !self.can_act(id) || self.units[id].has_status(StatusKind::Confused) {
+        if id >= self.units.len()
+            || !self.can_act(id)
+            || self.units[id].has_status(StatusKind::Confused)
+        {
             return Vec::new();
         }
         Planner::new(self, pack, id).plan()
@@ -47,7 +52,9 @@ impl BattleState {
         let (side, turn) = (self.phase, self.turn);
         let same_phase = |s: &BattleState| s.outcome.is_none() && s.phase == side && s.turn == turn;
         while same_phase(self) {
-            let Some(id) = self.next_actor(side) else { break };
+            let Some(id) = self.next_actor(side) else {
+                break;
+            };
             self.run_ai_unit(pack, id, &mut ev);
         }
         if same_phase(self) {
@@ -60,7 +67,9 @@ impl BattleState {
     /// move may have changed the situation), apply the action.
     fn run_ai_unit(&mut self, pack: &Pack, id: UnitId, ev: &mut Vec<BattleEvent>) {
         for _ in 0..2 {
-            let Some(first) = self.plan_ai(pack, id).into_iter().next() else { break };
+            let Some(first) = self.plan_ai(pack, id).into_iter().next() else {
+                break;
+            };
             let is_move = matches!(first, Action::Move { .. });
             match self.apply(pack, first) {
                 Ok(events) => ev.extend(events),
@@ -279,7 +288,10 @@ impl<'a> Planner<'a> {
         };
         let mut out = Vec::with_capacity(2);
         if tile != origin {
-            out.push(Action::Move { unit: self.id, to: tile });
+            out.push(Action::Move {
+                unit: self.id,
+                to: tile,
+            });
         }
         out.push(action.unwrap_or(Action::Wait { unit: self.id }));
         out
@@ -328,7 +340,9 @@ impl<'a> Planner<'a> {
             let position = self.position_value(tile);
             for oi in 0..self.attack_offsets.len() {
                 let o = self.attack_offsets[oi];
-                let Some(t) = self.occupant(tile.offset(o.x, o.y), tile) else { continue };
+                let Some(t) = self.occupant(tile.offset(o.x, o.y), tile) else {
+                    continue;
+                };
                 if !self.is_hostile(t) {
                     continue;
                 }
@@ -343,7 +357,10 @@ impl<'a> Planner<'a> {
                         score,
                         key: t,
                         tile,
-                        action: Action::Attack { unit: self.id, target: t },
+                        action: Action::Attack {
+                            unit: self.id,
+                            target: t,
+                        },
                     },
                     self.me.pos,
                 );
@@ -358,7 +375,9 @@ impl<'a> Planner<'a> {
                         .collect(),
                 };
                 for aim in aims {
-                    let Some(av) = self.aim_value(si, tile, aim) else { continue };
+                    let Some(av) = self.aim_value(si, tile, aim) else {
+                        continue;
+                    };
                     hostile_in_reach |= av.hostile;
                     if av.value <= 0 || (focus.is_some() && !av.hits_focus) {
                         continue;
@@ -409,7 +428,12 @@ impl<'a> Planner<'a> {
         let (st, pack) = (self.st, self.pack);
         let t = &st.units[target];
         let terrain = self.board.terrain(t.pos).map_or(0, |tt| tt.defense);
-        let dmg = hit_damage(self.atk, st.defense_power(pack, target), st.affinity(pack, self.id, target), terrain);
+        let dmg = hit_damage(
+            self.atk,
+            st.defense_power(pack, target),
+            st.affinity(pack, self.id, target),
+            terrain,
+        );
         let kill = dmg >= t.hp;
         let value = damage_value(dmg, t);
         let mut counter = None;
@@ -463,7 +487,9 @@ impl<'a> Planner<'a> {
         }
         let mut out: Option<AimValue> = None;
         for p in area {
-            let Some(u) = self.occupant(p, tile) else { continue };
+            let Some(u) = self.occupant(p, tile) else {
+                continue;
+            };
             let valid = match s.target {
                 TargetSide::Enemy => self.is_hostile(u),
                 TargetSide::Ally => !self.is_hostile(u),
@@ -503,7 +529,8 @@ impl<'a> Planner<'a> {
             TargetSide::Ally => 100,
         } as i64;
         let level_factor = t.level as i64 + 10;
-        let (mut hp, mut morale, mut confused) = (t.hp, t.morale, t.has_status(StatusKind::Confused));
+        let (mut hp, mut morale, mut confused) =
+            (t.hp, t.morale, t.has_status(StatusKind::Confused));
         let mut v: i64 = 0;
         for e in &s.effects {
             if hp <= 0 {
@@ -524,7 +551,10 @@ impl<'a> Planner<'a> {
                     morale -= morale_loss(&pack.rules, dmg, t.max_hp).min(morale);
                 }
                 Effect::Heal { power } => {
-                    let heal = st.strategy_heal(self.id, *power, u).min(t.max_hp - hp).max(0);
+                    let heal = st
+                        .strategy_heal(self.id, *power, u)
+                        .min(t.max_hp - hp)
+                        .max(0);
                     v -= sign * heal as i64;
                     hp += heal;
                 }
@@ -557,7 +587,9 @@ impl<'a> Planner<'a> {
             return;
         }
         for (item, &count) in &self.st.inventory {
-            let Some(def) = self.pack.item(item) else { continue };
+            let Some(def) = self.pack.item(item) else {
+                continue;
+            };
             let usable = count > 0
                 && def.battle_use
                 && def.strategy.is_none()
@@ -644,13 +676,28 @@ impl<'a> Planner<'a> {
         let n = self.board.len();
         let mut threat = vec![0i64; n];
         let mut stamp = vec![usize::MAX; n];
-        for h in st.units.iter().filter(|h| h.is_active() && self.is_hostile(h.id)) {
+        for h in st
+            .units
+            .iter()
+            .filter(|h| h.is_active() && self.is_hostile(h.id))
+        {
             // Still confused during its next phase: no threat.
-            if h.statuses.iter().any(|s| s.status == StatusKind::Confused && s.turns >= 2) {
+            if h.statuses
+                .iter()
+                .any(|s| s.status == StatusKind::Confused && s.turns >= 2)
+            {
                 continue;
             }
-            let Some(offsets) = st.class_of(pack, h.id).range.offsets() else { continue };
-            let range = st.reach(pack, &self.board, h.id, h.pos, st.base_move_points(pack, h.id));
+            let Some(offsets) = st.class_of(pack, h.id).range.offsets() else {
+                continue;
+            };
+            let range = st.reach(
+                pack,
+                &self.board,
+                h.id,
+                h.pos,
+                st.base_move_points(pack, h.id),
+            );
             let def = self.def as i64 * st.affinity(pack, h.id, self.id) as i64 / 100;
             let raw = (st.attack_power(pack, h.id) as i64 - def / 2).max(1);
             for e in range.tiles.keys() {
@@ -669,7 +716,9 @@ impl<'a> Planner<'a> {
 
     /// Expected damage taken on `tile` next phase, at most the unit's HP.
     fn threat_at(&self, tile: Pos) -> i64 {
-        let Some(i) = self.board.index(tile) else { return 0 };
+        let Some(i) = self.board.index(tile) else {
+            return 0;
+        };
         let defense = self.board.terrain(tile).map_or(0, |t| t.defense) as i64;
         (self.threat[i] * (100 - defense) / 100).clamp(0, self.me.hp as i64)
     }
@@ -736,7 +785,9 @@ impl<'a> Planner<'a> {
             }
             let enter = if is_goal[i] { 0 } else { cost[i].unwrap_or(0) };
             for nb in self.board.pos_of(i).neighbors4() {
-                let Some(j) = self.board.index(nb) else { continue };
+                let Some(j) = self.board.index(nb) else {
+                    continue;
+                };
                 if cost[j].is_none() {
                     continue;
                 }
