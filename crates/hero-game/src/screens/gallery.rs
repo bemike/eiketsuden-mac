@@ -637,21 +637,22 @@ impl GalleryScreen {
             gfx.text(line, x, y, small);
             y += 12.0;
         }
+        // Size ×2 sample, right-aligned beside the (shorter) Galmuri9 lines.
         let big = TextStyle::main(theme::TEXT_ACCENT)
             .size(2)
             .shadow(theme::TEXT_SHADOW);
         gfx.text_aligned(
             "영걸전 英傑傳",
             r.x,
-            r.y + 6.0,
+            r.y + 82.0,
             r.w - 12.0,
             Align::Right,
             big,
         );
         gfx.text_aligned(
-            "×2",
+            "Galmuri11 ×2 (24px)",
             r.x,
-            r.y + 38.0,
+            r.y + 116.0,
             r.w - 12.0,
             Align::Right,
             TextStyle::small(theme::TEXT_DIM),

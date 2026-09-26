@@ -51,8 +51,8 @@ pub fn draw_backdrop(time: f64) {
         );
     }
 
-    // Moon with a soft halo.
-    let (mx, my) = (372.0, 58.0);
+    // Moon with a soft halo, right of the centred title logo so the two never overlap.
+    let (mx, my) = (418.0, 50.0);
     for (r, a) in [(34.0, 0.04), (26.0, 0.07), (20.0, 0.1)] {
         draw_circle(mx, my, r, Color::new(1.0, 0.92, 0.7, a));
     }

@@ -55,7 +55,6 @@ try {
     New-Item -ItemType File (Join-Path $Out $Marker) | Out-Null
 
     Copy-Item "web/index.html", "web/mq_js_bundle.js", "web/hero_web.js" $Out
-    if (Test-Path "web/favicon.png") { Copy-Item "web/favicon.png" $Out }
     Copy-Item "target/wasm32-unknown-unknown/$buildProfile/eiketsuden.wasm" $Out
 
     if (Test-Path $Data -PathType Container) {

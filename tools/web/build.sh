@@ -50,7 +50,6 @@ mkdir -p "$out/data"
 touch "$out/$marker"
 
 cp web/index.html web/mq_js_bundle.js web/hero_web.js "$out/"
-if [ -f web/favicon.png ]; then cp web/favicon.png "$out/"; fi
 cp "target/wasm32-unknown-unknown/$profile/eiketsuden.wasm" "$out/"
 
 if [ -d "$data" ]; then

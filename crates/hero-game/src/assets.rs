@@ -13,7 +13,7 @@
 //! |---|---|---|
 //! | texture | `portraits/liu_bei`, `bg/palace`, `units/archer_player`, `ui/title` | `gfx/<key>.png` |
 //! | sound | `bgm/title` | `bgm/title.ogg` |
-//! | sound | `sfx/cursor` | `sfx/cursor.ogg`, else `sfx/cursor.wav` |
+//! | sound | `sfx/cursor` | `sfx/cursor.wav`, else `sfx/cursor.ogg` |
 //! | icon | `gold` | cell of `gfx/ui/icons.png` listed in `gfx/ui/icons.toml` |
 //!
 //! A request returns `None` while the file is loading and after it failed; failures are logged
@@ -305,7 +305,9 @@ impl Media {
             return slot.state();
         }
         let paths = if let Some(name) = key.strip_prefix("sfx/") {
-            vec![format!("sfx/{name}.ogg"), format!("sfx/{name}.wav")]
+            // The base pack ships its effects as WAV, so that is tried first: every failed probe
+            // is a 404 in the browser console.
+            vec![format!("sfx/{name}.wav"), format!("sfx/{name}.ogg")]
         } else {
             vec![format!("{key}.ogg")]
         };
@@ -457,7 +459,7 @@ impl Media {
                         }
                         (Ok(bytes), _) => job.stage = Stage::Decode(bytes),
                         (Err(e), JobKind::Sound { errors, .. }) => {
-                            // Try the next candidate (`.wav` after `.ogg`); fails once none is left.
+                            // Try the next candidate (`.ogg` after `.wav`); fails once none is left.
                             errors.push(e);
                             job.stage = Stage::Waiting;
                         }
