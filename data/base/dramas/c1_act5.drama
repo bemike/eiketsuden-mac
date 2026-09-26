@@ -1,0 +1,294 @@
+# 제1장 5막 — 서주 공방전. Scenes of the base pack's chapter 1, act 5, and the end of the chapter.
+#
+# Original text written for Eiketsuden Reloaded after the public-domain novel (chapters 20-24: the
+# emperor's uncle, the hunt at Xutian, the secret edict in the jade belt, the talk of heroes over
+# green plums, Yuan Shu's end, Che Zhou, Cao Cao's punitive campaign and the scattering of the three
+# brothers). As in the original game, careless answers at Cao Cao's table can end Liu Bei's story.
+# Flags: c1_edict_carried = 1 when Liu Bei keeps the pledge on him, c1_exposed = 1 when Cao Cao
+# finds it (bad ending).
+
+# ---------------------------------------------------------------------------------------------------
+# Xuchang: the jade belt and the talk of heroes
+# ---------------------------------------------------------------------------------------------------
+
+== c1_jade_belt
+@bg palace
+@bgm tension
+@title 제1장
+    서주 공방전
+@narr 허도. 조조는 여포를 멸한 공을 앞세워 조정을 제 손아귀에 넣었다.
+    어린 헌제는 조조의 눈치를 보며 하루하루를 보냈다.
+@narr 헌제는 족보를 살펴보고 유비가 경제의 후손임을 알게 되었다.
+    황제는 유비를 숙부로 대접했고, 사람들은 그를 유황숙이라 불렀다.
+@show liu_bei left
+@show guan_yu right
+guan_yu: 형님, 오늘 사냥터에서 조조가 폐하 앞을 가로막고 신하들의 만세를 받았습니다.
+    소장이 칼을 뽑으려 할 때 형님께서 말리셨지요.
+liu_bei: 운장, 그 자리에서 칼을 뽑았다면 폐하께서 먼저 다치셨을 걸세. 참게. 지금은 참아야 하네.
+@hide all
+@bg night
+@bgm sad
+@narr 며칠 뒤 깊은 밤, 국구 동승이 남몰래 유비의 집을 찾아왔다.
+동승: 황숙, 이것을 보십시오. 폐하께서 옥대 속에 손수 쓰신 밀조를 감추어 내리셨습니다.
+    역적 조조를 처단하라는 피로 쓴 조서입니다.
+@show liu_bei left
+liu_bei: …… 폐하께서 이토록 괴로워하고 계셨단 말인가.
+동승: 뜻을 같이하는 신하들이 이 연판장에 이름을 적었습니다. 황숙께서도…….
+@choice
+  - 연판장에 이름을 적는다 -> sign
+  - 잠시 생각할 시간을 청한다 -> wait
+@label wait
+liu_bei: 국구, 이 일은 가볍게 정할 수 없습니다. 조조의 눈과 귀는 곳곳에 있습니다.
+동승: 황숙마저 외면하신다면 폐하께서는 누구를 믿으시겠습니까! 부디…….
+liu_bei: …… 알겠습니다. 한실의 후손으로서 어찌 물러서겠습니까.
+@label sign
+@narr 유비는 붓을 들어 '좌장군 유비'라고 적었다.
+동승: 이 연판장의 사본을 한 장 드리겠습니다. 때가 오면 이것으로 뜻을 모으십시오.
+@choice
+  - 사본을 늘 품에 지니고 다닌다 -> carry
+  - 채소밭 헛간 깊숙이 숨겨 둔다 -> hide
+@label carry
+@set c1_edict_carried = 1
+liu_bei: 품 안에 두어야 마음이 놓이겠습니다.
+@goto after_edict
+@label hide
+@set c1_edict_carried = 0
+liu_bei: 헛간 바닥 아래 묻어 두겠습니다. 누구도 찾지 못할 것입니다.
+@label after_edict
+@hide all
+@bg village
+@bgm peace
+@narr 그날부터 유비는 뒤뜰에 채소를 심고 물을 주며 세상일에는 뜻이 없는 척했다.
+@show zhang_fei right
+@show liu_bei left
+zhang_fei: 형님! 천하의 일은 제쳐 두고 채소 농사라니요! 이게 대장부가 할 일이오?
+liu_bei: 익덕, 자네는 몰라도 되네. 물이나 좀 길어 오게.
+@hide all
+@narr 어느 날, 허저와 장료가 군사를 이끌고 채소밭에 들이닥쳤다. 승상이 급히 부른다는 것이었다.
+@bg palace
+@bgm tension
+@show cao_cao right
+@show liu_bei left
+cao_cao: 하하, 현덕! 집에서 큰일을 꾸미고 있다더니 채소 농사였구려.
+liu_bei: …… 소일거리일 뿐입니다.
+cao_cao: 뒤뜰의 매실이 푸르게 익었기에 술을 데워 놓았소. 한잔합시다.
+@narr 먹구름이 몰려와 하늘이 어두워졌다. 조조는 술잔을 기울이며 물었다.
+cao_cao: 현덕, 공은 사방을 떠돌며 많은 인물을 보았을 것이오. 지금 천하의 영웅은 누구라 생각하오?
+@label ask
+@choice
+  - 하북의 원소입니다 -> yuan_shao
+  - 회남의 원술입니다 -> yuan_shu
+  - 형주의 유표입니다 -> liu_biao
+  - 강동의 손책입니다 -> sun_ce
+  - 소인의 눈으로는 알 수 없습니다 -> humble
+  - 바로 이 유비입니다 -> myself
+@label yuan_shao
+cao_cao: 원소? 겉은 사나워 보이나 속은 겁이 많고, 꾀를 좋아하나 결단을 못 하는 자요.
+    큰일 앞에서는 몸을 사리고 작은 이익에는 목숨을 거는 자가 무슨 영웅이겠소.
+@goto ask
+@label yuan_shu
+cao_cao: 원술은 무덤 속의 마른 뼈요. 머지않아 내 손에 사로잡힐 것이오.
+@goto ask
+@label liu_biao
+cao_cao: 유표는 이름만 높을 뿐 실속이 없는 자요. 영웅이라 할 수 없소.
+@goto ask
+@label sun_ce
+cao_cao: 손책은 아비의 이름에 기댄 젊은이일 뿐이오. 영웅이라 하기엔 이르오.
+@goto ask
+@label myself
+cao_cao: …… 호오. 공이 영웅이라?
+@if c1_edict_carried == 1 -> exposed
+cao_cao: 하하하! 채소나 가꾸는 영웅이라니, 농담도 잘하시는구려.
+@narr 조조는 크게 웃었지만, 그 눈빛은 한동안 유비의 얼굴에서 떠나지 않았다.
+@goto thunder
+@label exposed
+@narr 유비가 몸을 일으키는 순간, 품속에서 접힌 종이 한 장이 흘러내렸다.
+cao_cao: …… 그것은 무엇이오?
+@set c1_exposed = 1
+@hide all
+@goto end
+@label humble
+cao_cao: 겸손하시구려. 허나 내 생각은 이렇소.
+@label thunder
+cao_cao: 영웅이란 가슴에 큰 뜻을 품고 배 속에 좋은 꾀를 감추었으며,
+    우주를 감쌀 기개와 천지를 삼킬 뜻을 가진 자요.
+    지금 천하의 영웅은 오직 그대와 이 조조뿐이오.
+@sfx hit_heavy
+@narr 그 순간 하늘을 가르며 천둥이 울렸다. 유비의 손에서 젓가락이 떨어졌다.
+liu_bei: 아이쿠, 천둥소리에 놀라 그만……. 성인께서도 천둥과 바람에는 낯빛을 바꾸셨다지요.
+cao_cao: 하하하! 대장부가 천둥을 무서워하다니!
+@narr 조조는 크게 웃었고, 유비는 가슴을 쓸어내렸다.
+@hide all
+@narr 그 무렵, 북쪽에서 공손찬이 원소에게 멸망했다는 소식이 들어왔다.
+    황제를 참칭하던 원술은 망해 가는 나라를 버리고 원소에게 몸을 맡기려 북쪽으로 향한다고 했다.
+@show cao_cao right
+@show liu_bei left
+cao_cao: 원술이 원소와 합치면 골치 아프게 되겠소. 공이라면 어찌하겠소?
+@label plan
+@choice
+  - 원소를 치러 가겠다고 한다 -> vs_yuan_shao
+  - 원술을 막겠다고 한다 -> vs_yuan_shu
+  - 공손찬의 원수를 갚으러 가겠다고 한다 -> mourn
+@label vs_yuan_shao
+cao_cao: 원소는 지금 백만 대군을 거느리고 있소. 공의 군사로는 어림도 없소.
+@goto plan
+@label mourn
+cao_cao: 북평은 이미 원소의 땅이오. 가는 길에 목숨을 잃을 것이오.
+@goto plan
+@label vs_yuan_shu
+liu_bei: 원술은 반드시 서주를 지나 북쪽으로 갈 것입니다. 제가 가서 길을 막겠습니다.
+cao_cao: 좋소! 군사 오만을 드리겠소.
+@hide all
+@narr 유비는 서둘러 허도를 떠났다. 곽가와 정욱이 뒤늦게 그를 놓아준 것을 알고 조조에게 간했지만,
+    이미 유비의 군사는 멀리 가 버린 뒤였다.
+@show guan_yu right
+@show liu_bei left
+guan_yu: 형님, 어찌 이리 서둘러 떠나십니까?
+liu_bei: 나는 새장 속의 새요 그물 속의 물고기였네. 이제야 바다와 하늘로 나온 셈이지.
+@hide all
+@narr 【허창의 도구상에서 장창, 연노, 마개, 무술교본, 술, 특급주, 콩, 상약을 살 수 있습니다.】
+@label end
+
+# Bad ending: Cao Cao finds the pledge.
+== c1_bad_end
+@bg night
+@bgm sad
+@narr 조조는 떨어진 종이를 집어 들고 한참 동안 말이 없었다.
+    거기에는 역적 조조를 처단하겠다는 맹세와 함께 유비의 이름이 적혀 있었다.
+@narr 그날 밤, 허저와 조인의 군사가 유비의 집을 에워쌌다. 동승과 뜻을 같이한 신하들도
+    하나둘 끌려 나왔다.
+@narr 한실을 다시 일으키겠다던 영웅의 꿈은 허도의 차가운 밤과 함께 스러졌다.
+@title 허도의 흉변
+@narr 【잘못된 선택으로 유비의 이야기가 끝났습니다. 저장해 둔 곳에서 다시 시작해 보세요.】
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Guangling (battles/c1_guangling.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== guangling_intro
+@narr 광릉. 옥새를 품은 원술의 행렬이 북쪽 길을 따라 올라오고 있었다.
+@show yuan_shu right
+yuan_shu: 비키거라, 돗자리 장수! 짐은 천자이니라! 황제의 길을 막는 자는 역적이다!
+@show liu_bei left
+liu_bei: 한의 천자는 허도에 계신다. 스스로 황제라 칭한 역적은 네가 아니더냐!
+yuan_shu: 네 이놈……! 모두 돌격하라! 저놈들을 짓밟고 북으로 간다!
+@hide all
+@narr 【원술을 물리치면 승리합니다. 원술은 옥새의 힘으로 매 턴 병력과 사기를 회복합니다.
+    장비를 기령의 옆 칸으로 보내면 일기토가 벌어집니다.】
+
+== guangling_duel
+@show zhang_fei left
+@show ji_ling right
+ji_ling: 장비! 서주에서의 빚을 오늘 갚아 주마! 이 삼첨도를 받아라!
+zhang_fei: 그 칼, 네 손에 들려 있기 아깝구나! 이리 내놔라!
+@sfx hit_heavy
+@wait 300
+@sfx hit_heavy
+@narr 장팔사모가 기령의 손목을 쳤다. 삼첨도가 허공을 돌아 장비의 발밑에 떨어졌다.
+zhang_fei: 하하하! 좋은 칼이로구나. 이 장비가 잘 쓰겠다!
+ji_ling: 크윽……!
+@hide right
+@sfx retreat
+@narr 【삼첨도를 얻었다!】
+@hide all
+
+== guangling_outro
+@narr 원술의 군사는 무너지고, 옥새를 품은 황제의 행렬은 흩어졌다.
+@show liu_bei left
+@show guan_yu right
+guan_yu: 원술은 회남으로 달아났습니다. 이제 그의 힘도 다했습니다.
+liu_bei: 스스로 황제라 일컫던 자의 끝이 이러하구나.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# After Guangling: Yuan Shu's end, Che Zhou's plot
+# ---------------------------------------------------------------------------------------------------
+
+== c1_after_guangling
+@bg field
+@bgm sad
+@narr 원술은 강정까지 쫓겨 갔다. 한여름에 꿀물 한 그릇을 찾았으나 부엌에는 피 묻은 물뿐이었다.
+    원술은 피를 토하고 숨을 거두었다. 옥새는 조정으로 돌아갔다.
+@bg castle
+@bgm tension
+@narr 유비는 조조의 군사를 서주에 머물게 한 채 허도로 돌아가지 않았다.
+    그러자 조조는 서주 자사 차주에게 몰래 유비를 없애라고 명했다.
+진등: 사군, 차주가 성문에 복병을 숨겨 두고 사군을 기다리고 있습니다. 성에 들어가시면 안 됩니다.
+@show liu_bei left
+@show guan_yu right
+guan_yu: 형님, 기다릴 것 없습니다. 차주를 치고 서주를 되찾읍시다.
+liu_bei: 서주를 되찾으면 조조는 반드시 대군을 몰고 올 것이네. 식구들이 있는 하비는
+    운장이 맡아 주게. 소패는 익덕이 지키고.
+@hide right
+@show zhang_fei right
+zhang_fei: 형님 혼자 서주로 가시겠다고요? 그건 안 되오!
+liu_bei: 차주 하나쯤은 우리 군사로 충분하네. 세 성이 서로 돕고 있어야 조조를 막을 수 있어.
+@hide all
+@narr 관우는 유비의 가족을 지키러 하비로, 장비는 소패로 떠났다.
+@narr 【이번 전투에는 관우와 장비가 나오지 않습니다.
+    하비의 도구상에서 콩, 보리, 평기서, 원대서, 폭탄을 살 수 있습니다.】
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Xuzhou II (battles/c1_xuzhou2.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== xuzhou2_intro
+@narr 서주. 사수를 가로질러 선 성의 문이 굳게 닫혀 있었다.
+@show che_zhou right
+che_zhou: 유비가 왔다고? 성문을 열지 마라! 승상의 명이다, 유비의 목을 가져오는 자에게는 큰 상을 내린다!
+@show liu_bei left
+liu_bei: 차주, 조조의 명으로 나를 해치려 했다는 것을 다 알고 있다! 성문을 열어라!
+@hide all
+@narr 【차주를 몰아내고 유비가 서주성 안으로 들어가면 조조의 대군이 북쪽에서 나타납니다.
+    그 뒤에는 조조를 물리치거나, 유비가 서쪽 성문을 나가 남서쪽 마을로 달아나면 승리합니다.
+    마을로 달아나면 살아남은 전원이 경험치 50을 더 얻습니다.】
+
+== xuzhou2_che_zhou_falls
+@show che_zhou right
+che_zhou: 크윽……. 승상, 명을 받들지 못했습니다…….
+@hide all
+@narr 차주가 쓰러지자 서주성의 군사들이 무기를 버렸다.
+
+== xuzhou2_cao_arrives
+@narr 성에 들어선 그때, 북쪽 지평선을 까마득한 깃발의 물결이 덮었다.
+@show cao_cao right
+cao_cao: 현덕……. 매실 술을 함께 마시던 사이가 아니었소? 은혜를 원수로 갚다니!
+    공이 영웅이라 했던 내 말이 틀리지 않았구려. 그러니 여기서 없애야겠소!
+@show liu_bei left
+liu_bei: 조조가 직접 왔구나……. 이 군세와 맞서 싸울 수는 없다.
+    서쪽 문으로 나가 남쪽으로 빠져나가자!
+@hide all
+@narr 【조조군이 나타났다! 조조를 물리치거나 유비가 남서쪽 마을에 이르면 승리합니다.】
+
+== xuzhou2_cut_off
+@show xiahou_yuan right
+xiahou_yuan: 유비가 서문으로 빠져나갔다! 남쪽 길을 막아라! 놓치지 마라!
+@hide all
+@narr 【하후연의 기병이 북서쪽에서 달려온다!】
+
+== xuzhou2_outro
+@narr 서주는 조조의 대군 앞에 무너졌다. 유비는 겨우 몇십 기만을 이끌고 포위를 빠져나왔다.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# End of chapter 1
+# ---------------------------------------------------------------------------------------------------
+
+== c1_scattered
+@bg night
+@bgm sad
+@narr 서주를 잃은 유비는 소패도 하비도 돌아보지 못한 채 북쪽으로 달아났다.
+    소패의 장비는 조조군의 야습에 흩어져 어디론가 자취를 감추었다.
+@narr 하비의 관우는 유비의 두 부인을 지키며 성을 나섰다가 조조군에게 에워싸였다.
+    관우는 산 위에서 사흘을 버티다, 형수들의 안전을 조건으로 칼을 거두었다.
+@show liu_bei center
+liu_bei: 운장, 익덕……. 도원에서 맺은 맹세를 잊지 않았네.
+    살아만 있어 주게. 반드시 다시 만날 것이네.
+@hide all
+@narr 청주를 거쳐 하북에 이른 유비를 원소가 맞아들였다.
+    천하를 가를 큰 싸움, 관도의 결전이 다가오고 있었다.
+@bg black
+@bgm ending
+@title 제1장 완료
+@narr 영걸전 Reloaded의 제1장을 모두 마쳤습니다. 플레이해 주셔서 고맙습니다.
+@narr 흩어진 삼형제의 이야기는 제2장으로 이어집니다.

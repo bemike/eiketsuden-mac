@@ -27,6 +27,7 @@
 #   c1_bandits      number of bandit camps cleared   c1_bandit_next  camp picked in the menu (0 = done)
 #   c1_join_chang_xi, c1_join_shi_meng, c1_join_xia_kun   1 when Liu Bei won that chief over (battles)
 #   c1_route_lubu   1 Xiaqiu II / 2 Pengcheng II     c1_gao_shun_duel  1 when Zhang Fei beat Gao Shun (battle)
+#   c1_edict_carried  1 when Liu Bei keeps the pledge on him   c1_exposed  1 when Cao Cao finds it
 
 title = "유비전"
 start = "prologue_opening"
@@ -588,13 +589,74 @@ next = "c1_lubu_end"
 type = "drama"
 id = "c1_lubu_end"
 scene = "c1_lubu_end"
+next = "c1_jade_belt"
+
+# ===================================================================================================
+# Chapter 1, act 5: 서주 공방전
+#   jade-belt affair (careless answers end the game) -> Guangling -> Xuzhou II (flight) -> end
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_jade_belt"
+scene = "c1_jade_belt"
+next = "c1_br_exposed"
+
+[[node]]
+type = "branch"
+id = "c1_br_exposed"
+flag = "c1_exposed"
+cmp = "=="
+value = 1
+then = "c1_bad_end"
+else = "c1_camp_guangling"
+
+[[node]]
+type = "ending"
+id = "c1_bad_end"
+scene = "c1_bad_end"
+title = "허도의 흉변"
+
+[[node]]
+type = "camp"
+id = "c1_camp_guangling"
+title = "허창 — 광릉 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "wine", "fine_wine", "bean", "salve"]
+battle = "c1_guangling"
+next = "c1_battle_guangling"
+
+[[node]]
+type = "battle"
+id = "c1_battle_guangling"
+battle = "c1_guangling"
+next = "c1_after_guangling"
+
+[[node]]
+type = "drama"
+id = "c1_after_guangling"
+scene = "c1_after_guangling"
+next = "c1_camp_xuzhou2"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xuzhou2"
+title = "하비 — 서주 출진 준비"
+shop = ["bean", "wheat", "scroll_great_encourage", "scroll_great_aid", "bomb"]
+battle = "c1_xuzhou2"
+next = "c1_battle_xuzhou2"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xuzhou2"
+battle = "c1_xuzhou2"
 next = "c1_finale"
 
 # ===================================================================================================
-# End of the 0.2 slice
+# End of the 0.2 slice: chapter 2 continues from here.
 # ===================================================================================================
 
 [[node]]
 type = "ending"
 id = "c1_finale"
+scene = "c1_scattered"
 title = "제1장 완료"

@@ -35,6 +35,9 @@ battles = [
   "battles/c1_pengcheng2.toml",
   "battles/c1_xiapi.toml",
   "battles/c1_xiapi_b.toml",
+  # Chapter 1, act 5: the struggle for Xuzhou
+  "battles/c1_guangling.toml",
+  "battles/c1_xuzhou2.toml",
 ]
 dramas = [
   "dramas/prologue.drama",
@@ -42,6 +45,7 @@ dramas = [
   "dramas/c1_act2.drama",
   "dramas/c1_act3.drama",
   "dramas/c1_act4.drama",
+  "dramas/c1_act5.drama",
 ]
 
 [rules]
