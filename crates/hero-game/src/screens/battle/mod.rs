@@ -15,6 +15,10 @@
 //! * **AI phases** — one unit at a time from `next_ai_unit` / `ai_actions`, animated like the
 //!   player's actions; holding confirm fast-forwards.
 //!
+//! * **Presentation** — the map is drawn with the tile size of the pack's tileset
+//!   (`gfx/tiles/terrain.toml` `tile_size`, 16 pixels without one) and every window is laid out
+//!   relative to the canvas size (`[presentation] canvas` of `pack.toml`).
+//!
 //! Controls: arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc/right click cancel,
 //! Tab/E and Q cycle through units that can still act, mouse at the screen edge / right-drag /
 //! touch drag / wheel scroll the map, and holding confirm speeds animations up. Touch has no
@@ -36,9 +40,7 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::{AssetState, FileRequest};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{
-    draw_placeholder, fill_rect, Align, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
-};
+use crate::gfx::{draw_placeholder, fill_rect, Align, FontId, TextStyle};
 use crate::screens::drama::DramaScreen;
 use crate::screens::error::ErrorScreen;
 use crate::screens::saveload::SaveLoadScreen;
@@ -58,15 +60,12 @@ use player::{Command, Mode, PlayerUi, Request};
 use sprites::{FxDef, SpriteDef};
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use tileset::{MapRenderer, Tileset, TILE};
+use tileset::{MapRenderer, Tileset, DEFAULT_TILE};
 
-/// Screen area of the map (below the top bar).
-const VIEWPORT: Rect = Rect {
-    x: 0.0,
-    y: hud::TOP_BAR_H,
-    w: VIRTUAL_W,
-    h: VIRTUAL_H - hud::TOP_BAR_H,
-};
+/// Screen area of the map on a `canvas` sized canvas: everything below the top bar.
+fn viewport(canvas: Vec2) -> Rect {
+    Rect::new(0.0, hud::TOP_BAR_H, canvas.x, canvas.y - hud::TOP_BAR_H)
+}
 /// Seconds the title card stays up.
 const TITLE_SECONDS: f32 = 2.6;
 /// Pause between AI units (seconds at normal speed).
@@ -251,7 +250,7 @@ impl BattleScreen {
                 if let Some(s) = ctx.session.as_mut() {
                     s.battle = Some(state.clone());
                 }
-                Box::new(BattleScreen::new(pack, state, true))
+                Box::new(BattleScreen::new(pack, state, true, ctx.gfx.size()))
             }
             Err(e) => Box::new(ErrorScreen::recoverable(
                 "전투 오류",
@@ -276,7 +275,7 @@ impl BattleScreen {
                             u.name, u.class
                         )],
                     )),
-                    None => Box::new(BattleScreen::new(pack, state, false)),
+                    None => Box::new(BattleScreen::new(pack, state, false, ctx.gfx.size())),
                 }
             }
             (Some(_), Some(state)) => Box::new(ErrorScreen::recoverable(
@@ -293,9 +292,11 @@ impl BattleScreen {
         }
     }
 
-    fn new(pack: Rc<Pack>, state: BattleState, fresh: bool) -> BattleScreen {
-        let map = MapRenderer::new(&state.map);
-        let mut camera = Camera::new(VIEWPORT, map.size);
+    /// The screen for `state` on a `canvas` sized canvas. The map starts with the default tile
+    /// size; [`BattleScreen::use_tile_size`] switches to the tileset's once it has loaded.
+    fn new(pack: Rc<Pack>, state: BattleState, fresh: bool, canvas: Vec2) -> BattleScreen {
+        let map = MapRenderer::new(&state.map, DEFAULT_TILE as f32);
+        let mut camera = Camera::new(viewport(canvas), map.size, map.tile);
         let scene = Scene::new(&state);
         let cursor = state
             .units
@@ -388,6 +389,7 @@ impl BattleScreen {
                         macroquad::logging::warn!("{}: {}", tileset::TILESET_FILE, w);
                     }
                     ctx.media.preload_textures(&[ts.texture.as_str()]);
+                    self.use_tile_size(ts.tile_size);
                     self.meta.tileset = Some(ts);
                 }
                 Err(e) => macroquad::logging::warn!(
@@ -440,6 +442,22 @@ impl BattleScreen {
     }
 
     // ----- helpers -----------------------------------------------------------------------
+
+    /// Size of a map tile in virtual pixels (the tileset's `tile_size`).
+    fn tile(&self) -> f32 {
+        self.map.tile
+    }
+
+    /// Lay the map out with `tile` pixel tiles (the tileset's `tile_size`): a new map renderer
+    /// and camera, centred on the cursor again. Called before the map is first built.
+    fn use_tile_size(&mut self, tile: f32) {
+        if tile == self.map.tile {
+            return;
+        }
+        self.map = MapRenderer::new(&self.state.map, tile);
+        self.camera = Camera::new(self.camera.viewport, self.map.size, tile);
+        self.camera.snap_to(self.cursor);
+    }
 
     /// Texture key of a unit sheet.
     fn sheet(&self, sprite: &str, side: Side) -> Option<&str> {
@@ -766,10 +784,11 @@ impl BattleScreen {
         let mut menu = Menu::new(items);
         let w = menu.fit_width(&ctx.gfx).max(110.0);
         let h = menu.rect().h;
+        let vp = self.camera.viewport;
         menu.set_width(w);
         menu.set_position(
-            ((VIRTUAL_W - w) / 2.0).round(),
-            (VIEWPORT.y + (VIEWPORT.h - h) / 2.0).round(),
+            (vp.x + (vp.w - w) / 2.0).round(),
+            (vp.y + (vp.h - h) / 2.0).round(),
         );
         ctx.sfx(sfx::CONFIRM);
         self.panel = Panel::Menu(menu);
@@ -809,9 +828,9 @@ impl BattleScreen {
         .rows(9);
         menu.tag_width = 64.0;
         menu.wrap = false;
-        let w = 300.0;
-        menu.set_width(w);
-        menu.set_position(((VIRTUAL_W - w) / 2.0).round(), VIEWPORT.y + 30.0);
+        let vp = self.camera.viewport;
+        menu.set_width(UNIT_LIST_W);
+        menu.set_position((vp.x + (vp.w - UNIT_LIST_W) / 2.0).round(), vp.y + 30.0);
         self.panel = Panel::Units { side, ids, menu };
     }
 
@@ -882,24 +901,29 @@ impl BattleScreen {
         };
         menu.set_width(w);
         let h = menu.rect().h;
+        let size = self.tile();
+        let canvas = ctx.gfx.size();
+        let vp = self.camera.viewport;
         let tile = self.camera.tile_screen(self.state.units[unit].pos);
         let (x, y) = if kind == MenuKind::Command {
-            let x = if tile.x + TILE + 6.0 + w <= VIRTUAL_W - 4.0 {
-                tile.x + TILE + 6.0
+            // Beside the unit, on the right when there is room.
+            let x = if tile.x + size + 6.0 + w <= canvas.x - 4.0 {
+                tile.x + size + 6.0
             } else {
                 tile.x - w - 6.0
             };
-            (x, tile.y + TILE / 2.0 - h / 2.0)
+            (x, tile.y + size / 2.0 - h / 2.0)
         } else {
-            let x = if tile.x < VIRTUAL_W / 2.0 {
-                VIRTUAL_W - w - 8.0
+            // Lists go to the side of the screen away from the unit.
+            let x = if tile.x < canvas.x / 2.0 {
+                canvas.x - w - 8.0
             } else {
                 8.0
             };
-            (x, VIEWPORT.y + 6.0)
+            (x, vp.y + 6.0)
         };
-        let x = x.clamp(4.0, VIRTUAL_W - w - 4.0).round();
-        let y = y.clamp(VIEWPORT.y + 4.0, VIRTUAL_H - h - 4.0).round();
+        let x = x.clamp(4.0, canvas.x - w - 4.0).round();
+        let y = y.clamp(vp.y + 4.0, canvas.y - h - 4.0).round();
         menu.set_position(x, y);
         self.mode_menu = Some((kind, menu));
     }
@@ -1025,7 +1049,10 @@ impl BattleScreen {
                 let switch = match ctx.input.nav() {
                     Some(crate::input::Dir::Left) => Some((current + 2) % 3),
                     Some(crate::input::Dir::Right) => Some((current + 1) % 3),
-                    _ => ctx.input.tap().and_then(unit_tab_at),
+                    _ => ctx
+                        .input
+                        .tap()
+                        .and_then(|p| unit_tab_at(self.camera.viewport, p)),
                 };
                 if let Some(tab) = switch {
                     let next = UNIT_TABS[tab];
@@ -1171,10 +1198,11 @@ impl BattleScreen {
         }
         let pointer = input.pointer();
         let hover = pointer.and_then(|p| self.camera.tile_at(p));
+        let vp = self.camera.viewport;
 
         // Camera: left drag (touch / mouse), right drag, wheel, mouse at the edges.
         if let Some(drag) = input.drag() {
-            if VIEWPORT.contains(drag.origin) {
+            if vp.contains(drag.origin) {
                 self.camera.pan(-drag.delta);
             }
         }
@@ -1204,12 +1232,14 @@ impl BattleScreen {
             }
             _ => {}
         }
+        // The wheel scrolls two tiles per step (Shift: sideways).
         let wheel = input.wheel();
-        if wheel != 0 && pointer.is_some_and(|p| VIEWPORT.contains(p)) {
+        if wheel != 0 && pointer.is_some_and(|p| vp.contains(p)) {
+            let step = wheel as f32 * 2.0 * self.tile();
             if input.key_down(KeyCode::LeftShift) || input.key_down(KeyCode::RightShift) {
-                self.camera.pan(vec2(wheel as f32 * 32.0, 0.0));
+                self.camera.pan(vec2(step, 0.0));
             } else {
-                self.camera.pan(vec2(0.0, wheel as f32 * 32.0));
+                self.camera.pan(vec2(0.0, step));
             }
         }
         if !touches().is_empty() {
@@ -1217,7 +1247,7 @@ impl BattleScreen {
         }
         if !self.touch_seen && self.rdrag.is_none() && !input.down() {
             if let Some(p) = pointer {
-                let d = edge_direction(VIEWPORT, p, self.pointer_rest);
+                let d = edge_direction(vp, p, self.pointer_rest);
                 if d != Vec2::ZERO {
                     self.camera.pan(d * EDGE_PAN_SPEED * dt);
                 }
@@ -1337,16 +1367,19 @@ impl BattleScreen {
 
 /// Sides in the order of the unit list tabs.
 const UNIT_TABS: [Side; 3] = [Side::Player, Side::Ally, Side::Enemy];
+/// Width of the unit list, centred in the map viewport.
+const UNIT_LIST_W: f32 = 300.0;
 
-/// Rectangle of a side tab of the unit list (index into [`UNIT_TABS`]).
-fn unit_tab_rect(i: usize) -> Rect {
-    let x0 = (VIRTUAL_W - 300.0) / 2.0;
-    Rect::new(x0 + 4.0 + i as f32 * 62.0, VIEWPORT.y + 6.0, 58.0, 19.0)
+/// Rectangle of a side tab of the unit list (index into [`UNIT_TABS`]) over the map viewport
+/// `vp`.
+fn unit_tab_rect(vp: Rect, i: usize) -> Rect {
+    let x0 = vp.x + (vp.w - UNIT_LIST_W) / 2.0;
+    Rect::new(x0 + 4.0 + i as f32 * 62.0, vp.y + 6.0, 58.0, 19.0)
 }
 
 /// Index of the unit list tab under a tap.
-fn unit_tab_at(p: Vec2) -> Option<usize> {
-    (0..UNIT_TABS.len()).find(|&i| unit_tab_rect(i).contains(p))
+fn unit_tab_at(vp: Rect, p: Vec2) -> Option<usize> {
+    (0..UNIT_TABS.len()).find(|&i| unit_tab_rect(vp, i).contains(p))
 }
 
 /// Window of the unit list around its menu (the side tabs sit in its top strip).
@@ -1464,7 +1497,9 @@ impl Screen for BattleScreen {
     }
 
     fn draw(&self, ctx: &Ctx) {
-        fill_rect(SCREEN, Color::from_hex(0x0b0f1c));
+        let screen = ctx.gfx.screen();
+        let vp = self.camera.viewport;
+        fill_rect(screen, Color::from_hex(0x0b0f1c));
         self.draw_map(ctx);
         let player_turn = matches!(self.stage, Stage::Battle)
             && self.events.is_idle()
@@ -1486,13 +1521,13 @@ impl Screen for BattleScreen {
             };
             // During AI phases the cursor rides on the acting unit.
             let at = match self.ai {
-                Some(a) => self.camera.to_screen(self.scene.views[a.unit].pos),
+                Some(a) => self.camera.map_to_screen(self.scene.views[a.unit].pos),
                 None => self.camera.tile_screen(self.cursor),
             };
-            hud::draw_cursor(at, ctx.time, color);
+            hud::draw_cursor(at, self.tile(), ctx.time, color);
         }
         for f in &self.scene.floats {
-            hud::draw_float(&ctx.gfx, self.camera.to_screen(f.at), f);
+            hud::draw_float(&ctx.gfx, self.camera.map_to_screen(f.at), self.tile(), f);
         }
         hud::draw_top_bar(
             ctx,
@@ -1513,12 +1548,12 @@ impl Screen for BattleScreen {
                 return;
             }
             Stage::Objective => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.02, 0.45));
+                fill_rect(screen, Color::new(0.0, 0.0, 0.02, 0.45));
                 self.draw_objective(ctx, "Z / 클릭 — 출진");
                 return;
             }
             Stage::Result { lines, title } => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.02, 0.5));
+                fill_rect(screen, Color::new(0.0, 0.0, 0.02, 0.5));
                 hud::draw_text_window(ctx, title, lines, "Z / 클릭 — 계속");
                 return;
             }
@@ -1549,23 +1584,23 @@ impl Screen for BattleScreen {
             self.draw_panel(ctx);
         }
         if let Some(c) = &self.scene.caption {
-            hud::draw_caption(ctx, &c.text, c.age, VIEWPORT);
+            hud::draw_caption(ctx, &c.text, c.age, vp);
         }
         if let Some(b) = &self.scene.banner {
-            hud::draw_banner(ctx, b, VIEWPORT);
+            hud::draw_banner(ctx, b, vp);
         }
         if let Some(p) = &self.scene.popup {
             let below = p.unit.is_some_and(|u| {
-                let y = self.camera.to_screen(self.scene.views[u].pos).y;
-                y < VIEWPORT.y + VIEWPORT.h * 0.5
+                let y = self.camera.map_to_screen(self.scene.views[u].pos).y;
+                y < vp.y + vp.h * 0.5
             });
-            hud::draw_popup(ctx, p, &self.state, VIEWPORT, below);
+            hud::draw_popup(ctx, p, &self.state, vp, below);
         }
         if let Some(v) = self.scene.outcome {
             hud::draw_outcome(ctx, v, self.scene.outcome_age);
         }
         if let Some((dialog, _)) = &self.dialog {
-            fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.35));
+            fill_rect(screen, Color::new(0.0, 0.0, 0.0, 0.35));
             dialog.draw(ctx);
         }
         if !self.events.is_idle()
@@ -1575,11 +1610,52 @@ impl Screen for BattleScreen {
             ctx.gfx.text_aligned(
                 "Z 길게 누르기: 빨리 감기",
                 0.0,
-                VIRTUAL_H - 13.0,
-                VIRTUAL_W - 6.0,
+                screen.h - 13.0,
+                screen.w - 6.0,
                 Align::Right,
                 TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::screens::drama::OVERLAY_TOOL_TOP;
+
+    const CANVASES: [Vec2; 2] = [crate::gfx::DEFAULT_CANVAS, Vec2::new(640.0, 480.0)];
+
+    /// Drama overlays over the battle (intro, events, outro) put their toolbar at
+    /// `OVERLAY_TOOL_TOP`, below the top bar of the screen underneath: the battle HUD's top bar
+    /// must end at least 4 pixels above it, so the bar stays readable and the buttons tappable.
+    #[test]
+    fn top_bar_leaves_room_for_the_drama_overlay_toolbar() {
+        for canvas in CANVASES {
+            let top_bar_bottom = viewport(canvas).y;
+            assert_eq!(top_bar_bottom, hud::TOP_BAR_H);
+            assert!(
+                top_bar_bottom + 4.0 <= OVERLAY_TOOL_TOP,
+                "the battle top bar ({top_bar_bottom} px) runs into the drama overlay toolbar \
+                 at {OVERLAY_TOOL_TOP} px"
+            );
+        }
+    }
+
+    #[test]
+    fn viewport_and_unit_tabs_follow_the_canvas() {
+        // The base pack's layout.
+        let vp = viewport(crate::gfx::DEFAULT_CANVAS);
+        assert_eq!(vp, Rect::new(0.0, 16.0, 480.0, 254.0));
+        assert_eq!(unit_tab_rect(vp, 0), Rect::new(94.0, 22.0, 58.0, 19.0));
+        for canvas in CANVASES {
+            let vp = viewport(canvas);
+            assert_eq!((vp.right(), vp.bottom()), (canvas.x, canvas.y));
+            let (first, last) = (unit_tab_rect(vp, 0), unit_tab_rect(vp, 2));
+            // The tabs sit inside the centred unit list.
+            assert!(first.x > (canvas.x - UNIT_LIST_W) / 2.0);
+            assert!(last.right() < (canvas.x + UNIT_LIST_W) / 2.0);
+            assert_eq!(unit_tab_at(vp, last.center()), Some(2));
         }
     }
 }

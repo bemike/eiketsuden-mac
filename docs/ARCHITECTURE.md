@@ -98,7 +98,8 @@ to catch unwinnable maps, stuck AI and panics.
 
 ## Rendering model
 
-The game renders to a fixed **480×270 virtual canvas** (16×16 px tiles, 30×17 tiles visible) and scales
+The game renders to a **virtual canvas** whose size comes from the data pack (the base pack: 480×270 with
+16×16 px tiles; the tile size comes from the tileset, see [ASSETS.md](ASSETS.md#presentation-profile)) and scales
 it to the window with integer factors when possible (nearest-neighbour, letterboxed). `pack.toml`
 declares the canvas size its media is laid out for in `[presentation] canvas = [w, h]` (320×200 to
 1280×800, default 480×270); `Pack::manifest.presentation` holds the effective value, which a layered

@@ -8,7 +8,7 @@
 use super::theme;
 use super::window::{draw_portrait, draw_small_arrow, draw_window, draw_window_ex, WindowStyle};
 use crate::app::Ctx;
-use crate::gfx::{FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{FontId, Gfx, TextStyle};
 use macroquad::prelude::*;
 
 /// Lines shown at once.
@@ -30,6 +30,8 @@ pub enum MessageEvent {
 
 #[derive(Debug, Clone)]
 pub struct MessageBox {
+    /// Size of the canvas the box was laid out for (bottom edge, full width).
+    canvas: Vec2,
     speaker: Option<String>,
     portrait: Option<String>,
     pages: Vec<Vec<String>>,
@@ -42,13 +44,15 @@ impl MessageBox {
     /// A message. `speaker` is the display name for the name tab; `portrait` a portrait key
     /// (`portraits/<key>`, falling back to `_unknown`, then a silhouette).
     pub fn new(gfx: &Gfx, speaker: Option<&str>, portrait: Option<&str>, text: &str) -> MessageBox {
-        let width = Self::text_rect_for(portrait.is_some()).w;
+        let canvas = gfx.size();
+        let width = Self::text_rect_for(canvas, portrait.is_some()).w;
         let lines = gfx.wrap(text, FontId::Main, 1, width);
         let pages = lines
             .chunks(LINES_PER_PAGE)
             .map(|c| c.to_vec())
             .collect::<Vec<_>>();
         MessageBox {
+            canvas,
             speaker: speaker.filter(|s| !s.is_empty()).map(str::to_string),
             portrait: portrait.map(str::to_string),
             pages: if pages.is_empty() {
@@ -67,18 +71,19 @@ impl MessageBox {
         MessageBox::new(gfx, None, None, text)
     }
 
-    /// Window rectangle of the text box.
-    pub fn box_rect(with_portrait: bool) -> Rect {
+    /// Window rectangle of the text box on a `canvas` sized canvas: along the bottom edge,
+    /// right of the portrait when there is one.
+    pub fn box_rect(canvas: Vec2, with_portrait: bool) -> Rect {
         let x = if with_portrait {
             MARGIN + PORTRAIT_SIZE.x + 4.0
         } else {
             MARGIN
         };
-        Rect::new(x, VIRTUAL_H - MARGIN - BOX_H, VIRTUAL_W - MARGIN - x, BOX_H)
+        Rect::new(x, canvas.y - MARGIN - BOX_H, canvas.x - MARGIN - x, BOX_H)
     }
 
-    fn text_rect_for(with_portrait: bool) -> Rect {
-        let b = Self::box_rect(with_portrait);
+    fn text_rect_for(canvas: Vec2, with_portrait: bool) -> Rect {
+        let b = Self::box_rect(canvas, with_portrait);
         Rect::new(
             b.x + theme::PADDING + 4.0,
             b.y + theme::PADDING + 1.0,
@@ -87,10 +92,10 @@ impl MessageBox {
         )
     }
 
-    fn portrait_rect() -> Rect {
+    fn portrait_rect(canvas: Vec2) -> Rect {
         Rect::new(
             MARGIN,
-            VIRTUAL_H - MARGIN - PORTRAIT_SIZE.y,
+            canvas.y - MARGIN - PORTRAIT_SIZE.y,
             PORTRAIT_SIZE.x,
             PORTRAIT_SIZE.y,
         )
@@ -162,9 +167,13 @@ impl MessageBox {
     pub fn draw(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
         let has_portrait = self.portrait.is_some();
-        let b = Self::box_rect(has_portrait);
+        let b = Self::box_rect(self.canvas, has_portrait);
         if has_portrait {
-            draw_portrait(ctx, self.portrait.as_deref(), Self::portrait_rect());
+            draw_portrait(
+                ctx,
+                self.portrait.as_deref(),
+                Self::portrait_rect(self.canvas),
+            );
         }
         draw_window(b);
         if let Some(name) = &self.speaker {
@@ -179,7 +188,7 @@ impl MessageBox {
             );
         }
 
-        let t = Self::text_rect_for(has_portrait);
+        let t = Self::text_rect_for(self.canvas, has_portrait);
         let style = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
         let mut remaining = self.shown as usize;
         for (i, line) in self.pages[self.page].iter().enumerate() {

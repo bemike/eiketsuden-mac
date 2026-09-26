@@ -6,7 +6,7 @@
 
 use crate::app::{Ctx, Screen, Transition};
 use crate::audio::sfx;
-use crate::gfx::{fill_rect, Align, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, TextStyle};
 use crate::settings::{cycle, BattleSpeed, Settings, TextSpeed};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -141,9 +141,11 @@ impl Screen for SettingsScreen {
         let mut menu = Menu::new(items);
         menu.framed = false;
         let h = menu.rect().h;
+        let canvas = ctx.gfx.size();
+        // The window (menu plus its heading) is centred on the canvas.
         menu.set_position(
-            ((VIRTUAL_W - WIDTH) / 2.0).round() + 6.0,
-            ((VIRTUAL_H - h) / 2.0).round() + 10.0,
+            ((canvas.x - WIDTH) / 2.0).round() + 6.0,
+            ((canvas.y - h) / 2.0).round() + 10.0,
         );
         menu.set_width(WIDTH - 12.0);
         self.menu = menu;
@@ -177,7 +179,8 @@ impl Screen for SettingsScreen {
     }
 
     fn draw(&self, ctx: &Ctx) {
-        fill_rect(SCREEN, Color::new(0.0, 0.0, 0.02, 0.55));
+        let canvas = ctx.gfx.size();
+        fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.02, 0.55));
         let m = self.menu.rect();
         let frame = Rect::new(m.x - 6.0, m.y - 26.0, WIDTH, m.h + 32.0);
         draw_window(frame);
@@ -193,11 +196,11 @@ impl Screen for SettingsScreen {
         let where_ = format!("저장 위치: {}", ctx.storage.location());
         let lines = ctx
             .gfx
-            .wrap(&where_, crate::gfx::FontId::Small, 1, VIRTUAL_W - 20.0);
+            .wrap(&where_, crate::gfx::FontId::Small, 1, canvas.x - 20.0);
         ctx.gfx.text_lines(
             &lines,
             10.0,
-            VIRTUAL_H - 4.0 - 12.0 * lines.len() as f32,
+            canvas.y - 4.0 - 12.0 * lines.len() as f32,
             TextStyle::small(theme::TEXT_DISABLED),
         );
     }

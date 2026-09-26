@@ -19,14 +19,15 @@
 //! was pushed ([`Enter::Fresh`]) or when the screen above it was popped ([`Enter::Resumed`]) —
 //! the place to (re)start music or refresh data.
 //!
-//! Screens draw in virtual 480×270 coordinates (see [`crate::gfx`]) and read input from
+//! Screens draw in virtual canvas coordinates — the canvas size is the pack's presentation
+//! profile, read from [`crate::gfx::Gfx::size`] (see [`crate::gfx`]) — and read input from
 //! [`Ctx::input`]. Widgets from [`crate::ui`] take `&mut Ctx` in their `update` (they play UI
 //! sounds) and `&Ctx` in `draw`.
 
 use crate::assets::Media;
 use crate::audio::Audio;
 use crate::flow::{Flow, Session};
-use crate::gfx::{fill_rect, Gfx, TextStyle, SCREEN};
+use crate::gfx::{fill_rect, Gfx, TextStyle};
 use crate::input::Input;
 use crate::platform::storage::KeyValueStore;
 use crate::platform::{DataRoot, LaunchOptions};
@@ -341,19 +342,21 @@ impl App {
             Fade::In { t } => 1.0 - t.clamp(0.0, 1.0),
         };
         if fade > 0.0 {
-            fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, fade));
+            fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, fade));
         }
         if self.show_fps {
             let top = self.stack.last().map(|s| s.name()).unwrap_or("-");
             let text = format!(
-                "{} fps  S={}  {}  media:{}",
+                "{} fps  S={}  {}x{}  {}  media:{}",
                 get_fps(),
                 ctx.gfx.scale(),
+                ctx.gfx.size().x,
+                ctx.gfx.size().y,
                 top,
                 ctx.media.pending()
             );
             fill_rect(
-                Rect::new(0.0, 0.0, 480.0, 13.0),
+                Rect::new(0.0, 0.0, ctx.gfx.size().x, 13.0),
                 Color::new(0.0, 0.0, 0.0, 0.6),
             );
             ctx.gfx.text(&text, 3.0, 0.0, TextStyle::small(theme::TEXT));

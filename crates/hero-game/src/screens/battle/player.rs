@@ -224,12 +224,14 @@ pub fn command_enabled(state: &BattleState, pack: &Pack, unit: UnitId, c: Comman
     }
 }
 
-/// Battle consumables of the army inventory, in inventory order.
+/// Battle consumables of the army inventory, in inventory order: the items the engine accepts
+/// in `Action::UseItem` (`ItemDef::is_battle_item`), so equipment marked `battle_use` by
+/// mistake is not offered.
 fn battle_items<'a>(state: &'a BattleState, pack: &'a Pack) -> Vec<(&'a Id, u32)> {
     state
         .inventory
         .iter()
-        .filter(|(id, n)| **n > 0 && pack.item(id).is_some_and(|d| d.battle_use))
+        .filter(|(id, n)| **n > 0 && pack.item(id).is_some_and(|d| d.is_battle_item()))
         .map(|(id, n)| (id, *n))
         .collect()
 }
@@ -933,6 +935,28 @@ mod tests {
         );
         assert_eq!(ui.cancel(&state, &pack), Request::None);
         assert!(matches!(ui.mode, Mode::Items { .. }));
+    }
+
+    /// Regression: equipment with `battle_use` (a pack mistake `hero-tools validate` warns about)
+    /// used to be listed and then rejected by the engine with `BadItem`.
+    #[test]
+    fn equipment_is_never_a_battle_item() {
+        let (pack, mut state) = begun();
+        let mut pack = (*pack).clone();
+        pack.items
+            .get_mut("serpent_spear")
+            .expect("the base pack has the serpent spear")
+            .battle_use = true;
+        let lb = state.find_unit("liu_bei").unwrap();
+        state.inventory.clear();
+        state.inventory.insert("serpent_spear".into(), 1);
+        assert!(item_entries(&state, &pack, lb).is_empty());
+        assert!(!command_enabled(&state, &pack, lb, Command::Item));
+        state.inventory.insert("bean".into(), 1);
+        let items = item_entries(&state, &pack, lb);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "bean");
+        assert!(command_enabled(&state, &pack, lb, Command::Item));
     }
 
     #[test]

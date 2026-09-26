@@ -9,9 +9,7 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::AssetState;
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{
-    draw_texture_fit, fill_gradient_v, Align, Fit, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
-};
+use crate::gfx::{draw_texture_fit, fill_gradient_v, Align, Fit, TextStyle};
 use crate::saves;
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -19,6 +17,10 @@ use crate::ui::theme;
 use macroquad::prelude::*;
 
 const TITLE_ART: &str = "ui/title";
+/// Top of the logo on canvases with room for it.
+const LOGO_TOP: f32 = 34.0;
+/// Height of the logo block: the big name (3 × 16 px lines) and the hanja line below it.
+const LOGO_H: f32 = 86.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -90,9 +92,11 @@ impl TitleScreen {
         let mut menu = Menu::new(items).cancellable(crate::platform::can_quit());
         menu.set_width(112.0);
         let h = menu.rect().h;
+        let canvas = ctx.gfx.size();
+        // Centred near the bottom edge.
         menu.set_position(
-            ((VIRTUAL_W - 112.0) / 2.0).round(),
-            (VIRTUAL_H - 18.0 - h).round(),
+            ((canvas.x - 112.0) / 2.0).round(),
+            (canvas.y - 18.0 - h).round(),
         );
         // Keep the cursor where it was, but land on "continue" when saves exist on first show.
         if self.age == 0.0 && self.has_saves {
@@ -192,17 +196,18 @@ impl Screen for TitleScreen {
 
     fn draw(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
+        let (w, h) = (gfx.size().x, gfx.size().y);
         match ctx.media.texture_state(TITLE_ART) {
             AssetState::Ready => {
                 if let Some(t) = ctx.media.texture(TITLE_ART) {
-                    draw_texture_fit(&t, SCREEN, Fit::Cover, WHITE);
+                    draw_texture_fit(&t, gfx.screen(), Fit::Cover, WHITE);
                 }
             }
-            _ => draw_backdrop(ctx.time),
+            _ => draw_backdrop(gfx.size(), ctx.time),
         }
         // Darken the top for the logo and the bottom for the menu.
         fill_gradient_v(
-            Rect::new(0.0, 0.0, VIRTUAL_W, 120.0),
+            Rect::new(0.0, 0.0, w, 120.0),
             Color::new(0.0, 0.0, 0.05, 0.55),
             Color::new(0.0, 0.0, 0.05, 0.0),
         );
@@ -219,8 +224,10 @@ impl Screen for TitleScreen {
         let w_big = gfx.text_width("영걸전", big.font, big.size);
         let w_tag = gfx.text_width("Reloaded", tag.font, tag.size);
         let gap = 10.0;
-        let x0 = ((VIRTUAL_W - (w_big + gap + w_tag)) / 2.0).round();
-        let y0 = 34.0 + (1.0 - intro) * 6.0;
+        let x0 = ((w - (w_big + gap + w_tag)) / 2.0).round();
+        // 34 pixels from the top, moved up on canvases too low to fit it above the menu.
+        let top = LOGO_TOP.min(self.menu.rect().y - LOGO_H - 4.0).max(2.0);
+        let y0 = top + (1.0 - intro) * 6.0;
         gfx.text("영걸전", x0, y0, big);
         // Align the baseline of "Reloaded" with the big text's baseline.
         let dy = gfx.line_height(big.font, big.size) - gfx.line_height(tag.font, tag.size) - 3.0;
@@ -229,7 +236,7 @@ impl Screen for TitleScreen {
             "英 傑 傳",
             0.0,
             y0 + 54.0,
-            VIRTUAL_W,
+            w,
             Align::Center,
             TextStyle::main(theme::TEXT_NAME.with_alpha(0.85 * alpha))
                 .size(2)
@@ -244,21 +251,21 @@ impl Screen for TitleScreen {
             gfx.text(
                 &format!("{} {}", pack.manifest.name, pack.manifest.version),
                 4.0,
-                VIRTUAL_H - 13.0,
+                h - 13.0,
                 small,
             );
         }
         gfx.text_aligned(
             concat!("v", env!("CARGO_PKG_VERSION")),
             0.0,
-            VIRTUAL_H - 13.0,
-            VIRTUAL_W - 4.0,
+            h - 13.0,
+            w - 4.0,
             Align::Right,
             small,
         );
 
         if let Some(dialog) = &self.confirm_quit {
-            crate::gfx::fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.35));
+            crate::gfx::fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35));
             dialog.draw(ctx);
         }
     }

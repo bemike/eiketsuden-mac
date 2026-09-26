@@ -10,7 +10,7 @@ use super::loading::{LoadingScreen, Target};
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
 use crate::flow::Flow;
-use crate::gfx::{FontId, TextStyle, VIRTUAL_W};
+use crate::gfx::{FontId, TextStyle};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
 use crate::ui::window::{draw_small_arrow, draw_window};
@@ -23,12 +23,11 @@ enum Action {
     Quit,
 }
 
-const TEXT_RECT: Rect = Rect {
-    x: 24.0,
-    y: 52.0,
-    w: 432.0,
-    h: 148.0,
-};
+/// Area of the detail text on a `canvas` sized canvas: 24 pixels in from the sides, below the
+/// heading and above the menu (70 pixels are kept free at the bottom).
+fn text_rect(canvas: Vec2) -> Rect {
+    Rect::new(24.0, 52.0, canvas.x - 48.0, canvas.y - 122.0)
+}
 
 pub struct ErrorScreen {
     title: String,
@@ -37,6 +36,8 @@ pub struct ErrorScreen {
     scroll: usize,
     actions: Vec<Action>,
     menu: Menu,
+    /// Detail text area, laid out for the canvas when the screen is entered.
+    text_rect: Rect,
 }
 
 impl ErrorScreen {
@@ -81,11 +82,12 @@ impl ErrorScreen {
             scroll: 0,
             actions,
             menu,
+            text_rect: text_rect(crate::gfx::DEFAULT_CANVAS),
         }
     }
 
     fn visible_lines(&self) -> usize {
-        (TEXT_RECT.h / 12.0) as usize
+        (self.text_rect.h / 12.0) as usize
     }
 }
 
@@ -99,28 +101,31 @@ impl Screen for ErrorScreen {
             ctx.audio.stop_bgm();
             ctx.sfx(sfx::ERROR);
         }
+        let canvas = ctx.gfx.size();
+        self.text_rect = text_rect(canvas);
         self.wrapped = self
             .details
             .iter()
-            .flat_map(|d| ctx.gfx.wrap(d, FontId::Small, 1, TEXT_RECT.w - 12.0))
+            .flat_map(|d| ctx.gfx.wrap(d, FontId::Small, 1, self.text_rect.w - 12.0))
             .collect();
         let w = self.menu.fit_width(&ctx.gfx).max(140.0);
         let h = self.menu.rect().h;
+        // Centred, its bottom 8 pixels above the bottom edge.
         self.menu
-            .set_position(((VIRTUAL_W - w) / 2.0).round(), 262.0 - h);
+            .set_position(((canvas.x - w) / 2.0).round(), canvas.y - 8.0 - h);
         self.menu.set_width(w);
     }
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         let max_scroll = self.wrapped.len().saturating_sub(self.visible_lines());
-        if ctx.input.hovering(TEXT_RECT) {
+        if ctx.input.hovering(self.text_rect) {
             let w = ctx.input.wheel();
             if w != 0 {
                 self.scroll = (self.scroll as i32 + w * 2).clamp(0, max_scroll as i32) as usize;
             }
         }
         if let Some(drag) = ctx.input.drag() {
-            if TEXT_RECT.contains(drag.origin) {
+            if self.text_rect.contains(drag.origin) {
                 let lines = (-drag.delta.y / 4.0) as i32;
                 self.scroll = (self.scroll as i32 + lines).clamp(0, max_scroll as i32) as usize;
             }
@@ -144,19 +149,20 @@ impl Screen for ErrorScreen {
     fn draw(&self, ctx: &Ctx) {
         clear_background(theme::BACKGROUND);
         let gfx = &ctx.gfx;
+        let text_rect = self.text_rect;
         gfx.text(
             &self.title,
-            TEXT_RECT.x,
+            text_rect.x,
             18.0,
             TextStyle::main(theme::TEXT_BAD)
                 .size(2)
                 .shadow(theme::TEXT_SHADOW),
         );
         let frame = Rect::new(
-            TEXT_RECT.x - 6.0,
-            TEXT_RECT.y - 6.0,
-            TEXT_RECT.w + 12.0,
-            TEXT_RECT.h + 12.0,
+            text_rect.x - 6.0,
+            text_rect.y - 6.0,
+            text_rect.w + 12.0,
+            text_rect.h + 12.0,
         );
         draw_window(frame);
         let style = TextStyle::small(theme::TEXT);
@@ -169,8 +175,8 @@ impl Screen for ErrorScreen {
         {
             gfx.text(
                 line,
-                TEXT_RECT.x + 4.0,
-                TEXT_RECT.y + i as f32 * 12.0,
+                text_rect.x + 4.0,
+                text_rect.y + i as f32 * 12.0,
                 style,
             );
         }

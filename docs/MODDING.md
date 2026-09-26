@@ -953,6 +953,9 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
 
 E = error, W = warning.
 
+**pack.toml** — W: a `presentation.canvas` smaller than 480×270 (the camp and battle screens are laid
+out for at least that size and overlap on smaller canvases).
+
 **rules/game.toml** — E: `level_cap`/`exp_per_level` below 1, negative `gold_cap`/`mp_cap`/
 `morale_loss_pct`/`counter_damage_pct`, `morale_start` or `confuse_morale` outside 0..=100, EXP tables not
 strictly sorted or with negative EXP, `counter_divisor` ≤ 0, weather chances negative or not summing to 100,

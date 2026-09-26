@@ -7,7 +7,7 @@
 //! |---|---|
 //! | [`app`] | shared context [`app::Ctx`], the [`app::Screen`] trait, the screen stack with fades, [`app::run`] |
 //! | [`flow`] | game flow (title → campaign nodes → ending) and **the plug-in point for the drama / camp / battle screens** |
-//! | [`gfx`] | 480×270 virtual canvas with integer scaling, fonts, text, word wrap, drawing helpers |
+//! | [`gfx`] | virtual canvas (the pack's presentation profile, 480×270 by default) with integer scaling, fonts, text, word wrap, drawing helpers |
 //! | [`ui`] | procedural Eiketsuden-style widgets: windows, menus, message box, dialogs, gauges, toasts, tooltips |
 //! | [`input`] | per-frame input snapshot: confirm / cancel / navigation with key repeat / pointer, tap and drag |
 //! | [`audio`] | music by key with fades, sound effects by key, volumes, web audio unlock |
@@ -18,7 +18,7 @@
 //! | [`screens`] | loading, error, title, save/load, settings, credits, game over, UI gallery |
 //!
 //! Start with the module docs of [`app`] (how to write a screen) and [`flow`] (where campaign
-//! screens plug in). All drawing happens in virtual 480×270 coordinates, see [`gfx`].
+//! screens plug in). All drawing happens in virtual canvas coordinates, see [`gfx`].
 
 pub mod app;
 pub mod assets;

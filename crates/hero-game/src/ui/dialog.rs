@@ -8,7 +8,7 @@ use super::theme;
 use super::window::{draw_highlight, draw_window, draw_window_ex, WindowStyle};
 use crate::app::Ctx;
 use crate::audio::sfx;
-use crate::gfx::{Align, FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{Align, FontId, Gfx, TextStyle};
 use crate::input::Dir;
 use macroquad::prelude::*;
 
@@ -30,7 +30,7 @@ pub struct ChoiceBox {
 }
 
 impl ChoiceBox {
-    /// Centred on the screen. With `cancel = Some(i)` the cancel button picks option `i`;
+    /// Centred on the canvas. With `cancel = Some(i)` the cancel button picks option `i`;
     /// with `None` the choice cannot be cancelled.
     pub fn new(
         gfx: &Gfx,
@@ -50,7 +50,8 @@ impl ChoiceBox {
             .iter()
             .map(|l| gfx.text_width(l, FontId::Main, 1))
             .fold(0.0, f32::max);
-        let w = (menu_w.max(prompt_w + 2.0 * theme::PADDING + 8.0)).clamp(80.0, VIRTUAL_W - 16.0);
+        let canvas = gfx.size();
+        let w = (menu_w.max(prompt_w + 2.0 * theme::PADDING + 8.0)).clamp(80.0, canvas.x - 16.0);
         let prompt_h = if prompt_lines.is_empty() {
             0.0
         } else {
@@ -59,8 +60,8 @@ impl ChoiceBox {
         let menu_h = menu.rect().h;
         let h = prompt_h + menu_h + 2.0 * theme::PADDING;
         let rect = Rect::new(
-            ((VIRTUAL_W - w) / 2.0).round(),
-            ((VIRTUAL_H - h) / 2.0).round(),
+            ((canvas.x - w) / 2.0).round(),
+            ((canvas.y - h) / 2.0).round(),
             w.round(),
             h,
         );
@@ -142,14 +143,15 @@ impl ConfirmDialog {
             .max(2.0 * BUTTON_W + 40.0)
             .round();
         let h = lines.len() as f32 * 16.0 + BUTTON_H + 2.0 * theme::PADDING + 14.0;
+        let canvas = gfx.size();
         ConfirmDialog {
             lines,
             yes: "예".into(),
             no: "아니오".into(),
             yes_selected: true,
             rect: Rect::new(
-                ((VIRTUAL_W - w) / 2.0).round(),
-                ((VIRTUAL_H - h) / 2.0).round(),
+                ((canvas.x - w) / 2.0).round(),
+                ((canvas.y - h) / 2.0).round(),
                 w,
                 h,
             ),

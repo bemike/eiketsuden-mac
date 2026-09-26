@@ -18,7 +18,7 @@ use crate::app::{Ctx, Screen, Transition};
 use crate::assets::{FileBatch, FileRequest, Media};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{fill_rect, stroke_rect, Align, FontId, TextStyle, VIRTUAL_W};
+use crate::gfx::{canvas_size, fill_rect, stroke_rect, Align, FontId, TextStyle};
 use crate::ui::theme;
 use hero_core::pack::{Pack, PackChain, PackError, Severity};
 use macroquad::prelude::*;
@@ -436,6 +436,10 @@ impl LoadingScreen {
                     }
                     return self.fail("데이터 팩 검증 실패", errors, ctx);
                 }
+                // Every following screen is laid out on the pack's canvas.
+                ctx.gfx
+                    .canvas
+                    .set_size(canvas_size(&pack.manifest.presentation));
                 ctx.pack = Some(Rc::new(pack));
                 let sounds: Vec<String> = sfx::ALL
                     .iter()
@@ -475,7 +479,9 @@ impl Screen for LoadingScreen {
     fn draw(&self, ctx: &Ctx) {
         clear_background(theme::BACKGROUND);
         let gfx = &ctx.gfx;
-        let bar = Rect::new(140.0, 170.0, 200.0, 6.0);
+        let (w, h) = (gfx.size().x, gfx.size().y);
+        let mid = (h / 2.0).round();
+        let bar = Rect::new(((w - 200.0) / 2.0).round(), mid + 35.0, 200.0, 6.0);
         fill_rect(bar, theme::GAUGE_BG);
         stroke_rect(bar, theme::BORDER_MID);
         let fill = Rect::new(
@@ -491,8 +497,8 @@ impl Screen for LoadingScreen {
             let phase = ((ctx.time * 8.0) as i32).rem_euclid(8);
             let alpha = if i == phase { 1.0 } else { 0.25 };
             draw_circle(
-                VIRTUAL_W / 2.0 + a.cos() * 8.0,
-                145.0 + a.sin() * 8.0,
+                w / 2.0 + a.cos() * 8.0,
+                mid + 10.0 + a.sin() * 8.0,
                 1.5,
                 theme::TEXT_ACCENT.with_alpha(alpha),
             );
@@ -501,8 +507,8 @@ impl Screen for LoadingScreen {
             gfx.text_aligned(
                 "영걸전 Reloaded",
                 0.0,
-                96.0,
-                VIRTUAL_W,
+                mid - 39.0,
+                w,
                 Align::Center,
                 TextStyle::main(theme::TEXT_ACCENT)
                     .size(2)
@@ -511,8 +517,8 @@ impl Screen for LoadingScreen {
             gfx.text_aligned(
                 &format!("불러오는 중… {}", self.status),
                 0.0,
-                182.0,
-                VIRTUAL_W,
+                mid + 47.0,
+                w,
                 Align::Center,
                 TextStyle::small(theme::TEXT_DIM),
             );

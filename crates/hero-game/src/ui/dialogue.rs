@@ -14,7 +14,7 @@ use super::textflow::Typewriter;
 use super::theme;
 use super::window::{draw_small_arrow, draw_window_ex, WindowStyle};
 use crate::app::Ctx;
-use crate::gfx::{wrap_text, FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{wrap_text, FontId, Gfx, TextStyle};
 use macroquad::prelude::*;
 
 /// Wrap `text` to `width`: the script's line breaks are kept when each written line fits;
@@ -63,6 +63,8 @@ pub enum DialogueEvent {
 /// See the module docs.
 #[derive(Debug, Clone)]
 pub struct DialogueBox {
+    /// Size of the canvas the box was laid out for (bottom edge, full width).
+    canvas: Vec2,
     speaker: Option<String>,
     portrait: Option<String>,
     centered: bool,
@@ -77,8 +79,10 @@ impl DialogueBox {
     /// messenger).
     pub fn speech(gfx: &Gfx, speaker: &str, portrait: Option<&str>, text: &str) -> DialogueBox {
         let with_portrait = portrait.is_some();
-        let width = Self::text_rect(with_portrait).w;
+        let canvas = gfx.size();
+        let width = Self::text_rect(canvas, with_portrait).w;
         DialogueBox {
+            canvas,
             speaker: Some(speaker.to_string()).filter(|s| !s.is_empty()),
             portrait: portrait.map(str::to_string),
             centered: false,
@@ -90,8 +94,10 @@ impl DialogueBox {
 
     /// Narration: no name, no portrait, centred lines.
     pub fn narration(gfx: &Gfx, text: &str) -> DialogueBox {
-        let width = Self::text_rect(false).w;
+        let canvas = gfx.size();
+        let width = Self::text_rect(canvas, false).w;
         DialogueBox {
+            canvas,
             speaker: None,
             portrait: None,
             centered: true,
@@ -101,18 +107,19 @@ impl DialogueBox {
         }
     }
 
-    /// Window rectangle of the text box.
-    pub fn box_rect(with_portrait: bool) -> Rect {
+    /// Window rectangle of the text box on a `canvas` sized canvas: along the bottom edge,
+    /// right of the portrait when there is one.
+    pub fn box_rect(canvas: Vec2, with_portrait: bool) -> Rect {
         let x = if with_portrait {
             MARGIN + PORTRAIT_SIZE.x + 4.0
         } else {
             MARGIN
         };
-        Rect::new(x, VIRTUAL_H - MARGIN - BOX_H, VIRTUAL_W - MARGIN - x, BOX_H)
+        Rect::new(x, canvas.y - MARGIN - BOX_H, canvas.x - MARGIN - x, BOX_H)
     }
 
-    fn text_rect(with_portrait: bool) -> Rect {
-        let b = Self::box_rect(with_portrait);
+    fn text_rect(canvas: Vec2, with_portrait: bool) -> Rect {
+        let b = Self::box_rect(canvas, with_portrait);
         Rect::new(
             b.x + theme::PADDING + 4.0,
             b.y + theme::PADDING + 1.0,
@@ -121,10 +128,10 @@ impl DialogueBox {
         )
     }
 
-    fn portrait_rect() -> Rect {
+    fn portrait_rect(canvas: Vec2) -> Rect {
         Rect::new(
             MARGIN,
-            VIRTUAL_H - MARGIN - PORTRAIT_SIZE.y,
+            canvas.y - MARGIN - PORTRAIT_SIZE.y,
             PORTRAIT_SIZE.x,
             PORTRAIT_SIZE.y,
         )
@@ -133,13 +140,13 @@ impl DialogueBox {
     /// Top edge of everything the box draws (portrait and name tab included), for placing a
     /// choice box above it.
     pub fn top(&self) -> f32 {
-        let b = Self::box_rect(self.portrait.is_some());
+        let b = Self::box_rect(self.canvas, self.portrait.is_some());
         let mut top = b.y;
         if self.speaker.is_some() {
             top = top.min(b.y - 16.0);
         }
         if self.portrait.is_some() {
-            top = top.min(Self::portrait_rect().y);
+            top = top.min(Self::portrait_rect(self.canvas).y);
         }
         top
     }
@@ -206,12 +213,12 @@ impl DialogueBox {
     pub fn draw(&self, ctx: &Ctx, more_arrow: bool) {
         let gfx = &ctx.gfx;
         let has_portrait = self.portrait.is_some();
-        let b = Self::box_rect(has_portrait);
+        let b = Self::box_rect(self.canvas, has_portrait);
         if has_portrait {
             draw_portrait_card(
                 ctx,
                 self.portrait.as_deref(),
-                Self::portrait_rect(),
+                Self::portrait_rect(self.canvas),
                 1.0,
                 1.0,
             );
@@ -234,7 +241,7 @@ impl DialogueBox {
             );
         }
 
-        let t = Self::text_rect(has_portrait);
+        let t = Self::text_rect(self.canvas, has_portrait);
         let style = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
         let full = self.writer.page_lines();
         // Narration pages are centred vertically too when they are shorter than the box.

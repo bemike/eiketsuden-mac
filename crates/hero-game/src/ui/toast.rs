@@ -3,7 +3,7 @@
 
 use super::theme;
 use super::window::{draw_window_ex, WindowStyle};
-use crate::gfx::{fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle};
 use macroquad::prelude::*;
 use std::collections::VecDeque;
 
@@ -47,6 +47,7 @@ impl Toasts {
     }
 
     pub fn draw(&self, gfx: &Gfx) {
+        let canvas_w = gfx.size().x;
         let mut y = 6.0;
         for t in &self.items {
             let alpha = if t.age < TOAST_FADE {
@@ -57,7 +58,7 @@ impl Toasts {
                 1.0
             }
             .clamp(0.0, 1.0);
-            let lines = gfx.wrap(&t.text, FontId::Main, 1, VIRTUAL_W - 60.0);
+            let lines = gfx.wrap(&t.text, FontId::Main, 1, canvas_w - 60.0);
             let w = lines
                 .iter()
                 .map(|l| gfx.text_width(l, FontId::Main, 1))
@@ -65,7 +66,7 @@ impl Toasts {
                 + 2.0 * theme::PADDING
                 + 8.0;
             let h = lines.len() as f32 * 16.0 + 2.0 * theme::PADDING;
-            let r = Rect::new(((VIRTUAL_W - w) / 2.0).round(), y, w.round(), h);
+            let r = Rect::new(((canvas_w - w) / 2.0).round(), y, w.round(), h);
             draw_window_ex(r, WindowStyle::Normal, alpha * 0.95);
             let style = TextStyle::main(theme::TEXT.with_alpha(alpha));
             for (i, line) in lines.iter().enumerate() {
@@ -129,34 +130,28 @@ impl Banner {
         let t_out = ((self.duration - self.age) / BANNER_OUT).clamp(0.0, 1.0);
         let alpha = t_in.min(t_out);
         let ease = 1.0 - (1.0 - t_in).powi(3);
+        let (w, canvas_h) = (gfx.size().x, gfx.size().y);
         let h = if self.subtitle.is_some() { 52.0 } else { 40.0 };
-        let y = ((VIRTUAL_H - h) / 2.0).round();
-        let band = Rect::new(0.0, y, VIRTUAL_W, h);
+        let y = ((canvas_h - h) / 2.0).round();
+        let band = Rect::new(0.0, y, w, h);
         let dark = Color::new(0.02, 0.03, 0.1, 0.85 * alpha);
         let mid = Color::new(0.08, 0.12, 0.35, 0.85 * alpha);
-        fill_gradient_h(Rect::new(0.0, y, VIRTUAL_W / 2.0, h), dark, mid);
-        fill_gradient_h(Rect::new(VIRTUAL_W / 2.0, y, VIRTUAL_W / 2.0, h), mid, dark);
+        fill_gradient_h(Rect::new(0.0, y, w / 2.0, h), dark, mid);
+        fill_gradient_h(Rect::new(w / 2.0, y, w / 2.0, h), mid, dark);
         let gold = theme::TEXT_ACCENT.with_alpha(alpha);
-        fill_rect(Rect::new(0.0, band.y, VIRTUAL_W, 1.0), gold);
-        fill_rect(Rect::new(0.0, band.bottom() - 1.0, VIRTUAL_W, 1.0), gold);
+        fill_rect(Rect::new(0.0, band.y, w, 1.0), gold);
+        fill_rect(Rect::new(0.0, band.bottom() - 1.0, w, 1.0), gold);
         let slide = (1.0 - ease) * 40.0;
         let title_style = TextStyle::main(theme::TEXT.with_alpha(alpha))
             .size(2)
             .shadow(theme::TEXT_SHADOW.with_alpha(alpha));
-        gfx.text_aligned(
-            &self.title,
-            slide,
-            y + 4.0,
-            VIRTUAL_W,
-            Align::Center,
-            title_style,
-        );
+        gfx.text_aligned(&self.title, slide, y + 4.0, w, Align::Center, title_style);
         if let Some(sub) = &self.subtitle {
             gfx.text_aligned(
                 sub,
                 -slide,
                 y + 36.0,
-                VIRTUAL_W,
+                w,
                 Align::Center,
                 TextStyle::main(theme::TEXT_ACCENT.with_alpha(alpha)),
             );

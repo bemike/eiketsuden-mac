@@ -17,7 +17,7 @@ use crate::app::Ctx;
 use crate::assets::AssetState;
 use crate::gfx::{
     draw_placeholder, draw_sprite_frame, draw_texture_fit, fill_gradient_v, fill_rect, key_color,
-    Align, Fit, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
+    Align, Fit, FontId, TextStyle,
 };
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
@@ -107,35 +107,44 @@ fn ridge(x: f32, seed: u32, base: f32, amp: f32) -> f32 {
             + 0.15 * (x / 11.0 + p3).sin())
 }
 
-fn draw_ridge(seed: u32, base: f32, amp: f32, color: Color) {
+/// A ridge filled down to the bottom of a `size` canvas.
+fn draw_ridge(size: Vec2, seed: u32, base: f32, amp: f32, color: Color) {
     let step = 4.0;
     let mut x = 0.0;
-    while x < VIRTUAL_W {
+    while x < size.x {
         let y0 = ridge(x, seed, base, amp);
         let y1 = ridge(x + step, seed, base, amp);
-        draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, VIRTUAL_H), color);
+        draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, size.y), color);
         draw_triangle(
             vec2(x + step, y1),
-            vec2(x + step, VIRTUAL_H),
-            vec2(x, VIRTUAL_H),
+            vec2(x + step, size.y),
+            vec2(x, size.y),
             color,
         );
         x += step;
     }
 }
 
-/// Procedural stand-in for background `key` (see [`fallback_palette`]).
-pub fn draw_fallback_background(key: &str, alpha: f32) {
+/// Procedural stand-in for background `key` (see [`fallback_palette`]) over a `size` canvas. The
+/// composition is designed for a 270-pixel-high canvas and scales vertically with the canvas
+/// height; it spans the full width, with the pillars of a hall mirrored at both edges.
+pub fn draw_fallback_background(size: Vec2, key: &str, alpha: f32) {
     let (top, bottom, scenery) = fallback_palette(key);
     let seed = key_seed(key);
-    fill_gradient_v(SCREEN, fade(top, alpha), fade(bottom, alpha));
+    let (w, h) = (size.x, size.y);
+    let k = h / 270.0;
+    fill_gradient_v(
+        Rect::new(0.0, 0.0, w, h),
+        fade(top, alpha),
+        fade(bottom, alpha),
+    );
     match scenery {
         Scenery::Plain => {}
         Scenery::Outdoor | Scenery::Night => {
             if scenery == Scenery::Night {
                 for i in 0..60u32 {
-                    let x = (hash01(seed ^ (i * 3)) * VIRTUAL_W).floor();
-                    let y = (hash01(seed ^ (i * 3 + 1)) * VIRTUAL_H * 0.55).floor();
+                    let x = (hash01(seed ^ (i * 3)) * w).floor();
+                    let y = (hash01(seed ^ (i * 3 + 1)) * h * 0.55).floor();
                     let a = 0.25 + 0.6 * hash01(i * 7 + 3);
                     fill_rect(
                         Rect::new(x, y, 1.0, 1.0),
@@ -152,22 +161,24 @@ pub fn draw_fallback_background(key: &str, alpha: f32) {
                 ),
                 0.8,
             );
-            draw_ridge(seed, 165.0, 55.0, fade(far, alpha));
+            draw_ridge(size, seed, 165.0 * k, 55.0 * k, fade(far, alpha));
             draw_ridge(
+                size,
                 seed.wrapping_add(17),
-                205.0,
-                40.0,
+                205.0 * k,
+                40.0 * k,
                 fade(shade(bottom, 0.9), alpha),
             );
             draw_ridge(
+                size,
                 seed.wrapping_add(41),
-                238.0,
-                22.0,
+                238.0 * k,
+                22.0 * k,
                 fade(shade(bottom, 0.55), alpha),
             );
             // Haze over the far ridge.
             fill_gradient_v(
-                Rect::new(0.0, 140.0, VIRTUAL_W, 60.0),
+                Rect::new(0.0, 140.0 * k, w, 60.0 * k),
                 fade(Color::new(top.r, top.g, top.b, 0.0), alpha),
                 fade(Color::new(top.r, top.g, top.b, 0.25), alpha),
             );
@@ -175,35 +186,35 @@ pub fn draw_fallback_background(key: &str, alpha: f32) {
         Scenery::Indoor => {
             // Floor.
             fill_gradient_v(
-                Rect::new(0.0, 190.0, VIRTUAL_W, 80.0),
+                Rect::new(0.0, 190.0 * k, w, h - 190.0 * k),
                 fade(shade(bottom, 1.6), alpha),
                 fade(shade(bottom, 0.6), alpha),
             );
-            // Pillars with a warm lantern glow between them.
+            // Pillars with a warm lantern glow between them, mirrored at both edges.
             let pillar = fade(shade(bottom, 0.7), alpha);
             let edge = fade(shade(top, 1.3), alpha * 0.5);
-            for (i, x) in [36.0, 132.0, 330.0, 426.0].into_iter().enumerate() {
-                fill_rect(Rect::new(x, 0.0, 18.0, 200.0), pillar);
-                fill_rect(Rect::new(x, 0.0, 2.0, 200.0), edge);
+            for (i, x) in [36.0, 132.0, w - 150.0, w - 54.0].into_iter().enumerate() {
+                fill_rect(Rect::new(x, 0.0, 18.0, 200.0 * k), pillar);
+                fill_rect(Rect::new(x, 0.0, 2.0, 200.0 * k), edge);
                 if i % 2 == 0 {
                     let gx = x + 48.0;
                     for (r, a) in [(26.0, 0.05), (16.0, 0.08), (8.0, 0.14)] {
-                        draw_circle(gx, 70.0, r, Color::new(1.0, 0.75, 0.4, a * alpha));
+                        draw_circle(gx, 70.0 * k, r, Color::new(1.0, 0.75, 0.4, a * alpha));
                     }
                 }
             }
             // Beam across the top.
-            fill_rect(Rect::new(0.0, 16.0, VIRTUAL_W, 10.0), pillar);
+            fill_rect(Rect::new(0.0, 16.0 * k, w, 10.0 * k), pillar);
         }
     }
     // Vignette.
     fill_gradient_v(
-        Rect::new(0.0, 0.0, VIRTUAL_W, 40.0),
+        Rect::new(0.0, 0.0, w, 40.0),
         Color::new(0.0, 0.0, 0.0, 0.35 * alpha),
         Color::new(0.0, 0.0, 0.0, 0.0),
     );
     fill_gradient_v(
-        Rect::new(0.0, VIRTUAL_H - 60.0, VIRTUAL_W, 60.0),
+        Rect::new(0.0, h - 60.0, w, 60.0),
         Color::new(0.0, 0.0, 0.0, 0.0),
         Color::new(0.0, 0.0, 0.0, 0.45 * alpha),
     );
@@ -217,14 +228,14 @@ pub fn draw_background(ctx: &Ctx, key: &str, alpha: f32) -> bool {
     match ctx.media.texture_state(&tex_key) {
         AssetState::Ready => match ctx.media.texture(&tex_key) {
             Some(t) => {
-                draw_texture_fit(&t, SCREEN, Fit::Cover, fade(WHITE, alpha));
+                draw_texture_fit(&t, ctx.gfx.screen(), Fit::Cover, fade(WHITE, alpha));
                 true
             }
             None => false,
         },
         AssetState::Loading => false,
         AssetState::Missing => {
-            draw_fallback_background(key, alpha);
+            draw_fallback_background(ctx.gfx.size(), key, alpha);
             true
         }
     }
@@ -450,8 +461,19 @@ pub fn unit_frame_size(sheet_w: f32, sheet_h: f32) -> Vec2 {
     vec2((sheet_w / 4.0).floor(), (sheet_h / 6.0).floor())
 }
 
+/// Tallest unit frame [`draw_unit`] draws at full size. Packs with bigger unit sprites (e.g.
+/// 48×48 frames for 32-pixel map tiles) get them shrunk by a whole factor, so the officer rows of
+/// the camp keep their spacing.
+pub const UNIT_ICON_MAX: f32 = 32.0;
+
+/// Whole factor a unit frame `frame_h` pixels high is shrunk by in [`draw_unit`].
+pub fn unit_icon_divisor(frame_h: f32) -> f32 {
+    (frame_h / UNIT_ICON_MAX).ceil().max(1.0)
+}
+
 /// Draw a unit sprite (`units/<sprite>_<side>`) standing with its feet at `feet` (bottom centre of
-/// the frame), facing down, walk frame `step` (0..4). A placeholder box when the sheet is missing.
+/// the frame), facing down, walk frame `step` (0..4); frames taller than [`UNIT_ICON_MAX`] are
+/// shrunk. A placeholder box when the sheet is missing.
 pub fn draw_unit(ctx: &Ctx, sprite: &str, side: &str, feet: Vec2, step: u32) {
     let key = format!("units/{sprite}_{side}");
     match ctx.media.texture_state(&key) {
@@ -459,8 +481,29 @@ pub fn draw_unit(ctx: &Ctx, sprite: &str, side: &str, feet: Vec2, step: u32) {
             if let Some(t) = ctx.media.texture(&key) {
                 let frame = unit_frame_size(t.width(), t.height());
                 if frame.x >= 1.0 && frame.y >= 1.0 {
-                    let pos = vec2((feet.x - frame.x / 2.0).round(), feet.y - frame.y);
-                    draw_sprite_frame(&t, frame, (0, step % 4), pos, false, WHITE);
+                    let size = frame / unit_icon_divisor(frame.y);
+                    let pos = vec2((feet.x - size.x / 2.0).round(), feet.y - size.y);
+                    let cell = (0, step % 4);
+                    if size == frame {
+                        draw_sprite_frame(&t, frame, cell, pos, false, WHITE);
+                    } else {
+                        draw_texture_ex(
+                            &t,
+                            pos.x,
+                            pos.y.round(),
+                            WHITE,
+                            DrawTextureParams {
+                                dest_size: Some(size),
+                                source: Some(Rect::new(
+                                    cell.0 as f32 * frame.x,
+                                    cell.1 as f32 * frame.y,
+                                    frame.x,
+                                    frame.y,
+                                )),
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -510,5 +553,16 @@ mod tests {
         assert_eq!(unit_frame_size(96.0, 144.0), vec2(24.0, 24.0));
         assert_eq!(unit_frame_size(128.0, 144.0), vec2(32.0, 24.0));
         assert_eq!(unit_frame_size(64.0, 96.0), vec2(16.0, 16.0));
+    }
+
+    #[test]
+    fn big_unit_frames_shrink_to_icon_size() {
+        // The base pack's 24-pixel frames (and anything up to 32) are drawn as they are.
+        assert_eq!(unit_icon_divisor(24.0), 1.0);
+        assert_eq!(unit_icon_divisor(32.0), 1.0);
+        // Original-sized 48 / 64 / 96 pixel frames are halved or thirded.
+        assert_eq!(unit_icon_divisor(48.0), 2.0);
+        assert_eq!(unit_icon_divisor(64.0), 2.0);
+        assert_eq!(unit_icon_divisor(96.0), 3.0);
     }
 }

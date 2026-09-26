@@ -7,12 +7,56 @@ OGG/WAV audio are supported by the engine.
 
 ## Screen model
 
-The game draws in a **480×270 virtual coordinate space**. The renderer uses a render target of
-`480·S × 270·S` real pixels, where `S` is the largest integer that fits the window (minimum 1), so:
+The game draws in a **virtual coordinate space** whose size the pack declares (the *presentation
+profile*, below; 480×270 for the base pack). The renderer uses a render target of `W·S × H·S` real
+pixels, where `S` is the largest integer that fits the window (minimum 1, and no side of the target
+larger than 4096 pixels), so:
 
 * pixel art (tiles, units, UI skins, FX) is drawn with nearest filtering and scaled by exactly `S` — always crisp;
 * text is rasterised at `S ×` its nominal size — crisp at every scale;
 * high-resolution artwork (portraits, drama backgrounds, title art) keeps its detail up to `S` times the virtual size.
+
+A window smaller than the canvas shrinks it (with linear filtering, so text stays readable).
+
+### Presentation profile
+
+Everything that fixes the *scale* of the art is data, so a pack made for another screen (for example
+one sized for the original game's 640×480 VGA screen, with bigger unit sprites than the base pack) is
+laid out without engine changes:
+
+| what | where | default |
+|---|---|---|
+| virtual canvas `[width, height]` | `pack.toml`: `[presentation] canvas = [640, 480]` | `[480, 270]` |
+| map tile size (virtual pixels) | `gfx/tiles/terrain.toml`: `tile_size` | `16` |
+| unit frame size and anchor | `gfx/units/units.toml`: `frame`, `anchor` per sprite | 16×16, anchor `[8, 15]` |
+| effect frame size | `gfx/fx/fx.toml`: `frame` per effect | — |
+
+```toml
+# pack.toml
+[presentation]
+canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 1280×800
+```
+
+* **Canvas.** A pack whose canvas lies outside 320×200 ..= 1280×800 (each side on its own) does not load.
+  Before a pack is loaded (loading, error and gallery screens) and for packs without
+  `[presentation]` the canvas is 480×270. Every screen is laid out relative to the canvas: windows
+  are centred or anchored to its edges, lists and panels grow with it, fonts keep their pixel size
+  (so a bigger canvas shows more, not bigger, text). The camp and battle screens are laid out for at
+  least **480×270**; smaller canvases are accepted, but those screens overlap and `Pack::validate`
+  warns about it. Procedural backdrops (title, credits, missing drama backgrounds) are designed for
+  a 270-pixel-high canvas and stretch vertically with the canvas height.
+* **Tile size.** The battle map, camera, cursor, range highlights, unit placement, floating numbers,
+  effects and pointer hit-testing use the tileset's `tile_size`: one atlas pixel is one virtual
+  pixel. Maps are drawn with flat colours at 16 pixels per tile when the tileset is missing. Motion
+  of the battle animation (lunges, knock-back) is designed for 16-pixel tiles and scales with the
+  tile size.
+* **Units.** A unit frame's `anchor` pixel is placed on the tile's bottom-centre pixel —
+  `(T/2, T−1)` for `T`-pixel tiles, `(8, 15)` for the base pack. The shadow and the HP bar follow the
+  tile; the commander flag, lord crown and confusion stars sit above the top of the unit's frame.
+  In the camp, unit icons taller than 32 pixels are drawn at 1/2 (1/3, ...) so the officer rows keep
+  their spacing.
+* **Portraits and backgrounds** are drawn into boxes in virtual pixels (64×80 portrait boxes, the
+  whole canvas for backgrounds with `Cover` fitting), independent of their file resolution.
 
 ## Canonical terrain ids
 
@@ -43,7 +87,8 @@ tile key for each.
 
 ## Terrain tileset — `gfx/tiles/terrain.png` + `gfx/tiles/terrain.toml`
 
-`terrain.png` is an atlas of 16×16 cells. `terrain.toml` maps a **tile key** (the terrain's `tile` field, default
+`terrain.png` is an atlas of `tile_size`×`tile_size` cells (16×16 in the base pack; the cell size is also the size
+of a map tile on screen, see [Presentation profile](#presentation-profile)). `terrain.toml` maps a **tile key** (the terrain's `tile` field, default
 its id) to a stack of layers drawn bottom to top:
 
 ```toml
@@ -94,12 +139,12 @@ Layout (same as the Ninja Adventure character sheets): **4 columns = facing down
 ```toml
 [sprites.short_infantry]
 frame = [24, 24]      # frame size in pixels
-anchor = [12, 23]     # frame pixel placed on the tile's bottom-centre pixel (8, 15)
+anchor = [12, 23]     # frame pixel placed on the tile's bottom-centre pixel, (8, 15) on 16-pixel tiles
 ```
 
-Frames larger than the 16×16 tile overhang it upwards and sideways around the anchor. Every base pack sheet
-uses 24×24 frames (the chariot 32×24, anchor `[16, 23]`); a 16×16 frame with anchor `[8, 15]` fits the tile
-exactly.
+Frames larger than the tile overhang it upwards and sideways around the anchor. Every base pack sheet
+uses 24×24 frames (the chariot 32×24, anchor `[16, 23]`); a 16×16 frame with anchor `[8, 15]` fits a 16-pixel
+tile exactly. On `T`-pixel tiles the anchor lands on the tile pixel `(T/2, T−1)`.
 
 ## Portraits — `gfx/portraits/<key>.png`
 
@@ -108,7 +153,8 @@ Any resolution with a **4:5 aspect** (recommended 192×240), head-and-shoulders,
 
 ## Drama backgrounds — `gfx/bg/<key>.png`
 
-16:9 images (recommended 960×540) shown behind drama scenes. Keys used by the base pack:
+16:9 images (recommended 960×540) shown behind drama scenes, scaled to cover the canvas (on a 4:3 canvas such as
+640×480 the sides are cropped; packs for such a canvas may ship 4:3 art). Keys used by the base pack:
 `palace`, `town`, `village`, `camp`, `field`, `river`, `mountain`, `castle`, `night`, `black` (plain black is also
 implied by `@bg none`).
 
@@ -126,7 +172,7 @@ in the spirit of the original PC version), so a pack only supplies:
 | file | content |
 |---|---|
 | `icons.png` + `icons.toml` | 16×16 icons by key: `[icons] bean = [0, 0]` (column, row). Keys used by the engine: `gold`, `weather_clear`, `weather_cloudy`, `weather_rain`, `hp`, `mp`, `morale`, `atk`, `def`, `move`, `exp`, `weapon`, `armor`, `accessory`, `consumable`, `fire`, `water`, `earth`, `heal`, `morale_up`, `morale_down`, `confuse`, `lord`, `commander`; items and strategies may use any other key. |
-| `title.png` | title screen artwork (16:9, recommended 960×540) |
+| `title.png` | title screen artwork (16:9, recommended 960×540; covers the canvas like drama backgrounds) |
 | `flags.png` | 16×16 animated banner, 4 frames horizontally, per side in rows: player, ally, enemy (drawn beside commanders) |
 
 ## Audio — `bgm/<key>.ogg`, `sfx/<key>.(ogg|wav)`

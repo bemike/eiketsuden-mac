@@ -8,7 +8,7 @@ use super::theme;
 use super::window::{draw_small_arrow, draw_window, inset};
 use crate::app::Ctx;
 use crate::audio::sfx;
-use crate::gfx::{fill_rect, Align, FontId, Gfx, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, FontId, Gfx, TextStyle};
 use crate::input::Dir;
 use macroquad::prelude::*;
 use std::collections::VecDeque;
@@ -113,18 +113,19 @@ pub fn max_scroll(content: f32, view: f32) -> f32 {
     (content - view).max(0.0)
 }
 
-const WINDOW: Rect = Rect {
-    x: 28.0,
-    y: 14.0,
-    w: VIRTUAL_W - 56.0,
-    h: VIRTUAL_H - 28.0,
-};
+/// The backlog window on a `canvas` sized canvas: centred, 28 pixels in from the sides and 14
+/// from the top and bottom.
+fn window_rect(canvas: Vec2) -> Rect {
+    Rect::new(28.0, 14.0, canvas.x - 56.0, canvas.y - 28.0)
+}
 const HEADER_H: f32 = 22.0;
 const TEXT_INDENT: f32 = 10.0;
 
 /// The modal backlog window.
 #[derive(Debug, Clone)]
 pub struct BacklogView {
+    /// The window, laid out for the canvas it was opened on.
+    window: Rect,
     lines: Vec<BacklogLine>,
     content_h: f32,
     scroll: f32,
@@ -133,12 +134,14 @@ pub struct BacklogView {
 impl BacklogView {
     /// Lay out `backlog`, scrolled to the newest line.
     pub fn open(gfx: &Gfx, backlog: &Backlog) -> BacklogView {
-        let width = Self::viewport().w - TEXT_INDENT - 4.0;
+        let window = window_rect(gfx.size());
+        let width = Self::viewport_of(window).w - TEXT_INDENT - 4.0;
         let lines = layout(backlog.entries(), |t| {
             super::dialogue::layout_text(t, width, |c| gfx.char_width(c, FontId::Main, 1))
         });
         let content_h = lines.iter().map(BacklogLine::height).sum();
         let mut view = BacklogView {
+            window,
             lines,
             content_h,
             scroll: 0.0,
@@ -147,13 +150,18 @@ impl BacklogView {
         view
     }
 
-    fn viewport() -> Rect {
-        let inner = inset(WINDOW, theme::PADDING + 2.0);
+    /// Text area of a backlog `window` (below its header).
+    fn viewport_of(window: Rect) -> Rect {
+        let inner = inset(window, theme::PADDING + 2.0);
         Rect::new(inner.x, inner.y + HEADER_H, inner.w, inner.h - HEADER_H)
     }
 
+    fn viewport(&self) -> Rect {
+        Self::viewport_of(self.window)
+    }
+
     fn max_scroll(&self) -> f32 {
-        max_scroll(self.content_h, Self::viewport().h)
+        max_scroll(self.content_h, self.viewport().h)
     }
 
     fn scroll_by(&mut self, dy: f32) {
@@ -172,7 +180,7 @@ impl BacklogView {
             ctx.sfx(sfx::CANCEL);
             return true;
         }
-        let page = Self::viewport().h - 16.0;
+        let page = self.viewport().h - 16.0;
         let mut dy = 0.0;
         match input.nav() {
             Some(Dir::Up) => dy -= 16.0,
@@ -195,9 +203,9 @@ impl BacklogView {
 
     pub fn draw(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
-        fill_rect(SCREEN, Color::new(0.0, 0.0, 0.02, 0.55));
-        draw_window(WINDOW);
-        let inner = inset(WINDOW, theme::PADDING + 2.0);
+        fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.02, 0.55));
+        draw_window(self.window);
+        let inner = inset(self.window, theme::PADDING + 2.0);
         gfx.text(
             "최근 대사",
             inner.x + 2.0,
@@ -214,7 +222,7 @@ impl BacklogView {
         );
         super::window::draw_divider(inner.x, inner.y + HEADER_H - 5.0, inner.w);
 
-        let view = Self::viewport();
+        let view = self.viewport();
         if self.lines.is_empty() {
             gfx.text_aligned(
                 "아직 대사가 없습니다.",

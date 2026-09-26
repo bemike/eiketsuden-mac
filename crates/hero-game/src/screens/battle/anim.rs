@@ -9,10 +9,14 @@
 //! Beats never touch the screen directly; side effects the screen must carry out (sounds, music,
 //! camera moves, drama overlays) are emitted as [`Cue`]s. A `Drama` beat blocks the queue until
 //! the screen calls [`EventPlayer::resume`] after the overlay has closed.
+//!
+//! Positions and motion are measured in **map tiles** (`(x, y)` is the top-left corner of tile
+//! `(x, y)`), so the animation does not depend on the tileset's tile size; the screen multiplies
+//! by the tile size when it draws. Motion amounts are designed in pixels of a [`REF_TILE`]
+//! pixel tile and scale with the tile size.
 
 use super::sprites::{FxDef, Pose};
 use super::text;
-use super::tileset::TILE;
 use crate::audio::sfx;
 use hero_core::battle::{BattleEvent, BattleState, StrategyHit, Unit, UnitId, Weather};
 use hero_core::battledef::Side;
@@ -28,13 +32,17 @@ pub const STEP_SECONDS: f32 = 0.1;
 const IMPACT: f32 = 0.14;
 /// Strike length.
 const STRIKE_END: f32 = 0.9;
-/// Pixels an attacker lunges towards its target.
+/// Tile size (pixels) the motion amounts below are designed for; they are divided by it to get
+/// tile units.
+pub const REF_TILE: f32 = 16.0;
+/// Pixels (of a [`REF_TILE`] tile) an attacker lunges towards its target.
 const LUNGE: f32 = 5.0;
 /// Fallback length of a missing effect strip.
 const DEFAULT_FX_SECONDS: f32 = 0.6;
 
-/// Knock-back of a hit, after the PC original: below 100 damage no reaction, 100–299 a step
-/// back, from 300 on pushed further the bigger the hit. Defeated units fly off separately.
+/// Knock-back of a hit in pixels of a [`REF_TILE`] tile, after the PC original: below 100
+/// damage no reaction, 100–299 a step back, from 300 on pushed further the bigger the hit.
+/// Defeated units fly off separately.
 pub fn knockback(damage: i32) -> f32 {
     match damage {
         d if d < 100 => 0.0,
@@ -52,8 +60,14 @@ fn dir_vec(from: Pos, to: Pos) -> Vec2 {
     }
 }
 
-fn tile_px(p: Pos) -> Vec2 {
-    vec2(p.x as f32 * TILE, p.y as f32 * TILE)
+/// Map position (in tiles) of a tile's top-left corner.
+fn tile_pos(p: Pos) -> Vec2 {
+    vec2(p.x as f32, p.y as f32)
+}
+
+/// A motion amount designed in pixels of a [`REF_TILE`] tile, in tiles.
+fn ref_px(px: f32) -> f32 {
+    px / REF_TILE
 }
 
 /// What the screen draws for one unit.
@@ -61,9 +75,9 @@ fn tile_px(p: Pos) -> Vec2 {
 pub struct UnitView {
     pub visible: bool,
     pub alpha: f32,
-    /// Map pixel of the tile the unit stands on (between tiles while walking).
+    /// Map position (tiles) of the tile the unit stands on (between tiles while walking).
     pub pos: Vec2,
-    /// Animation offset (lunge, knock-back, fly-off).
+    /// Animation offset in tiles (lunge, knock-back, fly-off).
     pub offset: Vec2,
     pub facing: Dir,
     pub pose: Pose,
@@ -116,7 +130,7 @@ impl UnitView {
     pub fn sync(&mut self, u: &Unit, phase: Side) {
         self.visible = u.is_active();
         self.alpha = 1.0;
-        self.pos = tile_px(u.pos);
+        self.pos = tile_pos(u.pos);
         self.offset = Vec2::ZERO;
         self.facing = u.facing;
         self.pose = Pose::Idle;
@@ -137,10 +151,7 @@ impl UnitView {
 
     /// Tile the view stands on (rounded while walking).
     pub fn tile(&self) -> Pos {
-        Pos::new(
-            (self.pos.x / TILE).round() as i32,
-            (self.pos.y / TILE).round() as i32,
-        )
+        Pos::new(self.pos.x.round() as i32, self.pos.y.round() as i32)
     }
 }
 
@@ -161,7 +172,7 @@ pub enum FloatKind {
 pub struct FloatText {
     pub text: String,
     pub kind: FloatKind,
-    /// Map pixel of the tile the text belongs to.
+    /// Map position (tiles) of the tile the text belongs to.
     pub at: Vec2,
     /// Extra lines stack upwards.
     pub row: u8,
@@ -173,7 +184,7 @@ pub struct FloatText {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FxSpawn {
     pub key: String,
-    /// Map pixel of the tile centre.
+    /// Map position (tiles) of the tile centre.
     pub center: Vec2,
     pub age: f32,
     pub life: f32,
@@ -348,11 +359,12 @@ impl Scene {
         });
     }
 
-    fn spawn_fx(&mut self, key: &str, tile_px: Vec2, fx: &BTreeMap<String, FxDef>) {
+    /// Play effect `key` on the tile whose top-left corner is at map position `tile`.
+    fn spawn_fx(&mut self, key: &str, tile: Vec2, fx: &BTreeMap<String, FxDef>) {
         if let Some(def) = fx.get(key) {
             self.fx.push(FxSpawn {
                 key: key.to_string(),
-                center: tile_px + vec2(TILE / 2.0, TILE / 2.0),
+                center: tile + vec2(0.5, 0.5),
                 age: 0.0,
                 life: def.duration(),
             });
@@ -891,7 +903,7 @@ fn step(
             v.visible = true;
             if path.len() < 2 {
                 if let Some(p) = path.first() {
-                    v.pos = tile_px(*p);
+                    v.pos = tile_pos(*p);
                 }
                 return true;
             }
@@ -900,7 +912,7 @@ fn step(
             let i = (s.floor() as usize).min(path.len() - 2);
             let f = s - i as f32;
             let (a, b) = (path[i], path[i + 1]);
-            v.pos = tile_px(a).lerp(tile_px(b), f);
+            v.pos = tile_pos(a).lerp(tile_pos(b), f);
             v.facing = Dir::towards(a, b);
             v.pose = Pose::Walk;
             if *mark != i + 1 {
@@ -911,7 +923,7 @@ fn step(
                 }
             }
             if s >= steps {
-                v.pos = tile_px(*path.last().expect("path has tiles"));
+                v.pos = tile_pos(*path.last().expect("path has tiles"));
                 v.pose = Pose::Idle;
                 return true;
             }
@@ -948,7 +960,7 @@ fn step(
             } else {
                 (1.0 - (t - IMPACT) / 0.3).max(0.0)
             };
-            scene.views[a].offset = dir * LUNGE * lunge;
+            scene.views[a].offset = dir * ref_px(LUNGE) * lunge;
             if t >= IMPACT && *stage == 0 {
                 *stage = 1;
                 let lethal = scene.views[d].hp - *damage as f32 <= 0.0;
@@ -972,11 +984,11 @@ fn step(
                 let v = &mut scene.views[d];
                 if v.knocked.is_some() {
                     // Pushed back hard; the retreat beat carries it off the field.
-                    v.offset = dir * 10.0 * ((t - IMPACT) / 0.18).clamp(0.0, 1.0);
+                    v.offset = dir * ref_px(10.0) * ((t - IMPACT) / 0.18).clamp(0.0, 1.0);
                 } else {
                     let out = ((t - IMPACT) / 0.16).clamp(0.0, 1.0);
                     let back = ((t - 0.62) / 0.2).clamp(0.0, 1.0);
-                    v.offset = dir * knockback(*damage) * out * (1.0 - back);
+                    v.offset = dir * ref_px(knockback(*damage)) * out * (1.0 - back);
                 }
             }
             if t >= STRIKE_END {
@@ -1253,12 +1265,12 @@ fn step(
                 // Knocked off the field: accelerating flight, fading at the end.
                 Some(dir) => {
                     v.pose = Pose::Hurt;
-                    v.offset = dir * (10.0 + 260.0 * k * k);
+                    v.offset = dir * ref_px(10.0 + 260.0 * k * k);
                     v.alpha = 1.0 - ((k - 0.6) / 0.4).clamp(0.0, 1.0);
                 }
                 // Retreat without a blow (event, rout): sink and fade.
                 None => {
-                    v.offset = vec2(0.0, 4.0 * k);
+                    v.offset = vec2(0.0, ref_px(4.0 * k));
                     v.alpha = 1.0 - k;
                 }
             }
@@ -1620,7 +1632,7 @@ mod tests {
         let mut scene = Scene::new(&state);
         scene.views[5].visible = false;
         state.units[5].pos = Pos::new(4, 4);
-        scene.views[5].pos = vec2(64.0, 64.0);
+        scene.views[5].pos = vec2(4.0, 4.0);
         let ev = vec![BattleEvent::Spawned { units: vec![5] }];
         let mut player = EventPlayer::default();
         player.push(plan(&ev, &state, &pack, &BTreeMap::new()));

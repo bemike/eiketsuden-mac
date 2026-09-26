@@ -2,7 +2,7 @@
 
 use super::theme;
 use super::window::{draw_window_ex, WindowStyle};
-use crate::gfx::{FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{FontId, Gfx, TextStyle};
 use macroquad::prelude::*;
 
 /// Hover time before a tooltip appears.
@@ -48,24 +48,24 @@ pub fn draw_tooltip(gfx: &Gfx, text: &str, anchor: Vec2) {
         .fold(0.0, f32::max)
         + 12.0;
     let h = lines.len() as f32 * lh + 9.0;
-    let r = tooltip_rect(anchor, vec2(w.round(), h));
+    let r = tooltip_rect(gfx.size(), anchor, vec2(w.round(), h));
     draw_window_ex(r, WindowStyle::Panel, 0.95);
     gfx.text_lines(&lines, r.x + 6.0, r.y + 4.0, TextStyle::small(theme::TEXT));
 }
 
-/// Position a `size` box below-right of `anchor`, flipped to stay on screen.
-pub fn tooltip_rect(anchor: Vec2, size: Vec2) -> Rect {
+/// Position a `size` box below-right of `anchor`, flipped to stay on a `canvas` sized canvas.
+pub fn tooltip_rect(canvas: Vec2, anchor: Vec2, size: Vec2) -> Rect {
     let mut x = anchor.x + 8.0;
     let mut y = anchor.y + 12.0;
-    if x + size.x > VIRTUAL_W - 2.0 {
+    if x + size.x > canvas.x - 2.0 {
         x = anchor.x - size.x - 4.0;
     }
-    if y + size.y > VIRTUAL_H - 2.0 {
+    if y + size.y > canvas.y - 2.0 {
         y = anchor.y - size.y - 4.0;
     }
     Rect::new(
-        x.clamp(2.0, (VIRTUAL_W - size.x - 2.0).max(2.0)),
-        y.clamp(2.0, (VIRTUAL_H - size.y - 2.0).max(2.0)),
+        x.clamp(2.0, (canvas.x - size.x - 2.0).max(2.0)),
+        y.clamp(2.0, (canvas.y - size.y - 2.0).max(2.0)),
         size.x,
         size.y,
     )
@@ -92,9 +92,12 @@ mod tests {
 
     #[test]
     fn tooltip_stays_on_screen() {
-        let r = tooltip_rect(vec2(470.0, 260.0), vec2(100.0, 30.0));
-        assert!(r.right() <= VIRTUAL_W && r.bottom() <= VIRTUAL_H && r.x >= 0.0 && r.y >= 0.0);
-        let r = tooltip_rect(vec2(10.0, 10.0), vec2(100.0, 30.0));
-        assert_eq!((r.x, r.y), (18.0, 22.0));
+        for canvas in [crate::gfx::DEFAULT_CANVAS, vec2(640.0, 480.0)] {
+            let corner = canvas - vec2(10.0, 10.0);
+            let r = tooltip_rect(canvas, corner, vec2(100.0, 30.0));
+            assert!(r.right() <= canvas.x && r.bottom() <= canvas.y && r.x >= 0.0 && r.y >= 0.0);
+            let r = tooltip_rect(canvas, vec2(10.0, 10.0), vec2(100.0, 30.0));
+            assert_eq!((r.x, r.y), (18.0, 22.0));
+        }
     }
 }

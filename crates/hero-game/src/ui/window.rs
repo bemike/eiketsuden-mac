@@ -158,7 +158,7 @@ pub fn draw_divider(x: f32, y: f32, w: f32) {
 
 /// Title strip at the top of a screen: gradient band with a heading.
 pub fn draw_title_bar(ctx: &Ctx, title: &str) {
-    let r = Rect::new(0.0, 0.0, crate::gfx::VIRTUAL_W, 20.0);
+    let r = Rect::new(0.0, 0.0, ctx.gfx.size().x, 20.0);
     fill_gradient_h(r, theme::WIN_TOP, theme::WIN_BOTTOM.with_alpha(0.6));
     fill_rect(
         Rect::new(0.0, 20.0, r.w, 1.0),

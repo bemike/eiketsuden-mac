@@ -13,6 +13,10 @@
 //! [`MapRenderer`] draws every static layer once into a render target per battle; only animated
 //! layers are drawn per frame. Without a tileset (missing `terrain.toml` or atlas) the map is
 //! drawn as flat colours per terrain so the battle stays playable.
+//!
+//! The tileset's `tile_size` is the size of a map tile on screen, in virtual pixels: one atlas
+//! pixel is one virtual pixel, like every other piece of pixel art. The battle screen uses it for
+//! the map, the camera, the cursor, highlights, unit placement, effects and hit-testing.
 
 use crate::gfx::{fill_rect, key_color};
 use hero_core::geom::Pos;
@@ -24,11 +28,12 @@ use std::collections::BTreeMap;
 
 /// Pack-relative path of the tileset description.
 pub const TILESET_FILE: &str = "gfx/tiles/terrain.toml";
-/// Size of a map tile in virtual pixels.
-pub const TILE: f32 = 16.0;
+/// Tile size in virtual pixels when `terrain.toml` does not set `tile_size`, and of the flat
+/// colour map drawn without a tileset.
+pub const DEFAULT_TILE: u32 = 16;
 
 fn default_tile_size() -> u32 {
-    16
+    DEFAULT_TILE
 }
 
 fn default_image() -> String {
@@ -233,6 +238,8 @@ struct AnimatedTile {
 pub struct MapRenderer {
     cache: Option<RenderTarget>,
     animated: Vec<AnimatedTile>,
+    /// Size of a tile in virtual pixels.
+    pub tile: f32,
     /// Size of the map in virtual pixels.
     pub size: Vec2,
 }
@@ -241,11 +248,14 @@ pub struct MapRenderer {
 const PAD: f32 = 1.0;
 
 impl MapRenderer {
-    pub fn new(map: &BattleMap) -> MapRenderer {
+    /// A renderer for `map` with `tile` pixel tiles (the tileset's `tile_size`, or
+    /// [`DEFAULT_TILE`] without a tileset). Nothing is drawn until [`MapRenderer::build`].
+    pub fn new(map: &BattleMap, tile: f32) -> MapRenderer {
         MapRenderer {
             cache: None,
             animated: Vec::new(),
-            size: vec2(map.width as f32 * TILE, map.height as f32 * TILE),
+            tile,
+            size: vec2(map.width as f32, map.height as f32) * tile,
         }
     }
 
@@ -254,8 +264,9 @@ impl MapRenderer {
     }
 
     /// Draw the static layers into the cache render target. `atlas` is `None` when the tileset
-    /// or its texture is unavailable (flat colours are used then). Must be called outside the
-    /// canvas camera (during `update`); it restores the default camera.
+    /// or its texture is unavailable (flat colours are used then). The tiles are drawn at the
+    /// renderer's tile size, so a renderer for a tileset is made with its `tile_size`. Must be
+    /// called outside the canvas camera (during `update`); it restores the default camera.
     pub fn build(
         &mut self,
         map: &BattleMap,
@@ -263,9 +274,10 @@ impl MapRenderer {
         tileset: Option<&Tileset>,
         atlas: Option<&Texture2D>,
     ) {
+        let tile = self.tile;
         let (w, h) = (
-            ((map.width as f32 + 2.0 * PAD) * TILE) as u32,
-            ((map.height as f32 + 2.0 * PAD) * TILE) as u32,
+            ((map.width as f32 + 2.0 * PAD) * tile) as u32,
+            ((map.height as f32 + 2.0 * PAD) * tile) as u32,
         );
         let target = render_target(w.max(1), h.max(1));
         target.texture.set_filter(FilterMode::Nearest);
@@ -274,20 +286,20 @@ impl MapRenderer {
         set_camera(&camera);
         clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
         self.animated.clear();
-        let origin = vec2(PAD * TILE, PAD * TILE);
+        let origin = vec2(PAD * tile, PAD * tile);
         for p in map.positions() {
             let terrain_id = map.terrain_at(p).unwrap_or("");
             let key = pack
                 .terrain(terrain_id)
                 .map(|t| t.tile_key().to_string())
                 .unwrap_or_else(|| terrain_id.to_string());
-            let at = origin + vec2(p.x as f32 * TILE, p.y as f32 * TILE);
+            let at = origin + vec2(p.x as f32, p.y as f32) * tile;
             let layers = match (tileset, atlas) {
                 (Some(ts), Some(_)) => ts.tiles.get(&key),
                 _ => None,
             };
             let (Some(layers), Some(ts), Some(atlas)) = (layers, tileset, atlas) else {
-                fill_rect(Rect::new(at.x, at.y, TILE, TILE), terrain_color(terrain_id));
+                fill_rect(Rect::new(at.x, at.y, tile, tile), terrain_color(terrain_id));
                 continue;
             };
             for (i, layer) in layers.iter().enumerate() {
@@ -300,7 +312,7 @@ impl MapRenderer {
                     break;
                 }
                 let cell = layer_cell(map, layer, i, p, 0);
-                draw_cell(atlas, ts.tile_size, cell, at + layer.offset);
+                draw_cell(atlas, ts.tile_size, tile, cell, at + layer.offset);
             }
         }
         set_default_camera();
@@ -320,7 +332,7 @@ impl MapRenderer {
             return;
         };
         let tex = &cache.texture;
-        let pad = vec2(PAD * TILE, PAD * TILE);
+        let pad = vec2(PAD, PAD) * self.tile;
         draw_texture_ex(
             tex,
             (origin.x - pad.x).round(),
@@ -339,23 +351,24 @@ impl MapRenderer {
             let Some(layers) = ts.tiles.get(&a.key) else {
                 continue;
             };
-            let at = origin + vec2(a.pos.x as f32 * TILE, a.pos.y as f32 * TILE);
+            let at = origin + vec2(a.pos.x as f32, a.pos.y as f32) * self.tile;
             for (i, layer) in layers.iter().enumerate().skip(a.first_layer) {
                 let cell = layer_cell(map, layer, i, a.pos, layer.frame_at(time));
-                draw_cell(atlas, ts.tile_size, cell, at + layer.offset);
+                draw_cell(atlas, ts.tile_size, self.tile, cell, at + layer.offset);
             }
         }
     }
 }
 
-fn draw_cell(atlas: &Texture2D, size: f32, cell: [u32; 2], at: Vec2) {
+/// Draw atlas cell `cell` (`size` pixel cells) as a `tile` pixel tile at `at`.
+fn draw_cell(atlas: &Texture2D, size: f32, tile: f32, cell: [u32; 2], at: Vec2) {
     draw_texture_ex(
         atlas,
         at.x.round(),
         at.y.round(),
         WHITE,
         DrawTextureParams {
-            dest_size: Some(vec2(TILE, TILE)),
+            dest_size: Some(vec2(tile, tile)),
             source: Some(Rect::new(
                 cell[0] as f32 * size,
                 cell[1] as f32 * size,
@@ -454,6 +467,7 @@ layers = [ { auto = [[0, 0]], connect = ["x"] } ]
 "#;
         let (ts, warnings) = Tileset::parse(src).unwrap();
         assert_eq!(ts.texture, "tiles/terrain");
+        assert_eq!(ts.tile_size, 16.0);
         assert_eq!(ts.tiles["grass"][0].frames[0].len(), 3);
         assert!(!ts.tiles["grass"][0].auto);
         assert_eq!(ts.tiles["forest"][1].offset, vec2(0.0, -4.0));
@@ -468,6 +482,19 @@ layers = [ { auto = [[0, 0]], connect = ["x"] } ]
         assert_eq!(ts.tiles["sea"].len(), 1);
         assert!(ts.tiles["broken"].is_empty());
         assert_eq!(warnings.len(), 2);
+    }
+
+    #[test]
+    fn tile_size_comes_from_the_tileset() {
+        let (ts, _) = Tileset::parse("tile_size = 32\nimage = \"big.png\"\n").unwrap();
+        assert_eq!(ts.tile_size, 32.0);
+        assert_eq!(ts.texture, "tiles/big");
+        // Without `tile_size` the documented default applies.
+        let (ts, _) = Tileset::parse("").unwrap();
+        assert_eq!(ts.tile_size, DEFAULT_TILE as f32);
+        let m = map("...\n...");
+        assert_eq!(MapRenderer::new(&m, 32.0).size, vec2(96.0, 64.0));
+        assert_eq!(MapRenderer::new(&m, 16.0).size, vec2(48.0, 32.0));
     }
 
     #[test]

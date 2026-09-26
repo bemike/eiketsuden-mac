@@ -18,14 +18,17 @@ impl BattleScreen {
         // Untaken treasures twinkle.
         for (i, t) in self.def().treasures.iter().enumerate() {
             if !self.state.treasures_taken.get(i).copied().unwrap_or(false) {
-                hud::draw_twinkle(self.camera.tile_screen(t.pos), ctx.time);
+                hud::draw_twinkle(self.camera.tile_screen(t.pos), self.tile(), ctx.time);
             }
         }
     }
 
     pub(super) fn draw_highlights(&self, ctx: &Ctx) {
         let t = ctx.time;
-        let hl = |p: Pos, c: Color| hud::draw_tile_highlight(self.camera.tile_screen(p), c, t);
+        let tile = self.tile();
+        let hl =
+            |p: Pos, c: Color| hud::draw_tile_highlight(self.camera.tile_screen(p), tile, c, t);
+        let centre = vec2(tile, tile) / 2.0;
         match &self.ui.mode {
             Mode::Move { range, reach, unit } | Mode::Inspect { range, reach, unit } => {
                 let own = matches!(self.ui.mode, Mode::Move { .. });
@@ -44,12 +47,11 @@ impl BattleScreen {
                 if own && self.cursor != self.state.units[*unit].pos {
                     if let Some(path) = range.path_to(self.cursor) {
                         for w in path.windows(2) {
-                            let a = self.camera.tile_screen(w[0]) + vec2(TILE / 2.0, TILE / 2.0);
-                            let b = self.camera.tile_screen(w[1]) + vec2(TILE / 2.0, TILE / 2.0);
+                            let a = self.camera.tile_screen(w[0]) + centre;
+                            let b = self.camera.tile_screen(w[1]) + centre;
                             draw_line(a.x, a.y, b.x, b.y, 3.0, Color::new(1.0, 0.9, 0.4, 0.85));
                         }
-                        let end =
-                            self.camera.tile_screen(self.cursor) + vec2(TILE / 2.0, TILE / 2.0);
+                        let end = self.camera.tile_screen(self.cursor) + centre;
                         draw_circle(end.x, end.y, 3.0, Color::new(1.0, 0.9, 0.4, 0.95));
                     }
                 }
@@ -106,14 +108,19 @@ impl BattleScreen {
                 .then(a.cmp(&b))
         });
         let default_sprite = SpriteDef::default();
+        let tile = self.tile();
+        let canvas = ctx.gfx.size();
+        // Units whose tile is this far outside the canvas cannot show (sprites overhang their
+        // tile mostly upwards and sideways).
+        let (before, after) = (2.5 * tile, 1.5 * tile);
         for i in order {
             let v = &self.scene.views[i];
             let u = &self.state.units[i];
-            let screen = self.camera.to_screen(v.pos + v.offset);
-            if screen.x < -40.0
-                || screen.x > VIRTUAL_W + 24.0
-                || screen.y < -40.0
-                || screen.y > VIRTUAL_H + 24.0
+            let screen = self.camera.map_to_screen(v.pos + v.offset);
+            if screen.x < -before
+                || screen.x > canvas.x + after
+                || screen.y < -before
+                || screen.y > canvas.y + after
             {
                 continue;
             }
@@ -123,16 +130,19 @@ impl BattleScreen {
                 .map_or(v.class.as_str(), |s| s.as_str());
             let def = self.meta.sprites.get(sprite).unwrap_or(&default_sprite);
             let frame = vec2(def.frame[0] as f32, def.frame[1] as f32);
-            let origin = sprites::frame_origin(screen, def);
+            let origin = sprites::frame_origin(screen, tile, def);
+            // Marks above the unit sit relative to the top of its frame.
+            let head = origin.y - screen.y;
+            let foot = sprites::tile_foot(tile);
             let flicker = v.flash > 0.0 && ((ctx.time * 30.0) as i64) % 2 == 0;
             let grey = if v.acted { 0.5 } else { 1.0 };
             let tint = Color::new(grey, grey, grey + if v.acted { 0.05 } else { 0.0 }, v.alpha);
             // Shadow under the unit.
             draw_ellipse(
-                screen.x + TILE / 2.0,
-                screen.y + TILE - 2.0,
-                6.0,
-                2.0,
+                screen.x + tile / 2.0,
+                screen.y + tile - 2.0,
+                tile * 0.375,
+                tile * 0.125,
                 0.0,
                 Color::new(0.0, 0.0, 0.0, 0.28 * v.alpha),
             );
@@ -154,7 +164,7 @@ impl BattleScreen {
                     }
                     Some((_, AssetState::Loading)) => {}
                     _ => draw_placeholder(
-                        Rect::new(screen.x + 2.0, screen.y + 1.0, 12.0, 14.0),
+                        Rect::new(screen.x + 2.0, screen.y + 1.0, tile - 4.0, tile - 2.0),
                         sprite,
                     ),
                 }
@@ -163,20 +173,20 @@ impl BattleScreen {
                 if u.commander {
                     hud::draw_flag(
                         ctx,
-                        screen + vec2(7.0, -14.0),
+                        screen + vec2(foot.x - 1.0, head - 6.0),
                         v.side,
                         ctx.time + i as f64 * 0.2,
                         v.alpha,
                     );
                 }
                 if u.lord {
-                    hud::draw_crown(screen + vec2(0.0, -8.0), v.alpha);
+                    hud::draw_crown(screen + vec2(0.0, head), v.alpha);
                 }
                 if v.confused {
-                    hud::draw_confusion(screen + vec2(TILE / 2.0, -9.0), ctx.time, v.alpha);
+                    hud::draw_confusion(screen + vec2(tile / 2.0, head - 1.0), ctx.time, v.alpha);
                 }
                 if v.knocked.is_none() {
-                    hud::draw_mini_hp(screen, v.hp, v.max_hp, v.alpha);
+                    hud::draw_mini_hp(screen, tile, v.hp, v.max_hp, v.alpha);
                 }
             }
         }
@@ -196,7 +206,7 @@ impl BattleScreen {
                 continue;
             };
             let size = vec2(def.frame[0] as f32, def.frame[1] as f32);
-            let c = self.camera.to_screen(f.center);
+            let c = self.camera.map_to_screen(f.center);
             hud::draw_frame(&tex, size, (frame, 0), c - size / 2.0, WHITE);
         }
     }
@@ -212,7 +222,8 @@ impl BattleScreen {
     /// Whether the info panels go to the top (the cursor is in the lower half).
     pub(super) fn panels_on_top(&self) -> bool {
         let s = self.camera.tile_screen(self.cursor);
-        s.y > VIEWPORT.y + VIEWPORT.h * 0.55
+        let vp = self.camera.viewport;
+        s.y > vp.y + vp.h * 0.55
     }
 
     /// Whether the cursor is on something the forecast window describes.
@@ -239,10 +250,12 @@ impl BattleScreen {
     /// terrain panel gives way to the forecast window when `terrain` is false.
     pub(super) fn draw_panels(&self, ctx: &Ctx, terrain: bool) {
         let top = self.panels_on_top();
+        let canvas = ctx.gfx.size();
+        let vp = self.camera.viewport;
         let y_unit = if top {
-            VIEWPORT.y + 4.0
+            vp.y + 4.0
         } else {
-            VIRTUAL_H - hud::UNIT_PANEL.y - 4.0
+            canvas.y - hud::UNIT_PANEL.y - 4.0
         };
         if let Some(u) = self.panel_unit() {
             if self.state.units[u].is_active() || self.scene.views[u].visible {
@@ -263,13 +276,13 @@ impl BattleScreen {
                         && !self.state.treasures_taken.get(i).copied().unwrap_or(false)
                 });
                 let y = if top {
-                    VIEWPORT.y + 4.0
+                    vp.y + 4.0
                 } else {
-                    VIRTUAL_H - hud::TERRAIN_PANEL.y - 4.0
+                    canvas.y - hud::TERRAIN_PANEL.y - 4.0
                 };
                 hud::draw_terrain_panel(
                     ctx,
-                    vec2(VIRTUAL_W - hud::TERRAIN_PANEL.x - 4.0, y),
+                    vec2(canvas.x - hud::TERRAIN_PANEL.x - 4.0, y),
                     t,
                     treasure,
                     !t.cost.is_empty(),
@@ -286,13 +299,11 @@ impl BattleScreen {
         };
         // Same band as the unit panel, on the right (where the terrain panel would be).
         let top = self.panels_on_top();
+        let canvas = gfx.size();
+        let vp = self.camera.viewport;
         let place = |h: f32, w: f32| {
-            let x = VIRTUAL_W - w - 4.0;
-            let y = if top {
-                VIEWPORT.y + 4.0
-            } else {
-                VIRTUAL_H - h - 4.0
-            };
+            let x = canvas.x - w - 4.0;
+            let y = if top { vp.y + 4.0 } else { canvas.y - h - 4.0 };
             Rect::new(x, y, w, h)
         };
         let main = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
@@ -511,15 +522,15 @@ impl BattleScreen {
         match &self.panel {
             Panel::None => {}
             Panel::Menu(menu) => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.25));
+                fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.25));
                 menu.draw(ctx);
             }
             Panel::Units { side, menu, .. } => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.3));
+                fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.3));
                 let frame = unit_list_frame(menu.rect());
                 draw_window(frame);
                 for (i, s) in UNIT_TABS.iter().enumerate() {
-                    let tab = unit_tab_rect(i);
+                    let tab = unit_tab_rect(self.camera.viewport, i);
                     let active = s == side;
                     draw_window_ex(
                         tab,
@@ -555,7 +566,7 @@ impl BattleScreen {
                 );
             }
             Panel::Objective => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.3));
+                fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.3));
                 self.draw_objective(ctx, "Z / X 닫기");
             }
         }
