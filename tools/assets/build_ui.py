@@ -125,6 +125,7 @@ ICONS: dict[str, Callable[[Sources], Image.Image]] = {
     "item_gem": lambda s: _chinese(s, 1, 0),
     "item_chest": lambda s: cell(s.na("Items/Treasure/LittleTreasureChest.png"), 0, 0),
     "item_bag": lambda s: s.na("Items/Object/MoneyBag.png"),
+    "item_bomb": lambda s: s.na("Items/Projectile/Bomb.png"),
 }
 
 ICONS_HEADER = """\

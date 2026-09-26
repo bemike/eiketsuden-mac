@@ -155,6 +155,7 @@ Item icons for content authors (use the key as an item's icon):
 | `item_gem` | gem | jewels |
 | `item_chest` | chest | treasure chests |
 | `item_bag` | money bag | money |
+| `item_bomb` | powder bomb | bombs, fire pots |
 
 ## Sound effects (`sfx`)
 
