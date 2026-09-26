@@ -113,6 +113,7 @@ fn layout(canvas: Vec2) -> (Rect, Rect) {
     let list = Rect::new(left.x, left.y + TABS_H, left.w, left.h - TABS_H);
     (list, panel)
 }
+
 const TAB_W: f32 = 60.0;
 
 /// The shop screen.

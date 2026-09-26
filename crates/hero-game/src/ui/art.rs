@@ -490,7 +490,7 @@ pub fn draw_unit(ctx: &Ctx, sprite: &str, side: &str, feet: Vec2, step: u32) {
                         draw_texture_ex(
                             &t,
                             pos.x,
-                            pos.y,
+                            pos.y.round(),
                             WHITE,
                             DrawTextureParams {
                                 dest_size: Some(size),
