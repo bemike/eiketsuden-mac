@@ -1014,6 +1014,23 @@ impl DramaScreen {
         None
     }
 
+    /// Show a message. While skipping it is only remembered (complete, at its last page), so a
+    /// choice that follows still shows the question it answers.
+    fn show_text(&mut self, mut dialogue: DialogueBox, spotlight: Spotlight) {
+        if self.skipping {
+            dialogue.show_last_page();
+            self.last_text = Some((dialogue, spotlight));
+            return;
+        }
+        if self.fast_now {
+            dialogue.complete_page();
+        }
+        self.current = Current::Text {
+            dialogue,
+            spotlight,
+        };
+    }
+
     /// Start presenting one step. Instant steps leave `current` at `Next`.
     fn present(&mut self, ctx: &mut Ctx, pack: &Pack, step: Step) -> Option<Transition> {
         let skipping = self.skipping;
@@ -1055,16 +1072,8 @@ impl DramaScreen {
             }
             Step::Narration(text) => {
                 self.backlog.push(None, &text);
-                if !skipping {
-                    let mut dialogue = DialogueBox::narration(&ctx.gfx, &text);
-                    if self.fast_now {
-                        dialogue.complete_page();
-                    }
-                    self.current = Current::Text {
-                        dialogue,
-                        spotlight: Spotlight::Nobody,
-                    };
-                }
+                let dialogue = DialogueBox::narration(&ctx.gfx, &text);
+                self.show_text(dialogue, Spotlight::Nobody);
             }
             Step::Line {
                 speaker,
@@ -1072,18 +1081,9 @@ impl DramaScreen {
                 text,
             } => {
                 self.backlog.push(Some(&speaker), &text);
-                if !skipping {
-                    let spotlight = self.spotlight_for(portrait.as_deref());
-                    let mut dialogue =
-                        DialogueBox::speech(&ctx.gfx, &speaker, portrait.as_deref(), &text);
-                    if self.fast_now {
-                        dialogue.complete_page();
-                    }
-                    self.current = Current::Text {
-                        dialogue,
-                        spotlight,
-                    };
-                }
+                let spotlight = self.spotlight_for(portrait.as_deref());
+                let dialogue = DialogueBox::speech(&ctx.gfx, &speaker, portrait.as_deref(), &text);
+                self.show_text(dialogue, spotlight);
             }
             Step::Choice(options) => {
                 self.fast_toggle = false;

@@ -342,9 +342,9 @@ fn draw_name_card(ctx: &Ctx, key: &str, inner: Rect, alpha: f32, light: f32) {
     let caption_h = if show_caption { 14.0 } else { 0.0 };
     let area = Rect::new(
         inner.x + 4.0,
-        inner.y + 6.0,
+        inner.y + 4.0,
         inner.w - 8.0,
-        inner.h - 12.0 - caption_h,
+        inner.h - 8.0 - caption_h,
     );
     let chars: Vec<char> = big.chars().collect();
     let shadow = Color::new(0.0, 0.0, 0.0, 0.8 * alpha);

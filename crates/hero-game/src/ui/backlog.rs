@@ -134,7 +134,9 @@ impl BacklogView {
     /// Lay out `backlog`, scrolled to the newest line.
     pub fn open(gfx: &Gfx, backlog: &Backlog) -> BacklogView {
         let width = Self::viewport().w - TEXT_INDENT - 4.0;
-        let lines = layout(backlog.entries(), |t| gfx.wrap(t, FontId::Main, 1, width));
+        let lines = layout(backlog.entries(), |t| {
+            super::dialogue::layout_text(t, width, |c| gfx.char_width(c, FontId::Main, 1))
+        });
         let content_h = lines.iter().map(BacklogLine::height).sum();
         let mut view = BacklogView {
             lines,

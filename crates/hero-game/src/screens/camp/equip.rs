@@ -4,17 +4,18 @@
 
 use super::stats::{officer_stats, preview_change, EquipChange};
 use super::widgets::{
-    class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame,
-    draw_officer_sprite, draw_stats_block, item_effect, item_icon, officer_name, portrait_key,
-    slot_icon, slot_name, visible_rows, TOP,
+    class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_help_colored,
+    draw_list_frame, draw_officer_sprite, draw_stats_block, item_effect, item_icon, officer_name,
+    portrait_key, slot_icon, slot_name, visible_rows, TOP,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
 use crate::gfx::{Align, FontId, TextStyle};
+use crate::ui::art::draw_portrait_card;
 use crate::ui::korean::{with_particle, Particle};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
-use crate::ui::window::{draw_divider, draw_icon, draw_portrait, draw_window_ex, WindowStyle};
+use crate::ui::window::{draw_divider, draw_icon, draw_window_ex, WindowStyle};
 use hero_core::campaign::{CampaignError, CampaignState};
 use hero_core::data::{Id, ItemKind};
 use hero_core::pack::Pack;
@@ -35,12 +36,12 @@ const PANEL: Rect = Rect {
     w: 308.0,
     h: 222.0,
 };
-/// Item picker window (over the officer list).
+/// Item picker window, over the slot rows (portrait and stats stay visible for the preview).
 const PICKER: Rect = Rect {
-    x: 8.0,
-    y: TOP + 2.0,
-    w: 236.0,
-    h: 222.0,
+    x: PANEL.x + 4.0,
+    y: PANEL.y + 104.0,
+    w: PANEL.w - 8.0,
+    h: PANEL.h - 106.0,
 };
 
 /// One row of the item picker.
@@ -394,10 +395,12 @@ impl Screen for EquipScreen {
             return;
         };
         let x = PANEL.x + 8.0;
-        draw_portrait(
+        draw_portrait_card(
             ctx,
             Some(portrait_key(pack, &officer.id)),
             Rect::new(x, PANEL.y + 8.0, 64.0, 80.0),
+            1.0,
+            1.0,
         );
         let tx = x + 74.0;
         gfx.text(
@@ -500,13 +503,26 @@ impl Screen for EquipScreen {
                 };
                 draw_icon(ctx, icon, vec2(row.x + 12.0, row.y + 1.0));
             }
+            // The picker covers the description: the help line explains the candidate instead.
+            let (text, color) = match choices.get(menu.cursor()) {
+                Some(Choice::Item { id, allowed }) => match (allowed, pack.item(id)) {
+                    (Err(e), _) => (equip_error(pack, e), theme::TEXT_BAD),
+                    (Ok(()), Some(item)) => (item.desc.clone(), theme::TEXT_DIM),
+                    (Ok(()), None) => (String::new(), theme::TEXT_DIM),
+                },
+                _ => (
+                    "장비를 벗어 보관합니다. · Z 결정 · X 취소".to_string(),
+                    theme::TEXT_DIM,
+                ),
+            };
+            draw_help_colored(ctx, &text, color);
+            return;
         }
         draw_help(
             ctx,
             match self.focus {
                 Focus::Officers => "Z 무장 선택 · X 돌아가기",
-                Focus::Slots => "Z 장비 바꾸기 · X 무장 목록",
-                Focus::Items { .. } => "Z 장비 · X 취소",
+                _ => "Z 장비 바꾸기 · X 무장 목록",
             },
         );
     }

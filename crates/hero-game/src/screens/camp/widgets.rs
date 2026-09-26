@@ -59,17 +59,47 @@ pub fn draw_header(ctx: &Ctx, title: &str, gold: i64) {
 
 /// Help line at the bottom of the screen.
 pub fn draw_help(ctx: &Ctx, text: &str) {
+    draw_help_colored(ctx, text, theme::TEXT_DIM);
+}
+
+/// Help line in a given colour; text wider than the screen is cut with `…`.
+pub fn draw_help_colored(ctx: &Ctx, text: &str, color: Color) {
     fill_gradient_v(
         Rect::new(0.0, HELP_Y - 3.0, VIRTUAL_W, VIRTUAL_H - HELP_Y + 3.0),
         Color::new(0.0, 0.0, 0.05, 0.0),
         Color::new(0.0, 0.0, 0.05, 0.75),
     );
-    ctx.gfx.text(
-        text,
+    let gfx = &ctx.gfx;
+    let fitted = truncate_to(text, VIRTUAL_W - 20.0, |c| {
+        gfx.char_width(c, FontId::Small, 1)
+    });
+    gfx.text(
+        &fitted,
         10.0,
         HELP_Y + 1.0,
-        TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW),
+        TextStyle::small(color).shadow(theme::TEXT_SHADOW),
     );
+}
+
+/// `text` cut to `width` with a trailing `…` when it is wider.
+pub fn truncate_to(text: &str, width: f32, advance: impl Fn(char) -> f32) -> String {
+    let total: f32 = text.chars().map(&advance).sum();
+    if total <= width {
+        return text.to_string();
+    }
+    let budget = width - advance('…');
+    let mut used = 0.0;
+    let mut out = String::new();
+    for c in text.chars() {
+        used += advance(c);
+        if used > budget {
+            break;
+        }
+        out.push(c);
+    }
+    out.truncate(out.trim_end().len());
+    out.push('…');
+    out
 }
 
 /// Class display name.
@@ -562,6 +592,15 @@ impl QuantityDialog {
 mod tests {
     use super::*;
     use crate::screens::camp::test_pack;
+
+    #[test]
+    fn truncation() {
+        let w = |_c: char| 1.0;
+        assert_eq!(truncate_to("abc", 3.0, w), "abc");
+        assert_eq!(truncate_to("abcdef", 4.0, w), "abc…");
+        assert_eq!(truncate_to("ab cdef", 4.0, w), "ab…");
+        assert_eq!(truncate_to("", 0.0, w), "");
+    }
 
     #[test]
     fn quantities_stay_in_range() {

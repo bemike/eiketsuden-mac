@@ -165,6 +165,12 @@ impl DialogueBox {
         self.writer.complete_page();
     }
 
+    /// Jump to the last page, fully revealed (for a message kept on screen after it was read).
+    pub fn show_last_page(&mut self) {
+        while self.writer.next_page() {}
+        self.writer.complete_page();
+    }
+
     /// Advance typing and handle confirm. In `fast` mode pages appear at once and turn after
     /// [`FAST_PAGE_SECONDS`].
     pub fn update(&mut self, ctx: &mut Ctx, fast: bool) -> DialogueEvent {

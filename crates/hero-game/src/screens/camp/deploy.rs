@@ -23,10 +23,11 @@ use super::widgets::{
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
 use crate::gfx::{fill_rect, stroke_rect, Align, FontId, TextStyle};
+use crate::ui::art::draw_portrait_card;
 use crate::ui::korean::{with_particle, Particle};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
-use crate::ui::window::{draw_divider, draw_portrait, draw_window_ex, WindowStyle};
+use crate::ui::window::{draw_divider, draw_window_ex, WindowStyle};
 use hero_core::battledef::BattleDef;
 use hero_core::campaign::CampaignState;
 use hero_core::data::Id;
@@ -379,10 +380,12 @@ impl Screen for DeployScreen {
         draw_window_ex(PANEL, WindowStyle::Panel, 1.0);
         if let Some(o) = campaign.roster.get(self.menu.cursor()) {
             let x = PANEL.x + 8.0;
-            draw_portrait(
+            draw_portrait_card(
                 ctx,
                 Some(portrait_key(pack, &o.id)),
                 Rect::new(x, PANEL.y + 8.0, 64.0, 80.0),
+                1.0,
+                1.0,
             );
             let tx = x + 72.0;
             gfx.text(
