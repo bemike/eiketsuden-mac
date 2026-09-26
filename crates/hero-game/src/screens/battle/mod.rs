@@ -1232,12 +1232,14 @@ impl BattleScreen {
             }
             _ => {}
         }
+        // The wheel scrolls two tiles per step (Shift: sideways).
         let wheel = input.wheel();
         if wheel != 0 && pointer.is_some_and(|p| vp.contains(p)) {
+            let step = wheel as f32 * 2.0 * self.tile();
             if input.key_down(KeyCode::LeftShift) || input.key_down(KeyCode::RightShift) {
-                self.camera.pan(vec2(wheel as f32 * 32.0, 0.0));
+                self.camera.pan(vec2(step, 0.0));
             } else {
-                self.camera.pan(vec2(0.0, wheel as f32 * 32.0));
+                self.camera.pan(vec2(0.0, step));
             }
         }
         if !touches().is_empty() {

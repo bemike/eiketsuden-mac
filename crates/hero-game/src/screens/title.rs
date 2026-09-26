@@ -17,6 +17,10 @@ use crate::ui::theme;
 use macroquad::prelude::*;
 
 const TITLE_ART: &str = "ui/title";
+/// Top of the logo on canvases with room for it.
+const LOGO_TOP: f32 = 34.0;
+/// Height of the logo block: the big name (3 × 16 px lines) and the hanja line below it.
+const LOGO_H: f32 = 86.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -221,7 +225,9 @@ impl Screen for TitleScreen {
         let w_tag = gfx.text_width("Reloaded", tag.font, tag.size);
         let gap = 10.0;
         let x0 = ((w - (w_big + gap + w_tag)) / 2.0).round();
-        let y0 = 34.0 + (1.0 - intro) * 6.0;
+        // 34 pixels from the top, moved up on canvases too low to fit it above the menu.
+        let top = LOGO_TOP.min(self.menu.rect().y - LOGO_H - 4.0).max(2.0);
+        let y0 = top + (1.0 - intro) * 6.0;
         gfx.text("영걸전", x0, y0, big);
         // Align the baseline of "Reloaded" with the big text's baseline.
         let dy = gfx.line_height(big.font, big.size) - gfx.line_height(tag.font, tag.size) - 3.0;

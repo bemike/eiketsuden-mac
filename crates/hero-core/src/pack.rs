@@ -78,6 +78,9 @@ impl Presentation {
     pub const MIN_CANVAS: [u32; 2] = [320, 200];
     /// Largest canvas a pack may ask for.
     pub const MAX_CANVAS: [u32; 2] = [1280, 800];
+    /// Smallest canvas the engine's camp and battle screens are laid out for; smaller (but
+    /// allowed) canvases draw them overlapping, which [`Pack::validate`] warns about.
+    pub const LAYOUT_MIN_CANVAS: [u32; 2] = [480, 270];
 
     /// Whether both canvas sides lie within [`Presentation::MIN_CANVAS`] ..=
     /// [`Presentation::MAX_CANVAS`].

@@ -934,9 +934,22 @@ fn presentation_canvas_defaults_and_limits() {
     assert_eq!(pack.manifest.presentation.canvas, [640, 480]);
     assert!(pack.validate().is_empty());
     // Both limits are allowed.
-    for ok in ["canvas = [320, 200]", "canvas = [1280, 800]"] {
-        let issues = load(&with(ok)).validate();
-        assert!(issues.is_empty(), "{ok}:\n{}", format_issues(&issues));
+    let issues = load(&with("canvas = [1280, 800]")).validate();
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+    // Canvases below the size the camp and battle screens are laid out for only warn.
+    for small in ["canvas = [320, 200]", "canvas = [640, 240]"] {
+        let issues = load(&with(small)).validate();
+        assert!(
+            issues.iter().all(|i| i.severity == Severity::Warning),
+            "{small}:\n{}",
+            format_issues(&issues)
+        );
+        assert_issue(
+            &issues,
+            Severity::Warning,
+            "pack.toml",
+            "smaller than 480x270",
+        );
     }
     for bad in [
         "canvas = [319, 240]",

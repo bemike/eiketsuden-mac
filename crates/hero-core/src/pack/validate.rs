@@ -156,6 +156,16 @@ impl<'a> Validator<'a> {
                     p.canvas[0], p.canvas[1], min[0], min[1], max[0], max[1]
                 ),
             );
+        } else if (0..2).any(|i| p.canvas[i] < Presentation::LAYOUT_MIN_CANVAS[i]) {
+            let layout = Presentation::LAYOUT_MIN_CANVAS;
+            self.warn(
+                super::MANIFEST_FILE,
+                format!(
+                    "presentation.canvas {}x{} is smaller than {}x{}: the camp and battle screens \
+                     are laid out for at least that size and overlap on this canvas",
+                    p.canvas[0], p.canvas[1], layout[0], layout[1]
+                ),
+            );
         }
     }
 

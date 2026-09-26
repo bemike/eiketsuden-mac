@@ -461,8 +461,19 @@ pub fn unit_frame_size(sheet_w: f32, sheet_h: f32) -> Vec2 {
     vec2((sheet_w / 4.0).floor(), (sheet_h / 6.0).floor())
 }
 
+/// Tallest unit frame [`draw_unit`] draws at full size. Packs with bigger unit sprites (e.g.
+/// 48×48 frames for 32-pixel map tiles) get them shrunk by a whole factor, so the officer rows of
+/// the camp keep their spacing.
+pub const UNIT_ICON_MAX: f32 = 32.0;
+
+/// Whole factor a unit frame `frame_h` pixels high is shrunk by in [`draw_unit`].
+pub fn unit_icon_divisor(frame_h: f32) -> f32 {
+    (frame_h / UNIT_ICON_MAX).ceil().max(1.0)
+}
+
 /// Draw a unit sprite (`units/<sprite>_<side>`) standing with its feet at `feet` (bottom centre of
-/// the frame), facing down, walk frame `step` (0..4). A placeholder box when the sheet is missing.
+/// the frame), facing down, walk frame `step` (0..4); frames taller than [`UNIT_ICON_MAX`] are
+/// shrunk. A placeholder box when the sheet is missing.
 pub fn draw_unit(ctx: &Ctx, sprite: &str, side: &str, feet: Vec2, step: u32) {
     let key = format!("units/{sprite}_{side}");
     match ctx.media.texture_state(&key) {
@@ -470,8 +481,29 @@ pub fn draw_unit(ctx: &Ctx, sprite: &str, side: &str, feet: Vec2, step: u32) {
             if let Some(t) = ctx.media.texture(&key) {
                 let frame = unit_frame_size(t.width(), t.height());
                 if frame.x >= 1.0 && frame.y >= 1.0 {
-                    let pos = vec2((feet.x - frame.x / 2.0).round(), feet.y - frame.y);
-                    draw_sprite_frame(&t, frame, (0, step % 4), pos, false, WHITE);
+                    let size = frame / unit_icon_divisor(frame.y);
+                    let pos = vec2((feet.x - size.x / 2.0).round(), feet.y - size.y);
+                    let cell = (0, step % 4);
+                    if size == frame {
+                        draw_sprite_frame(&t, frame, cell, pos, false, WHITE);
+                    } else {
+                        draw_texture_ex(
+                            &t,
+                            pos.x,
+                            pos.y,
+                            WHITE,
+                            DrawTextureParams {
+                                dest_size: Some(size),
+                                source: Some(Rect::new(
+                                    cell.0 as f32 * frame.x,
+                                    cell.1 as f32 * frame.y,
+                                    frame.x,
+                                    frame.y,
+                                )),
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -521,5 +553,16 @@ mod tests {
         assert_eq!(unit_frame_size(96.0, 144.0), vec2(24.0, 24.0));
         assert_eq!(unit_frame_size(128.0, 144.0), vec2(32.0, 24.0));
         assert_eq!(unit_frame_size(64.0, 96.0), vec2(16.0, 16.0));
+    }
+
+    #[test]
+    fn big_unit_frames_shrink_to_icon_size() {
+        // The base pack's 24-pixel frames (and anything up to 32) are drawn as they are.
+        assert_eq!(unit_icon_divisor(24.0), 1.0);
+        assert_eq!(unit_icon_divisor(32.0), 1.0);
+        // Original-sized 48 / 64 / 96 pixel frames are halved or thirded.
+        assert_eq!(unit_icon_divisor(48.0), 2.0);
+        assert_eq!(unit_icon_divisor(64.0), 2.0);
+        assert_eq!(unit_icon_divisor(96.0), 3.0);
     }
 }
