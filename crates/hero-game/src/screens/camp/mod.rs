@@ -305,7 +305,7 @@ impl CampScreen {
                     Command::Title,
                     ConfirmDialog::new(
                         &ctx.gfx,
-                        "타이틀 화면으로 돌아갈까요? 기록하지 않은 진행은 사라집니다.",
+                        "타이틀 화면으로 돌아갈까요?\n기록하지 않은 진행은 사라집니다.",
                     )
                     .default_no(),
                 );

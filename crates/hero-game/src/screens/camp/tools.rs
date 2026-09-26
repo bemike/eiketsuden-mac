@@ -485,7 +485,7 @@ impl Screen for ToolsScreen {
                     .iter()
                     .flat_map(|l| gfx.wrap(l, FontId::Main, 1, w - 24.0))
                     .collect();
-                let h = 40.0 + wrapped.len() as f32 * 16.0 + 18.0;
+                let h = 32.0 + wrapped.len() as f32 * 16.0 + 12.0;
                 let r = Rect::new(
                     ((VIRTUAL_W - w) / 2.0).round(),
                     ((VIRTUAL_H - h) / 2.0).round(),

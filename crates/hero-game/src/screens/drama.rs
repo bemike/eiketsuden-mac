@@ -1200,10 +1200,16 @@ impl DramaScreen {
     fn draw_toolbar(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
         let pointer = ctx.input.pointer();
+        // Title cards and blacked-out moments stay uncluttered: the buttons recede.
+        let quiet = matches!(self.current, Current::Title(_)) || self.stage.fade > 0.5;
         for (tool, r) in tool_rects(gfx) {
             let hover = pointer.is_some_and(|p| r.contains(p));
             let on = tool == Tool::Fast && self.fast_now;
-            let alpha = if hover || on { 0.95 } else { 0.6 };
+            let alpha = match (hover || on, quiet) {
+                (true, _) => 0.95,
+                (false, false) => 0.6,
+                (false, true) => 0.25,
+            };
             draw_window_ex(r, WindowStyle::Panel, alpha);
             if on || hover {
                 draw_highlight(inset(r, 2.0), on, ctx.time);
@@ -1212,6 +1218,8 @@ impl DramaScreen {
                 theme::TEXT_ACCENT
             } else if hover {
                 theme::TEXT
+            } else if quiet {
+                theme::TEXT_DIM.with_alpha(0.35)
             } else {
                 theme::TEXT_DIM
             };
