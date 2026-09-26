@@ -270,7 +270,7 @@ pub fn draw_tile_highlight(screen: Vec2, color: Color, time: f64) {
 }
 
 pub const MOVE_COLOR: Color = Color::new(0.25, 0.52, 1.0, 0.40);
-pub const REACH_COLOR: Color = Color::new(1.0, 0.25, 0.2, 0.32);
+pub const REACH_COLOR: Color = Color::new(1.0, 0.12, 0.1, 0.40);
 pub const TARGET_COLOR: Color = Color::new(1.0, 0.22, 0.18, 0.55);
 pub const AIM_COLOR: Color = Color::new(0.72, 0.35, 1.0, 0.42);
 pub const AREA_COLOR: Color = Color::new(0.9, 0.55, 1.0, 0.6);
@@ -412,7 +412,7 @@ pub fn draw_banner(ctx: &Ctx, b: &BannerView, viewport: Rect) {
     if a <= 0.0 {
         return;
     }
-    let h = if b.subtitle.is_some() { 46.0 } else { 34.0 };
+    let h = if b.subtitle.is_some() { 50.0 } else { 36.0 };
     let y = (viewport.y + (viewport.h - h) / 2.0 - 20.0).round();
     let (dark, mid) = tone_colors(b.tone);
     let dark = dark.with_alpha(0.0);
@@ -450,7 +450,7 @@ pub fn draw_banner(ctx: &Ctx, b: &BannerView, viewport: Rect) {
         gfx.text_aligned(
             sub,
             0.0,
-            y + 30.0,
+            y + 34.0,
             VIRTUAL_W,
             Align::Center,
             TextStyle::small(theme::TEXT_ACCENT.with_alpha(a)).shadow(Color::new(

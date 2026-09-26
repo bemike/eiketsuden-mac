@@ -465,6 +465,10 @@ impl BattleScreen {
                 self.store_session(ctx);
                 self.events
                     .push(anim::plan(&events, &self.state, &self.pack, &self.meta.fx));
+                if self.events.is_idle() {
+                    // Nothing to animate (a plain wait): show the result right away.
+                    self.events_done();
+                }
                 Some(events)
             }
             Err(e) => {
@@ -857,7 +861,8 @@ impl BattleScreen {
                         if moving {
                             self.move_undoable = player::move_is_undoable(&events);
                         } else {
-                            ctx.sfx(sfx::CONFIRM);
+                            // The unit has acted; the selection ends.
+                            self.ui.reset();
                         }
                     }
                     None => self.ui.reset(),
@@ -906,10 +911,6 @@ impl BattleScreen {
             self.cursor = p;
             self.camera.keep_visible(p, 2.0);
         }
-    }
-
-    fn description_rect(&self, list: Rect) -> Rect {
-        Rect::new(list.x, list.bottom() + 4.0, list.w, 40.0)
     }
 
     fn player_update(&mut self, ctx: &mut Ctx, dt: f32) -> Transition {
@@ -1473,7 +1474,29 @@ impl BattleScreen {
         s.y > VIEWPORT.y + VIEWPORT.h * 0.55
     }
 
-    fn draw_panels(&self, ctx: &Ctx) {
+    /// Whether the cursor is on something the forecast window describes.
+    fn has_forecast(&self) -> bool {
+        let at = self.cursor;
+        match &self.ui.mode {
+            Mode::Attack { targets, .. } => {
+                self.state.unit_at(at).is_some_and(|t| targets.contains(&t))
+            }
+            Mode::Aim { list, index, .. } => {
+                list[*index].aims.as_ref().is_ok_and(|a| a.contains(&at))
+            }
+            Mode::ItemTarget { list, index, .. } => {
+                match (&list[*index].targets, self.state.unit_at(at)) {
+                    (Ok(ts), Some(t)) => ts.contains(&t),
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Unit panel (left) and terrain panel (right) in the band away from the cursor. The
+    /// terrain panel gives way to the forecast window when `terrain` is false.
+    fn draw_panels(&self, ctx: &Ctx, terrain: bool) {
         let top = self.panels_on_top();
         let y_unit = if top {
             VIEWPORT.y + 4.0
@@ -1492,7 +1515,7 @@ impl BattleScreen {
                 );
             }
         }
-        if self.events.is_idle() && self.state.phase == Side::Player {
+        if terrain && self.events.is_idle() && self.state.phase == Side::Player {
             if let Some(t) = self.state.terrain_at(&self.pack, self.cursor) {
                 let treasure = self.def().treasures.iter().enumerate().any(|(i, tr)| {
                     tr.pos == self.cursor
@@ -1520,9 +1543,10 @@ impl BattleScreen {
         let Some(unit) = self.ui.unit() else {
             return;
         };
-        let top = !self.panels_on_top();
+        // Same band as the unit panel, on the right (where the terrain panel would be).
+        let top = self.panels_on_top();
         let place = |h: f32, w: f32| {
-            let x = ((VIRTUAL_W - w) / 2.0).round();
+            let x = VIRTUAL_W - w - 4.0;
             let y = if top {
                 VIEWPORT.y + 4.0
             } else {
@@ -1721,9 +1745,16 @@ impl BattleScreen {
                 }
             }
         }
-        let r = self.description_rect(menu.rect());
+        let list = menu.rect();
+        let lines = ctx.gfx.wrap(&desc, FontId::Small, 1, list.w - 14.0);
+        let rows = (lines.len() + usize::from(blocked.is_some())).clamp(1, 5);
+        let r = Rect::new(
+            list.x,
+            list.bottom() + 4.0,
+            list.w,
+            8.0 + rows as f32 * 12.0,
+        );
         draw_window_ex(r, WindowStyle::Panel, 0.96);
-        let lines = ctx.gfx.wrap(&desc, FontId::Small, 1, r.w - 14.0);
         let small = TextStyle::small(theme::TEXT).shadow(theme::TEXT_SHADOW);
         let mut y = r.y + 4.0;
         if let Some(b) = blocked {
@@ -2071,16 +2102,23 @@ impl Screen for BattleScreen {
             Stage::Battle => {}
         }
 
-        if player_turn && self.mode_menu.is_none() && matches!(self.panel, Panel::None) {
-            self.draw_panels(ctx);
-            self.draw_forecast(ctx);
-        } else if !self.events.is_idle() || self.ai.is_some() {
-            if self.scene.banner.is_none() && self.scene.popup.is_none() {
-                self.draw_panels(ctx);
+        let modal = !matches!(self.panel, Panel::None) || self.dialog.is_some();
+        let list_open = matches!(
+            self.mode_menu,
+            Some((MenuKind::Strategies | MenuKind::Items, _))
+        );
+        if player_turn && !modal && !list_open {
+            // With the command menu open the acting unit's panel stays visible.
+            let forecast = self.mode_menu.is_none() && self.has_forecast();
+            self.draw_panels(ctx, !forecast);
+            if forecast {
+                self.draw_forecast(ctx);
             }
-        } else if player_turn {
-            // A command menu is open: keep the acting unit's panel visible.
-            self.draw_panels(ctx);
+        } else if (!self.events.is_idle() || self.ai.is_some())
+            && self.scene.banner.is_none()
+            && self.scene.popup.is_none()
+        {
+            self.draw_panels(ctx, false);
         }
         if player_turn {
             self.draw_mode_menu(ctx);

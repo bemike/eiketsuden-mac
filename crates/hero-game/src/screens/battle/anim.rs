@@ -816,6 +816,10 @@ fn step(
             if first {
                 scene.hud.phase = *side;
                 scene.hud.turn = *turn;
+                // A new phase: nobody has acted in it yet.
+                for v in &mut scene.views {
+                    v.acted = false;
+                }
                 cues.push(Cue::PhaseMusic(*side));
                 cues.push(Cue::Sfx(sfx::PHASE));
             }
