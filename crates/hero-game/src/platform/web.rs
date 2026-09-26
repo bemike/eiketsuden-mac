@@ -13,6 +13,8 @@ pub const HERO_WEB_VERSION: u32 = 3;
 /// Prefix of every `localStorage` item written by the game.
 const KEY_PREFIX: &str = "eiketsuden.";
 
+// Imported from the `env` module that the miniquad loader fills from registered plugins.
+#[link(wasm_import_module = "env")]
 extern "C" {
     fn hero_web_ready();
     fn hero_web_panic(message: JsObject);
