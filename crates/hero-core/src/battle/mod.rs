@@ -4,6 +4,10 @@
 //! [`BattleEvent`]s in order. AI turns use [`BattleState::next_ai_unit`] +
 //! [`BattleState::ai_actions`]; headless simulations use [`BattleState::run_ai_phase`].
 //! Cancelling a move is done by the frontend restoring a clone taken before `Action::Move`.
+//!
+//! The rules implemented here are specified in `docs/RULES.md`; the submodules follow its
+//! sections: `setup` (battle construction), `stats` (§2), `path` (§3), `combat` (§4, §7, §11),
+//! `strategy` (§5, §10), `flow` (§1, §6, §8, §9) and `ai` (§12).
 
 use crate::battledef::{AiMode, BattleDef, Side};
 use crate::campaign::CampaignState;
@@ -14,6 +18,21 @@ use crate::pack::Pack;
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+mod ai;
+mod board;
+mod combat;
+mod flow;
+mod path;
+mod setup;
+mod stats;
+mod strategy;
+#[cfg(test)]
+mod testkit;
+#[cfg(test)]
+mod tests;
+
+use board::Board;
 
 pub type UnitId = usize;
 
@@ -118,15 +137,31 @@ pub enum Outcome {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     /// Move within the movement range. A unit moves at most once per phase.
-    Move { unit: UnitId, to: Pos },
-    Attack { unit: UnitId, target: UnitId },
+    Move {
+        unit: UnitId,
+        to: Pos,
+    },
+    Attack {
+        unit: UnitId,
+        target: UnitId,
+    },
     /// Aim a strategy at a tile (area effects are centred there).
-    Strategy { unit: UnitId, strategy: Id, target: Pos },
+    Strategy {
+        unit: UnitId,
+        strategy: Id,
+        target: Pos,
+    },
     /// Use a battle consumable from the army inventory. For strategy scrolls `target` is the
     /// unit on the aimed tile.
-    UseItem { unit: UnitId, item: Id, target: UnitId },
+    UseItem {
+        unit: UnitId,
+        item: Id,
+        target: UnitId,
+    },
     /// End this unit's action without doing anything.
-    Wait { unit: UnitId },
+    Wait {
+        unit: UnitId,
+    },
     /// End the current side's phase (remaining units forfeit their actions).
     EndPhase,
 }
@@ -184,6 +219,10 @@ pub struct MoveRange {
     /// Every tile the unit may end its move on (the origin included). Tiles occupied by
     /// friendly units can be passed through but are not listed.
     pub tiles: BTreeMap<Pos, MoveStep>,
+    /// Tiles the unit can cross but not stop on (occupied by friendly units). Paths to tiles
+    /// in `tiles` may lead through them; [`MoveRange::path_to`] uses both maps.
+    #[serde(default)]
+    pub through: BTreeMap<Pos, MoveStep>,
 }
 
 impl MoveRange {
@@ -191,10 +230,27 @@ impl MoveRange {
         self.tiles.contains_key(&p)
     }
 
-    /// Path from origin to `p`, both included.
+    /// Path from origin to `p`, both included. `None` when `p` is not a destination.
     pub fn path_to(&self, p: Pos) -> Option<Vec<Pos>> {
-        let _ = p;
-        todo!("W1a: MoveRange::path_to")
+        if !self.tiles.contains_key(&p) {
+            return None;
+        }
+        let step = |q: &Pos| self.tiles.get(q).or_else(|| self.through.get(q));
+        let limit = self.tiles.len() + self.through.len();
+        let mut path = vec![p];
+        let mut cur = p;
+        while let Some(prev) = step(&cur).and_then(|s| s.prev) {
+            if path.len() > limit {
+                return None; // malformed range (cycle)
+            }
+            path.push(prev);
+            cur = prev;
+        }
+        if cur != self.origin {
+            return None;
+        }
+        path.reverse();
+        Some(path)
     }
 }
 
@@ -244,8 +300,14 @@ pub struct StrategyHit {
 /// Everything the frontend needs to animate, in the order it happened.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BattleEvent {
-    PhaseStart { side: Side, turn: u32 },
-    Moved { unit: UnitId, path: Vec<Pos> },
+    PhaseStart {
+        side: Side,
+        turn: u32,
+    },
+    Moved {
+        unit: UnitId,
+        path: Vec<Pos>,
+    },
     /// One strike: the attack itself, or the defender's counter-attack.
     Strike {
         attacker: UnitId,
@@ -262,24 +324,72 @@ pub enum BattleEvent {
         target: Pos,
         hits: Vec<StrategyHit>,
     },
-    ItemUsed { user: UnitId, target: UnitId, item: Id, healed: i32, morale: i32 },
+    ItemUsed {
+        user: UnitId,
+        target: UnitId,
+        item: Id,
+        healed: i32,
+        morale: i32,
+    },
     /// Terrain / treasure / band-aura regeneration at phase start.
-    Regenerated { unit: UnitId, hp: i32, mp: i32, morale: i32 },
+    Regenerated {
+        unit: UnitId,
+        hp: i32,
+        mp: i32,
+        morale: i32,
+    },
     /// A unit became confused (strategy or low morale).
-    Confused { unit: UnitId },
-    StatusExpired { unit: UnitId, status: StatusKind },
-    WeatherChanged { weather: Weather },
-    ExpGained { unit: UnitId, amount: u32 },
-    LevelUp { unit: UnitId, level: u32, hp_gain: i32, mp_gain: i32 },
-    Promoted { unit: UnitId, from: Id, to: Id },
-    Learned { unit: UnitId, strategy: Id },
-    Retreated { unit: UnitId },
-    Spawned { units: Vec<UnitId> },
-    TreasureFound { unit: UnitId, item: Option<Id>, gold: i64 },
-    ItemDropped { unit: UnitId, item: Id },
+    Confused {
+        unit: UnitId,
+    },
+    StatusExpired {
+        unit: UnitId,
+        status: StatusKind,
+    },
+    WeatherChanged {
+        weather: Weather,
+    },
+    ExpGained {
+        unit: UnitId,
+        amount: u32,
+    },
+    LevelUp {
+        unit: UnitId,
+        level: u32,
+        hp_gain: i32,
+        mp_gain: i32,
+    },
+    Promoted {
+        unit: UnitId,
+        from: Id,
+        to: Id,
+    },
+    Learned {
+        unit: UnitId,
+        strategy: Id,
+    },
+    Retreated {
+        unit: UnitId,
+    },
+    Spawned {
+        units: Vec<UnitId>,
+    },
+    TreasureFound {
+        unit: UnitId,
+        item: Option<Id>,
+        gold: i64,
+    },
+    ItemDropped {
+        unit: UnitId,
+        item: Id,
+    },
     /// Play a drama scene now (battle state has already been updated).
-    Drama { scene: String },
-    BonusAchieved { exp: u32 },
+    Drama {
+        scene: String,
+    },
+    BonusAchieved {
+        exp: u32,
+    },
     Victory,
     Defeat(DefeatReason),
 }
@@ -314,15 +424,20 @@ impl BattleState {
     /// Build the initial state of `battle`: player units from `campaign.deployed` (falling back to
     /// required officers + roster order up to `deploy.max`) placed on deploy slots, enemy/ally
     /// spawns without a `group` placed on the map, grouped spawns hidden.
-    pub fn new(pack: &Pack, battle: &str, campaign: &CampaignState, seed: u64) -> Result<BattleState, BattleError> {
-        let _ = (pack, campaign, seed);
-        todo!("W1a: BattleState::new {battle}")
+    pub fn new(
+        pack: &Pack,
+        battle: &str,
+        campaign: &CampaignState,
+        seed: u64,
+    ) -> Result<BattleState, BattleError> {
+        setup::build(pack, battle, campaign, seed)
     }
 
     /// Start turn 1 (player phase): fires `TurnStart{1, player}` events and the intro drama.
+    /// The intro `Drama` event comes first, then the phase start (weather, regeneration, ...).
+    /// Call once, right after [`BattleState::new`].
     pub fn begin(&mut self, pack: &Pack) -> Vec<BattleEvent> {
-        let _ = pack;
-        todo!("W1a: begin")
+        self.begin_battle(pack)
     }
 
     pub fn def<'a>(&self, pack: &'a Pack) -> &'a BattleDef {
@@ -343,7 +458,10 @@ impl BattleState {
 
     /// First unit (any state) matching a tag or officer id.
     pub fn find_unit(&self, reference: &str) -> Option<UnitId> {
-        self.units.iter().find(|u| u.matches(reference)).map(|u| u.id)
+        self.units
+            .iter()
+            .find(|u| u.matches(reference))
+            .map(|u| u.id)
     }
 
     pub fn terrain_at<'a>(&self, pack: &'a Pack, pos: Pos) -> Option<&'a TerrainDef> {
@@ -365,81 +483,149 @@ impl BattleState {
     /// Attack power: `(level + 10) * (morale/10 + 400/(140 - str) + class.atk)`, times the best
     /// weapon's `atk_pct`. See `docs/RULES.md`.
     pub fn attack_power(&self, pack: &Pack, id: UnitId) -> i32 {
-        let _ = (pack, id);
-        todo!("W1a: attack_power")
+        self.attack_with_morale(pack, id, self.units[id].morale)
     }
 
     /// Defense power: same shape as attack with `lead`, `class.def` and `def_pct`.
     pub fn defense_power(&self, pack: &Pack, id: UnitId) -> i32 {
-        let _ = (pack, id);
-        todo!("W1a: defense_power")
+        self.defense_with_morale(pack, id, self.units[id].morale)
     }
 
     /// Movement points including the best horse (0 while confused).
     pub fn move_points(&self, pack: &Pack, id: UnitId) -> i32 {
-        let _ = (pack, id);
-        todo!("W1a: move_points")
+        if self.units[id].has_status(StatusKind::Confused) {
+            0
+        } else {
+            self.base_move_points(pack, id)
+        }
     }
 
     // ----- queries -------------------------------------------------------------------------
 
     /// Tiles the unit may move to this phase. Hostile units block; zone of control applies
     /// (entering a tile adjacent to a hostile unit ends movement). Empty when already moved.
+    ///
+    /// For a unit whose side is not in its phase this is the range it will have when its
+    /// phase starts (useful to show enemy ranges). Hidden and retreated units get an empty range.
     pub fn movement_range(&self, pack: &Pack, id: UnitId) -> MoveRange {
-        let _ = (pack, id);
-        todo!("W1a: movement_range")
+        let u = &self.units[id];
+        let spent = u.side == self.phase && (u.moved || u.acted);
+        if !u.is_active() || spent {
+            return MoveRange {
+                origin: u.pos,
+                ..MoveRange::default()
+            };
+        }
+        let board = Board::new(self, pack);
+        self.reach(pack, &board, id, u.pos, self.move_points(pack, id))
     }
 
     /// In-bounds tiles covered by the unit's attack range if it stood on `from`.
     pub fn attack_tiles(&self, pack: &Pack, id: UnitId, from: Pos) -> Vec<Pos> {
-        let _ = (pack, id, from);
-        todo!("W1a: attack_tiles")
+        let Some(offsets) = self.class_of(pack, id).range.offsets() else {
+            return Vec::new();
+        };
+        let mut tiles: Vec<Pos> = Vec::with_capacity(offsets.len());
+        for p in offsets.into_iter().map(|o| from.offset(o.x, o.y)) {
+            if p != from && self.map.in_bounds(p) && !tiles.contains(&p) {
+                tiles.push(p);
+            }
+        }
+        tiles
     }
 
     /// Hostile active units attackable from `from`.
     pub fn attack_targets(&self, pack: &Pack, id: UnitId, from: Pos) -> Vec<UnitId> {
-        let _ = (pack, id, from);
-        todo!("W1a: attack_targets")
+        let side = self.units[id].side;
+        let mut targets: Vec<UnitId> = self
+            .attack_tiles(pack, id, from)
+            .into_iter()
+            .filter_map(|p| self.unit_at(p))
+            .filter(|&t| t != id && self.units[t].side.is_hostile(side))
+            .collect();
+        targets.sort_unstable();
+        targets.dedup();
+        targets
     }
 
     /// Strategies the unit knows and can currently afford (empty when confused).
     pub fn usable_strategies(&self, pack: &Pack, id: UnitId) -> Vec<Id> {
-        let _ = (pack, id);
-        todo!("W1a: usable_strategies")
+        let u = &self.units[id];
+        if !u.is_active() || u.has_status(StatusKind::Confused) {
+            return Vec::new();
+        }
+        pack.known_strategies(&u.class, u.level)
+            .into_iter()
+            .filter(|s| pack.strategy(s).is_some_and(|d| u.mp >= d.mp))
+            .collect()
     }
 
     /// Tiles where `strategy` may be aimed from `from` that would affect at least one valid
     /// unit and satisfy the terrain/weather requirement. For `Area::AllInRange` strategies
     /// this returns the caster's own tile when at least one target is in reach.
     pub fn strategy_targets(&self, pack: &Pack, id: UnitId, strategy: &str, from: Pos) -> Vec<Pos> {
-        let _ = (pack, id, strategy, from);
-        todo!("W1a: strategy_targets")
+        self.strategy_aims(pack, id, strategy, from)
     }
 
     /// Units `item` can be used on: for healing items the user and orthogonally adjacent
     /// friendly units; for strategy scrolls the targets of that strategy from the user's tile.
     pub fn item_targets(&self, pack: &Pack, id: UnitId, item: &str) -> Vec<UnitId> {
-        let _ = (pack, id, item);
-        todo!("W1a: item_targets")
+        self.item_target_list(pack, id, item)
     }
 
-    pub fn forecast_attack(&self, pack: &Pack, attacker: UnitId, defender: UnitId) -> AttackForecast {
-        let _ = (pack, attacker, defender);
-        todo!("W1a: forecast_attack")
+    pub fn forecast_attack(
+        &self,
+        pack: &Pack,
+        attacker: UnitId,
+        defender: UnitId,
+    ) -> AttackForecast {
+        self.attack_forecast(pack, attacker, defender)
     }
 
-    pub fn forecast_strategy(&self, pack: &Pack, caster: UnitId, strategy: &str, target: Pos) -> Vec<StrategyForecast> {
-        let _ = (pack, caster, strategy, target);
-        todo!("W1a: forecast_strategy")
+    pub fn forecast_strategy(
+        &self,
+        pack: &Pack,
+        caster: UnitId,
+        strategy: &str,
+        target: Pos,
+    ) -> Vec<StrategyForecast> {
+        self.strategy_forecast(pack, caster, strategy, target)
     }
 
     // ----- mutation ------------------------------------------------------------------------
 
     /// Validate and perform an action; returns the resulting events (including level ups,
     /// retreats, triggered events, phase changes and victory/defeat).
+    ///
+    /// A rejected action leaves the state untouched. On victory the battle's `outro` scene,
+    /// if any, is emitted as the last event (`Drama`).
     pub fn apply(&mut self, pack: &Pack, action: Action) -> Result<Vec<BattleEvent>, ActionError> {
-        let _ = (pack, action);
-        todo!("W1a: apply")
+        if self.outcome.is_some() {
+            return Err(ActionError::BattleOver);
+        }
+        let mut ev = Vec::new();
+        match action {
+            Action::Move { unit, to } => self.act_move(pack, unit, to, &mut ev)?,
+            Action::Attack { unit, target } => self.act_attack(pack, unit, target, &mut ev)?,
+            Action::Strategy {
+                unit,
+                strategy,
+                target,
+            } => self.act_strategy(pack, unit, &strategy, target, &mut ev)?,
+            Action::UseItem { unit, item, target } => {
+                self.act_item(pack, unit, &item, target, &mut ev)?
+            }
+            Action::Wait { unit } => {
+                self.check_actor(unit)?;
+                self.units[unit].acted = true;
+            }
+            Action::EndPhase => {
+                self.end_phase(pack, &mut ev);
+                return Ok(ev);
+            }
+        }
+        self.settle(pack, &mut ev);
+        Ok(ev)
     }
 
     // ----- AI ------------------------------------------------------------------------------
@@ -447,20 +633,26 @@ impl BattleState {
     /// Next AI-controlled unit of the current phase that has not acted (None during the
     /// player phase or when all have acted).
     pub fn next_ai_unit(&self) -> Option<UnitId> {
-        todo!("W1a: next_ai_unit")
+        if self.phase == Side::Player {
+            None
+        } else {
+            self.next_actor(self.phase)
+        }
     }
 
     /// Plan the actions for one AI unit: optionally a `Move`, then exactly one of `Attack`,
     /// `Strategy`, `UseItem` or `Wait`. Deterministic for a given state.
+    ///
+    /// Empty when the unit cannot act (not its phase, already acted, confused). A `Move` can
+    /// trigger battle events that change the situation; if the planned action is then
+    /// rejected, call `ai_actions` again, which plans from the unit's new tile.
     pub fn ai_actions(&self, pack: &Pack, id: UnitId) -> Vec<Action> {
-        let _ = (pack, id);
-        todo!("W1a: ai_actions")
+        self.plan_ai(pack, id)
     }
 
     /// Let the AI play every unit of the current phase (also usable for the player side in
     /// simulations) and then end the phase. Returns all events.
     pub fn run_ai_phase(&mut self, pack: &Pack) -> Vec<BattleEvent> {
-        let _ = pack;
-        todo!("W1a: run_ai_phase")
+        self.run_ai(pack)
     }
 }

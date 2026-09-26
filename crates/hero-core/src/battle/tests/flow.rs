@@ -1,0 +1,1063 @@
+//! Turn flow (§1), regeneration and confusion upkeep (§6, §7.5), weather (§8), battle events
+//! and the outcome (§9, §11).
+
+use crate::battle::testkit::*;
+use crate::battle::{
+    Action, ActionError, ActiveStatus, BattleEvent, BattleState, DefeatReason, Outcome, UnitId,
+    UnitState, Weather,
+};
+use crate::battledef::{
+    AiMode, BattleDef, BonusDef, Condition, EventAction, EventDef, Side, Trigger, UnitSpawn,
+};
+use crate::data::{StatusKind, WeatherChances};
+use crate::geom::Pos;
+use crate::pack::Pack;
+
+fn event(trigger: Trigger, actions: Vec<EventAction>) -> EventDef {
+    EventDef {
+        trigger,
+        once: true,
+        actions,
+    }
+}
+
+fn spawn(side: Side, pos: Pos) -> UnitSpawn {
+    UnitSpawn {
+        side,
+        officer: None,
+        name: None,
+        class: Some("infantry".into()),
+        level: Some(1),
+        stats: None,
+        pos,
+        ai: AiMode::Aggressive,
+        ai_target: None,
+        ai_pos: None,
+        commander: false,
+        tag: None,
+        group: None,
+        equip: None,
+        drop: None,
+    }
+}
+
+fn confused(turns: u8) -> ActiveStatus {
+    ActiveStatus {
+        status: StatusKind::Confused,
+        turns,
+    }
+}
+
+fn drama(scene: &str) -> BattleEvent {
+    BattleEvent::Drama {
+        scene: scene.into(),
+    }
+}
+
+fn phase(side: Side, turn: u32) -> BattleEvent {
+    BattleEvent::PhaseStart { side, turn }
+}
+
+fn end_phase(st: &mut BattleState, pack: &Pack) -> Vec<BattleEvent> {
+    st.apply(pack, Action::EndPhase).unwrap()
+}
+
+fn tag(st: &mut BattleState, id: UnitId, tag: &str) {
+    st.units[id].tag = Some(tag.into());
+}
+
+// ----- turn structure ----------------------------------------------------------------------
+
+#[test]
+fn phases_cycle_and_skip_sides_without_units() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    assert_eq!(st.begin(&pack), vec![phase(Side::Player, 1)]);
+    assert_eq!(
+        st.next_ai_unit(),
+        None,
+        "no AI units during the player phase"
+    );
+    st.apply(&pack, Action::Wait { unit: me }).unwrap();
+    assert!(!st.can_act(me));
+
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![phase(Side::Enemy, 1)],
+        "empty ally phase skipped"
+    );
+    assert_eq!(st.next_ai_unit(), Some(foe));
+    assert_eq!(end_phase(&mut st, &pack), vec![phase(Side::Player, 2)]);
+    assert_eq!(st.turn, 2);
+    assert!(
+        st.can_act(me),
+        "flags are cleared at the start of the side's phase"
+    );
+
+    add(&mut st, &pack, Side::Ally, "infantry", 1, p(0, 7));
+    assert_eq!(end_phase(&mut st, &pack), vec![phase(Side::Ally, 2)]);
+    assert_eq!(end_phase(&mut st, &pack), vec![phase(Side::Enemy, 2)]);
+}
+
+#[test]
+fn turn_limit_loses_after_the_last_enemy_phase() {
+    let mut def = battle(OPEN_MAP);
+    def.turn_limit = 2;
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    for _ in 0..3 {
+        end_phase(&mut st, &pack);
+    }
+    assert_eq!((st.turn, st.phase, st.outcome), (2, Side::Enemy, None));
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![BattleEvent::Defeat(DefeatReason::TurnLimit)]
+    );
+    assert_eq!(st.outcome, Some(Outcome::Defeat(DefeatReason::TurnLimit)));
+    assert!(st.is_over());
+    assert_eq!(
+        st.apply(&pack, Action::Wait { unit: me }),
+        Err(ActionError::BattleOver)
+    );
+    assert_eq!(
+        st.apply(&pack, Action::EndPhase),
+        Err(ActionError::BattleOver)
+    );
+    assert_eq!(st.next_ai_unit(), None);
+}
+
+#[test]
+fn surviving_the_last_turn_wins_before_the_turn_limit() {
+    let mut def = battle(OPEN_MAP);
+    def.turn_limit = 2;
+    def.victory = vec![Condition::SurviveTurns { turns: 2 }];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    for _ in 0..3 {
+        end_phase(&mut st, &pack);
+    }
+    assert_eq!(st.outcome, None, "turn 2 is not completed yet");
+    assert_eq!(end_phase(&mut st, &pack), vec![BattleEvent::Victory]);
+    assert_eq!(st.outcome, Some(Outcome::Victory));
+}
+
+#[test]
+fn turn_start_events_fire_for_empty_phases_and_reinforcements_join_them() {
+    let mut def = battle(OPEN_MAP);
+    let mut allies = spawn(Side::Ally, p(0, 7));
+    allies.group = Some("allies".into());
+    def.units = vec![spawn(Side::Enemy, p(7, 7)), allies];
+    def.events = vec![
+        event(
+            Trigger::TurnStart {
+                turn: 1,
+                side: Side::Ally,
+            },
+            vec![EventAction::Drama {
+                scene: "empty".into(),
+            }],
+        ),
+        event(
+            Trigger::TurnStart {
+                turn: 2,
+                side: Side::Ally,
+            },
+            vec![EventAction::Spawn {
+                group: "allies".into(),
+            }],
+        ),
+    ];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    st.begin(&pack);
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![drama("empty"), phase(Side::Enemy, 1)]
+    );
+    end_phase(&mut st, &pack);
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![
+            BattleEvent::Spawned { units: vec![1] },
+            phase(Side::Ally, 2)
+        ]
+    );
+    assert_eq!(st.phase, Side::Ally);
+    assert_eq!(st.next_ai_unit(), Some(1));
+}
+
+// ----- regeneration, confusion, weather ----------------------------------------------------
+
+#[test]
+fn terrain_equipment_and_band_regeneration() {
+    let pack = pack(
+        "
+        .....
+        .v...
+        .....",
+    );
+    let mut st = state(&pack);
+    let villager = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 1));
+    let jade = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 1));
+    add(&mut st, &pack, Side::Enemy, "band", 10, p(3, 0));
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 2));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(4, 2));
+    st.units[villager].hp = 400;
+    st.units[villager].morale = 50;
+    st.units[jade].equip.accessory = Some("jade".into());
+    st.units[jade].hp = 100;
+    st.units[jade].mp = 0;
+    st.units[foe].hp = 100;
+
+    assert_eq!(
+        st.begin(&pack),
+        vec![
+            phase(Side::Player, 1),
+            // village: 10% of max HP and 10 morale
+            BattleEvent::Regenerated {
+                unit: villager,
+                hp: 50,
+                mp: 0,
+                morale: 10
+            },
+            // jade: 10% HP (+5 morale, already full); enemy band Lv10 next to it: 10 / 10 + 1 MP
+            BattleEvent::Regenerated {
+                unit: jade,
+                hp: 50,
+                mp: 2,
+                morale: 0
+            },
+        ]
+    );
+    assert_eq!(
+        (st.units[villager].hp, st.units[villager].morale),
+        (450, 60)
+    );
+    assert_eq!((st.units[jade].hp, st.units[jade].mp), (150, 2));
+    assert_eq!(
+        st.units[foe].hp, 100,
+        "only the side whose phase starts regenerates"
+    );
+
+    // Healing is capped at the missing HP.
+    st.units[villager].hp = 495;
+    end_phase(&mut st, &pack);
+    let ev = end_phase(&mut st, &pack);
+    assert!(ev.contains(&BattleEvent::Regenerated {
+        unit: villager,
+        hp: 5,
+        mp: 0,
+        morale: 10
+    }));
+}
+
+#[test]
+fn confusion_counts_down_but_persists_while_morale_is_low() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let calm = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    let shaken = add(&mut st, &pack, Side::Player, "infantry", 1, p(2, 0));
+    let long = add(&mut st, &pack, Side::Player, "infantry", 1, p(4, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.units[calm].statuses = vec![confused(1)];
+    st.units[shaken].statuses = vec![confused(1)];
+    st.units[shaken].morale = 20;
+    st.units[long].statuses = vec![confused(3)];
+    assert_eq!(
+        st.begin(&pack),
+        vec![
+            phase(Side::Player, 1),
+            BattleEvent::StatusExpired {
+                unit: calm,
+                status: StatusKind::Confused
+            },
+        ]
+    );
+    assert!(st.units[calm].statuses.is_empty());
+    assert_eq!(
+        st.units[shaken].statuses,
+        vec![confused(1)],
+        "kept at 1 while morale <= 30"
+    );
+    assert_eq!(st.units[long].statuses, vec![confused(2)]);
+    assert!(st.can_act(calm));
+}
+
+#[test]
+fn low_morale_confuses_and_a_confused_unit_at_zero_morale_retreats() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let broken = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    let steady = add(&mut st, &pack, Side::Player, "infantry", 1, p(2, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.units[broken].morale = 0;
+    st.units[steady].morale = 31;
+    assert_eq!(
+        st.begin(&pack),
+        vec![
+            phase(Side::Player, 1),
+            BattleEvent::Confused { unit: broken },
+            BattleEvent::Retreated { unit: broken },
+        ],
+        "chance (30 - 0) * 3 + 10 >= 100"
+    );
+    assert!(st.units[steady].statuses.is_empty());
+
+    // Morale 25: (30 - 25) * 3 + 10 = 25%.
+    let mut hits = 0;
+    for seed in 0..400 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let u = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        st.units[u].morale = 25;
+        st.begin(&pack);
+        if st.units[u].has_status(StatusKind::Confused) {
+            assert_eq!(st.units[u].statuses, vec![confused(1)]);
+            assert!(st.ai_actions(&pack, u).is_empty());
+            hits += 1;
+        }
+    }
+    assert!((60..140).contains(&hits), "25% of 400: {hits}");
+}
+
+#[test]
+fn weather_is_rolled_at_every_player_phase() {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.weather = WeatherChances {
+        clear: 0,
+        cloudy: 0,
+        rain: 100,
+    };
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    assert_eq!(
+        st.begin(&pack),
+        vec![
+            phase(Side::Player, 1),
+            BattleEvent::WeatherChanged {
+                weather: Weather::Rain
+            }
+        ]
+    );
+    assert_eq!(st.weather, Weather::Rain);
+    end_phase(&mut st, &pack);
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![phase(Side::Player, 2)],
+        "unchanged: no event"
+    );
+
+    pack.rules.weather = WeatherChances {
+        clear: 50,
+        cloudy: 0,
+        rain: 50,
+    };
+    let rainy = (0..200)
+        .filter(|&seed| {
+            let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+            add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+            st.begin(&pack);
+            assert_ne!(st.weather, Weather::Cloudy);
+            st.weather == Weather::Rain
+        })
+        .count();
+    assert!((60..140).contains(&rainy), "50% of 200: {rainy}");
+}
+
+// ----- triggers and actions ----------------------------------------------------------------
+
+#[test]
+fn unit_defeated_trigger_runs_reward_actions() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::UnitDefeated {
+            target: "boss".into(),
+        },
+        vec![
+            EventAction::GiveGold { amount: 100 },
+            EventAction::GiveItem {
+                item: "bean".into(),
+            },
+            EventAction::SetFlag {
+                flag: "boss_down".into(),
+                value: 1,
+            },
+            EventAction::Drama {
+                scene: "boss_falls".into(),
+            },
+        ],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    let boss = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 4));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    tag(&mut st, boss, "boss");
+    st.units[boss].hp = 1;
+    st.begin(&pack);
+    assert_eq!(st.fired, vec![false]);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: me,
+                target: boss,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        &ev[1..],
+        &[
+            BattleEvent::Retreated { unit: boss },
+            BattleEvent::ExpGained {
+                unit: me,
+                amount: 38
+            },
+            drama("boss_falls"),
+        ]
+    );
+    assert_eq!(st.gold_found, 100);
+    assert_eq!(st.items_found, vec!["bean".to_string()]);
+    assert_eq!(st.flags.get("boss_down"), Some(&1));
+    assert_eq!(st.fired, vec![true]);
+}
+
+#[test]
+fn reach_trigger_watches_player_units_or_a_named_unit() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![
+        event(
+            Trigger::Reach {
+                who: None,
+                pos: p(5, 5),
+                radius: 1,
+            },
+            vec![EventAction::Drama {
+                scene: "near".into(),
+            }],
+        ),
+        event(
+            Trigger::Reach {
+                who: Some("runner".into()),
+                pos: p(0, 7),
+                radius: 0,
+            },
+            vec![EventAction::Drama {
+                scene: "escaped".into(),
+            }],
+        ),
+    ];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(5, 1));
+    let runner = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(1, 7));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(5, 6));
+    tag(&mut st, runner, "runner");
+    assert_eq!(
+        st.begin(&pack),
+        vec![phase(Side::Player, 1)],
+        "enemies do not count as `who = None`"
+    );
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(5, 4),
+            },
+        )
+        .unwrap();
+    assert_eq!(ev[1..], [drama("near")]);
+    end_phase(&mut st, &pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: runner,
+                to: p(0, 7),
+            },
+        )
+        .unwrap();
+    assert_eq!(ev[1..], [drama("escaped")]);
+}
+
+#[test]
+fn adjacent_trigger_runs_a_duel() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::Adjacent {
+            a: "liu".into(),
+            b: "boss".into(),
+        },
+        vec![
+            EventAction::Drama {
+                scene: "duel".into(),
+            },
+            EventAction::Retreat {
+                target: "boss".into(),
+            },
+            EventAction::LevelUp {
+                target: "liu".into(),
+                amount: 2,
+            },
+        ],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let liu = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 1));
+    let boss = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 4));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    tag(&mut st, liu, "liu");
+    tag(&mut st, boss, "boss");
+    st.units[boss].drop = Some("bean".into());
+    st.units[boss].commander = true;
+    st.begin(&pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: liu,
+                to: p(3, 3),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        ev[1..],
+        [
+            drama("duel"),
+            BattleEvent::Retreated { unit: boss },
+            BattleEvent::LevelUp {
+                unit: liu,
+                level: 2,
+                hp_gain: 20,
+                mp_gain: 1
+            },
+            BattleEvent::LevelUp {
+                unit: liu,
+                level: 3,
+                hp_gain: 20,
+                mp_gain: 0
+            },
+            BattleEvent::Learned {
+                unit: liu,
+                strategy: "flood".into()
+            },
+        ]
+    );
+    assert!(st.items_found.is_empty(), "removed by an event: no drop");
+    assert_eq!(
+        (st.units[liu].level, st.units[liu].exp),
+        (3, 0),
+        "no EXP either"
+    );
+    assert_eq!(st.outcome, None);
+}
+
+#[test]
+fn hp_below_trigger_changes_ai_modes() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::HpBelow {
+            target: "boss".into(),
+            pct: 50,
+        },
+        vec![
+            EventAction::SetAi {
+                target: "boss".into(),
+                ai: AiMode::Flee,
+                ai_target: None,
+                ai_pos: None,
+            },
+            EventAction::SetAi {
+                target: "guard".into(),
+                ai: AiMode::Guard,
+                ai_target: None,
+                ai_pos: None,
+            },
+            EventAction::SetAi {
+                target: "hunter".into(),
+                ai: AiMode::Target,
+                ai_target: Some("liu".into()),
+                ai_pos: None,
+            },
+        ],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    let boss = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 4));
+    let guard = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(6, 6));
+    let hunter = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 0));
+    tag(&mut st, boss, "boss");
+    tag(&mut st, guard, "guard");
+    tag(&mut st, hunter, "hunter");
+    st.units[boss].hp = 300;
+    st.begin(&pack);
+    assert_eq!(
+        st.units[boss].ai,
+        AiMode::Aggressive,
+        "60% is not below 50%"
+    );
+    st.apply(
+        &pack,
+        Action::Attack {
+            unit: me,
+            target: boss,
+        },
+    )
+    .unwrap();
+    assert_eq!(st.units[boss].hp, 166);
+    assert_eq!(st.units[boss].ai, AiMode::Flee);
+    assert_eq!(
+        (st.units[guard].ai, st.units[guard].ai_pos),
+        (AiMode::Guard, Some(p(6, 6)))
+    );
+    assert_eq!(
+        (st.units[hunter].ai, st.units[hunter].ai_target.as_deref()),
+        (AiMode::Target, Some("liu"))
+    );
+}
+
+#[test]
+fn repeatable_events_fire_after_every_check() {
+    let mut def = battle(OPEN_MAP);
+    let everywhere = Trigger::Reach {
+        who: None,
+        pos: p(0, 0),
+        radius: 20,
+    };
+    def.events = vec![
+        EventDef {
+            trigger: everywhere.clone(),
+            once: false,
+            actions: vec![EventAction::GiveGold { amount: 10 }],
+        },
+        event(everywhere, vec![EventAction::GiveGold { amount: 1 }]),
+    ];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let a = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    let b = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    assert_eq!(st.gold_found, 11);
+    st.apply(&pack, Action::Wait { unit: a }).unwrap();
+    st.apply(&pack, Action::Wait { unit: b }).unwrap();
+    assert_eq!(st.gold_found, 31);
+    assert_eq!(st.fired, vec![true, true]);
+}
+
+#[test]
+fn spawn_uses_the_nearest_free_passable_tile() {
+    let mut def = battle(
+        "
+        ........
+        ........
+        ........
+        ....~...
+        ........
+        ........
+        ........
+        ........",
+    );
+    def.victory = vec![Condition::DefeatUnit {
+        target: "boss".into(),
+    }];
+    let mut boss = spawn(Side::Enemy, p(4, 4));
+    boss.group = Some("wave".into());
+    boss.tag = Some("boss".into());
+    let mut second = spawn(Side::Enemy, p(4, 3));
+    second.group = Some("wave".into());
+    def.units = vec![boss, second];
+    def.events = vec![event(
+        Trigger::TurnStart {
+            turn: 1,
+            side: Side::Enemy,
+        },
+        vec![EventAction::Spawn {
+            group: "wave".into(),
+        }],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(4, 4));
+    assert_eq!(
+        st.begin(&pack),
+        vec![phase(Side::Player, 1)],
+        "hidden units are not defeated"
+    );
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![
+            BattleEvent::Spawned { units: vec![0, 1] },
+            phase(Side::Enemy, 1)
+        ]
+    );
+    // (4, 4) is taken: distance 1 in row-major order is (4, 3) = river, then (3, 4).
+    assert_eq!(st.units[0].pos, p(3, 4));
+    // (4, 3) is a river: the first passable free tile at distance 1 is (4, 2).
+    assert_eq!(st.units[1].pos, p(4, 2));
+    assert!(st.units[0].is_active() && st.units[1].is_active());
+    assert_eq!(
+        st.next_ai_unit(),
+        Some(0),
+        "reinforcements act in the phase they arrive"
+    );
+}
+
+#[test]
+fn victory_and_defeat_event_actions() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::Reach {
+            who: None,
+            pos: p(7, 0),
+            radius: 0,
+        },
+        vec![EventAction::Victory],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(4, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(7, 0),
+            },
+        )
+        .unwrap();
+    assert_eq!(ev.last(), Some(&BattleEvent::Victory));
+    assert_eq!(st.outcome, Some(Outcome::Victory));
+
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::TurnStart {
+            turn: 2,
+            side: Side::Player,
+        },
+        vec![EventAction::Defeat],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(4, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    end_phase(&mut st, &pack);
+    assert_eq!(
+        end_phase(&mut st, &pack),
+        vec![
+            phase(Side::Player, 2),
+            BattleEvent::Defeat(DefeatReason::Event)
+        ]
+    );
+}
+
+// ----- victory, defeat, bonus --------------------------------------------------------------
+
+#[test]
+fn defeat_all_ignores_hidden_reinforcements_and_pays_the_reward() {
+    let mut def = battle(OPEN_MAP);
+    def.reward_gold = 500;
+    def.outro = Some("outro".into());
+    let mut rein = spawn(Side::Enemy, p(7, 7));
+    rein.group = Some("later".into());
+    def.units = vec![spawn(Side::Enemy, p(3, 4)), rein];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    st.units[0].hp = 1;
+    st.begin(&pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: me,
+                target: 0,
+            },
+        )
+        .unwrap();
+    assert_eq!(ev[ev.len() - 2..], [BattleEvent::Victory, drama("outro")]);
+    assert_eq!(st.outcome, Some(Outcome::Victory));
+    assert_eq!(st.gold_found, 500);
+    assert_eq!(st.units[1].state, UnitState::Hidden);
+}
+
+fn winning(victory: Condition) -> BattleDef {
+    let mut def = battle(OPEN_MAP);
+    def.victory = vec![victory];
+    def
+}
+
+/// `def` with a player unit 0 at (3, 3) tagged `liu`, a 1-HP enemy 1 at (3, 4) tagged `boss`,
+/// a healthy enemy far away and a second player unit 3 at (0, 7). Returns the state after `begin`.
+fn one_blow(def: BattleDef, commander: bool) -> (Pack, BattleState) {
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    let boss = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 4));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 7));
+    tag(&mut st, me, "liu");
+    tag(&mut st, boss, "boss");
+    st.units[boss].hp = 1;
+    st.units[boss].commander = commander;
+    st.begin(&pack);
+    (pack, st)
+}
+
+#[test]
+fn defeat_unit_commander_and_reach_victories() {
+    let kill = Action::Attack { unit: 0, target: 1 };
+    let (pack, mut st) = one_blow(
+        winning(Condition::DefeatUnit {
+            target: "boss".into(),
+        }),
+        false,
+    );
+    assert_eq!(
+        st.apply(&pack, kill.clone()).unwrap().last(),
+        Some(&BattleEvent::Victory)
+    );
+
+    let (pack, mut st) = one_blow(winning(Condition::DefeatCommander), true);
+    assert_eq!(
+        st.apply(&pack, kill.clone()).unwrap().last(),
+        Some(&BattleEvent::Victory)
+    );
+    let (pack, mut st) = one_blow(winning(Condition::DefeatCommander), false);
+    st.apply(&pack, kill).unwrap();
+    assert_eq!(st.outcome, None, "not a commander");
+
+    let reach = Condition::Reach {
+        who: Some("liu".into()),
+        pos: p(1, 6),
+        radius: 1,
+    };
+    let (pack, mut st) = one_blow(winning(reach.clone()), false);
+    st.apply(
+        &pack,
+        Action::Move {
+            unit: 3,
+            to: p(1, 7),
+        },
+    )
+    .unwrap();
+    assert_eq!(st.outcome, None, "another unit reaching does not count");
+    let (pack, mut st) = one_blow(winning(reach), false);
+    st.apply(
+        &pack,
+        Action::Move {
+            unit: 0,
+            to: p(1, 5),
+        },
+    )
+    .unwrap();
+    assert_eq!(st.outcome, Some(Outcome::Victory));
+}
+
+#[test]
+fn defeat_condition_and_victory_precedence() {
+    // Losing a protected allied unit loses the battle.
+    let mut def = battle(OPEN_MAP);
+    def.defeat = vec![Condition::UnitRetreated {
+        target: "envoy".into(),
+    }];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    let envoy = add(&mut st, &pack, Side::Ally, "infantry", 1, p(3, 4));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 5));
+    tag(&mut st, envoy, "envoy");
+    st.units[envoy].hp = 1;
+    st.begin(&pack);
+    end_phase(&mut st, &pack);
+    assert_eq!(st.phase, Side::Ally);
+    end_phase(&mut st, &pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: foe,
+                target: envoy,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        ev.last(),
+        Some(&BattleEvent::Defeat(DefeatReason::Condition))
+    );
+
+    // When a victory and a defeat condition become true together, victory wins.
+    let mut def = winning(Condition::DefeatUnit {
+        target: "boss".into(),
+    });
+    def.defeat = vec![Condition::UnitRetreated {
+        target: "boss".into(),
+    }];
+    let (pack, mut st) = one_blow(def, false);
+    st.apply(&pack, Action::Attack { unit: 0, target: 1 })
+        .unwrap();
+    assert_eq!(st.outcome, Some(Outcome::Victory));
+}
+
+#[test]
+fn the_lord_retreating_always_loses() {
+    // Defeating the last enemy triggers an event that removes the lord: the lord check wins.
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::UnitDefeated {
+            target: "boss".into(),
+        },
+        vec![EventAction::Retreat {
+            target: "liu_bei".into(),
+        }],
+    )];
+    let pack = pack_with(def);
+    let roster = vec![
+        officer_state(&pack, "liu_bei"),
+        officer_state(&pack, "guan_yu"),
+    ];
+    let mut st = BattleState::new(&pack, BATTLE, &campaign(roster, &[]), 1).unwrap();
+    let (liu, guan) = (0, 1);
+    assert!(st.units[liu].lord && st.units[guan].pos == p(1, 0));
+    let boss = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(1, 1));
+    tag(&mut st, boss, "boss");
+    st.units[boss].hp = 1;
+    st.begin(&pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: guan,
+                target: boss,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        ev.last(),
+        Some(&BattleEvent::Defeat(DefeatReason::LordRetreated))
+    );
+    assert!(!ev.contains(&BattleEvent::Victory));
+
+    // An enemy defeating the lord in combat.
+    let mut st = BattleState::new(
+        &pack,
+        BATTLE,
+        &campaign(vec![officer_state(&pack, "liu_bei")], &[]),
+        1,
+    )
+    .unwrap();
+    let foe = add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(0, 1));
+    add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(7, 7));
+    st.units[0].hp = 1;
+    st.begin(&pack);
+    end_phase(&mut st, &pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: foe,
+                target: 0,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        ev[ev.len() - 2..],
+        [
+            BattleEvent::Retreated { unit: 0 },
+            BattleEvent::Defeat(DefeatReason::LordRetreated)
+        ]
+    );
+}
+
+#[test]
+fn bonus_objective_is_announced_and_paid_at_victory() {
+    let mut def = battle(OPEN_MAP);
+    def.bonus = Some(BonusDef {
+        condition: Condition::Reach {
+            who: None,
+            pos: p(0, 3),
+            radius: 0,
+        },
+        exp: 30,
+        desc: String::new(),
+    });
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let a = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 1));
+    let b = add(&mut st, &pack, Side::Player, "infantry", 1, p(5, 5));
+    let gone = add(&mut st, &pack, Side::Player, "infantry", 1, p(7, 0));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(5, 6));
+    st.units[foe].hp = 1;
+    st.begin(&pack);
+    assert!(!st.bonus_done);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: a,
+                to: p(0, 3),
+            },
+        )
+        .unwrap();
+    assert_eq!(ev[1..], [BattleEvent::BonusAchieved { exp: 30 }]);
+    assert!(st.bonus_done);
+    st.apply(
+        &pack,
+        Action::Move {
+            unit: a,
+            to: p(0, 2),
+        },
+    )
+    .unwrap_err();
+    let ev = st.apply(&pack, Action::Wait { unit: a }).unwrap();
+    assert!(ev.is_empty(), "announced once");
+
+    st.units[gone].state = UnitState::Retreated;
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: b,
+                target: foe,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        ev[1..],
+        [
+            BattleEvent::Retreated { unit: foe },
+            BattleEvent::ExpGained {
+                unit: b,
+                amount: 38
+            },
+            BattleEvent::ExpGained {
+                unit: a,
+                amount: 30
+            },
+            BattleEvent::ExpGained {
+                unit: b,
+                amount: 30
+            },
+            BattleEvent::Victory,
+        ]
+    );
+    assert_eq!(
+        (st.units[a].exp, st.units[b].exp, st.units[gone].exp),
+        (30, 68, 0)
+    );
+}
