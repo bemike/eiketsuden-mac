@@ -1,0 +1,981 @@
+//! Maps of the DOS/V build and the `MAIN.EXE` tables that tie them to their chips.
+//!
+//! Every map is a grid of 16×16 planar cells (see [`crate::planar`]) indexing a *chip bank*:
+//!
+//! | archive | entry | layout | chip bank |
+//! |---|---|---|---|
+//! | `HEXZMAP.R3` | 0–57 | `[u8 W][u8 H][W×H chip bytes][(W/2)×(H/2) terrain bytes]` | `HEXZCHP` entry 0 (80 cells) followed by entry 1 or 2 |
+//! | `HEXZMAP.R3` | 58 | LF-separated EUC-KR map names | — |
+//! | `HEXBMAP.R3` | 0–4 / 5–8 | battle-scene backdrop 46×5 / ground 66×8, no header | `HEXBCHP` entry 0 (224 cells) |
+//! | `MMAP.R3` | 0–3 | `[W×H tiles][(W/2)×(H/2) route bits]`, size from `MAIN.EXE` | `MMAPBGPL` entry 0 (255 cells) |
+//! | `SMAP.R3` / `PMAP.R3` | 12 / 23 | `[32×20 tiles][31×20 walk grid][u8 n][n × (id, x, y)]` | `SMAPBGPL` entry 0 / 1 |
+//!
+//! The battle map's chip byte is a plain index into the 80 + 174/175-cell bank; values ≥ 80 are
+//! ordinary chips of the second set, not overlays. Which second set a map uses, the battle-scene
+//! strips per terrain, the terrain names and the campaign-map sizes are tables inside
+//! `MAIN.EXE`, located here through the code that reads them ([`find_exe_tables`]), so no table
+//! of the original is copied into this crate.
+
+use crate::image::IndexedImage;
+use crate::planar::{self, CELL_BYTES, CELL_PX};
+use std::fmt;
+
+/// Terrain codes of the battle maps (the game's name table has 20 entries; 18 and 19 are only
+/// set at run time by fire and flood tactics).
+pub const TERRAIN_COUNT: usize = 20;
+
+/// Neutral identifiers of the terrain codes, in code order. The game's own names are read from
+/// `MAIN.EXE` ([`ExeTables::terrain_names`]); these are our translations, checked against the
+/// graphics of the cells that carry each code.
+pub const TERRAIN_IDS: [&str; TERRAIN_COUNT] = [
+    "plain",
+    "forest",
+    "hill",
+    "stream",
+    "bridge",
+    "wall",
+    "castle",
+    "grassland",
+    "village",
+    "cliff",
+    "gate",
+    "wasteland",
+    "fence",
+    "fortress",
+    "barracks",
+    "granary",
+    "treasury",
+    "house",
+    "fire",
+    "flood",
+];
+
+/// Cells in `HEXZCHP.R3` entry 0, the part of the battle chip bank every map shares.
+pub const COMMON_CHIPS: usize = 80;
+
+/// Battle-scene backdrop strips (`HEXBMAP` entries of 230 bytes): 46 × 5 cells.
+pub const BACKDROP_CELLS: (usize, usize) = (46, 5);
+/// Battle-scene ground strips (`HEXBMAP` entries of 528 bytes): 66 × 8 cells.
+pub const GROUND_CELLS: (usize, usize) = (66, 8);
+
+/// Town (`SMAP`) and palace (`PMAP`) screens: 32 × 20 tiles.
+pub const TOWN_TILES: (usize, usize) = (32, 20);
+/// Their walk grid: 31 × 20 points; point `(x, y)` sits at pixel `(16x + 16, 16y + 8)`, on the
+/// seam between tiles `x` and `x + 1`.
+pub const TOWN_WALK: (usize, usize) = (31, 20);
+/// Walk-grid value of a point the characters cannot enter.
+pub const WALK_BLOCKED: u8 = 0xff;
+/// Walk-grid value of an ordinary walkable point (other values are walkable marked points:
+/// doors, exits and the like).
+pub const WALK_OPEN: u8 = 0x7f;
+
+/// Chapters with a campaign map (prologue and chapters 1–4, as `SNR0`–`SNR4`).
+pub const CHAPTERS: usize = 5;
+
+/// A map entry that does not have the documented shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MapError {
+    /// The entry length does not match the layout.
+    Length {
+        what: &'static str,
+        len: usize,
+        expected: String,
+    },
+    /// A dimension is zero or odd (maps are made of 2×2-chip cells).
+    Dimensions { width: usize, height: usize },
+    /// A tile refers to a cell the bank does not have.
+    ChipOutOfRange { chip: u8, cells: usize },
+    /// A bank is not a whole number of cells.
+    NotCells { len: usize },
+    /// A cell failed to decode.
+    Planar(String),
+}
+
+impl fmt::Display for MapError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MapError::Length {
+                what,
+                len,
+                expected,
+            } => write!(f, "{what}: {len} bytes, expected {expected}"),
+            MapError::Dimensions { width, height } => {
+                write!(
+                    f,
+                    "map of {width}×{height} chips (must be even and non-zero)"
+                )
+            }
+            MapError::ChipOutOfRange { chip, cells } => {
+                write!(f, "tile {chip} outside a bank of {cells} cells")
+            }
+            MapError::NotCells { len } => {
+                write!(f, "chip bank of {len} bytes is not a whole number of cells")
+            }
+            MapError::Planar(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for MapError {}
+
+// ----- battle maps ---------------------------------------------------------------------------
+
+/// A battle map of `HEXZMAP.R3`: chips (16 px) and terrain codes per 2×2-chip cell (32 px, the
+/// grid units move on).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BattleMap {
+    /// Width in chips.
+    pub width: usize,
+    /// Height in chips.
+    pub height: usize,
+    /// `width × height` chip indices into the bank, row-major.
+    pub chips: Vec<u8>,
+    /// `(width/2) × (height/2)` terrain codes (see [`TERRAIN_IDS`]), row-major.
+    pub terrain: Vec<u8>,
+}
+
+impl BattleMap {
+    /// Whether `entry` has the battle-map layout (the last entry of `HEXZMAP.R3`, the names,
+    /// does not).
+    pub fn matches(entry: &[u8]) -> bool {
+        BattleMap::parse(entry).is_ok()
+    }
+
+    pub fn parse(entry: &[u8]) -> Result<BattleMap, MapError> {
+        let [w, h, ..] = *entry else {
+            return Err(MapError::Length {
+                what: "battle map",
+                len: entry.len(),
+                expected: "a 2-byte size header".into(),
+            });
+        };
+        let (width, height) = (usize::from(w), usize::from(h));
+        let chips = width * height;
+        let expected = 2 + chips + chips / 4;
+        if entry.len() != expected {
+            return Err(MapError::Length {
+                what: "battle map",
+                len: entry.len(),
+                expected: format!("{expected} (2 + {width}×{height} × 5/4)"),
+            });
+        }
+        if width == 0 || height == 0 || width % 2 != 0 || height % 2 != 0 {
+            return Err(MapError::Dimensions { width, height });
+        }
+        Ok(BattleMap {
+            width,
+            height,
+            chips: entry[2..2 + chips].to_vec(),
+            terrain: entry[2 + chips..].to_vec(),
+        })
+    }
+
+    /// Width and height in cells (2×2 chips).
+    pub fn cells(&self) -> (usize, usize) {
+        (self.width / 2, self.height / 2)
+    }
+
+    /// Serialise (for fixtures).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![self.width as u8, self.height as u8];
+        out.extend_from_slice(&self.chips);
+        out.extend_from_slice(&self.terrain);
+        out
+    }
+}
+
+/// The map-name entry of `HEXZMAP.R3`: one name per map, separated by LF (the lines end in
+/// CR LF, except that the first two names are separated by a lone LF), ended by an empty line
+/// and `0x1A`.
+/// Returns the raw bytes of each line without the line end.
+pub fn parse_map_names(entry: &[u8]) -> Vec<Vec<u8>> {
+    let end = entry.iter().position(|&b| b == 0x1a).unwrap_or(entry.len());
+    let body = &entry[..end];
+    let mut lines: Vec<Vec<u8>> = body
+        .split(|&b| b == b'\n')
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line).to_vec())
+        .collect();
+    while lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
+/// The part of a name the game shows: the leading double-byte characters (it copies byte pairs
+/// while the lead byte is ≥ 0xA0, so trailing digits and spaces such as `1`/`2` of maps that
+/// share a place are not shown).
+pub fn display_name(raw: &[u8]) -> &[u8] {
+    let mut n = 0;
+    while n + 1 < raw.len() && raw[n] >= 0xa0 {
+        n += 2;
+    }
+    &raw[..n]
+}
+
+/// The battle chip bank of a map: `HEXZCHP` entry 0 followed by entry `second` (1 or 2).
+pub fn battle_bank(chipsets: &[Vec<u8>], second: usize) -> Result<Vec<u8>, MapError> {
+    let (Some(common), Some(rest)) = (chipsets.first(), chipsets.get(second)) else {
+        return Err(MapError::Length {
+            what: "HEXZCHP.R3",
+            len: chipsets.len(),
+            expected: format!("entries 0 and {second}"),
+        });
+    };
+    if common.len() != COMMON_CHIPS * CELL_BYTES {
+        return Err(MapError::Length {
+            what: "HEXZCHP.R3 entry 0",
+            len: common.len(),
+            expected: format!("{} ({COMMON_CHIPS} cells)", COMMON_CHIPS * CELL_BYTES),
+        });
+    }
+    if rest.len() % CELL_BYTES != 0 {
+        return Err(MapError::NotCells { len: rest.len() });
+    }
+    Ok([common.as_slice(), rest.as_slice()].concat())
+}
+
+/// Draw a grid of `width × height` tiles from a bank of cells.
+pub fn render_tiles(
+    tiles: &[u8],
+    width: usize,
+    height: usize,
+    bank: &[u8],
+) -> Result<IndexedImage, MapError> {
+    if bank.len() % CELL_BYTES != 0 {
+        return Err(MapError::NotCells { len: bank.len() });
+    }
+    if tiles.len() != width * height {
+        return Err(MapError::Length {
+            what: "tile grid",
+            len: tiles.len(),
+            expected: format!("{width}×{height}"),
+        });
+    }
+    let count = bank.len() / CELL_BYTES;
+    let cells = bank
+        .chunks_exact(CELL_BYTES)
+        .map(|c| planar::decode(c, CELL_PX, CELL_PX).map_err(|e| MapError::Planar(e.to_string())))
+        .collect::<Result<Vec<_>, _>>()?;
+    let px_width = width * CELL_PX;
+    let mut image = IndexedImage {
+        width: px_width,
+        height: height * CELL_PX,
+        pixels: vec![0; px_width * height * CELL_PX],
+    };
+    for (i, &t) in tiles.iter().enumerate() {
+        let cell = cells.get(usize::from(t)).ok_or(MapError::ChipOutOfRange {
+            chip: t,
+            cells: count,
+        })?;
+        let (x0, y0) = ((i % width) * CELL_PX, (i / width) * CELL_PX);
+        for y in 0..CELL_PX {
+            let dst = (y0 + y) * px_width + x0;
+            image.pixels[dst..dst + CELL_PX]
+                .copy_from_slice(&cell.pixels[y * CELL_PX..(y + 1) * CELL_PX]);
+        }
+    }
+    Ok(image)
+}
+
+/// How a chip of a battle bank is used by the maps: the terrain code of the cells it appears
+/// in, counted over every map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChipUse {
+    /// `HEXZCHP` entry the chip belongs to (0 = the shared 80 cells).
+    pub set: usize,
+    /// Index inside that entry.
+    pub index: usize,
+    /// How many cells of all maps contain the chip, per terrain code (index 20 = codes ≥ 20).
+    pub counts: [u32; TERRAIN_COUNT + 1],
+}
+
+impl ChipUse {
+    /// Total uses.
+    pub fn uses(&self) -> u32 {
+        self.counts.iter().sum()
+    }
+
+    /// The most frequent terrain code and its share of the uses (`None` when unused or only
+    /// under unknown codes).
+    pub fn dominant(&self) -> Option<(usize, f64)> {
+        let (code, &n) = self.counts[..TERRAIN_COUNT]
+            .iter()
+            .enumerate()
+            .max_by_key(|&(code, &n)| (n, std::cmp::Reverse(code)))?;
+        (n > 0).then(|| (code, f64::from(n) / f64::from(self.uses())))
+    }
+}
+
+/// Count, for every chip of the three `HEXZCHP` entries, the terrain codes of the cells it is
+/// drawn in. `maps` pairs each map with its second chip set (1 or 2).
+pub fn chip_uses(maps: &[(&BattleMap, usize)], set_sizes: [usize; 3]) -> Vec<ChipUse> {
+    let mut uses: Vec<ChipUse> = (0..3)
+        .flat_map(|set| {
+            (0..set_sizes[set]).map(move |index| ChipUse {
+                set,
+                index,
+                counts: [0; TERRAIN_COUNT + 1],
+            })
+        })
+        .collect();
+    let offset = |set: usize| set_sizes[..set].iter().sum::<usize>();
+    for &(map, second) in maps {
+        for (i, &chip) in map.chips.iter().enumerate() {
+            let (x, y) = (i % map.width, i / map.width);
+            let code = map.terrain[(y / 2) * (map.width / 2) + x / 2];
+            let chip = usize::from(chip);
+            let (set, index) = if chip < COMMON_CHIPS {
+                (0, chip)
+            } else {
+                (second, chip - COMMON_CHIPS)
+            };
+            if set < 3 && index < set_sizes[set] {
+                let slot = usize::from(code).min(TERRAIN_COUNT);
+                uses[offset(set) + index].counts[slot] += 1;
+            }
+        }
+    }
+    uses
+}
+
+// ----- battle-scene strips -------------------------------------------------------------------
+
+/// Kind of a `HEXBMAP.R3` entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneStrip {
+    /// Sky and horizon behind the duelling units (46 × 5 cells).
+    Backdrop,
+    /// The ground they stand on (66 × 8 cells).
+    Ground,
+}
+
+impl SceneStrip {
+    /// The strip kind of an entry, from its length.
+    pub fn of(entry: &[u8]) -> Option<SceneStrip> {
+        match entry.len() {
+            n if n == BACKDROP_CELLS.0 * BACKDROP_CELLS.1 => Some(SceneStrip::Backdrop),
+            n if n == GROUND_CELLS.0 * GROUND_CELLS.1 => Some(SceneStrip::Ground),
+            _ => None,
+        }
+    }
+
+    /// Width and height in cells.
+    pub fn cells(self) -> (usize, usize) {
+        match self {
+            SceneStrip::Backdrop => BACKDROP_CELLS,
+            SceneStrip::Ground => GROUND_CELLS,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            SceneStrip::Backdrop => "backdrop",
+            SceneStrip::Ground => "ground",
+        }
+    }
+}
+
+// ----- campaign maps -------------------------------------------------------------------------
+
+/// A campaign map of `MMAP.R3`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CampaignMap {
+    /// Width in tiles.
+    pub width: usize,
+    /// Height in tiles.
+    pub height: usize,
+    /// `width × height` tile indices into `MMAPBGPL` entry 0, row-major.
+    pub tiles: Vec<u8>,
+    /// `(width/2) × (height/2)` cells, `true` where the route network runs (stored as a cleared
+    /// bit, most significant bit first, rows packed without padding).
+    pub routes: Vec<bool>,
+}
+
+impl CampaignMap {
+    /// Parse an entry whose size is one of `sizes` (the table of `MAIN.EXE`); the entry length
+    /// must match exactly one distinct size.
+    pub fn parse(entry: &[u8], sizes: &[(usize, usize)]) -> Result<CampaignMap, MapError> {
+        let mut fits: Vec<(usize, usize)> = sizes
+            .iter()
+            .copied()
+            .filter(|&(w, h)| {
+                w % 2 == 0 && h % 2 == 0 && (w * h) % 32 == 0 && w * h + w * h / 32 == entry.len()
+            })
+            .collect();
+        fits.dedup();
+        let [(width, height)] = fits[..] else {
+            return Err(MapError::Length {
+                what: "campaign map",
+                len: entry.len(),
+                expected: format!(
+                    "W×H×33/32 for exactly one size of {}",
+                    sizes
+                        .iter()
+                        .map(|(w, h)| format!("{w}×{h}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            });
+        };
+        let n = width * height;
+        let routes = entry[n..]
+            .iter()
+            .flat_map(|&byte| (0..8).rev().map(move |bit| byte & (1 << bit) == 0))
+            .collect();
+        Ok(CampaignMap {
+            width,
+            height,
+            tiles: entry[..n].to_vec(),
+            routes,
+        })
+    }
+}
+
+// ----- town and palace maps ------------------------------------------------------------------
+
+/// A town (`SMAP.R3`) or palace (`PMAP.R3`) screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TownMap {
+    /// 32 × 20 tile indices into `SMAPBGPL` entry 0 (towns) or 1 (palaces).
+    pub tiles: Vec<u8>,
+    /// 31 × 20 walk-grid values ([`WALK_BLOCKED`], [`WALK_OPEN`] or a marker).
+    pub walk: Vec<u8>,
+    /// `(id, x, y)` placements on the walk grid (meaning of `id` not established).
+    pub objects: Vec<[u8; 3]>,
+}
+
+impl TownMap {
+    pub fn parse(entry: &[u8]) -> Result<TownMap, MapError> {
+        let tiles = TOWN_TILES.0 * TOWN_TILES.1;
+        let walk = TOWN_WALK.0 * TOWN_WALK.1;
+        let head = tiles + walk;
+        let count = entry.get(head).map(|&n| usize::from(n));
+        let expected = count.map(|n| head + 1 + 3 * n);
+        if expected != Some(entry.len()) {
+            return Err(MapError::Length {
+                what: "town map",
+                len: entry.len(),
+                expected: format!("{} + 1 + 3 × objects", head),
+            });
+        }
+        Ok(TownMap {
+            tiles: entry[..tiles].to_vec(),
+            walk: entry[tiles..head].to_vec(),
+            objects: entry[head + 1..]
+                .chunks_exact(3)
+                .map(|c| [c[0], c[1], c[2]])
+                .collect(),
+        })
+    }
+}
+
+// ----- tables in MAIN.EXE --------------------------------------------------------------------
+
+/// The map tables of `MAIN.EXE`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExeTables {
+    /// File offset of the data segment (DGROUP).
+    pub data_base: usize,
+    /// Battle maps that use `HEXZCHP` entry 2; every other map uses entry 1.
+    pub second_set_maps: Vec<u16>,
+    /// `HEXBMAP` backdrop entry per terrain code.
+    pub backdrop: Vec<u8>,
+    /// `HEXBMAP` ground entry per terrain code.
+    pub ground: Vec<u8>,
+    /// The game's terrain names (raw bytes, EUC-KR in the Korean build), when found.
+    pub terrain_names: Option<Vec<Vec<u8>>>,
+    /// Campaign-map size (width, height in tiles) per chapter.
+    pub campaign_sizes: Vec<(usize, usize)>,
+}
+
+impl ExeTables {
+    /// `HEXZCHP` entry (1 or 2) holding the rest of battle map `map`'s chip bank.
+    pub fn chip_set_for(&self, map: usize) -> usize {
+        if self.second_set_maps.iter().any(|&m| usize::from(m) == map) {
+            2
+        } else {
+            1
+        }
+    }
+}
+
+/// Why the tables could not be located.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExeTableError {
+    /// Not an MZ executable with the C runtime start-up that loads the data segment.
+    NoDataSegment,
+    /// A code pattern was not found exactly once.
+    Code { what: &'static str, found: usize },
+    /// A table address lies outside the file or has an implausible content.
+    Table { what: &'static str, detail: String },
+}
+
+impl fmt::Display for ExeTableError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExeTableError::NoDataSegment => write!(
+                f,
+                "no MZ header with the C start-up code that sets the data segment"
+            ),
+            ExeTableError::Code { what, found } => write!(
+                f,
+                "the code that reads the {what} was found {found} times (expected once)"
+            ),
+            ExeTableError::Table { what, detail } => write!(f, "{what}: {detail}"),
+        }
+    }
+}
+
+impl std::error::Error for ExeTableError {}
+
+/// A code pattern; `None` matches any byte.
+type Pattern = &'static [Option<u8>];
+
+macro_rules! pat {
+    (@ _) => { None };
+    (@ $b:literal) => { Some($b) };
+    ($($b:tt)*) => { &[$(pat!(@ $b)),*] };
+}
+
+/// C start-up: DOS version check, then `mov di, DGROUP`.
+const STARTUP: Pattern =
+    pat!(0xb4 0x30 0xcd 0x21 0x3c 0x02 0x73 0x05 0x33 0xc0 0x06 0x50 0xcb 0xbf _ _);
+/// `cmp [bx+list], ax / jz / inc byte [bp-1] / cmp byte [bp-1], count`: the membership test of
+/// the second-chip-set map list.
+const SECOND_SET_LOOP: Pattern = pat!(0x39 0x87 _ _ 0x74 0x0b 0xfe 0x46 0xff 0x80 0x7e 0xff _);
+/// `mov bl, [si+0x0c] / sub bh, bh / mov al, [bx+table]`: terrain → scene strip lookups (the
+/// backdrop table first, then the ground table).
+const SCENE_LOOKUP: Pattern = pat!(0x8a 0x5c 0x0c 0x2a 0xff 0x8a 0x87 _ _);
+/// `mov bl, [bp-4] / sub bh, bh / mov al, [bx+si+table]`: campaign-map size by chapter × 2 +
+/// axis.
+const CAMPAIGN_SIZE: Pattern = pat!(0x8a 0x5e 0xfc 0x2a 0xff 0x8a 0x80 _ _ 0x88 0x46 0xff);
+
+fn find_all(hay: &[u8], pattern: Pattern) -> Vec<usize> {
+    if hay.len() < pattern.len() {
+        return Vec::new();
+    }
+    (0..=hay.len() - pattern.len())
+        .filter(|&i| {
+            pattern
+                .iter()
+                .zip(&hay[i..])
+                .all(|(p, &b)| p.is_none_or(|p| p == b))
+        })
+        .collect()
+}
+
+fn u16_at(data: &[u8], at: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([*data.get(at)?, *data.get(at + 1)?]))
+}
+
+/// File offset of the data segment: the MZ header size plus DGROUP, which the C start-up at
+/// the entry point loads with `mov di, DGROUP`.
+fn data_base(exe: &[u8]) -> Result<usize, ExeTableError> {
+    if exe.get(..2) != Some(b"MZ") {
+        return Err(ExeTableError::NoDataSegment);
+    }
+    let field = |at| u16_at(exe, at).map(usize::from);
+    let (Some(header), Some(ip), Some(cs)) = (field(8), field(0x14), field(0x16)) else {
+        return Err(ExeTableError::NoDataSegment);
+    };
+    let entry = header * 16 + cs * 16 + ip;
+    let code = exe
+        .get(entry..entry + STARTUP.len())
+        .ok_or(ExeTableError::NoDataSegment)?;
+    if !find_all(code, STARTUP).contains(&0) {
+        return Err(ExeTableError::NoDataSegment);
+    }
+    let dgroup = usize::from(u16_at(code, STARTUP.len() - 2).unwrap_or(0));
+    Ok(header * 16 + dgroup * 16)
+}
+
+fn unique(exe: &[u8], pattern: Pattern, what: &'static str) -> Result<usize, ExeTableError> {
+    match find_all(exe, pattern)[..] {
+        [at] => Ok(at),
+        ref found => Err(ExeTableError::Code {
+            what,
+            found: found.len(),
+        }),
+    }
+}
+
+fn table<'a>(
+    exe: &'a [u8],
+    base: usize,
+    address: u16,
+    len: usize,
+    what: &'static str,
+) -> Result<&'a [u8], ExeTableError> {
+    let at = base + usize::from(address);
+    exe.get(at..at + len).ok_or_else(|| ExeTableError::Table {
+        what,
+        detail: format!("address {address:#06x} ({at:#x}) outside the file"),
+    })
+}
+
+/// The terrain names: a table of [`TERRAIN_COUNT`] string addresses stored right after the
+/// strings, which follow one another. Searched in the `window` after the map list.
+fn terrain_names(exe: &[u8], base: usize, window: std::ops::Range<usize>) -> Option<Vec<Vec<u8>>> {
+    let window = window.start..window.end.min(exe.len());
+    for at in window.clone() {
+        let pointers: Option<Vec<usize>> = (0..TERRAIN_COUNT)
+            .map(|k| u16_at(exe, at + 2 * k).map(|p| base + usize::from(p)))
+            .collect();
+        let Some(pointers) = pointers else { continue };
+        if pointers[0] < window.start || pointers[0] >= at {
+            continue;
+        }
+        let mut names = Vec::with_capacity(TERRAIN_COUNT);
+        let mut ok = true;
+        for (k, &p) in pointers.iter().enumerate() {
+            let Some(len) = exe[p.min(at)..at].iter().position(|&b| b == 0) else {
+                ok = false;
+                break;
+            };
+            let next = p + len + 1;
+            let chained = pointers.get(k + 1).map_or(next <= at, |&q| q == next);
+            if p >= at || len == 0 || !chained {
+                ok = false;
+                break;
+            }
+            names.push(exe[p..p + len].to_vec());
+        }
+        if ok {
+            return Some(names);
+        }
+    }
+    None
+}
+
+/// Locate the map tables of `MAIN.EXE` through the code that reads them.
+pub fn find_exe_tables(exe: &[u8]) -> Result<ExeTables, ExeTableError> {
+    let base = data_base(exe)?;
+
+    let at = unique(exe, SECOND_SET_LOOP, "second chip-set map list")?;
+    let list_address = u16_at(exe, at + 2).unwrap_or(0);
+    let count = usize::from(exe[at + SECOND_SET_LOOP.len() - 1]);
+    let list = table(
+        exe,
+        base,
+        list_address,
+        2 * count,
+        "second chip-set map list",
+    )?;
+    let second_set_maps: Vec<u16> = list
+        .chunks_exact(2)
+        .map(|w| u16::from_le_bytes([w[0], w[1]]))
+        .collect();
+    if count == 0 || second_set_maps.windows(2).any(|w| w[0] >= w[1]) {
+        return Err(ExeTableError::Table {
+            what: "second chip-set map list",
+            detail: format!("{second_set_maps:?} is not an ascending list of map numbers"),
+        });
+    }
+
+    let lookups = find_all(exe, SCENE_LOOKUP);
+    let [backdrop_at, ground_at] = lookups[..] else {
+        return Err(ExeTableError::Code {
+            what: "terrain → battle-scene tables",
+            found: lookups.len(),
+        });
+    };
+    let address = |at: usize| u16_at(exe, at + SCENE_LOOKUP.len() - 2).unwrap_or(0);
+    let (backdrop_address, ground_address) = (address(backdrop_at), address(ground_at));
+    if usize::from(ground_address.wrapping_sub(backdrop_address)) != TERRAIN_COUNT {
+        return Err(ExeTableError::Table {
+            what: "terrain → battle-scene tables",
+            detail: format!(
+                "tables at {backdrop_address:#06x} and {ground_address:#06x} are not \
+                 {TERRAIN_COUNT} entries apart"
+            ),
+        });
+    }
+    let backdrop = table(exe, base, backdrop_address, TERRAIN_COUNT, "backdrop table")?.to_vec();
+    let ground = table(exe, base, ground_address, TERRAIN_COUNT, "ground table")?.to_vec();
+
+    let at = unique(exe, CAMPAIGN_SIZE, "campaign-map sizes")?;
+    let sizes = table(
+        exe,
+        base,
+        u16_at(exe, at + 7).unwrap_or(0),
+        2 * CHAPTERS,
+        "campaign-map sizes",
+    )?;
+    let campaign_sizes: Vec<(usize, usize)> = sizes
+        .chunks_exact(2)
+        .map(|p| (usize::from(p[0]), usize::from(p[1])))
+        .collect();
+    if campaign_sizes.iter().any(|&(w, h)| w == 0 || h == 0) {
+        return Err(ExeTableError::Table {
+            what: "campaign-map sizes",
+            detail: format!("{campaign_sizes:?} has an empty size"),
+        });
+    }
+
+    let list_end = base + usize::from(list_address) + 2 * count;
+    let terrain_names = terrain_names(exe, base, list_end..list_end + 512);
+    Ok(ExeTables {
+        data_base: base,
+        second_set_maps,
+        backdrop,
+        ground,
+        terrain_names,
+        campaign_sizes,
+    })
+}
+
+/// Contents of a synthetic `MAIN.EXE` for fixtures.
+#[derive(Debug, Clone)]
+pub struct ExeFixture<'a> {
+    pub second_set_maps: &'a [u16],
+    pub backdrop: [u8; TERRAIN_COUNT],
+    pub ground: [u8; TERRAIN_COUNT],
+    pub terrain_names: &'a [&'a [u8]],
+    pub campaign_sizes: [(u8, u8); CHAPTERS],
+}
+
+/// Build a small MZ executable whose start-up and table-reading code have the shapes
+/// [`find_exe_tables`] looks for (for this crate's tests and the golden fixtures). `len` pads
+/// it with `0x90` to at least that many bytes.
+pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
+    const HEADER: usize = 0x20;
+    const DGROUP: usize = 0x10; // data at HEADER + 0x100
+    let mut exe = vec![0x90u8; len.max(0x400)];
+    exe[..2].copy_from_slice(b"MZ");
+    exe[2..HEADER].fill(0);
+    exe[8..10].copy_from_slice(&((HEADER / 16) as u16).to_le_bytes());
+    // Entry point CS:IP = 0:0 → the start-up code right after the header.
+    let mut code: Vec<u8> = STARTUP
+        .iter()
+        .take(STARTUP.len() - 2)
+        .map(|b| b.unwrap_or(0))
+        .collect();
+    code.extend((DGROUP as u16).to_le_bytes());
+    // Data segment layout: list, names, name pointers, scene tables, campaign sizes.
+    let mut data = Vec::new();
+    let list_address = data.len() as u16;
+    data.extend(f.second_set_maps.iter().flat_map(|m| m.to_le_bytes()));
+    data.extend(b"B:hexzmap.r3\0");
+    let mut pointers = Vec::new();
+    for name in f.terrain_names {
+        pointers.push(data.len() as u16);
+        data.extend_from_slice(name);
+        data.push(0);
+    }
+    if data.len() % 2 == 1 {
+        data.push(0);
+    }
+    data.extend(pointers.iter().flat_map(|p| p.to_le_bytes()));
+    let scene_address = data.len() as u16;
+    data.extend(f.backdrop);
+    data.extend(f.ground);
+    let size_address = data.len() as u16;
+    data.extend(f.campaign_sizes.iter().flat_map(|&(w, h)| [w, h]));
+
+    let mut put = |pattern: Pattern, fill: &[u8]| {
+        let mut fill = fill.iter();
+        for p in pattern {
+            code.push(p.unwrap_or_else(|| *fill.next().unwrap_or(&0)));
+        }
+        code.extend([0xcb]); // retf, keeps the snippets apart
+    };
+    let [lo, hi] = list_address.to_le_bytes();
+    put(SECOND_SET_LOOP, &[lo, hi, f.second_set_maps.len() as u8]);
+    let [lo, hi] = scene_address.to_le_bytes();
+    put(SCENE_LOOKUP, &[lo, hi]);
+    let [lo, hi] = (scene_address + TERRAIN_COUNT as u16).to_le_bytes();
+    put(SCENE_LOOKUP, &[lo, hi]);
+    let [lo, hi] = size_address.to_le_bytes();
+    put(CAMPAIGN_SIZE, &[lo, hi]);
+
+    let data_at = HEADER + DGROUP * 16;
+    assert!(
+        HEADER + code.len() <= data_at,
+        "fixture code overlaps its data"
+    );
+    exe[HEADER..HEADER + code.len()].copy_from_slice(&code);
+    if exe.len() < data_at + data.len() {
+        exe.resize(data_at + data.len(), 0x90);
+    }
+    exe[data_at..data_at + data.len()].copy_from_slice(&data);
+    exe
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil;
+
+    fn fixture_exe() -> Vec<u8> {
+        let names: Vec<Vec<u8>> = TERRAIN_IDS.iter().map(|s| s.as_bytes().to_vec()).collect();
+        let refs: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
+        build_exe_fixture(
+            &ExeFixture {
+                second_set_maps: &[0, 3, 7],
+                backdrop: std::array::from_fn(|i| (i % 5) as u8),
+                ground: std::array::from_fn(|i| 5 + (i % 4) as u8),
+                terrain_names: &refs,
+                campaign_sizes: [(96, 96), (96, 96), (72, 112), (120, 88), (112, 128)],
+            },
+            0,
+        )
+    }
+
+    #[test]
+    fn exe_tables_are_found_through_their_code() {
+        let t = find_exe_tables(&fixture_exe()).unwrap();
+        assert_eq!(t.second_set_maps, vec![0, 3, 7]);
+        assert_eq!((t.chip_set_for(3), t.chip_set_for(4)), (2, 1));
+        assert_eq!(t.backdrop[6], 1);
+        assert_eq!(t.ground[6], 7);
+        assert_eq!(t.campaign_sizes[2], (72, 112));
+        let names = t.terrain_names.unwrap();
+        assert_eq!(names.len(), TERRAIN_COUNT);
+        assert_eq!(names[19], b"flood");
+    }
+
+    #[test]
+    fn exe_tables_fail_explicitly() {
+        assert_eq!(
+            find_exe_tables(b"MZ not an executable"),
+            Err(ExeTableError::NoDataSegment)
+        );
+        let mut exe = fixture_exe();
+        // Break the membership loop: the list can no longer be located.
+        let at = find_all(&exe, SECOND_SET_LOOP)[0];
+        exe[at] = 0x90;
+        assert_eq!(
+            find_exe_tables(&exe),
+            Err(ExeTableError::Code {
+                what: "second chip-set map list",
+                found: 0
+            })
+        );
+    }
+
+    #[test]
+    fn battle_map_layout() {
+        let map = BattleMap {
+            width: 4,
+            height: 2,
+            chips: (0..8).collect(),
+            terrain: vec![1, 9],
+        };
+        let bytes = map.encode();
+        assert_eq!(bytes.len(), 2 + 8 + 2);
+        assert_eq!(BattleMap::parse(&bytes), Ok(map.clone()));
+        assert_eq!(map.cells(), (2, 1));
+        assert!(!BattleMap::matches(&bytes[..11]));
+        // Odd sizes cannot form 2×2 cells.
+        let mut odd = vec![3u8, 4];
+        odd.resize(2 + 12 + 3, 0);
+        assert!(matches!(
+            BattleMap::parse(&odd),
+            Err(MapError::Dimensions { .. })
+        ));
+    }
+
+    #[test]
+    fn names_split_on_line_feeds() {
+        let names =
+            parse_map_names(b"\xbb\xe7\xbc\xf6\n\xc8\xa3\r\n\xbd\xc5\xb5\xb5 1\r\n\r\n\x1a\r\n");
+        assert_eq!(
+            names,
+            vec![
+                b"\xbb\xe7\xbc\xf6".to_vec(),
+                b"\xc8\xa3".to_vec(),
+                b"\xbd\xc5\xb5\xb5 1".to_vec()
+            ]
+        );
+        assert_eq!(display_name(&names[2]), b"\xbd\xc5\xb5\xb5");
+    }
+
+    #[test]
+    fn tiles_index_the_concatenated_bank() {
+        let common = testutil::cells(COMMON_CHIPS);
+        let second = testutil::cells(3);
+        let bank = battle_bank(&[common.clone(), vec![], second.clone()], 2).unwrap();
+        assert_eq!(bank.len(), (COMMON_CHIPS + 3) * CELL_BYTES);
+        let image = render_tiles(&[0, 81], 2, 1, &bank).unwrap();
+        let cell = |data: &[u8], i: usize| {
+            planar::decode(&data[i * CELL_BYTES..(i + 1) * CELL_BYTES], 16, 16).unwrap()
+        };
+        let (a, b) = (cell(&common, 0), cell(&second, 1));
+        for y in 0..16 {
+            assert_eq!(
+                &image.pixels[y * 32..y * 32 + 16],
+                &a.pixels[y * 16..y * 16 + 16]
+            );
+            assert_eq!(
+                &image.pixels[y * 32 + 16..y * 32 + 32],
+                &b.pixels[y * 16..y * 16 + 16]
+            );
+        }
+        assert_eq!(
+            render_tiles(&[83], 1, 1, &bank),
+            Err(MapError::ChipOutOfRange {
+                chip: 83,
+                cells: 83
+            })
+        );
+        assert!(battle_bank(&[vec![0; 128]], 1).is_err());
+    }
+
+    #[test]
+    fn chip_uses_follow_the_cells() {
+        // 4×2 chips = 2×1 cells: left cell forest (1), right cell village (8).
+        let map = BattleMap {
+            width: 4,
+            height: 2,
+            chips: vec![0, 0, 80, 81, 0, 0, 80, 81],
+            terrain: vec![1, 8],
+        };
+        let uses = chip_uses(&[(&map, 2)], [80, 2, 2]);
+        let find = |set, index| {
+            uses.iter()
+                .find(|u| u.set == set && u.index == index)
+                .unwrap()
+        };
+        assert_eq!(find(0, 0).dominant(), Some((1, 1.0)));
+        assert_eq!(find(2, 0).dominant(), Some((8, 1.0)));
+        assert_eq!(find(2, 1).uses(), 2);
+        assert_eq!(find(1, 0).dominant(), None);
+    }
+
+    #[test]
+    fn campaign_map_size_and_routes() {
+        let (w, h) = (16, 4);
+        let mut entry = vec![3u8; w * h];
+        entry.extend([0b0111_1111, 0xff]); // first cell is a route
+        let map = CampaignMap::parse(&entry, &[(96, 96), (16, 4)]).unwrap();
+        assert_eq!((map.width, map.height), (16, 4));
+        assert_eq!(map.routes.len(), 16);
+        assert!(map.routes[0] && !map.routes[1]);
+        assert!(CampaignMap::parse(&entry[1..], &[(16, 4)]).is_err());
+        // Rows of the route mask are packed without padding: 24×4 tiles = 12×2 cells = 3 bytes,
+        // the second row starts at bit 12.
+        let mut entry = vec![0u8; 24 * 4];
+        entry.extend([0xff, 0xf7, 0xff]);
+        let map = CampaignMap::parse(&entry, &[(24, 4)]).unwrap();
+        assert_eq!(map.routes.iter().position(|&r| r), Some(12));
+    }
+
+    #[test]
+    fn town_map_layout() {
+        let mut entry = vec![1u8; 640];
+        entry.extend(vec![WALK_BLOCKED; 620]);
+        entry.push(2);
+        entry.extend([5, 30, 19, 6, 0, 0]);
+        let town = TownMap::parse(&entry).unwrap();
+        assert_eq!(town.objects, vec![[5, 30, 19], [6, 0, 0]]);
+        assert_eq!(town.walk.len(), 620);
+        assert!(TownMap::parse(&entry[..entry.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn scene_strip_kinds() {
+        assert_eq!(SceneStrip::of(&[0; 230]), Some(SceneStrip::Backdrop));
+        assert_eq!(SceneStrip::of(&[0; 528]), Some(SceneStrip::Ground));
+        assert_eq!(SceneStrip::of(&[0; 3]), None);
+    }
+}

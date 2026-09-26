@@ -33,6 +33,7 @@ pub mod extract;
 pub mod image;
 pub mod install;
 pub mod ls11;
+pub mod maps;
 pub mod palette;
 pub mod planar;
 pub mod probe;

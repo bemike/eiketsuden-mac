@@ -66,7 +66,8 @@ EUC-KR 한글입니다. 그래서 헤더만으로는 언어를 정하지 않고 
 | 오프닝·엔딩 그림 | `OPGRP`, `END1GRP`, `END2GRP` | **지원 안 함** (컨테이너만 검증) | 전체 화면 한 장이 아니라 `NPK016` 압축 그림(코덱 미해독)과 크기 정보가 없는 packed planar 그림·1비트 마스크의 묶음. 크기는 `OPEN.EXE`/`END.EXE` 코드에 있음(9.5절) |
 | `MARK.R3`, `SSCCHR1/2.R3` | | **지원 안 함** | 배치 미해독(9.5절) |
 | 무장·아이템 이름 | `BAKDATA.R3` | **지원 안 함** (명시 보고) | 레코드 바이트 배치가 공개되지 않음 |
-| 전투·전략·도시 맵, 규칙 표, 시나리오, 음악, 세이브 | `HEXZMAP` 등 | 아직 없음 | 로드맵(7절) 참고 |
+| 전투 맵·전투 장면 배경·캠페인 맵·도시/궁궐 화면 | `HEXZMAP`, `HEXBMAP`, `MMAP`, `SMAP`, `PMAP` (+ `MAIN.EXE` 표) | **추출** → `maps/*.json`, `gfx/original/maps/...`, **실물 검증(눈으로)** | 높음. 칩 뱅크 구성·지형 코드·이름·크기를 `MAIN.EXE`의 읽는 코드로 확인(9.6절). 58개 전투 맵 모두 칩이 뱅크 안에 있고 눈으로 본 결과 강·숲·성·다리·마을이 제자리. 팔레트 슬롯은 게임이 실행 중에 고르므로 추출기는 슬롯 1(도시 0, 궁궐 2)을 씀. `SMAP`/`PMAP` 물체 목록 `(id, x, y)`의 의미는 **미확인** |
+| 규칙 표, 시나리오, 음악, 세이브 | `MAIN.EXE`, `SNR?D` 등 | 아직 없음 | 로드맵(7절) 참고 |
 
 ### 3.1 6바이트 테이블과 TF-DCE 압축 (직접 분석)
 
@@ -148,7 +149,7 @@ hero-tools original probe "D:/Games/영걸전/GAME" --out manifest.json
 ### 4.3 추출
 
 ```sh
-hero-tools original extract "D:/Games/영걸전/GAME" --out "D:/영걸전-원작" [--text] [--sprites] [--portraits]
+hero-tools original extract "D:/Games/영걸전/GAME" --out "D:/영걸전-원작" [--text] [--sprites] [--portraits] [--maps]
 ```
 
 * 종류 옵션이 없으면 모든 종류를 시도하고, 지원하지 않는 종류(이름)는 보고만 합니다.
@@ -171,6 +172,13 @@ hero-tools original extract "D:/Games/영걸전/GAME" --out "D:/영걸전-원작
                                          다른 슬롯을 쓰는 항목은 sheets/<파일>-slot<N>.png)
 <out>/gfx/original/facedat/000.png ...   얼굴 240개(64×80, 색 0 불투명), 미디어 키 original/facedat/000
 <out>/text/snr0m.json ...                섹션 → 블록(섹션 기준 상대 오프셋, 텍스트)
+<out>/maps/battle.json                   전투 맵 목록(이름·크기·칩 세트), 지형 표(코드·이름·전투 장면
+                                         배경), 칩별 지형 통계(9.6절)
+<out>/maps/battle/000.json ...           전투 맵 하나의 칩 격자(16 px)와 지형 격자(32 px 칸)
+<out>/maps/scene.json, campaign.json,    전투 장면 띠, 캠페인 맵(타일·행군로), 도시·궁궐 화면(타일·
+<out>/maps/town.json                     보행 격자·표시 지점·물체)
+<out>/gfx/original/maps/battle/000.png   전투 맵 그림, battle/chips-1.png·chips-2.png = 칩 뱅크(번호순 16개씩)
+<out>/gfx/original/maps/{scene,campaign,town}/...  전투 장면 띠, 캠페인 맵, smap-/pmap- 화면
 ```
 
 ### 4.4 게임에서 쓰기
@@ -232,7 +240,7 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
   디코딩은 `tests/tfdce_golden.rs`가 따로 확인합니다(240개 64×80·2560바이트·플레인 3 = 0, 38개 크기 목록). 블록 수는 다른 프로젝트의 집계라
   세는 방식이 다를 수 있습니다(불일치 시 메시지에 명시).
   골든 테스트는 주제별로 나뉘어 있어(`golden_korean_ls11_archives`, `_table_containers`, `_map_geometry`,
-  `_scenario_text`, `_palette`, `_sprites`, `golden_every_container_validates`, `golden_extraction_succeeds`)
+  `_maps`, `_scenario_text`, `_palette`, `_sprites`, `golden_every_container_validates`, `golden_extraction_succeeds`)
   실패하면 어느 형식이 틀렸는지 이름으로 드러납니다. 검증한 사본에서 손상된 파일은 SHA-256으로 기록해
   (`KNOWN_DAMAGED`) 정확히 기록된 오류로 실패하는지와 손상 전 항목이 복원되는지만 확인합니다.
 * **실물 검증 현황 (2026-09, 한국어 DOS/V 사본 1개)**: LS11 코덱·두 디렉터리 바이트 순서, 판본 식별,
@@ -249,7 +257,7 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 | P1 컨테이너 | LS11(+인코더), 6바이트 테이블 | **완료**. 음악용 테이블 컨테이너는 P7과 함께 |
 | P2 텍스트 | `SNR?M`, `IPPAN0M` (EUC-KR/Big5) | **완료** (화자 번호 분리는 P6 필요). 이름(`BAKDATA`)은 P5 |
 | P3 그래픽 | 플레인 셀·팔레트 → PNG | **부분**: 스프라이트·칩·배경 셀·전투 UI 아이콘 완료(실물로 확인), 얼굴(TF-DCE) 완료. `PACKGRP` 화면은 디코딩만 되고 추출 종류는 아직 없음. 오프닝/엔딩(`NPK016`)·`MARK`·`SSCCHR`는 미지원 |
-| P4 맵 | `HEXZMAP` 59개, `MMAP`, `SMAP`/`PMAP` → 타일 맵 JSON + 참고 PNG | 미착수 (칩 매핑 불명) |
+| P4 맵 | `HEXZMAP` 59개, `HEXBMAP`, `MMAP`, `SMAP`/`PMAP` → 타일 맵 JSON + 참고 PNG | **완료**(실물로 확인, 9.6절). 남은 것: 맵별 팔레트 슬롯(P6 시나리오 레코드), `SMAP`/`PMAP` 물체 id의 의미, 지형 코드 255 한 칸 |
 | P5 규칙·무장 | `BAKDATA` 배치 규명, `MAIN.EXE` 병종·지형·책략 표 서명 검색 | 미착수 |
 | P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | 미착수 |
 | P7 음악 | OPL2 시퀀스 → FM 합성 | 미착수 (합성기 라이선스·크기 검토 필요) |
@@ -362,6 +370,52 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   첫 바이트들이 개수·번호 목록처럼 보임): 표준 셀·packed·plane 순차 배치 어느 것으로도 그림이 되지
   않았습니다. `SSCCHR2`는 16×16 조각 20개 묶음, `SSCCHR1`은 그 조각의 배치표일 가능성이 있지만 미확인입니다.
 
+### 9.6 맵 (전투·전투 장면·캠페인·도시)
+
+전부 16×16 플레인 셀(9.4절)을 번호로 가리키는 격자입니다. **정정**: 조사 노트의 "10비트 타일 번호"와
+"175 이상은 오버레이" 가설은 틀렸습니다.
+
+* **전투 맵 `HEXZMAP.R3` 0–57번**: `[u8 W][u8 H][W×H 칩 바이트][(W/2)×(H/2) 지형 바이트]`
+  (그래서 길이가 W×H×5/4 + 2). 칩은 16 px, 지형은 2×2 칩 = 32 px 칸(유닛이 움직이는 격자) 하나에 1바이트.
+  W 32–80, H 22–48, 모두 짝수.
+* **칩 뱅크**: `MAIN.EXE`가 `HEXZCHP` 0번(80셀)을 버퍼 앞에, 1번(174셀) 또는 2번(175셀)을 그 뒤(+0x2800 =
+  80 × 128바이트)에 읽습니다. 칩 바이트는 이 뱅크의 번호 그대로입니다(0–79 공통, 80– 두 번째 세트).
+  2번을 쓰는 맵은 `MAIN.EXE`의 u16 목록 19개(0, 1, 4, 8, 10, 16, 20, 28, 29, 30, 35, 36, 39, 40, 42, 43, 44,
+  50, 52)이고 나머지는 1번입니다. 이 목록은 맵 번호를 목록과 비교하는 루프
+  (`39 87 <목록> 74 0B FE 46 FF 80 7E FF <개수>`)로 찾습니다. 칩 254를 쓰는 맵 0·52가 목록에 있고(1번
+  세트로는 253까지뿐), 58개 모두 이 규칙으로 뱅크 안에 들어가며, 그린 결과가 이음매 없이 맞습니다.
+* **이름**: `HEXZMAP` 58번(390바이트)은 그림이 아니라 EUC-KR 맵 이름 목록입니다. 줄은 LF로 나뉘고(대부분
+  CR LF, 0·1번 사이만 LF), 빈 줄과 `0x1A`로 끝납니다. 게임은 맵 번호만큼 LF를 건너뛴 뒤 선행 바이트
+  0xA0 이상인 2바이트 문자만 복사하므로 `신야1`처럼 붙은 숫자는 화면에 나오지 않습니다("… 의 전투").
+* **지형 코드** (`MAIN.EXE` 이름 표 20개, 코드 순서 = 표 순서, 칸 그림으로 교차 확인):
+  0 평지, 1 숲, 2 산지(녹색 언덕), 3 개울(강·호수 물), 4 다리, 5 성벽, 6 성(성 안 바닥), 7 초원, 8 마을,
+  9 낭떠러지(갈색 바위산), 10 문, 11 황무지, 12 울타리, 13 성채(깃발 건물), 14 병영(주황 천막),
+  15 군량고, 16 보물창고, 17 집, 18 화염, 19 탁류. 18·19는 정적 맵에 없고(화계·수계로 생기는 상태로
+  보임), 맵 32번의 한 칸에 코드 255가 있습니다(의미 미상, 그대로 보존).
+* **전투 장면 배경 `HEXBMAP.R3`**: 머리말 없이 `HEXBCHP` 0번(224셀)을 가리키는 격자. 0–4번 230바이트 =
+  46×5셀 하늘·지평선(0 바위산, 1 물가 평원, 2 성벽과 성문, 3 숲, 4 평원), 5–8번 528바이트 = 66×8셀 바닥
+  (5 돌 포장, 6 다리 널판과 난간, 7 풀밭, 8 흙과 돌). 지형 코드 → 배경·바닥 번호는 `MAIN.EXE`의 20바이트
+  표 두 개(`8A 5C 0C 2A FF 8A 87 <표>`가 두 번; 칸 구조체 +0x0C = 지형)입니다: 예) 숲 → 3/7, 다리 → 1/6,
+  성 → 2/5, 황무지 → 0/8.
+* **캠페인 맵 `MMAP.R3`**: `[W×H 타일][(W/2)×(H/2) 비트]`, 타일은 `MMAPBGPL` 0번(255셀) 번호. 크기는
+  `MAIN.EXE`의 장(章)별 `(W, H)` u8 쌍 5개(서장 96×96, 1장 96×96, 2장 72×112, 3장 120×88, 4장 112×128;
+  `8A 5E FC 2A FF 8A 80 <표>`로 찾음)이고 4개 항목은 길이가 맞는 크기가 하나뿐입니다. 비트는 32 px 칸마다
+  1비트, MSB 먼저, **줄 사이 채움 없이 이어짐**(72폭은 줄당 36비트), **0 = 행군로**입니다. 행군로를 그림
+  위에 겹치면 성·전투 표시를 잇는 밝은 길을 정확히 따라갑니다.
+* **도시 `SMAP.R3`(12) / 궁궐 `PMAP.R3`(23)**: `[32×20 타일][31×20 보행 격자][u8 n][n × (id, x, y)]`.
+  타일은 도시가 `SMAPBGPL` 0번(212셀, 최대 번호 211), 궁궐이 1번(242셀, 최대 241). 보행 격자 점 (x, y)는
+  픽셀 (16x + 16, 16y + 8), 즉 타일 x와 x+1 사이 이음매에 있고 0xFF = 막힘, 0x7F = 통행, 그 밖의 값 =
+  통행 가능한 표시 지점(궁궐 문·성문·집 앞 등에 놓임). 통행 점을 겹치면 도시의 밝은 길과 정확히 겹칩니다.
+  물체 `(id, x, y)`는 x < 31, y < 20이지만 id의 뜻(인물·장식)은 **미확인**입니다.
+* **데이터 세그먼트**: 위 표 주소는 DS 기준이며, 파일 위치 = MZ 헤더 크기 + DGROUP × 16입니다. DGROUP은
+  진입점의 C 런타임 시작 코드 `mov di, DGROUP`(`B4 30 CD 21 3C 02 73 05 33 C0 06 50 CB BF <DGROUP>`)에서
+  읽습니다(한국어판 0x313A → 0x37DA0). 추출기는 이 코드들로 표를 찾으므로 원작 표를 저장소에 담지 않습니다.
+* **팔레트**: 게임이 실행 중에 고르므로(9.3절) 추출기는 전투 맵·전투 장면·캠페인 맵에 슬롯 1, 도시에
+  0, 궁궐에 2를 씁니다(모두 눈으로 자연스러움을 확인; 맵별 실제 슬롯은 시나리오 해석 후 확인).
+* **칩별 지형**: `maps/battle.json`의 `chip_terrain`은 칩마다 그 칩이 그려진 칸의 지형 코드를 전 맵에서 센
+  통계와 최다 지형·비율입니다(429칩 중 27개 미사용, 118개는 최다 비율 80 % 미만 — 경계 칩). 칸의 지형은
+  맵의 지형 격자가 정하므로, 변환기는 지형 격자를 쓰고 칩 통계는 참고로만 씁니다.
+
 ---
 
 ## English summary
@@ -405,10 +459,22 @@ and the repository and CI contain no original bytes (tests use synthetic fixture
   issue. A manifest contains relative paths, sizes, SHA-256, the first 16 bytes of each file and container
   summaries — no game content, no absolute paths.
 * **Verification**: `EIKETSU_ORIGINAL_DIR=<data folder> cargo test -p hero-import --test golden` checks the
-  published known answers on a real install. The golden tests are split by topic; on the verified copy the LS11, edition, 6-byte-table, palette, sprite and
-  map-geometry checks pass (as do the TF-DCE checks in `tests/tfdce_golden.rs`); the message-file checks, and
+  published known answers on a real install. The golden tests are split by topic; on the verified copy the LS11, edition, 6-byte-table, palette, sprite,
+  map-geometry and map (`golden_korean_maps`) checks pass (as do the TF-DCE checks in `tests/tfdce_golden.rs`); the message-file checks, and
   with them the full-extraction check, do not yet.
-* **Roadmap**: P4 maps, P5 rules/officer tables, P6 scenario bytecode, P7 OPL2 music, P8 Steam/PC-98 — all open.
+* **Maps (section 9.6, verified on the real copy)**: a battle map of `HEXZMAP.R3` is `[W][H][W×H chip bytes]
+  [(W/2)×(H/2) terrain bytes]` (hence the ×5/4 length; not 10-bit indices, and values ≥ 175 are ordinary chips,
+  not overlays). The chip byte indexes a bank of `HEXZCHP` entry 0 (80 cells) followed by entry 1 or 2; the
+  19 maps that use entry 2 are a list in `MAIN.EXE`. Entry 58 is the LF-separated EUC-KR name list. The 20
+  terrain codes (plain, forest, hill, stream, bridge, wall, castle, grassland, village, cliff, gate, wasteland,
+  fence, fortress, barracks, granary, treasury, house, fire, flood) and the terrain → battle-scene strip tables
+  (`HEXBMAP`: five 46×5 backdrops, four 66×8 grounds over `HEXBCHP`) come from `MAIN.EXE`. Campaign maps
+  (`MMAP`) are `[W×H tiles][route bits, 0 = road, rows packed]` with sizes from a per-chapter table; town and
+  palace screens (`SMAP`/`PMAP`) are 32×20 tiles, a 31×20 walk grid (0xFF blocked, 0x7F open, other = marked
+  point) and `(id, x, y)` objects of unknown meaning. All tables are located through the code that reads them
+  (`--maps` writes `maps/*.json` and `gfx/original/maps/`).
+* **Roadmap**: P4 maps done (per-map palette slot and the town object ids open); P5 rules/officer tables, P6
+  scenario bytecode, P7 OPL2 music, P8 Steam/PC-98 — open.
 * **Original mode (planned, not implemented)**: the goal is a pack the importer writes to `data/original/`
   (git-ignored) with `extends = "../base"` and `[presentation] canvas = [640, 480]`, holding only what was
   converted from the player's copy; everything else keeps coming from the base pack through the layered-pack

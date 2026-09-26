@@ -11,6 +11,13 @@
 //! <out>/gfx/original/sheets/<archive>.png every entry of an archive on one contact sheet
 //! <out>/gfx/original/facedat/<nnn>.png    TF-DCE portraits of FACEDAT.R3
 //! <out>/text/<file>.json                  message files as UTF-8 JSON
+//! <out>/maps/battle.json                  battle maps: names, chip sets, terrain table
+//!                                         (names and battle-scene strips per terrain from
+//!                                         MAIN.EXE), chip → terrain statistics
+//! <out>/maps/battle/<nnn>.json            chip and terrain grids of one battle map
+//! <out>/maps/{scene,campaign,town}.json   battle-scene strips, campaign maps (tiles + routes),
+//!                                         town / palace screens (tiles, walk grid, objects)
+//! <out>/gfx/original/maps/...             the maps drawn with their chips (see [`maps`])
 //! ```
 //!
 //! The game reads the folder with `--original <out>`: media keys are looked up there first,
@@ -28,7 +35,7 @@ use crate::image::{encode_png, grey_ramp, Palette16};
 use crate::install::{lies_inside, InstallDir, InstallError};
 use crate::sprites::{self, Group, SpriteArchive};
 use crate::text::{parse_messages, TextEncoding};
-use crate::{ls11, palette, table6};
+use crate::{ls11, maps, palette, table6};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -64,6 +71,7 @@ pub const TEXT_SOURCES: [(&str, Option<&str>); 6] = [
 /// Asset kinds chosen on the command line.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Selection {
+    pub maps: bool,
     pub portraits: bool,
     pub sprites: bool,
     pub text: bool,
@@ -73,6 +81,7 @@ impl Selection {
     /// Every kind.
     pub fn all() -> Selection {
         Selection {
+            maps: true,
             portraits: true,
             sprites: true,
             text: true,
@@ -391,6 +400,12 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
         assets.insert(
             "portraits".to_string(),
             extract_portraits(&install, &mut output, requested)?,
+        );
+    }
+    if selection.maps {
+        assets.insert(
+            "maps".to_string(),
+            extract_maps(&install, encoding, &mut output, requested)?,
         );
     }
     output.files.sort();
@@ -982,6 +997,762 @@ fn extract_portraits(
     Ok(report)
 }
 
+// ----- maps ----------------------------------------------------------------------------------
+
+/// Folder of the map data (JSON) in the output.
+pub const MAPS_DIR: &str = "maps";
+/// Folder of the map images inside [`GFX_DIR`].
+pub const MAP_GFX_DIR: &str = "maps";
+/// Palette slot of the battle maps, battle-scene strips and campaign maps (the green field slot;
+/// the game picks the slot per scenario at run time).
+pub const MAP_PALETTE_SLOT: usize = 1;
+/// Palette slots of the town (`SMAP`, slot 0) and palace (`PMAP`, slot 2) screens.
+pub const TOWN_PALETTE_SLOTS: [usize; 2] = [0, 2];
+
+const BATTLE_NOTE: &str = "Battle maps of HEXZMAP.R3. `chips` are rows of 16-px chip indices \
+    into a bank of HEXZCHP entry 0 (80 cells, indices 0–79) followed by entry `chip_set` \
+    (indices 80–255); the chip sheets gfx/original/maps/battle/chips-<set>.png show a bank in \
+    index order, 16 per row. `terrain` are rows of terrain codes, one per 2×2-chip cell (the \
+    32-px grid units move on); `terrain_table` names the codes. `chip_terrain` counts, for every \
+    chip, the terrain codes of the cells it is drawn in over all maps (a guide for mapping chips \
+    to terrain; the map's own terrain grid is authoritative).";
+
+const SCENE_NOTE: &str = "HEXBMAP.R3: battle-scene strips drawn with the cells of HEXBCHP.R3 \
+    entry 0; backdrops (sky and horizon, 46×5 cells) and grounds (66×8 cells). \
+    battle.json's terrain_table gives the strips the game picks for the terrain of the \
+    fighting unit's cell.";
+
+const CAMPAIGN_NOTE: &str = "MMAP.R3: campaign maps drawn with MMAPBGPL.R3 entry 0; the size \
+    of each entry is the one of MAIN.EXE's per-chapter table that matches its length. `routes` \
+    marks the 32-px cells of the road network the army marches along.";
+
+const TOWN_NOTE: &str = "SMAP.R3 (towns, SMAPBGPL entry 0) and PMAP.R3 (palaces, SMAPBGPL \
+    entry 1): 32×20 tiles; `walk` is the 31×20 walk grid whose point (x, y) sits at pixel \
+    (16x + 16, 16y + 8); `markers` lists (x, y, value) of the marked points; `objects` are the \
+    entry's (id, x, y) triples, whose meaning is not established.";
+
+#[derive(Serialize)]
+struct BattleIndex {
+    note: &'static str,
+    palette_slot: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    second_set_maps: Option<Vec<u16>>,
+    terrain_table: Vec<TerrainInfo>,
+    maps: Vec<BattleSummary>,
+    chip_terrain: Vec<ChipInfo>,
+}
+
+#[derive(Serialize)]
+struct TerrainInfo {
+    code: usize,
+    id: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scene_backdrop: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scene_ground: Option<u8>,
+}
+
+#[derive(Serialize)]
+struct BattleSummary {
+    index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    size_chips: [usize; 2],
+    size_cells: [usize; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chip_set: Option<usize>,
+    data: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<String>,
+}
+
+#[derive(Serialize)]
+struct BattleFile {
+    index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    /// The whole line of the name list (the game shows only the leading Hangul / Hanzi).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name_line: Option<String>,
+    size_chips: [usize; 2],
+    size_cells: [usize; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chip_set: Option<usize>,
+    chips: Vec<Vec<u8>>,
+    terrain: Vec<Vec<u8>>,
+}
+
+#[derive(Serialize)]
+struct ChipInfo {
+    set: usize,
+    index: usize,
+    /// Index in the bank (what the maps store).
+    chip: usize,
+    uses: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    terrain: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    share: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct SceneIndex {
+    note: &'static str,
+    palette_slot: usize,
+    strips: Vec<SceneInfo>,
+}
+
+#[derive(Serialize)]
+struct SceneInfo {
+    index: usize,
+    kind: &'static str,
+    size_cells: [usize; 2],
+    image: String,
+}
+
+#[derive(Serialize)]
+struct CampaignIndex {
+    note: &'static str,
+    palette_slot: usize,
+    sizes_by_chapter: Vec<[usize; 2]>,
+    maps: Vec<CampaignFile>,
+}
+
+#[derive(Serialize)]
+struct CampaignFile {
+    index: usize,
+    size_tiles: [usize; 2],
+    image: String,
+    tiles: Vec<Vec<u8>>,
+    /// Rows of `W/2` characters, `#` = route cell.
+    routes: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct TownIndex {
+    note: &'static str,
+    maps: Vec<TownFile>,
+}
+
+#[derive(Serialize)]
+struct TownFile {
+    source: &'static str,
+    index: usize,
+    chips: &'static str,
+    palette_slot: usize,
+    image: String,
+    tiles: Vec<Vec<u8>>,
+    /// Rows of 31 characters: `.` blocked, `#` walkable, `*` walkable marked point (the value
+    /// is in `markers`).
+    walk: Vec<String>,
+    markers: Vec<[u8; 3]>,
+    objects: Vec<[u8; 3]>,
+}
+
+fn rows<T: Copy>(data: &[T], width: usize) -> Vec<Vec<T>> {
+    data.chunks(width.max(1)).map(<[T]>::to_vec).collect()
+}
+
+/// The result of one map step: `None` when its source is not in the install, otherwise
+/// whether it could be converted (per-entry problems go to the report's errors).
+type MapStep = Option<Result<(), String>>;
+
+/// The decoded entries of an archive, or why they could not be decoded.
+type ArchiveEntries = Result<Vec<Vec<u8>>, String>;
+
+/// Decode an LS11 archive of the install; `Ok(None)` when the file is missing.
+fn map_archive(
+    install: &InstallDir,
+    name: &str,
+    report: &mut KindReport,
+) -> Result<Option<ArchiveEntries>, ExtractError> {
+    let Some(data) = read_source(install, name, report)? else {
+        return Ok(None);
+    };
+    Ok(Some(
+        ls11::Archive::parse(&data)
+            .and_then(|a| a.decode_all())
+            .map_err(|e| format!("{name}: {e}")),
+    ))
+}
+
+/// Entry 0 of a single-bank chip archive, or why it is not available.
+fn first_bank(
+    install: &InstallDir,
+    name: &str,
+    report: &mut KindReport,
+) -> Result<Result<Vec<u8>, String>, ExtractError> {
+    Ok(match map_archive(install, name, report)? {
+        Some(Ok(mut e)) if !e.is_empty() => Ok(e.swap_remove(0)),
+        Some(Ok(_)) => Err(format!("{name} has no entry")),
+        Some(Err(e)) => Err(e),
+        None => Err(format!("{name} missing")),
+    })
+}
+
+fn write_map_png(
+    out: &mut Output,
+    report: &mut KindReport,
+    rel: &str,
+    image: &IndexedImage,
+    pal: &Palette16,
+) -> Result<(), ExtractError> {
+    let png = encode_png(image, pal, false).map_err(|e| output_error(&out.root.join(rel), e))?;
+    out.write(rel, &png)?;
+    report.outputs += 1;
+    Ok(())
+}
+
+struct MapContext<'a> {
+    install: &'a InstallDir,
+    encoding: TextEncoding,
+    bank: Option<[Palette16; palette::SLOTS]>,
+    tables: Option<maps::ExeTables>,
+}
+
+impl MapContext<'_> {
+    fn palette(&self, slot: usize) -> Palette16 {
+        self.bank.map_or_else(grey_ramp, |b| b[slot])
+    }
+
+    fn decode(&self, raw: &[u8]) -> String {
+        self.encoding.decode(raw).text.trim().to_string()
+    }
+}
+
+/// Chip sheets of the two battle banks; returns the banks that could be built.
+fn battle_banks(
+    ctx: &MapContext,
+    chipsets: &[Vec<u8>],
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<BTreeMap<usize, Vec<u8>>, ExtractError> {
+    let pal = ctx.palette(MAP_PALETTE_SLOT);
+    let mut banks = BTreeMap::new();
+    for set in [1, 2] {
+        let bank = match maps::battle_bank(chipsets, set) {
+            Ok(bank) => bank,
+            Err(e) => {
+                report.errors.push(format!("HEXZCHP.R3 set {set}: {e}"));
+                continue;
+            }
+        };
+        let layout = crate::planar::CellLayout::Sheet {
+            columns: SHEET_COLUMNS,
+        };
+        match crate::planar::cells_to_image(&bank, layout) {
+            Ok(image) => write_map_png(
+                out,
+                report,
+                &format!("{GFX_DIR}/{MAP_GFX_DIR}/battle/chips-{set}.png"),
+                &image,
+                &pal,
+            )?,
+            Err(e) => report.errors.push(format!("HEXZCHP.R3 set {set}: {e}")),
+        }
+        banks.insert(set, bank);
+    }
+    Ok(banks)
+}
+
+/// Every chip of the three `HEXZCHP` entries with the terrain it is mostly drawn on.
+fn chip_terrain(
+    tables: &maps::ExeTables,
+    chipsets: &[Vec<u8>],
+    battle: &[(usize, maps::BattleMap)],
+) -> Vec<ChipInfo> {
+    if chipsets.len() < 3 {
+        return Vec::new();
+    }
+    let sizes = [0, 1, 2].map(|s| chipsets[s].len() / crate::planar::CELL_BYTES);
+    let pairs: Vec<(&maps::BattleMap, usize)> = battle
+        .iter()
+        .map(|(i, m)| (m, tables.chip_set_for(*i)))
+        .collect();
+    maps::chip_uses(&pairs, sizes)
+        .iter()
+        .map(|u| {
+            let dominant = u.dominant();
+            ChipInfo {
+                set: u.set,
+                index: u.index,
+                chip: if u.set == 0 {
+                    u.index
+                } else {
+                    maps::COMMON_CHIPS + u.index
+                },
+                uses: u.uses(),
+                terrain: dominant.map(|(c, _)| maps::TERRAIN_IDS[c]),
+                code: dominant.map(|(c, _)| c),
+                share: dominant.map(|(_, s)| (s * 1000.0).round() / 1000.0),
+            }
+        })
+        .collect()
+}
+
+/// Battle maps (HEXZMAP), their chip banks and the chip → terrain statistics.
+fn extract_battle_maps(
+    ctx: &MapContext,
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<MapStep, ExtractError> {
+    let entries = match map_archive(ctx.install, "HEXZMAP.R3", report)? {
+        None => return Ok(None),
+        Some(Err(e)) => return Ok(Some(Err(e))),
+        Some(Ok(e)) => e,
+    };
+    let mut battle = Vec::new();
+    let mut names = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        match maps::BattleMap::parse(entry) {
+            Ok(map) => battle.push((i, map)),
+            // The last entry is the name list.
+            Err(_) if i + 1 == entries.len() && !battle.is_empty() => {
+                names = maps::parse_map_names(entry);
+            }
+            Err(e) => report.errors.push(format!("HEXZMAP.R3 entry {i}: {e}")),
+        }
+    }
+    if battle.is_empty() {
+        return Ok(Some(Err("HEXZMAP.R3 holds no battle map".into())));
+    }
+    if names.len() != battle.len() {
+        report.notes.push(format!(
+            "HEXZMAP.R3: {} names for {} maps; names are matched by position",
+            names.len(),
+            battle.len()
+        ));
+    }
+
+    let chipsets = match map_archive(ctx.install, "HEXZCHP.R3", report)? {
+        Some(Ok(e)) => e,
+        Some(Err(e)) => {
+            report.errors.push(e);
+            Vec::new()
+        }
+        None => {
+            report
+                .errors
+                .push("HEXZCHP.R3 missing: battle maps are written without images".into());
+            Vec::new()
+        }
+    };
+    let banks = if chipsets.is_empty() {
+        BTreeMap::new()
+    } else {
+        battle_banks(ctx, &chipsets, out, report)?
+    };
+    let pal = ctx.palette(MAP_PALETTE_SLOT);
+    let tables = ctx.tables.as_ref();
+    let mut summaries = Vec::new();
+    for (k, (i, map)) in battle.iter().enumerate() {
+        let (cw, ch) = map.cells();
+        let chip_set = tables.map(|t| t.chip_set_for(*i));
+        let mut image = None;
+        if let Some(bank) = chip_set.and_then(|s| banks.get(&s)) {
+            match maps::render_tiles(&map.chips, map.width, map.height, bank) {
+                Ok(picture) => {
+                    let rel = format!("{GFX_DIR}/{MAP_GFX_DIR}/battle/{i:03}.png");
+                    write_map_png(out, report, &rel, &picture, &pal)?;
+                    image = Some(rel);
+                }
+                Err(e) => report.errors.push(format!("HEXZMAP.R3 map {i}: {e}")),
+            }
+        }
+        let raw = names.get(k);
+        let name = raw.map(|r| ctx.decode(maps::display_name(r)));
+        let data = format!("{MAPS_DIR}/battle/{i:03}.json");
+        out.write_json(
+            &data,
+            &BattleFile {
+                index: *i,
+                name: name.clone(),
+                name_line: raw.map(|r| ctx.decode(r)),
+                size_chips: [map.width, map.height],
+                size_cells: [cw, ch],
+                chip_set,
+                chips: rows(&map.chips, map.width),
+                terrain: rows(&map.terrain, cw),
+            },
+        )?;
+        report.outputs += 1;
+        summaries.push(BattleSummary {
+            index: *i,
+            name,
+            size_chips: [map.width, map.height],
+            size_cells: [cw, ch],
+            chip_set,
+            data,
+            image,
+        });
+    }
+
+    let unknown: usize = battle
+        .iter()
+        .flat_map(|(_, m)| &m.terrain)
+        .filter(|&&c| usize::from(c) >= maps::TERRAIN_COUNT)
+        .count();
+    if unknown > 0 {
+        report.notes.push(format!(
+            "{unknown} battle-map cells carry a terrain code ≥ {} (kept as stored)",
+            maps::TERRAIN_COUNT
+        ));
+    }
+    let terrain_table = (0..maps::TERRAIN_COUNT)
+        .map(|code| TerrainInfo {
+            code,
+            id: maps::TERRAIN_IDS[code],
+            name: tables
+                .and_then(|t| t.terrain_names.as_ref())
+                .and_then(|n| n.get(code))
+                .map(|raw| ctx.decode(raw)),
+            scene_backdrop: tables.and_then(|t| t.backdrop.get(code).copied()),
+            scene_ground: tables.and_then(|t| t.ground.get(code).copied()),
+        })
+        .collect();
+    out.write_json(
+        &format!("{MAPS_DIR}/battle.json"),
+        &BattleIndex {
+            note: BATTLE_NOTE,
+            palette_slot: MAP_PALETTE_SLOT,
+            second_set_maps: tables.map(|t| t.second_set_maps.clone()),
+            terrain_table,
+            maps: summaries,
+            chip_terrain: tables.map_or_else(Vec::new, |t| chip_terrain(t, &chipsets, &battle)),
+        },
+    )?;
+    report.outputs += 1;
+    report.notes.push(format!(
+        "{} battle maps: data in {MAPS_DIR}/battle/, images in {GFX_DIR}/{MAP_GFX_DIR}/battle/, \
+         index and terrain table in {MAPS_DIR}/battle.json",
+        battle.len()
+    ));
+    Ok(Some(Ok(())))
+}
+
+/// Battle-scene strips (HEXBMAP with HEXBCHP).
+fn extract_scene_strips(
+    ctx: &MapContext,
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<MapStep, ExtractError> {
+    let entries = match map_archive(ctx.install, "HEXBMAP.R3", report)? {
+        None => return Ok(None),
+        Some(Err(e)) => return Ok(Some(Err(e))),
+        Some(Ok(e)) => e,
+    };
+    let bank = match first_bank(ctx.install, "HEXBCHP.R3", report)? {
+        Ok(bank) => bank,
+        Err(e) => return Ok(Some(Err(e))),
+    };
+    let pal = ctx.palette(MAP_PALETTE_SLOT);
+    let mut strips = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let Some(kind) = maps::SceneStrip::of(entry) else {
+            report.errors.push(format!(
+                "HEXBMAP.R3 entry {i}: {} bytes is neither a backdrop nor a ground strip",
+                entry.len()
+            ));
+            continue;
+        };
+        let (w, h) = kind.cells();
+        match maps::render_tiles(entry, w, h, &bank) {
+            Ok(image) => {
+                let rel = format!("{GFX_DIR}/{MAP_GFX_DIR}/scene/{i:03}.png");
+                write_map_png(out, report, &rel, &image, &pal)?;
+                strips.push(SceneInfo {
+                    index: i,
+                    kind: kind.name(),
+                    size_cells: [w, h],
+                    image: rel,
+                });
+            }
+            Err(e) => report.errors.push(format!("HEXBMAP.R3 entry {i}: {e}")),
+        }
+    }
+    out.write_json(
+        &format!("{MAPS_DIR}/scene.json"),
+        &SceneIndex {
+            note: SCENE_NOTE,
+            palette_slot: MAP_PALETTE_SLOT,
+            strips,
+        },
+    )?;
+    report.outputs += 1;
+    Ok(Some(Ok(())))
+}
+
+/// Campaign maps (MMAP with MMAPBGPL, sizes from MAIN.EXE).
+fn extract_campaign_maps(
+    ctx: &MapContext,
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<MapStep, ExtractError> {
+    let entries = match map_archive(ctx.install, "MMAP.R3", report)? {
+        None => return Ok(None),
+        Some(Err(e)) => return Ok(Some(Err(e))),
+        Some(Ok(e)) => e,
+    };
+    let Some(tables) = &ctx.tables else {
+        return Ok(Some(Err(
+            "MMAP.R3: the map sizes come from MAIN.EXE's table, which was not found".into(),
+        )));
+    };
+    let bank = match first_bank(ctx.install, "MMAPBGPL.R3", report)? {
+        Ok(bank) => bank,
+        Err(e) => return Ok(Some(Err(e))),
+    };
+    let pal = ctx.palette(MAP_PALETTE_SLOT);
+    let mut files = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let drawn = maps::CampaignMap::parse(entry, &tables.campaign_sizes).and_then(|map| {
+            maps::render_tiles(&map.tiles, map.width, map.height, &bank).map(|image| (map, image))
+        });
+        let (map, image) = match drawn {
+            Ok(v) => v,
+            Err(e) => {
+                report.errors.push(format!("MMAP.R3 entry {i}: {e}"));
+                continue;
+            }
+        };
+        let rel = format!("{GFX_DIR}/{MAP_GFX_DIR}/campaign/{i:03}.png");
+        write_map_png(out, report, &rel, &image, &pal)?;
+        files.push(CampaignFile {
+            index: i,
+            size_tiles: [map.width, map.height],
+            image: rel,
+            tiles: rows(&map.tiles, map.width),
+            routes: map
+                .routes
+                .chunks(map.width / 2)
+                .map(|r| r.iter().map(|&on| if on { '#' } else { '.' }).collect())
+                .collect(),
+        });
+    }
+    out.write_json(
+        &format!("{MAPS_DIR}/campaign.json"),
+        &CampaignIndex {
+            note: CAMPAIGN_NOTE,
+            palette_slot: MAP_PALETTE_SLOT,
+            sizes_by_chapter: tables.campaign_sizes.iter().map(|&(w, h)| [w, h]).collect(),
+            maps: files,
+        },
+    )?;
+    report.outputs += 1;
+    Ok(Some(Ok(())))
+}
+
+fn town_file(
+    source: &'static str,
+    index: usize,
+    set: usize,
+    image: String,
+    town: maps::TownMap,
+) -> TownFile {
+    let ww = maps::TOWN_WALK.0;
+    TownFile {
+        source,
+        index,
+        chips: if set == 0 {
+            "SMAPBGPL.R3 entry 0"
+        } else {
+            "SMAPBGPL.R3 entry 1"
+        },
+        palette_slot: TOWN_PALETTE_SLOTS[set],
+        image,
+        tiles: rows(&town.tiles, maps::TOWN_TILES.0),
+        walk: town
+            .walk
+            .chunks(ww)
+            .map(|r| {
+                r.iter()
+                    .map(|&v| match v {
+                        maps::WALK_BLOCKED => '.',
+                        maps::WALK_OPEN => '#',
+                        _ => '*',
+                    })
+                    .collect()
+            })
+            .collect(),
+        markers: town
+            .walk
+            .iter()
+            .enumerate()
+            .filter(|&(_, &v)| v != maps::WALK_BLOCKED && v != maps::WALK_OPEN)
+            .map(|(p, &v)| [(p % ww) as u8, (p / ww) as u8, v])
+            .collect(),
+        objects: town.objects,
+    }
+}
+
+/// Town and palace screens (SMAP / PMAP with SMAPBGPL entries 0 / 1).
+fn extract_town_maps(
+    ctx: &MapContext,
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<MapStep, ExtractError> {
+    let mut archives = Vec::new();
+    for (set, name, stem) in [(0, "SMAP.R3", "smap"), (1, "PMAP.R3", "pmap")] {
+        if let Some(entries) = map_archive(ctx.install, name, report)? {
+            archives.push((set, name, stem, entries));
+        }
+    }
+    if archives.is_empty() {
+        return Ok(None);
+    }
+    let banks = match map_archive(ctx.install, "SMAPBGPL.R3", report)? {
+        Some(Ok(e)) if e.len() >= 2 => e,
+        Some(Ok(e)) => {
+            return Ok(Some(Err(format!(
+                "SMAPBGPL.R3 has {} entries, expected 2",
+                e.len()
+            ))))
+        }
+        Some(Err(e)) => return Ok(Some(Err(e))),
+        None => return Ok(Some(Err("SMAPBGPL.R3 missing".into()))),
+    };
+    let mut files = Vec::new();
+    for (set, name, stem, entries) in archives {
+        let entries = match entries {
+            Ok(e) => e,
+            Err(e) => {
+                report.errors.push(e);
+                continue;
+            }
+        };
+        let pal = ctx.palette(TOWN_PALETTE_SLOTS[set]);
+        let (w, h) = maps::TOWN_TILES;
+        for (i, entry) in entries.iter().enumerate() {
+            let drawn = maps::TownMap::parse(entry).and_then(|town| {
+                maps::render_tiles(&town.tiles, w, h, &banks[set]).map(|image| (town, image))
+            });
+            let (town, image) = match drawn {
+                Ok(v) => v,
+                Err(e) => {
+                    report.errors.push(format!("{name} entry {i}: {e}"));
+                    continue;
+                }
+            };
+            let rel = format!("{GFX_DIR}/{MAP_GFX_DIR}/town/{stem}-{i:03}.png");
+            write_map_png(out, report, &rel, &image, &pal)?;
+            files.push(town_file(name, i, set, rel, town));
+        }
+    }
+    out.write_json(
+        &format!("{MAPS_DIR}/town.json"),
+        &TownIndex {
+            note: TOWN_NOTE,
+            maps: files,
+        },
+    )?;
+    report.outputs += 1;
+    Ok(Some(Ok(())))
+}
+
+/// The palette bank and map tables of `MAIN.EXE` (problems go to the report).
+fn map_context<'a>(
+    install: &'a InstallDir,
+    encoding: TextEncoding,
+    report: &mut KindReport,
+) -> Result<MapContext<'a>, ExtractError> {
+    let exe = read_source(install, "MAIN.EXE", report)?;
+    let Some(exe) = exe else {
+        report.errors.push(
+            "MAIN.EXE missing: no palette and no map tables; battle maps are written without \
+             chip set and image"
+                .into(),
+        );
+        return Ok(MapContext {
+            install,
+            encoding,
+            bank: None,
+            tables: None,
+        });
+    };
+    let bank = match palette::find_bank(&exe) {
+        Ok(b) => Some(b.slots),
+        Err(e) => {
+            report
+                .errors
+                .push(format!("MAIN.EXE: {e}; maps use a grey ramp"));
+            None
+        }
+    };
+    let tables = match maps::find_exe_tables(&exe) {
+        Ok(t) => {
+            report.notes.push(format!(
+                "MAIN.EXE map tables located through the code that reads them (data segment at \
+                 {:#x})",
+                t.data_base
+            ));
+            Some(t)
+        }
+        Err(e) => {
+            report.errors.push(format!(
+                "MAIN.EXE map tables: {e}; battle maps are written without chip set and image, \
+                 campaign maps not at all"
+            ));
+            None
+        }
+    };
+    Ok(MapContext {
+        install,
+        encoding,
+        bank,
+        tables,
+    })
+}
+
+/// Battle maps, battle-scene strips, campaign maps and town screens.
+fn extract_maps(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    out: &mut Output,
+    requested: bool,
+) -> Result<KindReport, ExtractError> {
+    let mut report = KindReport::new(Status::Extracted, requested, "");
+    type Step = fn(&MapContext, &mut Output, &mut KindReport) -> Result<MapStep, ExtractError>;
+    let steps: [(&str, Step); 4] = [
+        ("battle maps", extract_battle_maps),
+        ("battle-scene strips", extract_scene_strips),
+        ("campaign maps", extract_campaign_maps),
+        ("town screens", extract_town_maps),
+    ];
+    let sources = ["HEXZMAP.R3", "HEXBMAP.R3", "MMAP.R3", "SMAP.R3", "PMAP.R3"];
+    if sources.iter().all(|s| install.path(s).is_none()) {
+        report.status = Status::MissingSource;
+        report.summary = format!("no map archives ({}) in the install", sources.join(", "));
+        return Ok(report);
+    }
+    let ctx = map_context(install, encoding, &mut report)?;
+    let (mut found, mut failed) = (0, 0);
+    let mut done = Vec::new();
+    for (what, step) in steps {
+        match step(&ctx, out, &mut report)? {
+            None => {}
+            Some(Ok(())) => {
+                found += 1;
+                done.push(what);
+            }
+            Some(Err(e)) => {
+                found += 1;
+                failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+    report.settle(found, failed);
+    if report.status == Status::Extracted && !report.errors.is_empty() {
+        report.status = Status::Partial;
+    }
+    report.summary = format!("{} ({} files)", done.join(", "), report.outputs);
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1305,6 +2076,149 @@ mod tests {
         .unwrap();
         let err = extract(src.path(), out.path(), &Options::default()).unwrap_err();
         assert!(err.to_string().contains("unsafe path"), "{err}");
+    }
+
+    /// A Korean install with every map archive: two battle maps (the second on chip set 2)
+    /// and their names, scene strips, one campaign map and one town and palace screen each.
+    fn write_map_install(dir: &Path) {
+        testutil::write_korean_install(dir);
+        let names: Vec<Vec<u8>> = maps::TERRAIN_IDS
+            .iter()
+            .map(|s| s.as_bytes().to_vec())
+            .collect();
+        let refs: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
+        let mut exe = maps::build_exe_fixture(
+            &maps::ExeFixture {
+                second_set_maps: &[1],
+                backdrop: [0; maps::TERRAIN_COUNT],
+                ground: [5; maps::TERRAIN_COUNT],
+                terrain_names: &refs,
+                campaign_sizes: [(16, 4); maps::CHAPTERS],
+            },
+            0,
+        );
+        exe.extend(palette::build_bank(&testutil::palette_slots()));
+        std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
+        let ls11 = |name: &str, entries: &[Vec<u8>]| {
+            let refs: Vec<&[u8]> = entries.iter().map(Vec::as_slice).collect();
+            std::fs::write(dir.join(name), ls11::build(&refs)).unwrap();
+        };
+        ls11(
+            "HEXZCHP.R3",
+            &[testutil::cells(80), testutil::cells(2), testutil::cells(3)],
+        );
+        let map = |chip: u8, terrain: u8| {
+            maps::BattleMap {
+                width: 4,
+                height: 2,
+                chips: vec![0, 1, chip, chip, 2, 3, chip, chip],
+                terrain: vec![1, terrain],
+            }
+            .encode()
+        };
+        ls11(
+            "HEXZMAP.R3",
+            &[
+                map(81, 8),
+                map(82, 3),
+                b"\xb0\xa1\n\xb0\xa2 1\r\n\r\n\x1a".to_vec(),
+            ],
+        );
+        ls11("HEXBCHP.R3", &[testutil::cells(4)]);
+        ls11("HEXBMAP.R3", &[vec![3; 230], vec![1; 528]]);
+        ls11("MMAPBGPL.R3", &[testutil::cells(2)]);
+        let mut campaign = vec![1u8; 64];
+        campaign.extend([0x7f, 0xff]);
+        ls11("MMAP.R3", &[campaign]);
+        ls11("SMAPBGPL.R3", &[testutil::cells(2), testutil::cells(3)]);
+        let mut town = vec![1u8; 640];
+        town.extend(vec![maps::WALK_BLOCKED; 620]);
+        town[640 + 32] = maps::WALK_OPEN;
+        town[640 + 33] = 9;
+        town.extend([1, 7, 2, 3]);
+        ls11("SMAP.R3", std::slice::from_ref(&town));
+        ls11("PMAP.R3", &[town]);
+    }
+
+    #[test]
+    fn extracts_maps() {
+        let src = TempDir::new("maps-src");
+        write_map_install(src.path());
+        let out = TempDir::new("maps-out");
+        let options = Options {
+            selection: Some(Selection {
+                maps: true,
+                ..Selection::default()
+            }),
+            edition: None,
+        };
+        let index = extract(src.path(), out.path(), &options).unwrap();
+        let report = &index.assets["maps"];
+        assert_eq!(report.status, Status::Extracted, "{report:#?}");
+
+        let battle = read_json(&out.path().join("maps/battle.json"));
+        assert_eq!(battle["second_set_maps"], serde_json::json!([1]));
+        assert_eq!(battle["maps"][0]["chip_set"], 1);
+        assert_eq!(battle["maps"][1]["chip_set"], 2);
+        assert_eq!(battle["maps"][0]["name"], "가");
+        assert_eq!(battle["maps"][1]["name"], "각");
+        assert_eq!(battle["terrain_table"][8]["id"], "village");
+        assert_eq!(battle["terrain_table"][8]["name"], "village");
+        assert_eq!(battle["terrain_table"][8]["scene_ground"], 5);
+        // Chip 81 = set 1 index 1, drawn only in the village cell of map 0.
+        let chips = battle["chip_terrain"].as_array().unwrap();
+        let chip = |set: u64, index: u64| {
+            chips
+                .iter()
+                .find(|c| c["set"] == set && c["index"] == index)
+                .unwrap()
+        };
+        assert_eq!(chip(1, 1)["terrain"], "village");
+        assert_eq!(chip(1, 1)["uses"], 4);
+        assert_eq!(chip(2, 2)["terrain"], "stream");
+        assert_eq!(chip(0, 0)["terrain"], "forest");
+        let map1 = read_json(&out.path().join("maps/battle/001.json"));
+        assert_eq!(map1["name_line"], "각 1");
+        assert_eq!(map1["chips"][0], serde_json::json!([0, 1, 82, 82]));
+        assert_eq!(map1["terrain"], serde_json::json!([[1, 3]]));
+        let png = |rel: &str| {
+            let decoder = png::Decoder::new(std::io::Cursor::new(
+                std::fs::read(out.path().join(rel)).unwrap(),
+            ));
+            let info = decoder.read_info().unwrap().info().clone();
+            (info.width, info.height)
+        };
+        assert_eq!(png("gfx/original/maps/battle/001.png"), (64, 32));
+        assert_eq!(png("gfx/original/maps/battle/chips-2.png"), (256, 96));
+        assert_eq!(png("gfx/original/maps/scene/000.png"), (46 * 16, 5 * 16));
+        assert_eq!(png("gfx/original/maps/scene/001.png"), (66 * 16, 8 * 16));
+
+        let campaign = read_json(&out.path().join("maps/campaign.json"));
+        assert_eq!(
+            campaign["maps"][0]["size_tiles"],
+            serde_json::json!([16, 4])
+        );
+        assert_eq!(campaign["maps"][0]["routes"][0], "#.......");
+        assert_eq!(png("gfx/original/maps/campaign/000.png"), (256, 64));
+
+        let town = read_json(&out.path().join("maps/town.json"));
+        let smap = &town["maps"][0];
+        assert_eq!(smap["palette_slot"], 0);
+        assert_eq!(town["maps"][1]["palette_slot"], 2);
+        assert_eq!(&smap["walk"][1].as_str().unwrap()[..4], ".#*.");
+        assert_eq!(smap["markers"], serde_json::json!([[2, 1, 9]]));
+        assert_eq!(smap["objects"], serde_json::json!([[7, 2, 3]]));
+        assert_eq!(png("gfx/original/maps/town/pmap-000.png"), (512, 320));
+
+        // Without the tables of MAIN.EXE the grids are still written, without chip set.
+        std::fs::write(src.path().join("MAIN.EXE"), b"MZ").unwrap();
+        let index = extract(src.path(), out.path(), &options).unwrap();
+        let report = &index.assets["maps"];
+        assert_eq!(report.status, Status::Partial, "{report:#?}");
+        assert!(!report.ok());
+        let map1 = read_json(&out.path().join("maps/battle/001.json"));
+        assert!(map1.get("chip_set").is_none());
+        assert!(!out.path().join("gfx/original/maps/battle/001.png").exists());
     }
 
     #[test]
