@@ -1,0 +1,138 @@
+# Prologue, battle 1: 사수관 전투 (Sishui Pass), novel chapter 5.
+# Dong Zhuo's vanguard Hua Xiong holds the pass. The coalition's advance guard has already been beaten;
+# Liu Bei's three brothers go out to break him.
+#
+# PC original: 30 turns, 3 deployable officers, enemy Hua Xiong Lv5 (light cavalry), Zhao Cen, Hu Zhen
+# (infantry Lv2), Li Su (archer Lv2) and three infantry squads Lv1; Guan Yu moving next to Hua Xiong
+# starts the duel that ends the battle (+1 level); a granary and a treasury; 100 gold for the victory.
+# (design) The PC treasures are 콩 + 100 gold here and 콩 + 초열서 at Hulao Pass. We swap the gold and
+# the scroll between the two battles, so the very first battle already hands out a strategy scroll;
+# the prologue's total loot (2 콩, 1 초열서, 100 gold) stays the same.
+#
+# Map: the Si river crosses the valley below the pass; three bridges lead north to the fortress wall.
+# Hua Xiong guards the gate, Zhao Cen sits in the eastern fort, Li Su covers the treasury path from the
+# eastern woods, and the infantry squads come down to the bridges. The granary lies in the western
+# gully, the treasury in a pocket under the eastern cliffs. Two villages on the southern bank heal.
+
+id = "p1_sishui"
+name = "사수관 전투"
+location = "190년, 낙양 동쪽 사수관"
+objective = "적장 화웅을 물리쳐라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 30
+reward_gold = 100
+intro = "sishui_intro"
+outro = "sishui_outro"
+victory = [{ type = "defeat_unit", target = "hua_xiong" }]
+
+[map]
+theme = "field"
+rows = '''
+^^^^^XHcccccHccccHX^^^^^
+^^^^^XccccccccccccX^^^^^
+^^^^^X#####G######X^^^^^
+^^^^^T,,f,,_,,f,,,TX^^^^
+^^^^TT,.,.._...,,T,::$X^
+^^^^T,,..T._..T.,TT,:X^^
+^^^^,,..TT._...T.,,,^^^^
+^^^:,......_.....,T,^^^^
+^^g::,.T..._...T..,,^^^^
+^^::,.TT..._..TT...,,^^^
+^^^,,......_.......,,^^^
+^^~~~~=~~~~=~~~~=~~~~~^^
+^^,,....T.._...T...,,,^^
+^,,v,..TT.._...TT..,,,,^
+^,,,,......_.......,,v,^
+^^,,.T....._......T.,,^^
+^^^,,,....._......,,,^^^
+^^^^,,,...._....,,,,^^^^
+'''
+
+[deploy]
+max = 3
+required = ["guan_yu", "zhang_fei"]
+slots = [[11, 17], [10, 16], [12, 16], [13, 17]]
+
+# --- Dong Zhuo's army -----------------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "hua_xiong"
+level = 5
+pos = [11, 4]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+officer = "zhao_cen"
+level = 2
+pos = [14, 3]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+officer = "hu_zhen"
+level = 2
+pos = [7, 7]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "li_su"
+level = 2
+pos = [17, 5]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 1
+pos = [5, 9]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 1
+pos = [11, 9]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 1
+pos = [16, 9]
+ai = "aggressive"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel: Guan Yu next to Hua Xiong ends the battle (PC).
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "hua_xiong" }
+actions = [
+  { type = "drama", scene = "sishui_duel" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "set_flag", flag = "sishui_duel", value = 1 },
+  { type = "retreat", target = "hua_xiong" },
+  { type = "victory" },
+]
+
+# Losing his fellow general makes the gate commander restless.
+[[events]]
+trigger = { type = "unit_defeated", target = "hu_zhen" }
+actions = [{ type = "drama", scene = "sishui_hu_zhen_falls" }]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [2, 8]
+item = "bean"
+
+[[treasures]]
+pos = [21, 4]
+item = "scroll_scorch"

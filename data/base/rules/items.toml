@@ -1,0 +1,718 @@
+# Items of the base pack (`ItemDef` in crates/hero-core/src/data.rs), after the PC original.
+#
+# Equipment: an officer has one weapon, one war manual (armor slot) and one accessory (horse or
+# regeneration treasure). In the PC original anyone may carry anything, so no item restricts `families`.
+#
+# Prices (shop price; an item sells for half):
+#  * Consumables and class-up items: PC prices where documented (콩 100, 초열서 50, 원대서/원부서/원군서
+#    500/1,000/2,000, 차 1,200, 폭탄 500, class-up items 200-800); otherwise the console price of the
+#    equivalent item, or (design) a price in line with its tier.
+#  * Treasures (weapons, war manuals, horses, regeneration treasures, class-change books) are never sold in
+#    any shop (`shop` lists in campaign.toml decide what is for sale). Their price only sets the sell value:
+#    3,820 sells for 1,910, the value the original pays for such treasures.
+#
+# Healing food restores exactly the base amount of the matching strategy (strategies.toml), so a strategy
+# cast by a capable officer always heals more than the item, as in the original. Scrolls cast their
+# strategy with the user's INT and no MP cost.
+#
+# Icon keys (gfx/ui/icons.toml): item_sword, item_spear, item_blade, item_halberd, item_book (war
+# manuals and class-change books), item_horse, item_report, item_edict, item_seal, item_bean, item_wheat,
+# item_rice, item_wine, item_medicine, item_scroll_fire, item_scroll_water, item_scroll_earth,
+# item_scroll_confuse, item_scroll (the great heal and morale scrolls), item_bomb, item_classup.
+
+# ---------------------------------------------------------------------------------------------------
+# Weapons (무기) - ATK +10% .. +24%; only the equipped weapon counts.
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "serpent_spear"
+name = "사모"
+hanja = "蛇矛"
+kind = "weapon"
+price = 3820
+atk_pct = 110
+icon = "item_spear"
+desc = "뱀처럼 구불구불한 날을 단 장창. 공격력 10% 상승."
+
+[[item]]
+id = "seven_star_sword"
+name = "칠성검"
+hanja = "七星劍"
+kind = "weapon"
+price = 3820
+atk_pct = 110
+icon = "item_sword"
+desc = "칼등에 일곱 별이 새겨진 보검. 공격력 10% 상승."
+
+[[item]]
+id = "three_point_blade"
+name = "삼첨도"
+hanja = "三尖刀"
+kind = "weapon"
+price = 3820
+atk_pct = 110
+icon = "item_blade"
+desc = "끝이 세 갈래로 갈라진 큰 칼. 공격력 10% 상승."
+
+[[item]]
+id = "green_dragon_blade"
+name = "청룡언월도"
+hanja = "靑龍偃月刀"
+kind = "weapon"
+price = 3820
+atk_pct = 112
+icon = "item_blade"
+desc = "초승달 모양의 날에 푸른 용을 새긴 무게 여든두 근의 대도. 공격력 12% 상승."
+
+[[item]]
+id = "heaven_sword"
+name = "의천검"
+hanja = "倚天劍"
+kind = "weapon"
+price = 3820
+atk_pct = 114
+icon = "item_sword"
+desc = "하늘에 기댈 만큼 길고 날카롭다는 명검. 공격력 14% 상승."
+
+[[item]]
+id = "twin_swords"
+name = "자웅일대검"
+hanja = "雌雄一對劍"
+kind = "weapon"
+price = 3820
+atk_pct = 116
+icon = "item_sword"
+desc = "암수 한 쌍으로 이루어진 쌍검. 공격력 16% 상승."
+
+[[item]]
+id = "sky_piercer"
+name = "방천화극"
+hanja = "方天畫戟"
+kind = "weapon"
+price = 3820
+atk_pct = 118
+icon = "item_halberd"
+desc = "초승달 날을 단 화려한 극. 천하무쌍의 맹장이 휘두르던 무기. 공격력 18% 상승."
+
+[[item]]
+id = "blue_steel_sword"
+name = "청강검"
+hanja = "靑釭劍"
+kind = "weapon"
+price = 3820
+atk_pct = 120
+icon = "item_sword"
+desc = "쇠를 진흙처럼 벤다는 보검. 공격력 20% 상승."
+
+[[item]]
+id = "hero_sword"
+name = "영걸검"
+hanja = "英傑劍"
+kind = "weapon"
+price = 3820
+atk_pct = 122
+icon = "item_sword"
+desc = "영웅호걸에게 어울린다는 보검. 공격력 22% 상승."
+
+[[item]]
+id = "conqueror_sword"
+name = "패자검"
+hanja = "霸者劍"
+kind = "weapon"
+price = 3820
+atk_pct = 124
+icon = "item_sword"
+desc = "천하를 제패할 자의 검. 최강의 무기. 공격력 24% 상승."
+
+# ---------------------------------------------------------------------------------------------------
+# War manuals (병법서) - DEF +15% .. +22%
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "liu_tao"
+name = "육도"
+hanja = "六韜"
+kind = "armor"
+price = 3820
+def_pct = 115
+icon = "item_book"
+desc = "태공망이 남겼다는 병법서. 방어력 15% 상승."
+
+[[item]]
+id = "san_lue"
+name = "삼략"
+hanja = "三略"
+kind = "armor"
+price = 3820
+def_pct = 115
+icon = "item_book"
+desc = "황석공이 전했다는 병법서. 방어력 15% 상승."
+
+[[item]]
+id = "mengde_book"
+name = "맹덕신서"
+hanja = "孟德新書"
+kind = "armor"
+price = 3820
+def_pct = 115
+icon = "item_book"
+desc = "어느 권세가가 손수 엮었다는 새 병법서. 방어력 15% 상승."
+
+[[item]]
+id = "wuzi"
+name = "오자병법"
+hanja = "吳子兵法"
+kind = "armor"
+price = 3820
+def_pct = 120
+icon = "item_book"
+desc = "전국시대 명장 오기의 병법서. 방어력 20% 상승."
+
+[[item]]
+id = "sunzi"
+name = "손자병법"
+hanja = "孫子兵法"
+kind = "armor"
+price = 3820
+def_pct = 122
+icon = "item_book"
+desc = "병법의 으뜸으로 꼽히는 손무의 병법서. 방어력 22% 상승."
+
+# ---------------------------------------------------------------------------------------------------
+# Horses (명마) - movement bonus
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "yellow_flash"
+name = "조황비전"
+hanja = "爪黃飛電"
+kind = "accessory"
+price = 3820
+move_bonus = 1
+icon = "item_horse"
+desc = "번개처럼 달린다는 명마. 이동력 +1."
+
+[[item]]
+id = "dilu"
+name = "적로"
+hanja = "的盧"
+kind = "accessory"
+price = 3820
+move_bonus = 2
+icon = "item_horse"
+desc = "이마에 흰 점이 박힌 준마. 주인을 해친다는 소문도 있다. 이동력 +2."
+
+[[item]]
+id = "red_hare"
+name = "적토마"
+hanja = "赤兎馬"
+kind = "accessory"
+price = 3820
+move_bonus = 3
+icon = "item_horse"
+desc = "하루에 천 리를 달린다는 붉은 명마. 이동력 +3."
+
+# ---------------------------------------------------------------------------------------------------
+# Regeneration treasures (회복 보물) - restore troops and/or morale at the start of each own phase,
+# as much as a village does.
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "relief_report"
+name = "원군보고"
+hanja = "援軍報告"
+kind = "accessory"
+price = 3820
+regen_hp = 10
+icon = "item_report"
+desc = "원군이 온다는 보고서. 지닌 부대의 병력이 매 턴 조금씩 회복된다."
+
+[[item]]
+id = "imperial_edict"
+name = "칙명서"
+hanja = "勅命書"
+kind = "accessory"
+price = 3820
+regen_morale = 10
+icon = "item_edict"
+desc = "황제의 칙명을 적은 문서. 지닌 부대의 사기가 매 턴 조금씩 회복된다."
+
+[[item]]
+id = "imperial_seal"
+name = "옥새"
+hanja = "玉璽"
+kind = "accessory"
+price = 3820
+regen_hp = 10
+regen_morale = 10
+icon = "item_seal"
+desc = "천자의 도장. 지닌 부대의 병력과 사기가 매 턴 조금씩 회복된다."
+
+# ---------------------------------------------------------------------------------------------------
+# Healing consumables (회복 도구) - used on the user or an orthogonally adjacent friendly unit.
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "bean"
+name = "콩"
+hanja = "豆"
+kind = "consumable"
+price = 100
+effects = [{ type = "heal", power = 400 }]
+battle_use = true
+icon = "item_bean"
+desc = "부대 하나의 병력을 조금(400) 회복한다."
+
+[[item]]
+id = "wheat"
+name = "보리"
+hanja = "麥"
+kind = "consumable"
+price = 250
+effects = [{ type = "heal", power = 800 }]
+battle_use = true
+icon = "item_wheat"
+desc = "부대 하나의 병력을 어느 정도(800) 회복한다."
+
+[[item]]
+id = "rice"
+name = "쌀"
+hanja = "米"
+kind = "consumable"
+price = 600
+effects = [{ type = "heal", power = 1200 }]
+battle_use = true
+icon = "item_rice"
+desc = "부대 하나의 병력을 크게(1200) 회복한다."
+
+[[item]]
+id = "wine"
+name = "술"
+hanja = "酒"
+kind = "consumable"
+price = 120
+effects = [{ type = "morale", amount = 20 }]
+battle_use = true
+icon = "item_wine"
+desc = "부대 하나의 사기를 조금(20) 회복한다."
+
+[[item]]
+id = "fine_wine"
+name = "특급주"
+hanja = "特級酒"
+kind = "consumable"
+price = 400
+effects = [{ type = "morale", amount = 35 }]
+battle_use = true
+icon = "item_wine"
+desc = "부대 하나의 사기를 어느 정도(35) 회복한다."
+
+[[item]]
+id = "baijiu"
+name = "빼갈"
+hanja = "白乾兒"
+kind = "consumable"
+price = 800
+effects = [{ type = "morale", amount = 50 }]
+battle_use = true
+icon = "item_wine"
+desc = "독한 백주. 부대 하나의 사기를 크게(50) 회복한다."
+
+[[item]]
+id = "salve"
+name = "상약"
+hanja = "傷藥"
+kind = "consumable"
+price = 300
+effects = [{ type = "heal", power = 400 }, { type = "morale", amount = 20 }]
+battle_use = true
+icon = "item_medicine"
+desc = "상처에 바르는 약. 부대 하나의 병력과 사기를 조금 회복한다."
+
+[[item]]
+id = "herbal_medicine"
+name = "한방약"
+hanja = "漢方藥"
+kind = "consumable"
+price = 700
+effects = [{ type = "heal", power = 800 }, { type = "morale", amount = 35 }]
+battle_use = true
+icon = "item_medicine"
+desc = "귀한 약재를 달인 약. 부대 하나의 병력과 사기를 어느 정도 회복한다."
+
+[[item]]
+id = "tea"
+name = "차"
+hanja = "茶"
+kind = "consumable"
+price = 1200
+effects = [{ type = "heal", power = 1200 }, { type = "morale", amount = 50 }]
+battle_use = true
+icon = "item_medicine"
+desc = "기운을 북돋는 귀한 차. 부대 하나의 병력과 사기를 크게 회복한다."
+
+# ---------------------------------------------------------------------------------------------------
+# Strategy scrolls (책략서) - cast their strategy without MP. Attack scrolls earn EXP like the strategy.
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "scroll_scorch"
+name = "초열서"
+hanja = "焦熱書"
+kind = "consumable"
+price = 50
+strategy = "scorch"
+battle_use = true
+icon = "item_scroll_fire"
+desc = "초열을 쓸 수 있는 책략서. 책략치를 소모하지 않는다."
+
+[[item]]
+id = "scroll_fire_dragon"
+name = "화룡서"
+hanja = "火龍書"
+kind = "consumable"
+price = 250
+strategy = "fire_dragon"
+battle_use = true
+icon = "item_scroll_fire"
+desc = "화룡을 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_hellfire"
+name = "업화서"
+hanja = "業火書"
+kind = "consumable"
+price = 600
+strategy = "hellfire"
+battle_use = true
+icon = "item_scroll_fire"
+desc = "업화를 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_whirlpool"
+name = "소용돌이서"
+hanja = "渦潮書"
+kind = "consumable"
+price = 50
+strategy = "whirlpool"
+battle_use = true
+icon = "item_scroll_water"
+desc = "소용돌이를 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_torrent"
+name = "탁류서"
+hanja = "濁流書"
+kind = "consumable"
+price = 250
+strategy = "torrent"
+battle_use = true
+icon = "item_scroll_water"
+desc = "탁류를 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_tsunami"
+name = "해일서"
+hanja = "津波書"
+kind = "consumable"
+price = 600
+strategy = "tsunami"
+battle_use = true
+icon = "item_scroll_water"
+desc = "해일을 쓸 수 있는 책략서."
+
+# (design) The Korean release names the earth scrolls off by one (its 설붕서 casts 산사태 and its
+# 산사태서 casts 토석류). We name every scroll after the strategy it casts to avoid that trap.
+[[item]]
+id = "scroll_rockfall"
+name = "낙석서"
+hanja = "落石書"
+kind = "consumable"
+price = 50
+strategy = "rockfall"
+battle_use = true
+icon = "item_scroll_earth"
+desc = "낙석을 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_landslide"
+name = "산사태서"
+hanja = "山崩書"
+kind = "consumable"
+price = 250
+strategy = "landslide"
+battle_use = true
+icon = "item_scroll_earth"
+desc = "산사태를 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_mudflow"
+name = "토석류서"
+hanja = "山津波書"
+kind = "consumable"
+price = 600
+strategy = "mudflow"
+battle_use = true
+icon = "item_scroll_earth"
+desc = "토석류를 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_fog"
+name = "농무서"
+hanja = "濃霧書"
+kind = "consumable"
+price = 100
+strategy = "false_report"
+battle_use = true
+icon = "item_scroll_confuse"
+desc = "짙은 안개를 부르는 책략서. 거짓정보처럼 가까운 적 한 부대를 혼란시킨다."
+
+# (PC) The original reaches only as far as a tier-2 strategy; the engine uses the strategy's own reach.
+[[item]]
+id = "scroll_mirage"
+name = "기상서"
+hanja = "氣象書"
+kind = "consumable"
+price = 300
+strategy = "false_troops"
+battle_use = true
+icon = "item_scroll_confuse"
+desc = "기이한 기상을 일으키는 책략서. 위병처럼 먼 곳의 적 한 부대를 혼란시킨다."
+
+[[item]]
+id = "scroll_downpour"
+name = "호우서"
+hanja = "豪雨書"
+kind = "consumable"
+price = 600
+strategy = "disguise"
+battle_use = true
+icon = "item_scroll_confuse"
+desc = "장대비를 부르는 책략서. 위장처럼 노린 칸과 그 상하좌우의 적을 혼란시킨다."
+
+[[item]]
+id = "scroll_great_encourage"
+name = "평기서"
+hanja = "平氣書"
+kind = "consumable"
+price = 400
+strategy = "great_encourage"
+battle_use = true
+icon = "item_scroll"
+desc = "대격려를 쓸 수 있는 책략서. 주위 아군 모두의 사기를 회복한다."
+
+[[item]]
+id = "scroll_great_cheer"
+name = "활기서"
+hanja = "活氣書"
+kind = "consumable"
+price = 800
+strategy = "great_cheer"
+battle_use = true
+icon = "item_scroll"
+desc = "대응원을 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_great_inspire"
+name = "용기서"
+hanja = "勇氣書"
+kind = "consumable"
+price = 1600
+strategy = "great_inspire"
+battle_use = true
+icon = "item_scroll"
+desc = "대고무를 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_great_aid"
+name = "원대서"
+hanja = "援隊書"
+kind = "consumable"
+price = 500
+strategy = "great_aid"
+battle_use = true
+icon = "item_scroll"
+desc = "대원조를 쓸 수 있는 책략서. 주위 아군 모두의 병력을 회복한다."
+
+[[item]]
+id = "scroll_great_resupply"
+name = "원부서"
+hanja = "援部書"
+kind = "consumable"
+price = 1000
+strategy = "great_resupply"
+battle_use = true
+icon = "item_scroll"
+desc = "대보급을 쓸 수 있는 책략서."
+
+[[item]]
+id = "scroll_great_relief"
+name = "원군서"
+hanja = "援軍書"
+kind = "consumable"
+price = 2000
+strategy = "great_relief"
+battle_use = true
+icon = "item_scroll"
+desc = "대구제를 쓸 수 있는 책략서."
+
+# (PC) The bomb gives no EXP in the original; here it earns EXP like any attack scroll.
+[[item]]
+id = "bomb"
+name = "폭탄"
+hanja = "爆彈"
+kind = "consumable"
+price = 500
+strategy = "blast"
+battle_use = true
+icon = "item_bomb"
+desc = "화약을 채운 단지. 지형과 날씨에 상관없이 두 칸 거리의 적에게 큰 피해를 준다."
+
+# ---------------------------------------------------------------------------------------------------
+# Class-up items (병과 향상) - used in camp on an officer of the required level (classes.toml `promote`).
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "long_spear"
+name = "장창"
+hanja = "長槍"
+kind = "consumable"
+price = 300
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "레벨 15 이상의 단병을 장병으로 바꾼다."
+
+[[item]]
+id = "war_cart"
+name = "보병차"
+hanja = "步兵車"
+kind = "consumable"
+price = 600
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "레벨 30 이상의 장병을 전차로 바꾼다."
+
+[[item]]
+id = "repeater"
+name = "연노"
+hanja = "連弩"
+kind = "consumable"
+price = 350
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "레벨 15 이상의 궁병을 연노병으로 바꾼다."
+
+[[item]]
+id = "stone_thrower"
+name = "투석기"
+hanja = "投石機"
+kind = "consumable"
+price = 700
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "레벨 30 이상의 연노병을 발석차로 바꾼다."
+
+[[item]]
+id = "horse_armor"
+name = "마개"
+hanja = "馬鎧"
+kind = "consumable"
+price = 400
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "말에게 입히는 갑옷. 레벨 15 이상의 경기병을 중기병으로 바꾼다."
+
+[[item]]
+id = "guard_armor"
+name = "근위개"
+hanja = "近衛鎧"
+kind = "consumable"
+price = 800
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "근위대의 갑옷. 레벨 30 이상의 중기병을 친위대로 바꾼다."
+
+[[item]]
+id = "martial_manual"
+name = "무술교본"
+hanja = "武術敎本"
+kind = "consumable"
+price = 200
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "레벨 15 이상의 산적을 흉적으로 바꾼다."
+
+[[item]]
+id = "chivalry_manual"
+name = "의협교본"
+hanja = "義俠敎本"
+kind = "consumable"
+price = 400
+effects = [{ type = "promote" }]
+icon = "item_classup"
+desc = "레벨 30 이상의 흉적을 의적으로 바꾼다."
+
+# ---------------------------------------------------------------------------------------------------
+# Class-change books (병과 변환) - any level, always to the lowest tier of the new line; the lord
+# (fixed_class) cannot use them. Found in treasuries and events only.
+# ---------------------------------------------------------------------------------------------------
+
+[[item]]
+id = "sword_guide"
+name = "검술지침서"
+hanja = "劍術指針書"
+kind = "consumable"
+price = 3820
+effects = [{ type = "change_class", to = "short_infantry" }]
+icon = "item_book"
+desc = "부대를 단병으로 바꾼다."
+
+[[item]]
+id = "archery_guide"
+name = "궁술지침서"
+hanja = "弓術指針書"
+kind = "consumable"
+price = 3820
+effects = [{ type = "change_class", to = "archer" }]
+icon = "item_book"
+desc = "부대를 궁병으로 바꾼다."
+
+[[item]]
+id = "riding_guide"
+name = "마술지침서"
+hanja = "馬術指針書"
+kind = "consumable"
+price = 3820
+effects = [{ type = "change_class", to = "light_cavalry" }]
+icon = "item_book"
+desc = "부대를 경기병으로 바꾼다."
+
+[[item]]
+id = "medic_book"
+name = "청낭서"
+hanja = "靑囊書"
+kind = "consumable"
+price = 3820
+effects = [{ type = "change_class", to = "supply" }]
+icon = "item_book"
+desc = "명의의 비방을 담은 책. 부대를 수송대로 바꾼다."
+
+[[item]]
+id = "drum_kit"
+name = "고취구"
+hanja = "鼓吹具"
+kind = "consumable"
+price = 3820
+effects = [{ type = "change_class", to = "band" }]
+icon = "item_book"
+desc = "북과 나팔 한 벌. 부대를 군악대로 바꾼다."
+
+[[item]]
+id = "occult_book"
+name = "둔갑천서"
+hanja = "遁甲天書"
+kind = "consumable"
+price = 3820
+effects = [{ type = "change_class", to = "sorcerer" }]
+icon = "item_book"
+desc = "천지의 이치를 적은 비서. 부대를 주술사로 바꾼다."

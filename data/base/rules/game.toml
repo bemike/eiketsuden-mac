@@ -1,0 +1,101 @@
+# Global tuning constants of the base pack (`GameRules` in crates/hero-core/src/data.rs).
+# Formulas that use these numbers: docs/RULES.md.
+#
+# Source tags: (PC) = value of the PC-98 / Korean DOS original as documented by the community;
+# (design) = our own choice where no source exists or where we deliberately deviate.
+
+# (PC) Level 1..99, 100 EXP per level, the EXP bar keeps the remainder.
+level_cap = 99
+exp_per_level = 100
+
+# (design) The PC original caps gold at 10,000; the console ports use 59,999. We take the console cap so
+# that late-game shopping is not throttled by an arbitrary 16-bit-era limit.
+gold_cap = 59999
+
+# (PC) MP = (level + 10) * INT / 40, capped at 255.
+mp_cap = 255
+
+# (PC) Morale starts at 100 in every battle.
+morale_start = 100
+# (design) Morale lost when hit = ceil(damage * 50 / max HP): a hit worth half the troops costs 25 morale.
+morale_loss_pct = 50
+# (PC, approximate) Units at or below this morale may fall into confusion; confusion persists while low.
+confuse_morale = 30
+
+# EXP tables, keyed by `target level - own level`. Each pair is [diff, exp]; the lookup takes the last pair
+# whose diff <= the actual difference, and differences below the first pair use the first pair.
+#
+# (PC) Defeating a unit of the same level gives 38, one level lower 25, one level higher 40, and the reward
+# is capped at 48. The steep fall-off for weaker targets is the heart of the original's levelling curve
+# (farming weak units is pointless). The intermediate steps are (design) interpolations.
+exp_kill = [
+  [-8, 1],
+  [-7, 2],
+  [-6, 3],
+  [-5, 5],
+  [-4, 8],
+  [-3, 12],
+  [-2, 18],
+  [-1, 25],
+  [0, 38],
+  [1, 40],
+  [2, 42],
+  [3, 44],
+  [4, 46],
+  [5, 48],
+]
+# (PC, approximate) A damaging attack on an equal-level unit gives about 6 EXP; attack strategies typically
+# give about 4-6. The rest of the curve is (design), shaped like `exp_kill` and capped at 12.
+exp_attack = [
+  [-5, 1],
+  [-3, 2],
+  [-2, 3],
+  [-1, 4],
+  [0, 6],
+  [1, 7],
+  [2, 8],
+  [3, 9],
+  [4, 10],
+  [5, 11],
+  [6, 12],
+]
+# (design) The original awards extra "commander EXP" for routing an enemy commander; the amount is not
+# documented, so we use a round bonus of roughly half a kill.
+exp_commander = 20
+# (PC) Heal / morale / confusion strategies give 8 EXP (supply and band classes: 12, see classes.toml).
+exp_support = 8
+
+# (PC) Counter-attack chance = STR * 100 / 150 (STR 92 -> 61%).
+counter_divisor = 150
+# (design) The original only says counters are "weak"; they deal half of a normal hit.
+counter_damage_pct = 50
+
+# (PC) Class affinity changes the defender's DEF by 25%:
+#   infantry and bandit beat archer, archer beats cavalry, cavalry beats infantry and bandit.
+# Table: attacker family -> defender family -> DEF percent (75 = attacker has the advantage,
+# 125 = attacker has the disadvantage). Every other pairing (martial, tribe, beast, support classes,
+# infantry vs bandit, same family) is neutral (100).
+[affinity.infantry]
+archer = 75
+cavalry = 125
+
+[affinity.bandit]
+archer = 75
+cavalry = 125
+
+[affinity.archer]
+cavalry = 75
+infantry = 125
+bandit = 125
+
+[affinity.cavalry]
+infantry = 75
+bandit = 75
+archer = 125
+
+# (design) The PC original re-rolls the weather every turn but its odds are undocumented.
+# Rain blocks fire strategies and boosts water strategies by 25%.
+[weather]
+clear = 60
+cloudy = 25
+rain = 15

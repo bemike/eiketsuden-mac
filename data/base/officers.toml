@@ -1,0 +1,1375 @@
+# Named officers of the base pack (`OfficerDef` in crates/hero-core/src/data.rs).
+#
+# Sources and conventions:
+#  * Player-side officers: class, joining level and 무력/지력/통솔 (str/int/lead) from the community
+#    roster of the original (the stats are the same on every platform). The three brothers start at
+#    level 1 as in the PC original.
+#  * Enemy and allied officers of the prologue and chapter 1: str/lead from the community table of PC
+#    stat corrections; levels from the PC walkthrough where it names them (otherwise the console level
+#    lowered to the PC scale). Values the sources do not give are (design) and marked as such.
+#  * `level` is the level at the officer's first appearance; battles may override it per spawn.
+#  * Officers invented by KOEI for the original game (e.g. its chapter-1 bandit chiefs and the
+#    Chencang tribesmen) are deliberately NOT part of this pack: the base pack only uses people from
+#    history and the public-domain novel (docs/DECISIONS.md D3). Their story slots will get our own
+#    characters when those chapters are written.
+#  * Bios are our own one- or two-line summaries.
+
+# ===================================================================================================
+# Liu Bei's army
+# ===================================================================================================
+
+[[officer]]
+id = "liu_bei"
+name = "유비"
+hanja = "劉備"
+courtesy = "현덕"
+class = "short_infantry"
+level = 1
+str = 75
+int = 64
+lead = 91
+lord = true
+fixed_class = true
+bio = "탁현에서 돗자리를 짜며 살던 한 황실의 먼 후손. 어진 마음으로 사람을 모으며, 두 아우와 함께 어지러운 천하를 바로잡겠다고 맹세했다."
+
+[[officer]]
+id = "guan_yu"
+name = "관우"
+hanja = "關羽"
+courtesy = "운장"
+class = "light_cavalry"
+level = 1
+str = 98
+int = 80
+lead = 100
+equip = { weapon = "green_dragon_blade" }
+bio = "하동 해현 출신의 장수. 긴 수염과 붉은 얼굴, 청룡언월도로 이름이 높으며 의리를 목숨보다 무겁게 여긴다."
+
+[[officer]]
+id = "zhang_fei"
+name = "장비"
+hanja = "張飛"
+courtesy = "익덕"
+class = "light_cavalry"
+level = 1
+str = 99
+int = 42
+lead = 83
+equip = { weapon = "serpent_spear" }
+bio = "탁현의 호걸. 장팔사모를 휘두르는 만인지적의 용장이지만 성미가 급하고 술을 몹시 좋아한다."
+
+[[officer]]
+id = "jian_yong"
+name = "간옹"
+hanja = "簡雍"
+courtesy = "헌화"
+class = "archer"
+level = 5
+str = 42
+int = 74
+lead = 36
+bio = "유비와 어릴 적부터 알고 지낸 동향 친구. 말솜씨가 좋고 격식에 얽매이지 않아 사신 노릇을 자주 맡는다."
+
+[[officer]]
+id = "geng_wu"
+name = "경무"
+hanja = "耿武"
+courtesy = "문위"
+class = "short_infantry"
+level = 7
+str = 44
+int = 53
+lead = 32
+bio = "기주의 관리. 원소가 기주를 차지하려 하자 끝까지 반대한 강직한 인물."
+
+[[officer]]
+id = "guan_chun"
+name = "관순"
+hanja = "關純"
+courtesy = "공서"
+class = "archer"
+level = 7
+str = 42
+int = 61
+lead = 32
+bio = "경무와 함께 기주를 지키려 한 관리. 권세 앞에서도 뜻을 굽히지 않았다."
+
+[[officer]]
+id = "zhao_yun"
+name = "조운"
+hanja = "趙雲"
+courtesy = "자룡"
+class = "light_cavalry"
+level = 14
+str = 98
+int = 84
+lead = 87
+bio = "상산 진정 출신의 백마 장수. 창술이 신묘하고 침착하며 충직하다. 공손찬 휘하에서 유비와 처음 만난다."
+
+[[officer]]
+id = "sun_qian"
+name = "손건"
+hanja = "孫乾"
+courtesy = "공우"
+class = "supply"
+level = 13
+str = 38
+int = 74
+lead = 34
+bio = "북해 출신의 문관. 도겸의 천거로 유비를 섬기며 외교 사절로 여러 번 공을 세운다."
+
+[[officer]]
+id = "mi_fang"
+name = "미방"
+hanja = "糜芳"
+courtesy = "자방"
+class = "short_infantry"
+level = 18
+str = 63
+int = 25
+lead = 59
+bio = "서주의 부호 미축의 아우. 형과 함께 가산을 털어 유비를 도왔다."
+
+[[officer]]
+id = "mi_zhu"
+name = "미축"
+hanja = "糜竺"
+courtesy = "자중"
+class = "band"
+level = 17
+str = 40
+int = 64
+lead = 36
+bio = "서주 동해의 대부호. 온화하고 신의가 두터워 재산과 누이를 유비에게 바치고 평생을 함께했다."
+
+[[officer]]
+id = "guan_ping"
+name = "관평"
+hanja = "關平"
+class = "heavy_cavalry"
+level = 31
+str = 80
+int = 74
+lead = 78
+bio = "관우의 양자. 아버지를 곁에서 모시며 여러 싸움에서 활약한 젊은 장수."
+
+[[officer]]
+id = "zhou_cang"
+name = "주창"
+hanja = "周倉"
+courtesy = "원복"
+class = "brigand"
+level = 31
+str = 85
+int = 40
+lead = 82
+bio = "황건적 출신의 무쌍한 장사. 관우를 흠모하여 그 칼을 받들고 그림자처럼 따른다."
+
+[[officer]]
+id = "liu_pi"
+name = "유벽"
+hanja = "劉辟"
+class = "brigand"
+level = 32
+str = 67
+int = 59
+lead = 65
+bio = "여남의 황건 잔당 두목. 유비를 흠모하여 기꺼이 그 휘하에 든다."
+
+[[officer]]
+id = "yi_ji"
+name = "이적"
+hanja = "伊籍"
+courtesy = "기백"
+class = "long_infantry"
+level = 38
+str = 21
+int = 84
+lead = 72
+bio = "형주 유표의 막료. 유비를 해치려는 음모를 몰래 알려 목숨을 구해 주고, 뒤에 그를 섬긴다."
+
+[[officer]]
+id = "liu_feng"
+name = "유봉"
+hanja = "劉封"
+class = "long_infantry"
+level = 32
+str = 63
+int = 57
+lead = 59
+bio = "유비가 신야에서 양자로 맞은 청년 장수. 무예가 뛰어나고 기개가 있다."
+
+[[officer]]
+id = "xu_shu"
+name = "서서"
+hanja = "徐庶"
+courtesy = "원직"
+class = "sorcerer"
+level = 36
+str = 44
+int = 97
+lead = 85
+bio = "영천 출신의 책사. 단복이라는 이름으로 유비를 돕다가 어머니 때문에 떠나며 와룡을 천거한다."
+
+[[officer]]
+id = "zhuge_liang"
+name = "제갈량"
+hanja = "諸葛亮"
+courtesy = "공명"
+class = "sorcerer"
+level = 41
+str = 44
+int = 100
+lead = 94
+bio = "와룡이라 불리던 융중의 은자. 세 번이나 찾아온 유비의 정성에 감복하여 천하삼분의 계책을 들고 세상에 나온다."
+
+[[officer]]
+id = "ma_liang"
+name = "마량"
+hanja = "馬良"
+courtesy = "계상"
+class = "supply"
+level = 42
+str = 45
+int = 90
+lead = 74
+bio = "양양 마씨 다섯 형제 가운데 가장 뛰어나 '흰 눈썹'이라 불린 인재. 유비의 형주 경영을 돕는다."
+
+[[officer]]
+id = "ma_su"
+name = "마속"
+hanja = "馬謖"
+courtesy = "유상"
+class = "band"
+level = 42
+str = 65
+int = 84
+lead = 54
+bio = "마량의 아우. 병법 논하기를 좋아하는 재사로 제갈량이 아끼는 인물이다."
+
+[[officer]]
+id = "gong_zhi"
+name = "공지"
+hanja = "鞏志"
+class = "catapult"
+level = 43
+str = 44
+int = 63
+lead = 40
+bio = "무릉 태수의 부하. 주군에게 항복을 간했으나 받아들여지지 않자 유비에게 귀순한다."
+
+[[officer]]
+id = "wei_yan"
+name = "위연"
+hanja = "魏延"
+courtesy = "문장"
+class = "martial"
+level = 46
+str = 92
+int = 51
+lead = 80
+bio = "장사의 장수. 무용이 뛰어나지만 오만한 기질 탓에 의심을 사기도 한다."
+
+[[officer]]
+id = "huang_zhong"
+name = "황충"
+hanja = "黃忠"
+courtesy = "한승"
+class = "chariot"
+level = 46
+str = 95
+int = 67
+lead = 90
+bio = "장사의 노장. 나이를 잊은 활솜씨와 기백으로 젊은 장수들을 압도한다."
+
+[[officer]]
+id = "jiang_wan"
+name = "장완"
+hanja = "蔣琬"
+courtesy = "공염"
+class = "catapult"
+level = 45
+str = 60
+int = 85
+lead = 73
+bio = "영릉 출신의 문관. 침착하고 도량이 넓어 나라의 살림을 맡길 만한 재목이다."
+
+[[officer]]
+id = "fei_yi"
+name = "비위"
+hanja = "費禕"
+courtesy = "문위"
+class = "catapult"
+level = 45
+str = 23
+int = 80
+lead = 25
+bio = "강하 출신의 젊은 인재. 총명하고 사람을 대하는 데 막힘이 없어 외교에 능하다."
+
+[[officer]]
+id = "pang_tong"
+name = "방통"
+hanja = "龐統"
+courtesy = "사원"
+class = "sorcerer"
+level = 49
+str = 51
+int = 98
+lead = 88
+bio = "봉추라 불린 양양의 기재. 볼품없는 외모 탓에 처음엔 홀대받지만 와룡에 견줄 지략을 지녔다."
+
+[[officer]]
+id = "fa_zheng"
+name = "법정"
+hanja = "法正"
+courtesy = "효직"
+class = "chariot"
+level = 46
+str = 52
+int = 87
+lead = 66
+bio = "익주 유장의 신하. 주군의 나약함에 실망하여 유비를 촉으로 맞아들일 계책을 꾸민다."
+
+[[officer]]
+id = "yan_yan"
+name = "엄안"
+hanja = "嚴顏"
+class = "chariot"
+level = 49
+str = 86
+int = 71
+lead = 87
+bio = "파군을 지키던 노장. 사로잡혀서도 굽히지 않는 기개로 장비를 감복시키고 뒤에 유비군에 가담한다."
+
+[[officer]]
+id = "wu_lan"
+name = "오란"
+hanja = "吳蘭"
+class = "guard_cavalry"
+level = 52
+str = 88
+int = 43
+lead = 85
+bio = "유장 휘하의 장수. 낙성 싸움 도중 유비에게 귀순한다."
+
+[[officer]]
+id = "lei_tong"
+name = "뇌동"
+hanja = "雷銅"
+class = "guard_cavalry"
+level = 52
+str = 86
+int = 43
+lead = 81
+bio = "유장 휘하의 맹장. 오란과 함께 유비에게 귀순한다."
+
+[[officer]]
+id = "wu_yi"
+name = "오의"
+hanja = "吳懿"
+courtesy = "자원"
+class = "catapult"
+level = 52
+str = 71
+int = 69
+lead = 70
+bio = "유장의 인척이자 장수. 낙성 싸움 뒤 유비에게 항복한다."
+
+[[officer]]
+id = "li_yan"
+name = "이엄"
+hanja = "李嚴"
+courtesy = "정방"
+class = "catapult"
+level = 51
+str = 75
+int = 74
+lead = 72
+bio = "유장이 보낸 장수. 황충과 대등하게 겨룬 뒤 유비의 인품을 보고 귀순한다."
+
+[[officer]]
+id = "fei_guan"
+name = "비관"
+hanja = "費觀"
+courtesy = "빈백"
+class = "chariot"
+level = 51
+str = 49
+int = 45
+lead = 58
+bio = "유장의 인척. 이엄과 함께 면죽을 지키다 유비에게 항복한다."
+
+[[officer]]
+id = "ma_chao"
+name = "마초"
+hanja = "馬超"
+courtesy = "맹기"
+class = "guard_cavalry"
+level = 56
+str = 97
+int = 44
+lead = 88
+bio = "서량 마등의 아들. 금마초라 불리는 용맹한 기병 대장으로, 원수 조조를 치려다 떠돌던 끝에 유비를 만난다."
+
+[[officer]]
+id = "ma_dai"
+name = "마대"
+hanja = "馬岱"
+class = "guard_cavalry"
+level = 55
+str = 84
+int = 47
+lead = 74
+bio = "마초의 사촌 아우. 형을 따라 유비에게 귀순하며, 신중하고 믿음직한 장수다."
+
+[[officer]]
+id = "huang_quan"
+name = "황권"
+hanja = "黃權"
+courtesy = "공형"
+class = "chariot"
+level = 54
+str = 45
+int = 84
+lead = 72
+bio = "유장의 주부. 유비를 촉에 들이는 것을 끝까지 반대한 충신이지만 뒤에는 유비의 신임을 얻는다."
+
+[[officer]]
+id = "meng_da"
+name = "맹달"
+hanja = "孟達"
+courtesy = "자도"
+class = "chariot"
+level = 53
+str = 73
+int = 70
+lead = 71
+bio = "법정의 벗. 함께 유비를 촉으로 맞아들이는 데 힘을 보탠 장수."
+
+[[officer]]
+id = "wu_ban"
+name = "오반"
+hanja = "吳班"
+courtesy = "원웅"
+class = "catapult"
+level = 52
+str = 65
+int = 47
+lead = 64
+bio = "오의의 일족. 유장 휘하에 있다가 유비군에 합류한다."
+
+[[officer]]
+id = "huo_jun"
+name = "곽준"
+hanja = "霍峻"
+courtesy = "중막"
+class = "beast"
+level = 53
+str = 67
+int = 65
+lead = 62
+bio = "형주 출신의 장수. 적은 병사로 성을 오래도록 지켜 낸 수비의 명수."
+
+[[officer]]
+id = "chen_shi"
+name = "진식"
+hanja = "陳式"
+class = "martial"
+level = 52
+str = 67
+int = 28
+lead = 60
+bio = "유비군의 장수. 용맹하지만 지략이 모자라 적의 꾀에 걸리기도 한다."
+
+[[officer]]
+id = "shamoke"
+name = "사마가"
+hanja = "沙摩柯"
+class = "tribe"
+level = 53
+str = 91
+int = 18
+lead = 74
+bio = "무릉 오계만의 우두머리. 철질려골타를 휘두르는 괴력의 장수로 유비와 손을 잡는다."
+
+[[officer]]
+id = "wang_ping"
+name = "왕평"
+hanja = "王平"
+courtesy = "자균"
+class = "chariot"
+level = 59
+str = 72
+int = 67
+lead = 72
+bio = "파서 출신의 장수. 글은 몰라도 병법의 이치에 밝으며, 조조군에서 유비군으로 넘어온다."
+
+[[officer]]
+id = "liao_hua"
+name = "요화"
+hanja = "廖化"
+courtesy = "원검"
+class = "chariot"
+level = 52
+str = 78
+int = 60
+lead = 41
+bio = "황건적 출신으로 관우를 따르게 된 장수. 오래도록 촉을 위해 싸운다."
+
+[[officer]]
+id = "wang_fu"
+name = "왕보"
+hanja = "王甫"
+courtesy = "국산"
+class = "chariot"
+level = 52
+str = 52
+int = 73
+lead = 74
+bio = "관우의 막료. 형주의 방비를 걱정하여 여러 차례 충언을 올린다."
+
+[[officer]]
+id = "zhao_lei"
+name = "조루"
+hanja = "趙累"
+class = "catapult"
+level = 52
+str = 60
+int = 70
+lead = 51
+bio = "관우 휘하의 도독. 형주에서 관우와 운명을 함께한다."
+
+[[officer]]
+id = "liu_shan"
+name = "유선"
+hanja = "劉禪"
+courtesy = "공사"
+class = "chariot"
+level = 59
+str = 22
+int = 20
+lead = 18
+bio = "유비의 맏아들. 어린 시절 장판파에서 조운의 품에 안겨 목숨을 건졌다."
+
+[[officer]]
+id = "guan_xing"
+name = "관흥"
+hanja = "關興"
+courtesy = "안국"
+class = "guard_cavalry"
+level = 56
+str = 88
+int = 70
+lead = 85
+bio = "관우의 둘째 아들. 아버지를 닮은 무예로 장포와 함께 젊은 세대를 이끈다."
+
+[[officer]]
+id = "zhang_bao"
+name = "장포"
+hanja = "張苞"
+class = "guard_cavalry"
+level = 56
+str = 92
+int = 37
+lead = 83
+bio = "장비의 맏아들. 아버지를 빼닮은 용력을 지녔으며 관흥과 의형제를 맺는다."
+
+[[officer]]
+id = "xu_sheng"
+name = "서성"
+hanja = "徐盛"
+courtesy = "문향"
+class = "chariot"
+level = 53
+str = 72
+int = 70
+lead = 59
+bio = "오의 장수. 강동의 방비를 도맡은 명장으로 동맹군이 되어 함께 싸운다."
+
+[[officer]]
+id = "ding_feng"
+name = "정봉"
+hanja = "丁奉"
+courtesy = "승연"
+class = "chariot"
+level = 52
+str = 75
+int = 65
+lead = 70
+bio = "오의 장수. 날쌔고 담대하여 어떤 싸움에서도 물러서지 않는다."
+
+[[officer]]
+id = "ling_tong"
+name = "능통"
+hanja = "淩統"
+courtesy = "공적"
+class = "guard_cavalry"
+level = 54
+str = 81
+int = 65
+lead = 71
+bio = "오의 장수. 아버지를 죽인 감녕과 원수 사이였으나 전장에서 목숨을 구원받고 화해한다."
+
+[[officer]]
+id = "gan_ning"
+name = "감녕"
+hanja = "甘寧"
+courtesy = "흥패"
+class = "beast"
+level = 54
+str = 91
+int = 54
+lead = 84
+bio = "방울을 차고 강을 누비던 협객 출신의 오나라 맹장. 백 명의 기병으로 적진을 급습한 담력으로 이름 높다."
+
+[[officer]]
+id = "jiang_wei"
+name = "강유"
+hanja = "姜維"
+courtesy = "백약"
+class = "guard_cavalry"
+level = 71
+str = 90
+int = 94
+lead = 80
+bio = "천수 출신의 젊은 장수. 지혜와 용맹을 겸비하여 제갈량이 그 재능을 아낀다."
+
+# Fought as an enemy through most of the campaign; joins late in the final chapter.
+[[officer]]
+id = "zhang_liao"
+name = "장료"
+hanja = "張遼"
+courtesy = "문원"
+class = "short_infantry"
+level = 3
+str = 90
+int = 80
+lead = 87
+bio = "안문 마읍 출신의 장수. 여포 휘하에 있지만 의리를 아는 인물로, 관우와 서로를 알아본다."
+
+# ===================================================================================================
+# Coalition lords and allies (prologue, chapter 1)
+# ===================================================================================================
+
+# int (design)
+[[officer]]
+id = "tao_qian"
+name = "도겸"
+hanja = "陶謙"
+courtesy = "공조"
+class = "short_infantry"
+level = 6
+str = 52
+int = 62
+lead = 40
+bio = "서주 목사. 온후한 노인으로 반동탁 연합에 참가하며, 훗날 유비에게 서주를 맡긴다."
+
+# The stat table lists him twice (66-67 and 70-71); we read them as str 70 / lead 66. int (design)
+[[officer]]
+id = "gongsun_zan"
+name = "공손찬"
+hanja = "公孫瓚"
+courtesy = "백규"
+class = "light_cavalry"
+level = 6
+str = 70
+int = 55
+lead = 66
+bio = "북평 태수. 흰 말을 탄 기병대를 거느린 북방의 호걸로, 유비와 같은 스승 밑에서 배운 동문이다."
+
+# First fought at Xiaopei (chapter 1) as heavy cavalry. int (design)
+[[officer]]
+id = "cao_cao"
+name = "조조"
+hanja = "曹操"
+courtesy = "맹덕"
+class = "heavy_cavalry"
+level = 23
+str = 75
+int = 92
+lead = 98
+bio = "패국 초현 출신의 영걸. 동탁을 치자는 격문을 돌려 천하의 제후를 불러 모은다. 난세의 간웅이라는 평을 듣는다."
+
+# int (design)
+[[officer]]
+id = "yuan_shao"
+name = "원소"
+hanja = "袁紹"
+courtesy = "본초"
+class = "short_infantry"
+level = 13
+str = 57
+int = 68
+lead = 70
+bio = "사대에 걸쳐 삼공을 낸 명문가의 당주. 반동탁 연합의 맹주로 추대되지만 결단력이 부족하다."
+
+# int (design)
+[[officer]]
+id = "yuan_shu"
+name = "원술"
+hanja = "袁術"
+courtesy = "공로"
+class = "long_infantry"
+level = 20
+str = 79
+int = 58
+lead = 70
+bio = "원소의 아우. 연합군의 군량을 맡았으나 가문의 위세만 믿고 오만하게 굴어 원망을 산다."
+
+# int (design)
+[[officer]]
+id = "gongsun_yue"
+name = "공손월"
+hanja = "公孫越"
+class = "archer"
+level = 10
+str = 60
+int = 45
+lead = 57
+bio = "공손찬의 사촌 아우. 형을 도와 원소와 싸운다."
+
+# All stats (design); first appears at Qinghe.
+[[officer]]
+id = "yan_gang"
+name = "엄강"
+hanja = "嚴綱"
+class = "light_cavalry"
+level = 9
+str = 62
+int = 38
+lead = 55
+bio = "공손찬 휘하의 장수. 흰 말의 기병대를 이끌고 원소군과 맞선다."
+
+# int (design)
+[[officer]]
+id = "kong_rong"
+name = "공융"
+hanja = "孔融"
+courtesy = "문거"
+class = "short_infantry"
+level = 12
+str = 57
+int = 80
+lead = 66
+bio = "공자의 20대손인 북해 태수. 학식과 문장으로 이름이 높으며 선비를 아낀다."
+
+# All stats (design)
+[[officer]]
+id = "taishi_ci"
+name = "태사자"
+hanja = "太史慈"
+courtesy = "자의"
+class = "light_cavalry"
+level = 13
+str = 93
+int = 66
+lead = 80
+bio = "동래 황현 출신의 명궁. 은혜를 갚으려고 홀로 포위를 뚫고 나가 유비에게 구원을 청한다."
+
+# ===================================================================================================
+# Dong Zhuo's army (prologue)
+# ===================================================================================================
+
+# int (design)
+[[officer]]
+id = "hua_xiong"
+name = "화웅"
+hanja = "華雄"
+class = "light_cavalry"
+level = 5
+str = 90
+int = 40
+lead = 88
+bio = "동탁군의 맹장. 거구에 범 같은 기세로 사수관을 지키며 연합군의 장수들을 잇달아 쓰러뜨린다."
+
+# All stats (design)
+[[officer]]
+id = "hu_zhen"
+name = "호진"
+hanja = "胡軫"
+courtesy = "문재"
+class = "short_infantry"
+level = 2
+str = 64
+int = 34
+lead = 55
+bio = "동탁 휘하의 장수. 화웅과 함께 사수관 방어에 나선다."
+
+# All stats (design)
+[[officer]]
+id = "zhao_cen"
+name = "조잠"
+hanja = "趙岑"
+class = "short_infantry"
+level = 2
+str = 58
+int = 36
+lead = 60
+bio = "동탁 휘하의 장수. 사수관의 성채를 지킨다."
+
+# int (design)
+[[officer]]
+id = "li_su"
+name = "이숙"
+hanja = "李肅"
+class = "archer"
+level = 2
+str = 54
+int = 66
+lead = 50
+bio = "여포와 같은 고향 사람. 적토마와 황금으로 여포를 꾀어 동탁에게 끌어들인 말재주꾼."
+
+# int (design). Carries a famous halberd and horse in the original but fights without them at first.
+[[officer]]
+id = "lu_bu"
+name = "여포"
+hanja = "呂布"
+courtesy = "봉선"
+class = "light_cavalry"
+level = 6
+str = 100
+int = 26
+lead = 80
+bio = "오원 구원 출신. 방천화극과 적토마를 지닌 천하무쌍의 용장이지만, 의리보다 이익을 좇아 주인을 바꾼다."
+
+# All stats (design)
+[[officer]]
+id = "hou_cheng"
+name = "후성"
+hanja = "侯成"
+class = "light_cavalry"
+level = 3
+str = 70
+int = 38
+lead = 60
+bio = "여포 휘하의 장수. 기병을 이끌고 호로관 앞을 지킨다."
+
+# int (design)
+[[officer]]
+id = "song_xian"
+name = "송헌"
+hanja = "宋憲"
+class = "archer"
+level = 3
+str = 59
+int = 42
+lead = 50
+bio = "여포 휘하의 장수. 궁병을 이끄는 여포군의 고참."
+
+# int (design)
+[[officer]]
+id = "wei_xu"
+name = "위속"
+hanja = "魏續"
+class = "archer"
+level = 2
+str = 72
+int = 38
+lead = 68
+bio = "여포의 인척이자 부하 장수. 여포군의 궁병을 지휘한다."
+
+# ===================================================================================================
+# Yuan Shao's army (chapter 1)
+# ===================================================================================================
+
+# int (design)
+[[officer]]
+id = "chunyu_qiong"
+name = "순우경"
+hanja = "淳于瓊"
+courtesy = "중간"
+class = "light_cavalry"
+level = 8
+str = 73
+int = 42
+lead = 68
+bio = "원소 휘하의 장수. 옛 서원팔교위의 한 사람으로 조조와도 안면이 있다."
+
+# int (design)
+[[officer]]
+id = "feng_ji"
+name = "봉기"
+hanja = "逢紀"
+courtesy = "원도"
+class = "short_infantry"
+level = 9
+str = 54
+int = 72
+lead = 66
+bio = "원소의 모사. 기주를 손에 넣을 계책을 올린 꾀 많은 인물."
+
+# int (design)
+[[officer]]
+id = "zhang_he"
+name = "장합"
+hanja = "張郃"
+courtesy = "준예"
+class = "light_cavalry"
+level = 10
+str = 90
+int = 69
+lead = 88
+bio = "하간 출신의 원소군 장수. 싸움의 흐름을 읽고 전술을 바꾸는 데 능하다."
+
+# int (design)
+[[officer]]
+id = "yan_liang"
+name = "안량"
+hanja = "顏良"
+class = "light_cavalry"
+level = 10
+str = 87
+int = 42
+lead = 84
+bio = "원소 휘하 하북의 명장. 문추와 함께 원소군의 쌍벽으로 불린다."
+
+# str and int (design)
+[[officer]]
+id = "gao_lan"
+name = "고람"
+hanja = "高覽"
+class = "archer"
+level = 10
+str = 76
+int = 45
+lead = 70
+bio = "원소 휘하의 장수. 장합과 함께 원소군의 한 축을 맡는다."
+
+# All stats (design)
+[[officer]]
+id = "shen_pei"
+name = "심배"
+hanja = "審配"
+courtesy = "정남"
+class = "short_infantry"
+level = 9
+str = 60
+int = 75
+lead = 78
+bio = "원소의 모사. 강직하고 충성스러우나 고집이 세다."
+
+# int (design)
+[[officer]]
+id = "qu_yi"
+name = "국의"
+hanja = "麴義"
+class = "light_cavalry"
+level = 9
+str = 70
+int = 40
+lead = 65
+bio = "원소 휘하의 장수. 쇠뇌를 다루는 정예병을 거느린 백전의 무장."
+
+# int (design)
+[[officer]]
+id = "wen_chou"
+name = "문추"
+hanja = "文醜"
+class = "light_cavalry"
+level = 13
+str = 91
+int = 30
+lead = 86
+bio = "원소 휘하 하북의 명장. 안량과 함께 원소군 최강의 무용을 자랑한다."
+
+# All stats (design)
+[[officer]]
+id = "guo_tu"
+name = "곽도"
+hanja = "郭圖"
+courtesy = "공칙"
+class = "short_infantry"
+level = 10
+str = 48
+int = 72
+lead = 55
+bio = "원소의 모사. 말재주가 좋지만 제 공을 앞세운다."
+
+# All stats (design)
+[[officer]]
+id = "chen_zhen"
+name = "진진"
+hanja = "陳震"
+courtesy = "효기"
+class = "short_infantry"
+level = 10
+str = 50
+int = 70
+lead = 58
+bio = "남양 출신의 선비. 원소 진영에서 병사를 이끈다."
+
+# int (design)
+[[officer]]
+id = "tian_feng"
+name = "전풍"
+hanja = "田豐"
+courtesy = "원호"
+class = "archer"
+level = 10
+str = 45
+int = 90
+lead = 88
+bio = "원소의 모사. 뛰어난 식견을 지녔지만 직언을 서슴지 않아 주군의 미움을 산다."
+
+# All stats (design)
+[[officer]]
+id = "ju_shou"
+name = "저수"
+hanja = "沮授"
+class = "archer"
+level = 10
+str = 40
+int = 88
+lead = 80
+bio = "원소의 감군. 깊은 계책을 여러 번 올리지만 받아들여지지 않는다."
+
+# All stats (design)
+[[officer]]
+id = "jiao_chu"
+name = "초촉"
+hanja = "焦觸"
+class = "archer"
+level = 10
+str = 65
+int = 38
+lead = 58
+bio = "원소 휘하의 장수. 장남과 함께 북방의 싸움에 나선다."
+
+# All stats (design)
+[[officer]]
+id = "zhang_nan"
+name = "장남"
+hanja = "張南"
+class = "archer"
+level = 10
+str = 64
+int = 36
+lead = 55
+bio = "원소 휘하의 장수. 초촉과 함께 움직인다."
+
+# All stats (design)
+[[officer]]
+id = "chen_lin"
+name = "진림"
+hanja = "陳琳"
+courtesy = "공장"
+class = "supply"
+level = 11
+str = 30
+int = 82
+lead = 45
+bio = "원소의 서기. 붓 한 자루로 적장을 꾸짖는 격문을 써 낸 명문장가."
+
+# All stats (design)
+[[officer]]
+id = "xu_you"
+name = "허유"
+hanja = "許攸"
+courtesy = "자원"
+class = "band"
+level = 10
+str = 32
+int = 84
+lead = 40
+bio = "원소의 모사이자 조조의 옛 친구. 재주는 있으나 탐욕스럽다."
+
+# ===================================================================================================
+# Beihai (chapter 1)
+# ===================================================================================================
+
+# int (design)
+[[officer]]
+id = "guan_hai"
+name = "관해"
+hanja = "管亥"
+class = "bandit"
+level = 10
+str = 68
+int = 30
+lead = 52
+bio = "황건적 잔당의 두목. 무리를 이끌고 북해성을 에워싼다."
+
+# ===================================================================================================
+# Cao Cao's army (chapter 1)
+# ===================================================================================================
+
+# int (design)
+[[officer]]
+id = "yu_jin"
+name = "우금"
+hanja = "于禁"
+courtesy = "문칙"
+class = "short_infantry"
+level = 14
+str = 60
+int = 65
+lead = 62
+bio = "조조 휘하의 장수. 군율을 엄하게 지켜 조조의 신임을 받는다."
+
+# int (design)
+[[officer]]
+id = "li_dian"
+name = "이전"
+hanja = "李典"
+courtesy = "만성"
+class = "short_infantry"
+level = 15
+str = 72
+int = 70
+lead = 73
+bio = "조조 휘하의 장수. 학문을 좋아하는 신중한 유장."
+
+# int (design)
+[[officer]]
+id = "cao_hong"
+name = "조홍"
+hanja = "曹洪"
+courtesy = "자렴"
+class = "short_infantry"
+level = 15
+str = 74
+int = 45
+lead = 74
+bio = "조조의 사촌 아우. 형양에서 제 말을 내주며 조조의 목숨을 구한 충직한 장수."
+
+# All stats (design)
+[[officer]]
+id = "yue_jin"
+name = "악진"
+hanja = "樂進"
+courtesy = "문겸"
+class = "light_cavalry"
+level = 15
+str = 80
+int = 50
+lead = 70
+bio = "조조 휘하의 장수. 몸집은 작아도 담이 커서 언제나 선봉에 선다."
+
+# int (design)
+[[officer]]
+id = "xiahou_yuan"
+name = "하후연"
+hanja = "夏侯淵"
+courtesy = "묘재"
+class = "light_cavalry"
+level = 15
+str = 90
+int = 55
+lead = 86
+bio = "조조의 일족. 번개 같은 기습을 장기로 하는 명장이자 활의 명수."
+
+# All stats (design)
+[[officer]]
+id = "guo_jia"
+name = "곽가"
+hanja = "郭嘉"
+courtesy = "봉효"
+class = "archer"
+level = 14
+str = 30
+int = 97
+lead = 70
+bio = "영천 출신의 천재 책사. 조조의 마음을 가장 잘 읽는 참모."
+
+# int (design)
+[[officer]]
+id = "xiahou_dun"
+name = "하후돈"
+hanja = "夏侯惇"
+courtesy = "원양"
+class = "light_cavalry"
+level = 18
+str = 95
+int = 58
+lead = 87
+bio = "조조의 일족이자 가장 믿음직한 장수. 강직하고 용맹하다."
+
+# int (design)
+[[officer]]
+id = "xun_yu"
+name = "순욱"
+hanja = "荀彧"
+courtesy = "문약"
+class = "band"
+level = 18
+str = 35
+int = 95
+lead = 62
+bio = "영천 출신의 명사. 조조가 '나의 장자방'이라 부른 으뜸 참모."
+
+# int (design)
+[[officer]]
+id = "cao_ren"
+name = "조인"
+hanja = "曹仁"
+courtesy = "자효"
+class = "short_infantry"
+level = 15
+str = 80
+int = 62
+lead = 79
+bio = "조조의 사촌 아우. 수비에 능한 조조군의 기둥."
+
+# Level (design, the console level scaled to the PC) and int (design)
+[[officer]]
+id = "xu_chu"
+name = "허저"
+hanja = "許褚"
+courtesy = "중강"
+class = "heavy_cavalry"
+level = 21
+str = 97
+int = 36
+lead = 94
+bio = "초국 출신의 괴력의 장사. 조조의 곁을 한시도 떠나지 않는 호위 대장."
+
+# Level and all stats (design)
+[[officer]]
+id = "cheng_yu"
+name = "정욱"
+hanja = "程昱"
+courtesy = "중덕"
+class = "crossbow"
+level = 21
+str = 50
+int = 88
+lead = 70
+bio = "조조의 모사. 냉철한 계략으로 조조를 여러 번 위기에서 구한다."
+
+# Level and all stats (design)
+[[officer]]
+id = "xun_you"
+name = "순유"
+hanja = "荀攸"
+courtesy = "공달"
+class = "band"
+level = 21
+str = 38
+int = 92
+lead = 65
+bio = "순욱의 조카. 조조의 군사로서 기묘한 계책을 여럿 낸다."
+
+# Level (PC) and stats (design)
+[[officer]]
+id = "che_zhou"
+name = "차주"
+hanja = "車冑"
+class = "long_infantry"
+level = 21
+str = 62
+int = 45
+lead = 60
+bio = "조조가 서주를 맡긴 장수. 유비를 없애라는 밀명을 받는다."
+
+# ===================================================================================================
+# Yuan Shu's and Lü Bu's armies (chapter 1)
+# ===================================================================================================
+
+# Level (design, PC scale) and int (design)
+[[officer]]
+id = "ji_ling"
+name = "기령"
+hanja = "紀靈"
+class = "heavy_cavalry"
+level = 16
+str = 70
+int = 40
+lead = 70
+bio = "원술 휘하의 대장. 삼첨도를 휘두르는 원술군 제일의 장수."
+
+# Level and all stats (design)
+[[officer]]
+id = "yue_jiu"
+name = "악취"
+hanja = "樂就"
+class = "long_infantry"
+level = 15
+str = 60
+int = 45
+lead = 62
+bio = "원술 휘하의 장수. 기령을 도와 전선을 지킨다."
+
+# Level and all stats (design)
+[[officer]]
+id = "chen_ji"
+name = "진기"
+hanja = "陳紀"
+class = "short_infantry"
+level = 14
+str = 55
+int = 50
+lead = 58
+bio = "원술 휘하의 장수. 원술의 칭제에 앞장선다."
+
+# Level (design) and int (design)
+[[officer]]
+id = "chen_gong"
+name = "진궁"
+hanja = "陳宮"
+courtesy = "공대"
+class = "crossbow"
+level = 17
+str = 54
+int = 92
+lead = 85
+bio = "동군 출신의 책사. 한때 조조를 따랐으나 그 잔혹함에 등을 돌리고 여포의 참모가 된다."
+
+# Level and all stats (design)
+[[officer]]
+id = "gao_shun"
+name = "고순"
+hanja = "高順"
+class = "beast"
+level = 18
+str = 85
+int = 50
+lead = 80
+bio = "여포 휘하의 장수. 청렴하고 과묵하며, 그가 이끄는 정예병은 치는 곳마다 적진을 무너뜨렸다."
+
+# Level and all stats (design)
+[[officer]]
+id = "xu_si"
+name = "허사"
+hanja = "許汜"
+class = "martial"
+level = 18
+str = 60
+int = 70
+lead = 50
+bio = "여포 휘하의 모사. 난세에 이름을 떨치고자 여포 곁에 머문다."
+
+# Level and all stats (design)
+[[officer]]
+id = "wang_kai"
+name = "왕해"
+hanja = "王楷"
+class = "supply"
+level = 17
+str = 40
+int = 70
+lead = 45
+bio = "여포 휘하의 모사. 허사와 함께 원술에게 구원을 청하는 사신으로 간다."
+
+# Level and all stats (design)
+[[officer]]
+id = "yuan_yin"
+name = "원윤"
+hanja = "袁胤"
+class = "crossbow"
+level = 17
+str = 45
+int = 55
+lead = 50
+bio = "원술의 일족. 원술의 마지막 길을 함께한다."
+
+# Level and all stats (design)
+[[officer]]
+id = "li_feng"
+name = "이풍"
+hanja = "李豐"
+class = "crossbow"
+level = 17
+str = 50
+int = 40
+lead = 50
+bio = "원술 휘하의 장수. 수춘의 방비를 맡는다."

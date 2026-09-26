@@ -1,0 +1,504 @@
+# Unit classes of the base pack (`ClassDef` in crates/hero-core/src/data.rs), after the PC original.
+#
+# move / atk / def / hp / hp_growth are the PC values: `atk` and `def` are the class terms of the ATK/DEF
+# formula (docs/RULES.md §2), `hp` is the troop count at level 1 and `hp_growth` the gain per level.
+# generic = [str, int, lead] of unnamed units of the class (PC values).
+# Strategy learn levels are the PC values of the community guides; a promoted class keeps the list of its
+# predecessors, so a whole line shares one list on its tier-1 class. Levels marked (design) are not
+# documented anywhere and were chosen by us.
+# Promotion (PC): tier 1 -> 2 at level 15 and tier 2 -> 3 at level 30, each needing its class-up item.
+#
+# Counters (PC): only the bandit line and martial artists can counter, and only melee attacks from
+# cavalry, bandits, martial artists, beast tamers and tribesmen provoke them. Sources disagree about the
+# tier-1 bandit (namu's footnote lists only brigands, outlaws and martial artists; the main namu article
+# and the Daum guide credit the whole bandit line). We follow the majority: bandits can counter too.
+#
+# The sprite key of every class is its id (docs/ASSETS.md).
+
+# ---------------------------------------------------------------------------------------------------
+# Infantry line (보병계)
+# ---------------------------------------------------------------------------------------------------
+
+[[class]]
+id = "short_infantry"
+name = "단병"
+hanja = "短兵"
+family = "infantry"
+tier = 1
+move = 4
+move_type = "foot"
+# PC: the short-weapon infantry cannot strike diagonally (console versions can).
+range = "adjacent4"
+atk = 8
+def = 8
+hp = 500
+hp_growth = 50
+generic = [40, 30, 50]
+strategies = [
+  { level = 6, id = "scorch" },
+  { level = 12, id = "false_report" },
+  { level = 18, id = "fire_dragon" },
+  { level = 24, id = "encourage" },
+  { level = 28, id = "aid" },
+]
+promote = { to = "long_infantry", level = 15, item = "long_spear" }
+sprite = "short_infantry"
+desc = "칼과 방패를 든 보병. 궁병에 강하고 기병에 약하다. 대각선은 공격할 수 없다."
+
+[[class]]
+id = "long_infantry"
+name = "장병"
+hanja = "長兵"
+family = "infantry"
+tier = 2
+move = 4
+move_type = "foot"
+range = "adjacent8"
+atk = 12
+def = 12
+hp = 500
+hp_growth = 50
+generic = [40, 30, 50]
+promote = { to = "chariot", level = 30, item = "war_cart" }
+sprite = "long_infantry"
+desc = "긴 창을 든 보병. 주위 여덟 칸을 모두 공격할 수 있다."
+
+[[class]]
+id = "chariot"
+name = "전차"
+hanja = "戰車"
+family = "infantry"
+tier = 3
+move = 5
+move_type = "foot"
+range = "adjacent8"
+atk = 12
+def = 16
+hp = 500
+hp_growth = 50
+generic = [40, 30, 50]
+sprite = "chariot"
+desc = "말이 끄는 전차 부대. 보병계 최상위 병과로 방어가 매우 단단하다."
+
+# ---------------------------------------------------------------------------------------------------
+# Cavalry line (기병계) - no forest, no mountains, slow on wasteland; no attack strategies.
+# ---------------------------------------------------------------------------------------------------
+
+[[class]]
+id = "light_cavalry"
+name = "경기병"
+hanja = "輕騎兵"
+family = "cavalry"
+tier = 1
+move = 6
+move_type = "horse"
+range = "adjacent4"
+atk = 12
+def = 6
+hp = 500
+hp_growth = 60
+generic = [50, 30, 40]
+strategies = [
+  { level = 8, id = "harass" },
+  { level = 12, id = "encourage" },
+  { level = 20, id = "provoke" },
+]
+promote = { to = "heavy_cavalry", level = 15, item = "horse_armor" }
+sprite = "light_cavalry"
+provokes_counter = true
+desc = "발 빠른 기마 부대. 보병에 강하고 궁병에 약하다. 숲과 산에는 들어갈 수 없다."
+
+[[class]]
+id = "heavy_cavalry"
+name = "중기병"
+hanja = "重騎兵"
+family = "cavalry"
+tier = 2
+move = 5
+move_type = "horse"
+range = "adjacent4"
+atk = 14
+def = 10
+hp = 500
+hp_growth = 60
+generic = [50, 30, 40]
+promote = { to = "guard_cavalry", level = 30, item = "guard_armor" }
+sprite = "heavy_cavalry"
+provokes_counter = true
+desc = "말에게도 갑옷을 입힌 기마 부대. 경기병보다 느리지만 훨씬 튼튼하다."
+
+[[class]]
+id = "guard_cavalry"
+name = "친위대"
+hanja = "親衛隊"
+family = "cavalry"
+tier = 3
+move = 6
+move_type = "horse"
+range = "adjacent4"
+atk = 16
+def = 12
+hp = 500
+hp_growth = 60
+generic = [50, 30, 40]
+sprite = "guard_cavalry"
+provokes_counter = true
+desc = "군주를 지키는 정예 기마대. 공격력이 모든 병과 가운데 손꼽힌다."
+
+# ---------------------------------------------------------------------------------------------------
+# Archer line (궁병계)
+# ---------------------------------------------------------------------------------------------------
+
+[[class]]
+id = "archer"
+name = "궁병"
+hanja = "弓兵"
+family = "archer"
+tier = 1
+move = 4
+move_type = "foot"
+# Diagonal neighbours plus the four tiles two steps straight out.
+range = "archer"
+atk = 6
+def = 8
+hp = 500
+hp_growth = 40
+generic = [40, 50, 30]
+strategies = [
+  { level = 6, id = "whirlpool" },
+  { level = 12, id = "false_report" },
+  { level = 18, id = "torrent" },
+  { level = 24, id = "encourage" },
+  { level = 28, id = "aid" },
+]
+promote = { to = "crossbow", level = 15, item = "repeater" }
+sprite = "archer"
+desc = "활을 쏘는 부대. 기병에 강하고 보병에 약하다. 바로 옆 칸은 쏠 수 없다."
+
+[[class]]
+id = "crossbow"
+name = "연노병"
+hanja = "連弩兵"
+family = "archer"
+tier = 2
+move = 4
+move_type = "foot"
+range = "crossbow"
+atk = 12
+def = 8
+hp = 500
+hp_growth = 40
+generic = [40, 50, 30]
+promote = { to = "catapult", level = 30, item = "stone_thrower" }
+sprite = "crossbow"
+desc = "연발 쇠뇌로 무장한 부대. 사거리가 넓고 공격력이 크게 오른다."
+
+[[class]]
+id = "catapult"
+name = "발석차"
+hanja = "發石車"
+family = "archer"
+tier = 3
+move = 3
+move_type = "foot"
+range = "catapult"
+atk = 16
+def = 10
+hp = 500
+hp_growth = 40
+generic = [40, 50, 30]
+sprite = "catapult"
+desc = "돌을 날리는 공성 병기. 느리지만 먼 곳까지 강력한 일격을 날린다."
+
+# ---------------------------------------------------------------------------------------------------
+# Bandit line (적병계) - climbs mountains, high troop count, counter-attacks.
+# ---------------------------------------------------------------------------------------------------
+
+[[class]]
+id = "bandit"
+name = "산적"
+hanja = "山賊"
+family = "bandit"
+tier = 1
+move = 4
+move_type = "mountain"
+range = "adjacent4"
+atk = 10
+def = 8
+hp = 800
+hp_growth = 40
+generic = [50, 40, 30]
+strategies = [
+  { level = 3, id = "rockfall" },
+  { level = 8, id = "landslide" },
+  { level = 8, id = "harass" },
+  { level = 12, id = "false_report" },
+  { level = 16, id = "mudflow" },
+  { level = 16, id = "encourage" },
+  { level = 20, id = "aid" },
+  { level = 24, id = "great_rockfall" },
+  { level = 32, id = "great_landslide" }, # (design) level undocumented
+]
+promote = { to = "brigand", level = 15, item = "martial_manual" }
+sprite = "bandit"
+can_counter = true
+provokes_counter = true
+desc = "산을 타는 도적 떼. 병력이 많고 지계 책략을 쓰며, 붙어 온 적에게 반격하기도 한다."
+
+[[class]]
+id = "brigand"
+name = "흉적"
+hanja = "凶賊"
+family = "bandit"
+tier = 2
+move = 4
+move_type = "mountain"
+range = "adjacent8"
+atk = 12
+def = 10
+hp = 800
+hp_growth = 40
+generic = [50, 40, 30]
+promote = { to = "outlaw", level = 30, item = "chivalry_manual" }
+sprite = "brigand"
+can_counter = true
+provokes_counter = true
+desc = "사나운 무리를 이끄는 도적. 주위 여덟 칸을 공격할 수 있다."
+
+[[class]]
+id = "outlaw"
+name = "의적"
+hanja = "義賊"
+family = "bandit"
+tier = 3
+move = 4
+move_type = "mountain"
+range = "adjacent8"
+atk = 14
+def = 12
+hp = 800
+hp_growth = 40
+generic = [50, 40, 30]
+sprite = "outlaw"
+can_counter = true
+provokes_counter = true
+desc = "의리를 아는 협객 무리. 적병계의 최상위 병과다."
+
+# ---------------------------------------------------------------------------------------------------
+# Special classes - single tier, no class affinity.
+# ---------------------------------------------------------------------------------------------------
+
+[[class]]
+id = "martial"
+name = "무도가"
+hanja = "武道家"
+family = "martial"
+tier = 1
+move = 5
+move_type = "mountain"
+range = "adjacent8"
+atk = 14
+def = 12
+hp = 600
+hp_growth = 50
+generic = [50, 10, 60]
+strategies = [
+  { level = 4, id = "scorch" },
+  { level = 8, id = "fire_dragon" },
+  { level = 16, id = "hellfire" },
+  { level = 24, id = "great_scorch" },      # (design) level undocumented
+  { level = 32, id = "great_fire_dragon" }, # (design) level undocumented
+]
+sprite = "martial"
+can_counter = true
+provokes_counter = true
+desc = "맨손 무예를 닦은 무인 집단. 산을 넘나들며 화계를 쓰고 반격에도 능하다."
+
+[[class]]
+id = "tribe"
+name = "이민족"
+hanja = "異民族"
+family = "tribe"
+tier = 1
+move = 5
+move_type = "mountain"
+range = "adjacent8"
+atk = 14
+def = 16
+hp = 700
+hp_growth = 60
+generic = [60, 10, 50]
+# (design) The PC list is known but none of its levels are; they mirror the martial artists' pattern.
+strategies = [
+  { level = 4, id = "whirlpool" },
+  { level = 8, id = "torrent" },
+  { level = 16, id = "tsunami" },
+  { level = 24, id = "great_whirlpool" },
+  { level = 32, id = "great_torrent" },
+]
+sprite = "tribe"
+provokes_counter = true
+desc = "변방의 용맹한 부족 전사. 병력 성장이 가장 크고 방어도 단단하며 수계를 쓴다."
+
+[[class]]
+id = "beast"
+name = "맹수사"
+hanja = "猛獸使"
+family = "beast"
+tier = 1
+move = 4
+move_type = "mountain"
+range = "adjacent8"
+atk = 16
+def = 6
+hp = 400
+hp_growth = 50
+generic = [70, 10, 40]
+# PC: harass, false report and false troops are known by level 12; the other levels are (design).
+strategies = [
+  { level = 4, id = "harass" },
+  { level = 8, id = "false_report" },
+  { level = 12, id = "false_troops" },
+  { level = 16, id = "provoke" },
+  { level = 24, id = "intimidate" },
+  { level = 32, id = "disguise" },
+]
+sprite = "beast"
+provokes_counter = true
+desc = "맹수를 부리는 부대. 공격력은 최강이지만 방어가 약하다. 혼란과 사기 저하 책략을 쓴다."
+
+# ---------------------------------------------------------------------------------------------------
+# Support classes - half strategy damage, doubled strategy evasion (`strategy_guard`).
+# ---------------------------------------------------------------------------------------------------
+
+[[class]]
+id = "supply"
+name = "수송대"
+hanja = "輸送隊"
+family = "supply"
+tier = 1
+move = 3
+move_type = "slow"
+range = "adjacent8"
+atk = 4
+def = 4
+hp = 300
+hp_growth = 40
+generic = [10, 70, 10]
+# PC: aid and resupply are known by level 8, relief at 16; the three great heals are (design).
+strategies = [
+  { level = 1, id = "aid" },
+  { level = 8, id = "resupply" },
+  { level = 16, id = "relief" },
+  { level = 24, id = "great_aid" },
+  { level = 32, id = "great_resupply" },
+  { level = 40, id = "great_relief" },
+]
+sprite = "supply"
+strategy_guard = true
+support_exp = 12
+desc = "군량을 나르는 부대. 병력 회복 책략을 모두 익히며 책략에 강하다."
+
+[[class]]
+id = "band"
+name = "군악대"
+hanja = "軍樂隊"
+family = "band"
+tier = 1
+move = 4
+move_type = "slow"
+range = "adjacent4"
+atk = 4
+def = 4
+hp = 300
+hp_growth = 40
+generic = [10, 70, 10]
+# PC: encourage is known by level 8, cheer by 12, inspire at 16; the three great rallies are (design).
+strategies = [
+  { level = 1, id = "encourage" },
+  { level = 12, id = "cheer" },
+  { level = 16, id = "inspire" },
+  { level = 24, id = "great_encourage" },
+  { level = 32, id = "great_cheer" },
+  { level = 40, id = "great_inspire" },
+]
+sprite = "band"
+strategy_guard = true
+mp_aura = true
+support_exp = 12
+desc = "북과 나팔로 군사를 북돋는 부대. 곁에 선 부대의 책략치를 매 턴 회복시킨다(적군도 마찬가지)."
+
+[[class]]
+id = "sorcerer"
+name = "주술사"
+hanja = "呪術師"
+family = "sorcerer"
+tier = 1
+move = 4
+move_type = "foot"
+range = "adjacent4"
+atk = 4
+def = 4
+hp = 300
+hp_growth = 50
+generic = [5, 80, 50]
+# PC: every strategy except the six single-target HP/morale heals. The levels are undocumented; this
+# (design) schedule unlocks one tier of each family roughly every ten levels.
+strategies = [
+  { level = 1, id = "scorch" },
+  { level = 1, id = "whirlpool" },
+  { level = 1, id = "rockfall" },
+  { level = 1, id = "false_report" },
+  { level = 1, id = "harass" },
+  { level = 1, id = "nurse" },
+  { level = 10, id = "fire_dragon" },
+  { level = 10, id = "torrent" },
+  { level = 10, id = "landslide" },
+  { level = 10, id = "provoke" },
+  { level = 10, id = "great_encourage" },
+  { level = 20, id = "false_troops" },
+  { level = 20, id = "cure" },
+  { level = 20, id = "great_aid" },
+  { level = 20, id = "great_scorch" },
+  { level = 20, id = "great_whirlpool" },
+  { level = 20, id = "great_rockfall" },
+  { level = 30, id = "hellfire" },
+  { level = 30, id = "tsunami" },
+  { level = 30, id = "mudflow" },
+  { level = 30, id = "intimidate" },
+  { level = 30, id = "great_cheer" },
+  { level = 30, id = "great_resupply" },
+  { level = 40, id = "disguise" },
+  { level = 40, id = "revive" },
+  { level = 40, id = "great_fire_dragon" },
+  { level = 40, id = "great_torrent" },
+  { level = 40, id = "great_landslide" },
+  { level = 50, id = "great_inspire" },
+  { level = 50, id = "great_relief" },
+]
+sprite = "sorcerer"
+strategy_guard = true
+desc = "천문과 도술에 통달한 책사의 부대. 거의 모든 책략을 다루지만 직접 싸우는 힘은 약하다."
+
+# ---------------------------------------------------------------------------------------------------
+# Event class
+# ---------------------------------------------------------------------------------------------------
+
+# Civilians only appear in escort and evacuation scenes: they cannot attack or use strategies.
+# (design) The PC troop count and move are undocumented; the console versions use a flat 200 troops.
+[[class]]
+id = "civilian"
+name = "백성"
+hanja = "百姓"
+family = "civilian"
+tier = 1
+move = 3
+move_type = "foot"
+range = []
+atk = 0
+def = 0
+hp = 200
+hp_growth = 0
+generic = [0, 0, 0]
+sprite = "civilian"
+desc = "전란을 피해 달아나는 백성들. 싸울 힘이 없다."

@@ -1,0 +1,140 @@
+# Prologue, battle 2: 호로관 전투 (Hulao Pass), novel chapter 5.
+# Dong Zhuo sends Lü Bu to hold Hulao Pass. The coalition's lords are beaten one after another until
+# Zhang Fei rides out against him.
+#
+# PC original: 30 turns, 3 deployable officers, enemy Lü Bu Lv6 (light cavalry), Hou Cheng (light
+# cavalry Lv3), Zhang Liao (infantry Lv3), Song Xian (archer Lv3), Wei Xu (archer Lv2) and two archer
+# squads Lv1. Lü Bu stays in front of the gate until turn 18 and then charges. Zhang Fei moving next to
+# Lü Bu starts the duel that ends the battle (+1 level); a granary and a treasury; 100 gold.
+# (design) The treasury holds the 100 gold of the PC's Sishui treasury; the 초열서 it held in the PC
+# original moved to Sishui Pass (see p1_sishui.toml).
+#
+# Map: the pass fortress closes the west edge; the road runs straight from its gate to the coalition
+# camp in the east. Lü Bu waits on the road before the gate behind a palisade with three openings; his
+# archer squads man the two forts, his officers hold the ground in front. The treasury hides in the
+# northern gully right under the fortress, the granary in the southern one; villages heal on both sides.
+
+id = "p2_hulao"
+name = "호로관 전투"
+location = "190년, 낙양 동쪽 호로관"
+objective = "적장 여포를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "boss"
+turn_limit = 30
+reward_gold = 100
+intro = "hulao_intro"
+outro = "hulao_outro"
+victory = [{ type = "defeat_unit", target = "lu_bu" }]
+
+[map]
+theme = "field"
+rows = '''
+cc#X^^^^^^^^^^^^^^^^^^^^^^
+cc#X^^$:,,^^^^,,TT^^^^^^^^
+cc#,^^::.,,,TT,,,,,T^^^^^^
+cc#,,.|....,,T,v.,,,,,^^^^
+cc#,f.|..T..........,TT,^^
+cc#,.......TT..........,,^
+cc#,,.|...T......,,......,
+cc#...|.............T...,,
+ccG_______________________
+cc#...|......,,.....T..,,,
+cc#,,.|....TT...........,,
+cc#,.......T....,,......,^
+cc#,f.|..T....v...,,TT,,^^
+cc#,,.|.....,,,,,,.,,,,^^^
+cc#,^^::.,,TT,,,,g,T^^^^^^
+cc#X^^^^^^^,,TTT^^^^^^^^^^
+cc#X^^^^^^^^^^^^^^^^^^^^^^
+'''
+
+[deploy]
+max = 3
+required = ["guan_yu", "zhang_fei"]
+slots = [[24, 8], [23, 7], [23, 9], [25, 8]]
+
+# --- Lü Bu's army ---------------------------------------------------------------------------------
+
+# Holds his ground before the gate until the turn-18 event lets him loose.
+[[units]]
+side = "enemy"
+officer = "lu_bu"
+level = 6
+pos = [4, 8]
+ai = "hold"
+commander = true
+
+[[units]]
+side = "enemy"
+officer = "hou_cheng"
+level = 3
+pos = [8, 7]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "zhang_liao"
+level = 3
+pos = [8, 9]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "song_xian"
+level = 3
+pos = [9, 4]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "wei_xu"
+level = 2
+pos = [9, 12]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 1
+pos = [4, 4]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 1
+pos = [4, 12]
+ai = "guard"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel: Zhang Fei next to Lü Bu ends the battle (PC). The other brothers join in the scene.
+[[events]]
+trigger = { type = "adjacent", a = "zhang_fei", b = "lu_bu" }
+actions = [
+  { type = "drama", scene = "hulao_duel" },
+  { type = "level_up", target = "zhang_fei", amount = 1 },
+  { type = "set_flag", flag = "hulao_duel", value = 1 },
+  { type = "retreat", target = "lu_bu" },
+  { type = "victory" },
+]
+
+# PC: Lü Bu starts to move on turn 18.
+[[events]]
+trigger = { type = "turn_start", turn = 18, side = "enemy" }
+actions = [
+  { type = "drama", scene = "hulao_lu_bu_charges" },
+  { type = "set_ai", target = "lu_bu", ai = "aggressive" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [6, 1]
+gold = 100
+
+[[treasures]]
+pos = [17, 14]
+item = "bean"
