@@ -836,7 +836,9 @@ impl<'a> Planner<'a> {
                     hp += heal;
                 }
                 Effect::Morale { amount } => {
-                    let new = (morale + st.morale_shift(self.id, u, *amount)).clamp(0, 100);
+                    let new = morale
+                        .saturating_add(st.morale_shift(self.id, u, *amount))
+                        .clamp(0, 100);
                     // Morale enters ATK/DEF as `(level + 10) * morale / 10`.
                     let change = (new - morale) as i64 * level_factor / 10;
                     v += if sign > 0 { -change } else { change / 2 };

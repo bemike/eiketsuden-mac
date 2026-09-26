@@ -208,7 +208,7 @@ impl BattleState {
             return amount;
         }
         let shift = (self.units[caster].level / 10) as i32 - (self.units[target].level / 10) as i32;
-        (amount - shift).min(0)
+        amount.saturating_sub(shift).min(0)
     }
 
     /// Stored counter for a confusion of `turns` turns. The countdown runs at the start of
@@ -425,7 +425,7 @@ impl BattleState {
                     let delta = self.morale_shift(caster, t, *amount);
                     let u = &mut self.units[t];
                     let before = u.morale;
-                    u.morale = (u.morale + delta).clamp(0, 100);
+                    u.morale = u.morale.saturating_add(delta).clamp(0, 100);
                     hit.morale += u.morale - before;
                 }
                 Effect::Status {
@@ -562,7 +562,7 @@ impl BattleState {
                         }
                         Effect::Morale { amount } => {
                             let before = u.morale;
-                            u.morale = (u.morale + amount).clamp(0, 100);
+                            u.morale = u.morale.saturating_add(*amount).clamp(0, 100);
                             morale += u.morale - before;
                         }
                         // Rejected by `battle_item`.

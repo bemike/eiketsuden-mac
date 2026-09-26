@@ -666,6 +666,54 @@ fn equipment_is_never_a_battle_item() {
     assert_eq!(st.inventory.get("jade"), Some(&1));
 }
 
+/// Morale amounts are data; extreme ones clamp to 0..=100 instead of overflowing.
+#[test]
+fn extreme_morale_amounts_saturate() {
+    let mut pack = pack(OPEN_MAP);
+    let morale = |amount: i32| vec![Effect::Morale { amount }];
+    pack.strategies.get_mut("cheer").unwrap().effects = morale(i32::MAX);
+    pack.strategies.get_mut("provoke").unwrap().effects = morale(i32::MIN);
+    pack.items.get_mut("wine").unwrap().effects = morale(i32::MAX);
+    let mut sour = pack.items["wine"].clone();
+    sour.id = "sour_wine".into();
+    sour.effects = morale(i32::MIN);
+    pack.items.insert(sour.id.clone(), sour);
+    let mut st = state(&pack);
+    st.inventory.insert("wine".into(), 1);
+    st.inventory.insert("sour_wine".into(), 1);
+    let band = add(&mut st, &pack, Side::Player, "band", 10, p(3, 3));
+    let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+    let rider = add(&mut st, &pack, Side::Player, "cavalry", 20, p(5, 5));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(5, 6));
+    set_stats(&mut st, &pack, foe, [50, 0, 50]);
+    st.units[friend].morale = 20;
+
+    // The AI weighs the effects too (the player side in simulations).
+    assert!(!st.ai_actions(&pack, band).is_empty());
+    assert!(!st.ai_actions(&pack, rider).is_empty());
+
+    let ev = st.apply(&pack, cast(band, "cheer", p(3, 4))).unwrap();
+    assert_eq!(hits(&ev)[0].morale, 80);
+    assert_eq!(st.units[friend].morale, 100);
+    // The level difference shifts morale-down further (§5).
+    let ev = st.apply(&pack, cast(rider, "provoke", p(5, 6))).unwrap();
+    assert_eq!(hits(&ev)[0].morale, -100);
+    assert_eq!(st.units[foe].morale, 0);
+
+    st.units[friend].morale = 50;
+    st.apply(&pack, use_item(friend, "wine", friend)).unwrap();
+    assert_eq!(st.units[friend].morale, 100);
+    st.units[friend].acted = false;
+    let ev = st
+        .apply(&pack, use_item(friend, "sour_wine", friend))
+        .unwrap();
+    assert!(
+        matches!(ev[0], BattleEvent::ItemUsed { morale: -100, .. }),
+        "{ev:?}"
+    );
+    assert_eq!(st.units[friend].morale, 0);
+}
+
 #[test]
 fn strategy_scrolls_cast_without_mp_and_earn_exp() {
     let pack = pack(OPEN_MAP);
