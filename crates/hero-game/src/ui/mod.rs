@@ -11,7 +11,7 @@
 //! | toasts (app-wide) and banners | [`toast`] |
 //! | HP/MP/EXP/morale gauges | [`bars`] |
 //! | tooltip and hover delay | [`tooltip`] |
-//! | number/time formatting | [`format`] |
+//! | number/time formatting | [`mod@format`] |
 //! | colours and metrics | [`theme`] |
 //!
 //! Widgets are plain structs owned by screens: call `update(&mut ctx)` while the widget has

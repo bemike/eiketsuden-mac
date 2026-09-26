@@ -1,7 +1,7 @@
 //! Save slots on top of the [`KeyValueStore`]: one autosave slot and [`MANUAL_SLOTS`] manual
 //! slots, each holding one [`SaveGame`] JSON document (`hero_core::save`).
 //!
-//! The screens use [`list`] for the slot overview, [`write`] / [`read`] / [`delete`] for the
+//! The screens use [`list`] for the slot overview, [`write()`] / [`read`] / [`delete`] for the
 //! actions and [`latest`] for the title screen's "continue".
 
 use crate::platform::storage::{KeyValueStore, StorageError};
