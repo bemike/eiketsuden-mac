@@ -38,7 +38,7 @@ the places it looked. Media files are optional: a missing portrait falls back to
 missing sprites and images are drawn as coloured placeholder boxes, missing sounds are silent, missing
 fonts fall back to macroquad's built-in Latin font. Every miss is logged once to stderr.
 
-Keys available everywhere: **F3** frame rate / canvas scale / media queue overlay, **F11** or
+Keys available everywhere: **F3** frame rate / canvas scale and size / media queue overlay, **F11** or
 **Alt+Enter** fullscreen (native only).
 
 Saves (`save_auto.json`, `save_1.json` … `save_8.json`), `settings.json` and `crash.log` live in the
@@ -86,7 +86,9 @@ both sizes with Hangul and Hanja, word wrap (←/→ change the width), windows,
 adjustable items, tooltips, icons, sprites, portraits and their fallbacks, the message box, choice box
 and yes/no dialog, gauges, number formatting, toasts and banners, and a page that opens the real
 screens and exercises the audio manager. Tab / Shift+Tab, PageUp / PageDown, the keys 1–5 or a tap on
-a tab switch pages. Check it at a few window sizes after changing anything in `gfx.rs` or `ui/`.
+a tab switch pages. **V** switches the canvas between 480×270, 640×480 and 320×200 (the
+presentation profiles screens must lay out on; see below). Check it at a few window sizes and
+canvas sizes after changing anything in `gfx.rs` or `ui/`.
 
 ## Writing screens
 
@@ -94,8 +96,19 @@ a tab switch pages. Check it at a few window sizes after changing anything in `g
 
 * A screen implements `app::Screen` (`on_enter`, `update` → `Transition`, `draw`); the app keeps a
   stack of screens with fade transitions, overlays are drawn above the screen below them.
-* Everything draws in virtual 480×270 coordinates (`gfx`); text goes through `ctx.gfx.text*`
+* Everything draws in virtual canvas coordinates (`gfx`); text goes through `ctx.gfx.text*`
   (Galmuri11 12 px / Galmuri9 10 px, pixel-crisp at every scale) and `ctx.gfx.wrap` for Korean word wrap.
+* The canvas size is not a constant: it is the loaded pack's presentation profile
+  (`[presentation] canvas` in `pack.toml`, 480×270 by default and before a pack is loaded;
+  [ASSETS.md](ASSETS.md#presentation-profile)). Read it from `ctx.gfx.size()` /
+  `ctx.gfx.screen()` and lay screens out relative to it: centre windows, anchor bars and buttons to
+  the edges, let lists and panels take the remaining room. Widgets that lay text out when they are
+  built (`MessageBox`, `DialogueBox`, `BacklogView`, the dialogs) take `&Gfx` and keep the size
+  they were built for. Layout code worth testing takes the canvas size as a parameter (for example
+  `camp::widgets::columns`, `drama::slot_rect`), so tests can check 480×270 (where the base pack's
+  positions must stay exactly as they are) and other sizes.
+* The battle screen uses the tileset's `tile_size` for everything on the map; the event animation
+  (`battle::anim`) works in tile units and never needs the tile size.
 * Input is read from `ctx.input` (confirm / cancel / navigation with key repeat / pointer, tap, drag,
   wheel), media by key from `ctx.media`, music and effects through `ctx.audio` / `ctx.sfx(key)`.
 * Widgets in `ui/` (windows, menus, message box, dialogs, gauges, toasts, tooltips) are plain structs:
@@ -110,6 +123,29 @@ a tab switch pages. Check it at a few window sizes after changing anything in `g
 * Save slots live in `saves`; the camp screen and the battle menu push
   `screens::saveload::SaveLoadScreen::save(snapshot)` with the snapshot from `flow::Session::to_save`,
   and the title and game over screens push `SaveLoadScreen::load`.
+
+## Checking another presentation profile
+
+The base pack always runs at 480×270 with 16-pixel tiles. To look at the screens on another canvas,
+copy the pack and give the copy a `[presentation]` section — the copy's id stays `base`, so keep
+it out of the repository:
+
+```sh
+cp -r data/base /tmp/vga-pack
+cat >> /tmp/vga-pack/pack.toml <<'EOF'
+
+[presentation]
+canvas = [640, 480]
+EOF
+hero-tools validate /tmp/vga-pack
+cargo run -p hero-game -- --data /tmp/vga-pack          # or: tools/web/build.sh --data /tmp/vga-pack
+```
+
+For bigger map tiles, scale `gfx/tiles/terrain.png` up by a whole factor with nearest-neighbour
+sampling and multiply `tile_size` in `terrain.toml` by it; do the same with the unit sheets and the
+`frame` sizes in `units.toml` (a doubled anchor `[x, y]` becomes `[2x, 2y + 1]`). Compare the
+default look before and after a layout change with screenshots at the same window size: apart from
+animation (walk cycles, blinking cursors, the credits scroll) they must be identical.
 
 ## Publishing
 

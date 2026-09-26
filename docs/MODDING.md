@@ -87,6 +87,9 @@ terrain = "rules/terrain.toml"
 classes = "rules/classes.toml"
 strategies = "rules/strategies.toml"
 items = "rules/items.toml"
+
+[presentation]                    # optional
+canvas = [480, 270]
 ```
 
 | field | type | required | meaning |
@@ -102,6 +105,7 @@ items = "rules/items.toml"
 | `campaign` | path | yes | Campaign graph. |
 | `battles` | list of paths | yes | Battle files, one battle each (may be empty). |
 | `dramas` | list of paths | yes | Drama scripts, any number of scenes each (may be empty). |
+| `presentation.canvas` | `[width, height]` | no | Virtual canvas the screens are laid out on, each side within 320×200 ..= 1280×800 (default `[480, 270]`). Map tile and unit sizes come from the tileset and `units.toml`; see [ASSETS.md](ASSETS.md#presentation-profile). |
 
 Paths are relative to the pack directory, use `/`, must not contain `..`, `\` or `:`, and no file may be
 listed twice. The web build fetches exactly these files, so a file that is not listed is never loaded.
@@ -864,6 +868,9 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
 ### 2. Cross-references (`Pack::validate`)
 
 E = error, W = warning.
+
+**pack.toml** — E: `presentation.canvas` outside 320×200 ..= 1280×800. W: a canvas smaller than
+480×270 (the camp and battle screens are laid out for at least that size).
 
 **rules/game.toml** — E: `level_cap`/`exp_per_level` below 1, negative `gold_cap`/`mp_cap`/
 `morale_loss_pct`/`counter_damage_pct`, `morale_start` or `confuse_morale` outside 0..=100, EXP tables not
