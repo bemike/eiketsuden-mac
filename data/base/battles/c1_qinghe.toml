@@ -161,14 +161,19 @@ actions = [
   { type = "victory" },
 ]
 
-# Yan Gang reaching Qu Yi is cut down (PC); the fall scene plays however he retreats.
+# Yan Gang reaching Qu Yi is cut down (PC); the fall scene plays however he retreats. He can also
+# live through the battle (Guan Yu's duel or a rout of Qu Yi before he gets there), so the flag
+# tells c1_after_qinghe which ending to tell.
 [[events]]
 trigger = { type = "adjacent", a = "yan_gang", b = "qu_yi" }
 actions = [{ type = "retreat", target = "yan_gang" }]
 
 [[events]]
 trigger = { type = "unit_defeated", target = "yan_gang" }
-actions = [{ type = "drama", scene = "qinghe_yan_gang_falls" }]
+actions = [
+  { type = "drama", scene = "qinghe_yan_gang_falls" },
+  { type = "set_flag", flag = "c1_yan_gang_fell", value = 1 },
+]
 
 [[events]]
 trigger = { type = "turn_start", turn = 7, side = "enemy" }

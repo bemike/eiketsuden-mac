@@ -5,7 +5,8 @@
 # Yun). The Xindu, Guangchuan, Julu and Qinghe battles are prelude battles of the game; their story
 # is ours. Campaign scenes set their own background and music; scenes played inside a battle
 # (intro, events, outro) leave both alone so the dialogue appears over the battle map.
-# Flags: c1_route_a = 1 Xindu / 2 Guangchuan, c1_route_b = 1 Julu / 2 Qinghe.
+# Flags: c1_route_a = 1 Xindu / 2 Guangchuan, c1_route_b = 1 Julu / 2 Qinghe; c1_yan_gang_fell = 1
+# when Yan Gang fell at Qinghe (set by the battle).
 
 # ---------------------------------------------------------------------------------------------------
 # Pingyuan: Jian Yong joins, war in the north
@@ -429,10 +430,18 @@ liu_bei: 두 분의 곧은 마음이 우리 군의 기둥이 될 것입니다.
 == c1_after_qinghe
 @bg camp
 @bgm camp
+@if c1_yan_gang_fell == 0 -> yan_gang_lives
 @narr 청하의 다리를 건너 계교로 향하는 길. 엄강의 부하들이 흰 말을 끌고 뒤따랐다.
 @show liu_bei left
 @show zhang_fei right
 zhang_fei: 형님, 엄강 장군의 원수는 계교에서 원소 놈에게 갚읍시다!
+@goto road
+@label yan_gang_lives
+@narr 청하의 다리를 건너 계교로 향하는 길. 엄강은 백마 기병을 추슬러 공손찬의 본진으로 먼저 달려갔다.
+@show liu_bei left
+@show zhang_fei right
+zhang_fei: 형님, 엄강 장군도 무사하니 다행이오. 계교에서는 원소 놈을 단단히 혼내 줍시다!
+@label road
 liu_bei: 그래야지. 허나 장합과 안량이 고스란히 남아 있네. 쉽지 않은 싸움이 될 걸세.
 @hide all
 @narr 【계교 전투에 나설 부대를 정비합니다. 이번에는 물건을 살 수 없습니다.】

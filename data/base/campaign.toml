@@ -22,6 +22,7 @@
 #
 # Flags set by chapter 1 (dramas unless noted):
 #   c1_route_a      1 Xindu / 2 Guangchuan          c1_route_b      1 Julu / 2 Qinghe
+#   c1_yan_gang_fell  1 when Yan Gang fell at Qinghe (battle)
 #   c1_xiaopei      1 fight Cao Cao at Xiaopei / 0 truce
 #   c1_taishan, c1_xiaqiu1, c1_pengcheng1   1 once that bandit camp is cleared
 #   c1_bandits      number of bandit camps cleared   c1_bandit_next  camp picked in the menu (0 = done)
