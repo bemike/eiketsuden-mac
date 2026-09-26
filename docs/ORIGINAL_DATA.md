@@ -58,15 +58,15 @@ EUC-KR 한글입니다. 그래서 헤더만으로는 언어를 정하지 않고 
 |---|---|---|---|
 | LS11 아카이브 | 대부분의 `.R3` | 구현, **실물 검증** | 높음. `LS11`(디렉터리 빅엔디언)과 `Ls11`(리틀엔디언, `OPGRP`/`END1GRP`/`END2GRP`) 모두. 디렉터리 체인, 마지막 항목이 파일 끝에서 끝남, 정확한 복원 길이, 입력 완전 소비를 모두 검사. 한국어판 24개 중 23개가 전부 통과, `OPGRP.R3`는 검증한 사본이 손상(9.2절). `Ls10`/`Ls12` 변형은 "지원 안 함"으로 보고(실물에는 없음) |
 | 6바이트 테이블 컨테이너 | `FACEDAT.R3`, `PACKGRP.R3` | 구현, **실물 검증** | 높음. 오프셋은 데이터 영역 기준(0번 = 0), 항목 수는 파일에 없어 체인이 파일 끝에서 끝나는 유일한 수로 구함(3.1절) |
-| 대사·문자열 | `SNR0M`–`SNR4M.R3`, `IPPAN0M.R3` | **추출** → `text/*.json` | 높음. 섹션 수를 `SNRnD.R3` 장면 수와 교차 검증. 대사 레코드 앞의 u16 화자 번호는 바이트코드(P6) 없이는 경계를 알 수 없어 분리하지 않음. 깨끗하게 디코딩되지 않은 블록은 원본 hex를 함께 기록 |
+| 대사·문자열·시나리오 | `SNR0M`–`SNR4M.R3`, `SNR0D`–`SNR4D.R3`, `IPPAN0.R3`, `IPPAN0M.R3` | **추출** → `text/snr<n>.json`·`.txt`, `townsfolk_talk.json`, **실물 검증** | 높음. 바이트코드를 해독해 대화(화자별 줄)와 문자열의 경계를 정하고, 모든 섹션의 모든 바이트가 덮이는지 검사(10절). 명령 일부는 이름·의미 미확인. 깨끗하게 디코딩되지 않은 텍스트는 원본 hex를 함께 기록 |
 | 팔레트 | `MAIN.EXE` 안 | **추출** → `gfx/original/palettes.json`, **실물 검증** | 높음. 9 슬롯 × 48바이트 + `80 40 20 10` 서명으로 위치 탐색(고정 오프셋 안 씀), [B][R][G] 4비트. 한국어판은 0x38DF0. 게임은 **슬롯을 실행 중에** 시나리오·맵 데이터로 고르므로, 추출기는 눈으로 확인한 슬롯을 아카이브별로 씀(9.3절) |
 | 유닛 스프라이트·맵 칩·전투 UI 아이콘 | `HEXBCHR`, `HEXICHR`, `HEXZCHR`, `HEXZCHP`, `HEXBCHP`, `MMAPBGPL`, `SMAPBGPL`, `HEXGRP`(0번) | **추출** → `gfx/original/<파일>/<nnn>.png`, `sheets/<파일>.png`, `sprites.json`, **실물 검증(눈으로)** | 높음. 16×16 셀·4 비트플레인·MSB=왼쪽, 플레인 p = 색 비트 p, 셀은 행 우선 — 모두 실물 렌더링으로 확인. 항목 크기별 배치와 항목 묶음(병종·효과)은 9.4절. 저장된 한 방향만 내보냄(반대 방향은 엔진이 좌우 반전). 색 0은 투명 |
 | 얼굴 그림 | `FACEDAT.R3` (TF-DCE 압축) | **추출** → `gfx/original/facedat/<nnn>.png`, **실물 검증(눈으로)** | 높음. `TFDED.COM`을 정적으로 읽어 만든 디코더(3.1절). 한국어판 240개 모두 입력을 정확히 소비하고 64×80(2560바이트)을 내며, 눈으로 확인한 결과 모두 알아볼 수 있는 얼굴. 얼굴은 색 0–7만 쓰고(플레인 3은 항상 0) 이 8색은 팔레트 슬롯 4를 뺀 8개 슬롯에서 같으므로(9.3절) 슬롯 선택의 영향이 없음(추출기는 슬롯 0). 색 0은 불투명 |
 | 공통 화면·삽화 | `PACKGRP.R3` (TF-DCE 압축) | 디코딩만 (추출 종류 없음) | 높음. 38개 모두 정확히 소비. 조사 노트의 "16×16 공통 타일"이 아니라 640×400 화면 틀 2개, 512×320 창 1개, 224×144 사건 삽화 31개, KOEI 로고·문구 3개, 176×112 대리석 무늬 1개. 16색을 쓰는 3개(1·2·37번)는 어느 팔레트 슬롯이 맞는지 **미확인** |
 | 오프닝·엔딩 그림 | `OPGRP`, `END1GRP`, `END2GRP` | **지원 안 함** (컨테이너만 검증) | 전체 화면 한 장이 아니라 `NPK016` 압축 그림(코덱 미해독)과 크기 정보가 없는 packed planar 그림·1비트 마스크의 묶음. 크기는 `OPEN.EXE`/`END.EXE` 코드에 있음(9.5절) |
 | `MARK.R3`, `SSCCHR1/2.R3` | | **지원 안 함** | 배치 미해독(9.5절) |
-| 무장·아이템 이름 | `BAKDATA.R3` | **지원 안 함** (명시 보고) | 레코드 바이트 배치가 공개되지 않음 |
-| 전투·전략·도시 맵, 규칙 표, 시나리오, 음악, 세이브 | `HEXZMAP` 등 | 아직 없음 | 로드맵(7절) 참고 |
+| 무장·아이템·마을 사람 | `BAKDATA.R3` | **추출** → `text/officers.json`·`items.json`·`townsfolk.json`, **실물 검증** | 높음. 배치는 직접 분석(10.3절), 능력치 순서는 공개 수치로, 얼굴 번호는 눈으로 확인. 역할·플래그 바이트는 미확인 |
+| 전투·전략·도시 맵, 규칙 표, 음악, 세이브, 시나리오 → 게임 이벤트 변환 | `HEXZMAP` 등 | 아직 없음 | 로드맵(7절) 참고 |
 
 ### 3.1 6바이트 테이블과 TF-DCE 압축 (직접 분석)
 
@@ -170,7 +170,11 @@ hero-tools original extract "D:/Games/영걸전/GAME" --out "D:/영걸전-원작
 <out>/gfx/original/sheets/hexbchr.png    아카이브 전체를 한 장에 모은 확인용 시트(16개씩 한 줄,
                                          다른 슬롯을 쓰는 항목은 sheets/<파일>-slot<N>.png)
 <out>/gfx/original/facedat/000.png ...   얼굴 240개(64×80, 색 0 불투명), 미디어 키 original/facedat/000
-<out>/text/snr0m.json ...                섹션 → 블록(섹션 기준 상대 오프셋, 텍스트)
+<out>/text/snr0.json ...                 장(장면 → 대화·문자열, 블록 → 트리거 레코드 → 명령; 10절)
+<out>/text/snr0.txt ...                  같은 내용의 읽기용 목록
+<out>/text/townsfolk_talk.json           장·마을별 마을 사람과 대사(IPPAN0), ippan0m.json = 문자열 모음
+<out>/text/officers.json, items.json,    BAKDATA.R3 마스터 표
+          townsfolk.json
 ```
 
 ### 4.4 게임에서 쓰기
@@ -214,7 +218,8 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 ## 6. 검증 방식
 
 * **구조 불변식을 오라클로**: LS11 디렉터리 체인·파일 끝 일치·정확한 복원 길이·입력 완전 소비, 6바이트 테이블
-  체인, 메시지 표(첫 값 = 2 × 섹션 수, 섹션마다 NUL 종결), `SNRnM` 섹션 수 = `SNRnD` 장면 수. 위반하면 그
+  체인, 메시지 표(첫 값 = 2 × 섹션 수), `SNRnM` 섹션 수 = `SNRnD` 장면 수, 스크립트가 가리키는 대화·문자열이
+  섹션 안에서 끝나는지, 블록·레코드·명령 길이. 위반하면 그
   종류는 정확한 오류와 함께 실패하고 부분 결과를 남기지 않습니다.
 * **합성 픽스처**: 우리 LS11 인코더·6바이트 테이블 작성기·플레인 인코더·팔레트 뱅크 작성기로 만든 데이터로
   왕복·손상 입력·불변식 위반을 단위 테스트합니다.
@@ -226,20 +231,22 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 
   모든 컨테이너 검증, 한국어판 공개 수치(얼굴 240·`PACKGRP` 38·`HEXBCHR` 181개와 데이터 시작 0x990,
   전투 맵 59개와 0번 56×32, 캠페인 맵 크기 공식, 장면 수 1/5/4/5/3, 프롤로그 이벤트 오프셋 표, `SNR0M`
-  10,920바이트·`IPPAN0M` 37,580바이트, 블록 수 5,677/653, 팔레트 오프셋 0x38DF0), 전체 추출 성공을
+  10,920바이트·`IPPAN0M` 37,580바이트·문자열 653개, 메시지 섹션의 모든 바이트가 스크립트로 덮임, 팔레트
+  오프셋 0x38DF0), 전체 추출 성공을
   확인합니다. 같은 검사를 문서화된 형태로 만든 합성 설치본에도 돌려 CI에서 검사 코드 자체를 검증합니다.
   공개된 얼굴 0번 해시 접두어는 출력 배치가 문서화되지 않아 비교할 수 없어 검사하지 않습니다. 얼굴·`PACKGRP`
-  디코딩은 `tests/tfdce_golden.rs`가 따로 확인합니다(240개 64×80·2560바이트·플레인 3 = 0, 38개 크기 목록). 블록 수는 다른 프로젝트의 집계라
-  세는 방식이 다를 수 있습니다(불일치 시 메시지에 명시).
+  디코딩은 `tests/tfdce_golden.rs`가 따로 확인합니다(240개 64×80·2560바이트·플레인 3 = 0, 38개 크기 목록).
+  실물에서만 도는 `golden_korean_scenario_facts`는 10절의 수치(블록·레코드·명령·대화·문자열 수, `SNR3M`
+  기준 넘침, 서장 두 전투의 턴·격파 목표·조건부 우군·적장 병종/레벨, `IPPAN0` 조각, 공개 능력치)를 확인합니다.
   골든 테스트는 주제별로 나뉘어 있어(`golden_korean_ls11_archives`, `_table_containers`, `_map_geometry`,
-  `_scenario_text`, `_palette`, `_sprites`, `golden_every_container_validates`, `golden_extraction_succeeds`)
+  `_scenario_text`, `_scenario_facts`, `_palette`, `_sprites`, `golden_every_container_validates`,
+  `golden_extraction_succeeds`)
   실패하면 어느 형식이 틀렸는지 이름으로 드러납니다. 검증한 사본에서 손상된 파일은 SHA-256으로 기록해
   (`KNOWN_DAMAGED`) 정확히 기록된 오류로 실패하는지와 손상 전 항목이 복원되는지만 확인합니다.
 * **실물 검증 현황 (2026-09, 한국어 DOS/V 사본 1개)**: LS11 코덱·두 디렉터리 바이트 순서, 판본 식별,
   팔레트 뱅크, 스프라이트·칩·전투 UI 배치, 6바이트 테이블(`FACEDAT`/`PACKGRP`)과 TF-DCE 디코딩(얼굴 240개,
-  `PACKGRP` 38개)은 실물로 통과했고 PNG를 눈으로 확인했습니다. 메시지 파일 일부(`SNR1M`–`SNR3M`, `IPPAN0M`)는
-  실물과 맞지 않아 `golden_korean_scenario_text`와 `golden_extraction_succeeds`(텍스트 종류가 `partial`)가
-  실패합니다(텍스트 파서 작업에서 수정 예정).
+  `PACKGRP` 38개)은 실물로 통과했고 PNG를 눈으로 확인했습니다. 메시지·시나리오·`IPPAN0`·`BAKDATA`(10절)도
+  실물로 통과했고, 무장 이름 ↔ 얼굴 대응은 한 장에 그려 눈으로 확인했습니다.
 
 ## 7. 로드맵 (정직한 현황)
 
@@ -247,11 +254,11 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 |---|---|---|
 | P0 프로브 | 판본 식별, 공유용 매니페스트 | **완료** (Steam·PC-98은 식별만) |
 | P1 컨테이너 | LS11(+인코더), 6바이트 테이블 | **완료**. 음악용 테이블 컨테이너는 P7과 함께 |
-| P2 텍스트 | `SNR?M`, `IPPAN0M` (EUC-KR/Big5) | **완료** (화자 번호 분리는 P6 필요). 이름(`BAKDATA`)은 P5 |
+| P2 텍스트 | `SNR?M`, `IPPAN0/IPPAN0M` (EUC-KR/Big5) | **완료** (화자별 대사 줄, 마을 사람 대사까지; 실물 검증) |
 | P3 그래픽 | 플레인 셀·팔레트 → PNG | **부분**: 스프라이트·칩·배경 셀·전투 UI 아이콘 완료(실물로 확인), 얼굴(TF-DCE) 완료. `PACKGRP` 화면은 디코딩만 되고 추출 종류는 아직 없음. 오프닝/엔딩(`NPK016`)·`MARK`·`SSCCHR`는 미지원 |
 | P4 맵 | `HEXZMAP` 59개, `MMAP`, `SMAP`/`PMAP` → 타일 맵 JSON + 참고 PNG | 미착수 (칩 매핑 불명) |
-| P5 규칙·무장 | `BAKDATA` 배치 규명, `MAIN.EXE` 병종·지형·책략 표 서명 검색 | 미착수 |
-| P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | 미착수 |
+| P5 규칙·무장 | `BAKDATA` 배치 규명, `MAIN.EXE` 병종·지형·책략 표 서명 검색 | **부분**: `BAKDATA` 완료(10.3절). `MAIN.EXE` 규칙 표는 미착수 |
+| P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | **부분**: 해독·JSON 추출 완료(10.4절, 명령 일부 미확인). 우리 이벤트 형식으로의 변환은 미착수 |
 | P7 음악 | OPL2 시퀀스 → FM 합성 | 미착수 (합성기 라이선스·크기 검토 필요) |
 | P8 Steam / PC-98 | Steam 컨테이너(매니페스트 수집 후), 디스크 이미지 리더, Shift-JIS·OPN 변형 | 미착수 — **Steam 매니페스트가 선행 조건**. 암호화가 있으면 법률 검토 전 중단 |
 | P9 세이브 | `ESAVE/MSAVE` 가져오기 | 선택 사항 |
@@ -362,6 +369,185 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   첫 바이트들이 개수·번호 목록처럼 보임): 표준 셀·packed·plane 순차 배치 어느 것으로도 그림이 되지
   않았습니다. `SSCCHR2`는 16×16 조각 20개 묶음, `SSCCHR1`은 그 조각의 배치표일 가능성이 있지만 미확인입니다.
 
+## 10. 대사·시나리오·마스터 데이터 (한국어 DOS/V, 실물로 검증)
+
+바이트 배치는 실물 데이터를 끝까지 걸어 보며(모든 바이트가 설명되는지) 확인했고, 명령어 집합은 `MAIN.EXE`의
+스크립트 인터프리터를 정적으로 읽어(명령 분기, 각 처리기가 읽는 피연산자, 처리기가 찍는 디버그 문자열)
+정했습니다. 이름에 "(미확인)"이 붙거나 `op_xx`인 것은 동작을 아직 확정하지 못한 것입니다.
+노트(3.5절)와 다른 점은 **정정**으로 표시했습니다.
+
+### 10.1 메시지 파일 `SNR0M`–`SNR4M.R3`
+
+* `[u16 섹션 기준 N개][섹션…]`, 첫 값 = 2N, 섹션 i = 장면 i(`SNRnD.R3`의 항목 i). 파일은 압축되지 않았습니다.
+* **정정**: 섹션 기준은 16비트라 64 KiB를 넘는 `SNR3M`(106,704바이트)의 3·4번 기준(실제 0x11029, 0x159D0)은
+  잘려 저장됩니다. 게임은 이 두 값을 코드에 박아 두고 0x10000을 더합니다(메시지 읽기 함수). 우리 파서는
+  "앞 기준보다 작으면 넘친 것"으로 일반화해 같은 결과를 냅니다.
+* **정정**: 섹션은 NUL로 나뉜 문자열 목록이 아니고, 바이트코드만이 경계를 압니다. 항목은 두 종류입니다.
+  * **평문 문자열**: 서술·캡션·제목·선택지·전투 목표. EUC-KR 텍스트 + NUL. 앞에는 NUL 또는 대화의 `FF FF`가 옵니다.
+  * **대화**: `[u16 화자][텍스트][00]`의 반복을 `u16 0xFFFF`가 끝냅니다. 화자는 `BAKDATA.R3` 무장 번호(0–383).
+    게임은 대화 하나를 1 KiB 버퍼로 읽습니다.
+* 선택지 문자열은 줄바꿈(0x0A)으로 선택지를 나눕니다. 제어 문자·치환 코드는 없습니다(복사 함수가 2바이트
+  문자를 그대로 옮길 뿐).
+* 검증 수치: 18개 장면 섹션의 **모든 바이트**가 스크립트가 가리키는 대화·문자열로 정확히 덮이고(남는 바이트 0),
+  서로 다른 대화 2,619개(대사 줄 4,783개), 평문 문자열 901개, 모두 EUC-KR로 깨끗하게 디코딩됩니다.
+  화자 번호는 모두 0–383. (다른 프로젝트의 "블록 5,677개"는 세는 방식이 달라 쓰지 않습니다.)
+
+### 10.2 `IPPAN0.R3` / `IPPAN0M.R3` — 마을 사람 대사
+
+* **정정**: `IPPAN0M`에는 표가 없습니다. NUL로 끝나는 문자열 653개의 모음입니다.
+* `IPPAN0.R3`(압축 없음, 3,640바이트)는 제1–4장용 조각 4개가 이어 붙은 것입니다(서장 없음). 조각 경계
+  (957/785/1,047/851바이트)는 `MAIN.EXE` 안의 오프셋·길이 표와 같고, 조각 자체로도 끝을 알 수 있습니다.
+
+  ```text
+  [u8 n][n × u16 마을 레코드 오프셋(조각 1번째 바이트 기준, 0 = 없음)]
+  [u16 m][m × u16 문자열 오프셋(이 장의 IPPAN0M 구간 기준, FFFF = 없음)]
+  마을 레코드: [u8 g] g × ([u8 키][u8 k][k × u16 항목])
+  ```
+* 장 c의 `IPPAN0M` 구간은 장 c-1이 참조한 마지막 문자열 끝에서 시작합니다(0, 11,301, 20,619, 31,291 —
+  `MAIN.EXE`의 표와 같음). 네 장이 653개 문자열을 빠짐없이 한 번씩 가리킵니다.
+* 스크립트 명령 `0x1F`(마을 사람 배치)가 이 표를 씁니다: 현재 마을의 그룹 중 키가 게임 상태 값과 맞는 것(키
+  125 = 기본 그룹)을 골라, 항목마다 32×20 맵의 빈 칸에 무작위로 세웁니다. **항목 번호는 `BAKDATA`의 마을 사람
+  번호(이름·스프라이트)이자 그 사람이 하는 대사의 번호**입니다(의사는 사기 이야기, 상인은 물건 이야기).
+  키가 125 이외일 때 어떤 상태 값과 비교되는지는 미확인입니다.
+
+### 10.3 `BAKDATA.R3` — 마스터 표 (19,328바이트, 압축 없음)
+
+`MAIN.EXE`의 로더가 정확히 이 네 구간을 읽습니다(0xD00, 0x400, 0x1F80, 0x1B00바이트).
+
+| 오프셋 | 레코드 | 배치 |
+|---|---|---|
+| 0x0000 | 마을 사람 256 × 13 B | `[이름 8][스프라이트][00 00 00][80]`. 마지막 레코드는 개발용 자리표시자 |
+| 0x0D00 | 아이템 64 × 16 B | `[이름 13][가격(×10, 255 = 비매품)][위력][종류]`. 마지막은 자리표시자 |
+| 0x1100 | 무장 384 × 21 B | `[이름 6][일본판 읽기 8][u16 얼굴][스프라이트][통솔][무력][지력][플래그]` |
+| 0x3080 | 무장 초기 상태 384 × 18 B | `[소속][역할][00 00][사기][u16 병력][병종][레벨][경험치][아이템 8, FF = 빈칸]` |
+
+* 능력치 순서 **통솔·무력·지력**은 공개 수치로 확인: 조조 통솔 98·무력 75, 강유 지력 94, 제갈량 지력 100.
+  로더는 능력치를 0–100으로 자릅니다.
+* 얼굴 번호 = `FACEDAT.R3` 항목. 무장 이름과 얼굴을 한 장에 그려 눈으로 확인했습니다(유비·관우·장비·동탁,
+  외눈 하후돈, 노인 도겸, 윤건의 제갈량 등 모두 맞음).
+* "읽기" 8바이트는 일본판의 반각 가타카나 읽기(JIS X 0201, 예: 유비 = `ﾘｭｳﾋﾞ`)가 그대로 남은 것으로 한국어판은
+  표시하지 않습니다(NUL 뒤는 옛 값의 찌꺼기).
+* 소속 = 0x80 + 군주 번호. 순서는 `MAIN.EXE`의 이름 목록과 같습니다: 0 유비, 1 조조, 2 손권, 3 공손찬, 4 원소,
+  5 동탁, 6 원술, 7 여포, 8 도겸, 9 유표, 10 유장, 11 장노, 12 마등, 13 공융, 14 무소속. 병종 번호 0–18의 이름
+  목록도 `MAIN.EXE`에 있습니다(단병 … 수송대).
+* 아이템 종류(그 종류를 가진 아이템들로 명명): 0 무기(위력 = 공격 % 보정), 1 전직 도구, 2 공격 책략서·폭탄,
+  3 소모품·특수, 4 말(위력 = 이동력), 5 병법서(위력 = 방어 % 보정). 관우 = 청룡언월도, 장비 = 사모, 여포 =
+  적토마·방천화극을 초기 소지.
+* 역할 바이트(유비만 0, 로더는 값 + 2로 보관)와 무장 플래그 바이트, 스프라이트 번호가 가리키는 그림은 미확인.
+  시나리오 명령이 합류 시 병종·레벨·소속을 덮어쓰므로 초기 상태가 전부는 아닙니다.
+
+### 10.4 시나리오 바이트코드 `SNR0D`–`SNR4D.R3`
+
+LS11 아카이브, 항목 = 장면(1/5/4/5/3개).
+
+```text
+장면        [u16 블록 오프셋]… FFFF
+블록        [10바이트 트리거 레코드]… [FF × 10]  그 뒤 스크립트들
+레코드      [종류][그룹][u16 a][u16 b][u16 c][u16 스크립트 오프셋(블록 시작 기준)]
+스크립트    [명령][피연산자]… FF
+```
+
+* **정정**: 노트의 "이벤트 오프셋 표"는 블록 표이고, 10바이트 레코드는 유닛 슬롯이 아니라 트리거입니다
+  (유닛 배치는 명령 `0x03`/`0x22` 안에 있음).
+* 검증: 18개 장면의 모든 바이트가 블록 표·레코드·스크립트로 정확히 덮입니다(블록 225개, 레코드 2,144개,
+  레코드별로 해독한 명령 14,404개).
+* **종류 바이트**: 하위 7비트 = 종류, 비트 7 = 판정 반전. **그룹 바이트**: 하위 7비트 = 그룹, 비트 7 = 그룹
+  플래그(그룹 첫 레코드 것). 같은 그룹의 연속 레코드는 한 사건의 후보들로, 게임은 차례로 판정해 처음 성립하는
+  것의 스크립트를 실행합니다. 스크립트가 끝나면 다음 그룹으로 넘어갑니다. 선택지(`0x25`)는 i번째 답에 대해
+  "현재 레코드 + 1 + i"의 스크립트로 갑니다.
+
+| 종류 | 이름 | 인자 | 근거 |
+|---|---|---|---|
+| 0 | run | 없음 | 그룹 차례가 오면 바로 실행(모든 블록의 0번 레코드) |
+| 1 | condition | 없음 | 그룹 플래그가 있으면 스크립트 첫 명령 `0x21`을 조건으로 평가 |
+| 2 | location | a = 현재 장소, b = 대상 | 맵 모드 판정 함수, 데이터는 마을 입장 |
+| 3 | talk | a = 무장 | 말 걸기. 서장 진유 막사: 원소·조조·원술·공융·공손찬·도겸·장비·도구상·관우 |
+| 4 | unit_contact | a, b = 무장 | 전투: 인접 유닛 판정. 관우가 화웅에 붙으면 일기토 |
+| 5 | campaign_location (미확인) | a | 캠페인 맵 모드에서만 판정 |
+| 6 | unit_at_cell | a = 무장(0x400 = 아무 유닛), 칸 (c4, c5) | 서장 보물고·군량고 칸 → 금 100·콩 |
+| 7 | battle_won | 없음 | 스크립트가 모두 승리 장면 |
+| 8 | battle_lost | 없음 | 스크립트가 모두 패배 장면(관우 처형, 백제성 퇴각 등) |
+| 9 | turn | a = 턴 | 호로관 18턴에 여포 AI 전환(공개 공략 "18턴부터 여포 이동"과 일치) |
+| 11 | unit_in_area | a = 무장, 칸 범위 (c4–c6, c5–c7) | 영역 진입 판정 함수 |
+| 12 | unit_defeated | a = 무장 | 스크립트가 퇴각 대사·+50 경험치 |
+
+칸 좌표 두 바이트 중 어느 쪽이 가로인지는 맵 해석(P4) 전에는 확정하지 않았습니다.
+
+**명령 집합** (`0x00`–`0x3D`, `FF`; 길이는 처리기가 읽는 바이트 수):
+
+| 코드 | 이름 | 피연산자 | 비고 |
+|---|---|---|---|
+| 00 | dialogue | u16 대화 | 다음 명령이 `0x15`면 첫 줄이 예/아니오 질문 |
+| 01 | move_person | u16 무장, x, y, 방향 | 연속된 이동은 함께 진행 후 대기 |
+| 02 | add_menu | u8 | |
+| 03 | battle_setup | 0x119 B | 머리 11 B: [?][턴 제한][?][무시][승리 플래그][u16 격파 목표][무시][패배 플래그][u16 패배 무장] + 아군 슬롯 30 × 9 B `[u16 무장][x][y][0이면 적 편][조건 여부][플래그][?][?]` (FFFF = 빈 슬롯) |
+| 04 | weather | — | 이 판에서는 디버그 출력뿐 |
+| 05 | show_screen (미확인) | — | 항상 load_map·배치 뒤, 첫 대사 앞 |
+| 06 | op_06 | — | 미사용 |
+| 07 | show_picture | 그림, 변형 | 뒤따르는 서술이 그림 위에 표시. 그림 번호 = `PACKGRP.R3` 항목(3번부터 사건 삽화; 서장 3번 = 동탁과 황제, 10번 = 사냥터의 조조) |
+| 08 | narration | u16 문자열 | |
+| 09 | load_map | u16 맵 | 상위 니블 1 = 캠페인 맵, 2 = 마을·실내, 3 = 전투 맵; 하위 바이트 = 번호 |
+| 0A | place_person | u16 무장, x, y, 방향 | 마을 맵 32×20 |
+| 0B | caption | u16 문자열 | 장소·획득 표시 |
+| 0C | op_0c | u16, u16 문자열 | 읽기만 하고 표시 안 함, 미사용 |
+| 0D | title | u16 문자열 | |
+| 0E | chapter_title | u16 문자열(키) | 키 첫 글자 − '0' = `MAIN.EXE`의 장 제목 18개 중 번호 |
+| 0F | goto_block | u8 블록 | |
+| 10 | duel | u16, u16 무장 | |
+| 11 | battle_end | u16 맵 | 전투 뒤 돌아갈 캠페인 맵 |
+| 12 | end_event | — | |
+| 13 | leave_parallel | — | |
+| 14 | set_flag | 플래그, 값 | 값 0 = 켜기, 1 = 끄기(플래그 256개) |
+| 15 | if_answer | 답, 건너뛸 수 | 답이 같으면 뒤 N개 명령을 건너뜀. 서장 "준비는 다 되셨습니까?"에서 0이면 출진을 건너뜀 |
+| 16 | withdraw_unit (미확인) | u16 무장, u16 | 미사용 |
+| 17 | input_control | u8 | |
+| 18 | remove_person | u16 무장 | **정정**: 노트의 "합류"가 아님 |
+| 19 | — | — | 기본 분기(효과 없음)지만 건너뛰기 표 길이(2)와 실행 길이(0)가 달라 미정의로 거부, 미사용 |
+| 1A | join_battle | u16 무장 | 전투 중 유닛 참전 |
+| 1B | add_item | u8 아이템 | |
+| 1C | set_ai | u16 무장, 방식, 인자 2 B | 방식 3·5 = 목표 무장, 4·6 = 목표 칸, 0–2 = 안 쓰는 워드 |
+| 1D | set_previous_map | u16 맵, x, y | **4바이트**: 인터프리터의 건너뛰기 표는 2라고 잘못 적고 있음 |
+| 1E | clear_persons | — | |
+| 1F | place_townsfolk | — | 10.2절 |
+| 20 | enable_list (미확인) | u8 개수(비트 7 = 먼저 전부 끔) + 목록 | 32바이트 레코드 표의 항목을 켬 |
+| 21 | if_flags | 건너뛸 수, n, 켜진 플래그 n개, m, 꺼진 플래그 m개 | 조건이 아니면 뒤 N개 건너뜀 |
+| 22 | battle_roster | 0x187 B | [방식: 0 = 적, 그 외 = 우군 NPC] + 30 × 13 B `[u16 무장][x][y][조건 여부][플래그][?][?][AI 방식][u16 AI 인자][병종][레벨]` — 서장 화웅 경기병 Lv5, 여포 Lv6 등 공개 공략과 일치 |
+| 23 | op_23 | — | 모든 battle_setup 바로 뒤 |
+| 24 | set_allegiance | u16 무장, 소속 | 0 = 유비 … 14 = 무소속 |
+| 25 | choice | u16 문자열 | 10.4절 머리말 |
+| 26 | set_map_chip | x, y, 칩 | |
+| 27 | screen_effect | x, y, 효과 | 연속 사용으로 칸 경로를 그림 |
+| 28 | set_country | u16 무장, 번호 | 설득 합류 장면(유비 레벨 +1과 함께) |
+| 29 | game_over | — | |
+| 2A | ending | u8 (0–3) | |
+| 2B | data | 종류, u16 값 | 종류 2 = 금 추가(서장 조조의 군자금 500), 종류 4 = 대체 승리의 +50 경험치(값 50) |
+| 2C | redraw | — | |
+| 2D | halve (미확인) | u8, u8 | |
+| 2E | reset_player_position | u16, x, y, 방향 | |
+| 2F | set_graphic | u16 무장, 번호 | |
+| 30 | set_objective | u16 문자열 | 전투 목표 문구 |
+| 31 | nop | — | 기본 분기 |
+| 32 | set_shop_items | n + n바이트 | 도구상에게 말할 때만 실행, 목록이 소모품 아이템 번호 |
+| 33 / 34 | duel_end / duel_begin | — | 일기토 연출의 끝과 시작 |
+| 35 | duel_action | u16 무장, 동작 | 동작 번호 미확인 |
+| 36 | begin_battle (미확인) | — | 전투 블록 그룹 1의 유일한 명령 |
+| 37 | set_officer_bit | u16 무장, 켬 | 소속 바이트의 비트 6 |
+| 38 | play_music | u8 곡 | `MUSIC.R3`의 20곡(0–19) |
+| 39 | add_levels | u16 무장, 레벨 | 99에서 멈춤 |
+| 3A | set_class | u16 무장, 병종 | |
+| 3B / 3C / 3D | op_3b / op_3c / op_3d | (x, y) / u16 무장 / u8 | 캠페인 맵 연출(미확인) |
+| FF | end | — | |
+
+맵 번호의 하위 바이트가 어느 맵 파일 항목인지(`SMAP`/`PMAP`/`HEXZMAP`)와 좌표축은 P4에서 확인할 일입니다.
+
+### 10.5 추출 결과
+
+`--text`는 `text/snr<n>.json`(장면 → 섹션의 대화·문자열 목록과 블록 → 레코드 → 명령, 명령마다 이름·텍스트를
+풀어 쓴 `resolved`), 같은 내용의 읽기용 `text/snr<n>.txt`, `text/ippan0m.json`, `text/townsfolk_talk.json`,
+`text/officers.json`·`items.json`·`townsfolk.json`을 씁니다. 실물 사본에서는 18장면, 명령 14,404개, 대화
+2,619개, 문자열 901개, 마을 사람 대사 653개, 디코딩 실패 0으로 추출됩니다. 게임의 이벤트 형식으로 바꾸는
+일(P6 후반)은 아직 하지 않았습니다.
+
 ---
 
 ## English summary
@@ -383,17 +569,21 @@ and the repository and CI contain no original bytes (tests use synthetic fixture
   written to `gfx/original/sprites.json` with contact sheets in `gfx/original/sheets/`. `HEXGRP.R3` entry 0
   uses a *packed* planar layout (4 plane bytes per 8 pixels). Not decoded: `NPK016` opening/ending pictures,
   `MARK.R3`, `SSCCHR1/2.R3`. The 6-byte tables use offsets relative to the data area (section 3.1), and
-  some message files do not parse yet.
+  the scenario text layout is documented in section 10.
 * **Editions**: Korean DOS/V (identified by the `DISK1.R3I` header and Korean text, extractable), Traditional-Chinese DOS
   (DOS/V family + Big5 text, medium confidence, extractable but not yet verified on a real copy), Steam 2017 and
   PC-98 disk images (identified only), anything else `unknown` (refused unless `--edition` is given).
-* **Assets**: LS11 archives and 6-byte tables with full invariant checks; message text (EUC-KR/Big5 → JSON,
-  scene counts cross-checked); palettes located by signature in `MAIN.EXE`; 16×16 planar sprite/chip cells and packed
+* **Assets**: LS11 archives and 6-byte tables with full invariant checks; **scenario scripts and text** (section 10:
+  the `SNRnD` bytecode — blocks, 10-byte trigger records, the 0x00–0x3D instruction set read from the `MAIN.EXE`
+  interpreter — delimits the dialogues `[u16 speaker][text]00…FFFF` and plain strings of `SNRnM`, which cover every
+  message byte; `IPPAN0.R3` indexes the townspeople's lines in `IPPAN0M.R3`) → `text/snr<n>.json`/`.txt` and
+  `townsfolk_talk.json`; `BAKDATA.R3` (256 townspeople × 13 B, 64 items × 16 B, 384 officers × 21 B + 18 B initial
+  state; stats in the order leadership/war/intelligence) → `officers.json`, `items.json`, `townsfolk.json`; palettes located by signature in `MAIN.EXE`; 16×16 planar sprite/chip cells and packed
   planar images → PNG (plane order, cell order and palette slots checked visually on the real files); the 240
   **TF-DCE portraits** of `FACEDAT.R3` → `gfx/original/facedat/<nnn>.png` (64×80, decoder written from a static
   reading of `TFDED.COM`, format in section 3.1; all 240 consume their input exactly and were checked by eye).
   `PACKGRP.R3` (38 TF-DCE screens and event illustrations, not 16×16 tiles) decodes but is not an extraction kind
-  yet. **`BAKDATA.R3` names are reported as unsupported**, because the record layout is unknown.
+  yet.
 * **Usage**: `hero-tools original probe <dir> [--out manifest.json]`, then
   `hero-tools original extract <dir> --out <overlay> [--text] [--sprites] [--portraits]`, then
   `eiketsuden --original <overlay>` (or `EIKETSUDEN_ORIGINAL`; native builds only). Media keys are looked up in
