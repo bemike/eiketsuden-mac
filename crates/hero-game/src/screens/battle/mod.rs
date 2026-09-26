@@ -222,6 +222,8 @@ pub struct BattleScreen {
     focus_player: bool,
     idle_time: f32,
     touch_seen: bool,
+    /// Seconds since the pointer last moved (edge scrolling stops for a resting pointer).
+    pointer_rest: f32,
     rdrag: Option<RightDrag>,
     /// Class id -> sprite key.
     sprite_of: BTreeMap<String, String>,
@@ -339,6 +341,7 @@ impl BattleScreen {
             focus_player: false,
             idle_time: 0.0,
             touch_seen: false,
+            pointer_rest: 0.0,
             rdrag: None,
             sprite_of,
             sheets,
@@ -1214,7 +1217,7 @@ impl BattleScreen {
         }
         if !self.touch_seen && self.rdrag.is_none() && !input.down() {
             if let Some(p) = pointer {
-                let d = edge_direction(VIEWPORT, p);
+                let d = edge_direction(VIEWPORT, p, self.pointer_rest);
                 if d != Vec2::ZERO {
                     self.camera.pan(d * EDGE_PAN_SPEED * dt);
                 }
@@ -1383,6 +1386,11 @@ impl Screen for BattleScreen {
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         self.poll_meta(ctx);
         let dt = ctx.dt;
+        self.pointer_rest = if ctx.input.pointer_moved() {
+            0.0
+        } else {
+            self.pointer_rest + dt
+        };
         let speed = self.speed(ctx);
         self.camera.update(dt);
         self.scene.tick(dt * speed);
