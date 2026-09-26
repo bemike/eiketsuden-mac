@@ -477,13 +477,6 @@ page = 21
 quad = "TR"
 face = [1400, 850]
 
-[portraits.gongsun_yue]  # 공손월 公孫越
-figure = "傅彤"
-page = 30
-quad = "BL"
-face = [460, 1840]
-stand_in = true
-
 [portraits.yan_gang]  # 엄강 嚴綱
 figure = "陳泰"
 page = 48
