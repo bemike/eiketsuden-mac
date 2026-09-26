@@ -10,24 +10,30 @@
 //!                                         transparent
 //! <out>/gfx/original/sheets/<archive>.png every entry of an archive on one contact sheet
 //! <out>/gfx/original/facedat/<nnn>.png    TF-DCE portraits of FACEDAT.R3
-//! <out>/text/<file>.json                  message files as UTF-8 JSON
+//! <out>/text/snr<n>.json                  chapter n: decoded event scripts of every scene with
+//!                                         the dialogues and strings they show (UTF-8)
+//! <out>/text/snr<n>.txt                   the same as a plain-text listing
+//! <out>/text/ippan0m.json                 the generic string pool
+//! <out>/text/officers.json, items.json,   BAKDATA.R3 master tables
+//!            townsfolk.json
 //! ```
 //!
 //! The game reads the folder with `--original <out>`: media keys are looked up there first,
 //! then in the data pack. Only the DOS/V editions can be extracted; every asset kind reports its
 //! own status (`extracted`, `partial`, `failed`, `unsupported`, `missing-source`) so an
-//! unsupported format (the `BAKDATA.R3` record layout) is an explicit result
-//! rather than a guess.
+//! unsupported format is an explicit result rather than a guess.
 //!
 //! The install is only read. The output folder must not lie inside it, and must be empty, new,
 //! or a previous extraction (whose listed files are replaced).
 
+use crate::bakdata::{self, Bakdata};
 use crate::edition::{identify, Edition, EditionId};
 use crate::image::IndexedImage;
 use crate::image::{encode_png, grey_ramp, Palette16};
 use crate::install::{lies_inside, InstallDir, InstallError};
+use crate::scenario::{self, ArgKind, Operands};
 use crate::sprites::{self, Group, SpriteArchive};
-use crate::text::{parse_messages, TextEncoding};
+use crate::text::{parse_messages, Section, TextEncoding};
 use crate::{ls11, palette, table6};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -375,11 +381,12 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
     };
     let mut assets = BTreeMap::new();
     if selection.text {
+        let (names, bakdata) = extract_names(&install, encoding, &mut output, requested)?;
+        assets.insert("names".to_string(), names);
         assets.insert(
             "text".to_string(),
-            extract_text(&install, encoding, &mut output, requested)?,
+            extract_text(&install, encoding, bakdata.as_ref(), &mut output, requested)?,
         );
-        assets.insert("names".to_string(), names_report());
     }
     if selection.sprites {
         assets.insert(
@@ -423,22 +430,19 @@ fn read_source(
 
 // ----- text ----------------------------------------------------------------------------------
 
-#[derive(Serialize)]
-struct TextFile {
-    source: String,
-    encoding: &'static str,
-    blocks: usize,
-    malformed_blocks: usize,
-    note: &'static str,
-    sections: Vec<TextSection>,
-}
+/// Master tables (officer, item and townsperson names).
+pub const NAMES_SOURCE: &str = "BAKDATA.R3";
+/// The generic string pool.
+pub const POOL_SOURCE: &str = "IPPAN0M.R3";
 
-#[derive(Serialize)]
-struct TextSection {
-    index: usize,
-    base: usize,
-    blocks: Vec<TextBlock>,
-}
+const SCENARIO_NOTE: &str = "Scripts decoded from the scenario bytecode; message offsets are \
+    relative to the scene's section of the message file, persons are officer indices of \
+    BAKDATA.R3. `resolved` repeats the referenced names and text for reading. Names marked \
+    op_xx / kind_x and summaries marked unverified are not pinned down yet \
+    (docs/ORIGINAL_DATA.md §10).";
+
+const POOL_NOTE: &str = "NUL-terminated strings addressed by absolute offset from IPPAN0.R3 \
+    (whose layout is not decoded yet).";
 
 #[derive(Serialize)]
 struct TextBlock {
@@ -450,9 +454,110 @@ struct TextBlock {
     raw_hex: Option<String>,
 }
 
-const TEXT_NOTE: &str = "Blocks are split at NUL bytes; offsets are relative to the section base \
-    (as the scenario bytecode addresses them). Dialogue records start with a u16le speaker id \
-    that is not separated from the text.";
+impl TextBlock {
+    fn new(offset: usize, bytes: &[u8], encoding: TextEncoding) -> TextBlock {
+        let d = encoding.decode(bytes);
+        TextBlock {
+            offset,
+            raw_hex: d.malformed.then(|| crate::hex(bytes)),
+            malformed: d.malformed,
+            text: d.text,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PoolFile {
+    source: String,
+    encoding: &'static str,
+    note: &'static str,
+    strings: Vec<TextBlock>,
+}
+
+#[derive(Serialize)]
+struct ScenarioFile {
+    scenario: String,
+    messages: String,
+    encoding: &'static str,
+    note: &'static str,
+    scenes: Vec<SceneOut>,
+}
+
+#[derive(Serialize)]
+struct SceneOut {
+    index: usize,
+    /// Absolute offset of the scene's section in the message file.
+    message_base: usize,
+    dialogues: Vec<DialogueOut>,
+    strings: Vec<StringOut>,
+    /// Section bytes no instruction refers to (none in the verified copy).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unreferenced: Vec<TextBlock>,
+    blocks: Vec<BlockOut>,
+}
+
+#[derive(Serialize)]
+struct DialogueOut {
+    offset: usize,
+    lines: Vec<LineOut>,
+}
+
+#[derive(Serialize)]
+struct LineOut {
+    speaker: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speaker_name: Option<String>,
+    text: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    malformed: bool,
+}
+
+#[derive(Serialize)]
+struct StringOut {
+    offset: usize,
+    used_by: Vec<&'static str>,
+    text: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    malformed: bool,
+}
+
+#[derive(Serialize)]
+struct BlockOut {
+    index: usize,
+    offset: usize,
+    records: Vec<RecordOut>,
+}
+
+#[derive(Serialize)]
+struct RecordOut {
+    index: usize,
+    offset: usize,
+    trigger: scenario::Trigger,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trigger_person: Option<String>,
+    code_offset: usize,
+    code: Vec<InstrOut>,
+}
+
+#[derive(Serialize)]
+struct InstrOut {
+    #[serde(flatten)]
+    instr: scenario::Instr,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    resolved: BTreeMap<&'static str, String>,
+}
+
+/// Counters for the report.
+#[derive(Default)]
+struct TextCounts {
+    scenes: usize,
+    instructions: usize,
+    dialogues: usize,
+    lines: usize,
+    strings: usize,
+    malformed: usize,
+    unreferenced_bytes: usize,
+}
 
 /// The message bytes of a file: the file itself, or the single entry of an LS11 archive.
 fn message_payload(data: &[u8]) -> Result<Cow<'_, [u8]>, String> {
@@ -469,139 +574,492 @@ fn message_payload(data: &[u8]) -> Result<Cow<'_, [u8]>, String> {
     archive.decode(0).map(Cow::Owned).map_err(|e| e.to_string())
 }
 
-fn scene_count(install: &InstallDir, name: &str) -> Result<Option<usize>, String> {
-    let data = match install.read(name) {
-        Ok(Some(d)) => d,
-        Ok(None) => return Ok(None),
-        Err(e) => return Err(e.to_string()),
-    };
-    ls11::Archive::parse(&data)
-        .map(|a| Some(a.len()))
-        .map_err(|e| format!("{name}: {e}"))
+struct Lookup<'a> {
+    names: Option<&'a Bakdata>,
+    encoding: TextEncoding,
 }
 
-fn convert_messages(
-    install: &InstallDir,
-    name: &str,
-    scenes_from: Option<&str>,
-    data: &[u8],
-    encoding: TextEncoding,
-    notes: &mut Vec<String>,
-) -> Result<(TextFile, usize), String> {
-    let payload = message_payload(data)?;
-    let messages = parse_messages(&payload).map_err(|e| e.to_string())?;
-    if let Some(d) = scenes_from {
-        match scene_count(install, d)? {
-            Some(expected) if expected != messages.sections.len() => {
-                return Err(crate::text::TextError::SectionCount {
-                    found: messages.sections.len(),
-                    expected,
-                }
-                .to_string())
-            }
-            Some(_) => {}
-            None => notes.push(format!(
-                "{d} missing: {name}'s scene count not cross-checked"
-            )),
+impl Lookup<'_> {
+    fn person(&self, id: u16) -> Option<String> {
+        match id {
+            0x400 => Some("(any unit)".into()),
+            _ => self
+                .names
+                .and_then(|n| n.officer_name(id))
+                .map(str::to_string),
         }
     }
-    let mut malformed_blocks = 0;
-    let sections: Vec<TextSection> = messages
-        .sections
-        .iter()
-        .enumerate()
-        .map(|(index, s)| TextSection {
-            index,
-            base: s.base,
-            blocks: s
-                .blocks
-                .iter()
-                .map(|b| {
-                    let d = encoding.decode(b.bytes);
-                    malformed_blocks += usize::from(d.malformed);
-                    TextBlock {
-                        offset: b.offset,
-                        text: d.text,
-                        malformed: d.malformed,
-                        raw_hex: d.malformed.then(|| crate::hex(b.bytes)),
+
+    fn item(&self, id: u16) -> Option<String> {
+        self.names.and_then(|n| n.item_name(id)).map(str::to_string)
+    }
+}
+
+/// Readable forms of an instruction's references.
+fn resolve(
+    instr: &scenario::Instr,
+    section: &Section<'_>,
+    look: &Lookup<'_>,
+) -> Result<BTreeMap<&'static str, String>, String> {
+    let mut out = BTreeMap::new();
+    let at = |e: crate::text::TextError| format!("instruction at {:#x}: {e}", instr.offset);
+    for arg in instr.operands.args() {
+        let v = arg.value;
+        let text = match arg.kind {
+            ArgKind::Person => look.person(v),
+            ArgKind::Item => look.item(v),
+            ArgKind::Message => Some(
+                look.encoding
+                    .decode(section.string_at(v as usize).map_err(at)?)
+                    .text,
+            ),
+            ArgKind::Dialogue => {
+                let (lines, _) = section.dialogue_at(v as usize).map_err(at)?;
+                let rendered: Vec<String> = lines
+                    .iter()
+                    .map(|l| {
+                        let who = look
+                            .person(l.speaker)
+                            .unwrap_or_else(|| l.speaker.to_string());
+                        format!("{who}: {}", look.encoding.decode(l.text).text)
+                    })
+                    .collect();
+                Some(rendered.join("\n"))
+            }
+            _ => None,
+        };
+        if let Some(t) = text {
+            out.insert(arg.name, t);
+        }
+    }
+    let roster = match &instr.operands {
+        Operands::BattleSetup { units, .. } | Operands::Roster { units, .. } => Some(units),
+        _ => None,
+    };
+    if let Some(units) = roster {
+        let names: Vec<String> = units
+            .iter()
+            .map(|u| {
+                let who = look
+                    .person(u.person)
+                    .unwrap_or_else(|| u.person.to_string());
+                format!("{who} ({}, {})", u.x, u.y)
+            })
+            .collect();
+        out.insert("units", names.join(", "));
+    }
+    Ok(out)
+}
+
+/// Decode one chapter: its scenes' scripts and the text they reference.
+fn convert_scenario(
+    scenario_name: &str,
+    scenario_data: &[u8],
+    message_name: &str,
+    message_data: &[u8],
+    look: &Lookup<'_>,
+    counts: &mut TextCounts,
+) -> Result<ScenarioFile, String> {
+    let archive =
+        ls11::Archive::parse(scenario_data).map_err(|e| format!("{scenario_name}: {e}"))?;
+    let payload = message_payload(message_data).map_err(|e| format!("{message_name}: {e}"))?;
+    let messages = parse_messages(&payload).map_err(|e| format!("{message_name}: {e}"))?;
+    if messages.sections.len() != archive.len() {
+        return Err(format!(
+            "{message_name}: {}",
+            crate::text::TextError::SectionCount {
+                found: messages.sections.len(),
+                expected: archive.len(),
+            }
+        ));
+    }
+    let mut scenes = Vec::with_capacity(archive.len());
+    for (index, section) in messages.sections.iter().enumerate() {
+        let where_ = |e: String| format!("{scenario_name} scene {index}: {e}");
+        let data = archive.decode(index).map_err(|e| where_(e.to_string()))?;
+        let scene = scenario::parse_scene(&data).map_err(|e| where_(e.to_string()))?;
+        // Every item of the section, by offset: dialogues and strings (with their users).
+        let mut dialogues: BTreeMap<usize, DialogueOut> = BTreeMap::new();
+        let mut strings: BTreeMap<usize, StringOut> = BTreeMap::new();
+        let mut covered = vec![false; section.bytes.len()];
+        for instr in scene.instructions() {
+            counts.instructions += 1;
+            for arg in instr.operands.args() {
+                let off = arg.value as usize;
+                let err = |e: crate::text::TextError| {
+                    where_(format!("{} at {:#x}: {e}", instr.mnemonic, instr.offset))
+                };
+                match arg.kind {
+                    ArgKind::Dialogue if !dialogues.contains_key(&off) => {
+                        let (lines, end) = section.dialogue_at(off).map_err(err)?;
+                        covered[off..end].fill(true);
+                        let lines = lines
+                            .iter()
+                            .map(|l| {
+                                let d = look.encoding.decode(l.text);
+                                LineOut {
+                                    speaker: l.speaker,
+                                    speaker_name: look.person(l.speaker),
+                                    text: d.text,
+                                    malformed: d.malformed,
+                                }
+                            })
+                            .collect();
+                        dialogues.insert(off, DialogueOut { offset: off, lines });
                     }
-                })
-                .collect(),
-        })
-        .collect();
-    let blocks = messages.block_count();
-    Ok((
-        TextFile {
-            source: name.to_string(),
-            encoding: encoding.name(),
+                    ArgKind::Message => {
+                        let bytes = section.string_at(off).map_err(err)?;
+                        covered[off..off + bytes.len() + 1].fill(true);
+                        let entry = strings.entry(off).or_insert_with(|| {
+                            let d = look.encoding.decode(bytes);
+                            StringOut {
+                                offset: off,
+                                used_by: Vec::new(),
+                                text: d.text,
+                                malformed: d.malformed,
+                            }
+                        });
+                        if !entry.used_by.contains(&instr.mnemonic) {
+                            entry.used_by.push(instr.mnemonic);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut unreferenced = Vec::new();
+        let mut at = 0;
+        while at < covered.len() {
+            if covered[at] {
+                at += 1;
+                continue;
+            }
+            let end = (at..covered.len())
+                .find(|&i| covered[i])
+                .unwrap_or(covered.len());
+            counts.unreferenced_bytes += end - at;
+            unreferenced.push(TextBlock::new(at, &section.bytes[at..end], look.encoding));
+            at = end;
+        }
+        let mut blocks = Vec::with_capacity(scene.blocks.len());
+        for (bi, block) in scene.blocks.iter().enumerate() {
+            let mut records = Vec::with_capacity(block.records.len());
+            for (ri, record) in block.records.iter().enumerate() {
+                let code = record
+                    .code
+                    .iter()
+                    .map(|i| {
+                        Ok(InstrOut {
+                            instr: i.clone(),
+                            resolved: resolve(i, section, look).map_err(&where_)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                let t = &record.trigger;
+                let has_person = matches!(t.kind, 3 | 4 | 6 | 0x0b | 0x0c);
+                records.push(RecordOut {
+                    index: ri,
+                    offset: record.offset,
+                    trigger: t.clone(),
+                    trigger_person: has_person.then(|| look.person(t.word(0))).flatten(),
+                    code_offset: record.code_offset,
+                    code,
+                });
+            }
+            blocks.push(BlockOut {
+                index: bi,
+                offset: block.offset,
+                records,
+            });
+        }
+        counts.scenes += 1;
+        counts.dialogues += dialogues.len();
+        counts.lines += dialogues.values().map(|d| d.lines.len()).sum::<usize>();
+        counts.strings += strings.len();
+        counts.malformed += dialogues
+            .values()
+            .flat_map(|d| &d.lines)
+            .filter(|l| l.malformed)
+            .count()
+            + strings.values().filter(|s| s.malformed).count();
+        scenes.push(SceneOut {
+            index,
+            message_base: section.base,
+            dialogues: dialogues.into_values().collect(),
+            strings: strings.into_values().collect(),
+            unreferenced,
             blocks,
-            malformed_blocks,
-            note: TEXT_NOTE,
-            sections,
-        },
-        blocks,
-    ))
+        });
+    }
+    Ok(ScenarioFile {
+        scenario: scenario_name.to_string(),
+        messages: message_name.to_string(),
+        encoding: look.encoding.name(),
+        note: SCENARIO_NOTE,
+        scenes,
+    })
+}
+
+/// A plain-text listing of a decoded chapter (for reading and diffing).
+fn scenario_listing(file: &ScenarioFile) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "# {} + {} ({})",
+        file.scenario, file.messages, file.encoding
+    );
+    for scene in &file.scenes {
+        let _ = writeln!(
+            s,
+            "\n## scene {} (message section at {:#x})",
+            scene.index, scene.message_base
+        );
+        for block in &scene.blocks {
+            let _ = writeln!(s, "\n### block {} @{:#06x}", block.index, block.offset);
+            for r in &block.records {
+                let t = &r.trigger;
+                let who = r
+                    .trigger_person
+                    .as_deref()
+                    .map(|p| format!(" [{p}]"))
+                    .unwrap_or_default();
+                let _ = writeln!(
+                    s,
+                    "\nrecord {} {}{}{} group {}{} args {}{} -> code {:#06x}",
+                    r.index,
+                    if t.inverted { "!" } else { "" },
+                    t.kind_name,
+                    if t.kind_name.starts_with("kind") || t.kind_name == "unknown" {
+                        String::new()
+                    } else {
+                        format!("({})", t.kind)
+                    },
+                    t.group,
+                    if t.group_flag { "*" } else { "" },
+                    crate::hex(&t.args),
+                    who,
+                    r.code_offset
+                );
+                for i in &r.code {
+                    let _ = writeln!(s, "  {:04x}  {}", i.instr.offset, instr_text(&i.instr));
+                    for (k, v) in &i.resolved {
+                        for (n, line) in v.lines().enumerate() {
+                            let label = if n == 0 { *k } else { "" };
+                            let _ = writeln!(s, "        {label:>8} │ {line}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    s
+}
+
+fn instr_text(i: &scenario::Instr) -> String {
+    let mut s = format!("{:02x} {}", i.opcode, i.mnemonic);
+    match &i.operands {
+        Operands::Fields { args } => {
+            for a in args {
+                let v = match a.kind {
+                    ArgKind::Message | ArgKind::Dialogue | ArgKind::Map => {
+                        format!("{:#06x}", a.value)
+                    }
+                    _ => a.value.to_string(),
+                };
+                s.push_str(&format!(" {}={v}", a.name));
+            }
+        }
+        Operands::BattleSetup { header, units } => {
+            s.push_str(&format!(
+                " turns={} win={:?} lose={:?} other={} units={}",
+                header.turn_limit,
+                header.defeat_to_win,
+                header.lose_if_defeated,
+                crate::hex(&header.other),
+                units.len()
+            ));
+        }
+        Operands::Roster { friendly, units } => {
+            s.push_str(&format!(" friendly={friendly} units={}", units.len()));
+            for u in units {
+                s.push_str(&format!(
+                    "\n          unit {} at ({}, {}) class {:?} lv {:?} ai {:?}/{:?}{}",
+                    u.person,
+                    u.x,
+                    u.y,
+                    u.class.unwrap_or_default(),
+                    u.level.unwrap_or_default(),
+                    u.ai_mode.unwrap_or_default(),
+                    u.ai_param.unwrap_or_default(),
+                    u.requires_flag
+                        .map(|f| format!(" if flag {f}"))
+                        .unwrap_or_default()
+                ));
+            }
+        }
+        Operands::Condition {
+            skip,
+            all_set,
+            all_clear,
+        } => s.push_str(&format!(
+            " unless set{all_set:?} and clear{all_clear:?} skip {skip}"
+        )),
+        Operands::List { reset_all, values } => {
+            s.push_str(&format!(" reset_all={reset_all} {values:?}"))
+        }
+        Operands::Bytes { bytes } => s.push_str(&format!(" {}", crate::hex(bytes))),
+    }
+    s
 }
 
 fn extract_text(
     install: &InstallDir,
     encoding: TextEncoding,
+    names: Option<&Bakdata>,
     out: &mut Output,
     requested: bool,
 ) -> Result<KindReport, ExtractError> {
     let mut report = KindReport::new(Status::Extracted, requested, "");
-    let (mut found, mut failed, mut blocks, mut malformed) = (0, 0, 0, 0);
-    for (name, scenes_from) in TEXT_SOURCES {
-        let Some(data) = read_source(install, name, &mut report)? else {
+    let look = Lookup { names, encoding };
+    let mut counts = TextCounts::default();
+    let (mut found, mut failed) = (0, 0);
+    let mut pool_strings = 0;
+    if names.is_none() {
+        report
+            .notes
+            .push("BAKDATA.R3 not decoded: speakers and persons are shown as numbers".into());
+    }
+    for (message_name, scenario_name) in TEXT_SOURCES {
+        let Some(message_data) = read_source(install, message_name, &mut report)? else {
             continue;
         };
         found += 1;
-        match convert_messages(
-            install,
-            name,
-            scenes_from,
-            &data,
-            encoding,
-            &mut report.notes,
+        let stem = message_name.trim_end_matches(".R3").to_lowercase();
+        let Some(scenario_name) = scenario_name else {
+            // The string pool.
+            match crate::text::split_strings(&message_data) {
+                Ok(blocks) => {
+                    pool_strings += blocks.len();
+                    let strings: Vec<TextBlock> = blocks
+                        .iter()
+                        .map(|b| TextBlock::new(b.offset, b.bytes, encoding))
+                        .collect();
+                    counts.malformed += strings.iter().filter(|b| b.malformed).count();
+                    out.write_json(
+                        &format!("{TEXT_DIR}/{stem}.json"),
+                        &PoolFile {
+                            source: message_name.to_string(),
+                            encoding: encoding.name(),
+                            note: POOL_NOTE,
+                            strings,
+                        },
+                    )?;
+                    report.outputs += 1;
+                }
+                Err(e) => {
+                    failed += 1;
+                    report.errors.push(format!("{message_name}: {e}"));
+                }
+            }
+            continue;
+        };
+        let Some(scenario_data) = read_source(install, scenario_name, &mut report)? else {
+            failed += 1;
+            report.errors.push(format!(
+                "{message_name}: {scenario_name} is missing; message items are delimited by its scripts"
+            ));
+            continue;
+        };
+        match convert_scenario(
+            scenario_name,
+            &scenario_data,
+            message_name,
+            &message_data,
+            &look,
+            &mut counts,
         ) {
-            Ok((file, n)) => {
-                blocks += n;
-                malformed += file.malformed_blocks;
-                let stem = name.trim_end_matches(".R3").to_lowercase();
-                out.write_json(&format!("{TEXT_DIR}/{stem}.json"), &file)?;
-                report.outputs += 1;
+            Ok(file) => {
+                let chapter = stem.trim_end_matches('m');
+                out.write_json(&format!("{TEXT_DIR}/{chapter}.json"), &file)?;
+                out.write(
+                    &format!("{TEXT_DIR}/{chapter}.txt"),
+                    scenario_listing(&file).as_bytes(),
+                )?;
+                report.outputs += 2;
             }
             Err(e) => {
                 failed += 1;
-                report.errors.push(format!("{name}: {e}"));
+                report.errors.push(e);
             }
         }
     }
     report.settle(found, failed);
+    if counts.unreferenced_bytes > 0 {
+        report.notes.push(format!(
+            "{} message bytes are not referenced by any script (listed as `unreferenced`)",
+            counts.unreferenced_bytes
+        ));
+    }
     report.summary = if found == 0 {
         "no message files (SNR0M.R3–SNR4M.R3, IPPAN0M.R3) in the install".into()
     } else {
         format!(
-            "{} of {found} message files converted ({blocks} blocks, {malformed} not cleanly decodable) as {}",
-            report.outputs,
+            "{} of {found} message files converted: {} scenes, {} instructions, {} dialogues \
+             ({} lines), {} strings, {pool_strings} pool strings; {} not cleanly decodable as {}",
+            found - failed,
+            counts.scenes,
+            counts.instructions,
+            counts.dialogues,
+            counts.lines,
+            counts.strings,
+            counts.malformed,
             encoding.name()
         )
     };
     Ok(report)
 }
 
-fn names_report() -> KindReport {
-    let mut r = KindReport::new(
-        Status::Unsupported,
-        false,
-        "officer and item names (BAKDATA.R3) are not extracted: the record layout is not published",
-    );
-    r.notes.push(
-        "known from the Chinese editor: 384 officers (name ≤ 6 bytes) and 63 items (name ≤ 10 \
-         bytes); byte offsets unknown, so reading them would be guesswork"
-            .into(),
-    );
-    r
+/// Decode `BAKDATA.R3` and write the officer, item and townsperson tables.
+fn extract_names(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    out: &mut Output,
+    requested: bool,
+) -> Result<(KindReport, Option<Bakdata>), ExtractError> {
+    let mut report = KindReport::new(Status::Extracted, requested, "");
+    let Some(data) = read_source(install, NAMES_SOURCE, &mut report)? else {
+        report.settle(0, 0);
+        report.summary = "no BAKDATA.R3 in the install".into();
+        return Ok((report, None));
+    };
+    match bakdata::parse(&data, encoding) {
+        Ok(b) => {
+            out.write_json(&format!("{TEXT_DIR}/officers.json"), &b.officers)?;
+            out.write_json(&format!("{TEXT_DIR}/items.json"), &b.items)?;
+            out.write_json(&format!("{TEXT_DIR}/townsfolk.json"), &b.townsfolk)?;
+            report.outputs = 3;
+            report.settle(1, 0);
+            report.summary = format!(
+                "{} officers, {} items, {} townspeople from BAKDATA.R3",
+                b.officers.len(),
+                b.items.len(),
+                b.townsfolk.len()
+            );
+            report.notes.push(
+                "the last item and the last townsperson are unused placeholder records; \
+                 initial class / level / army are overridden by scenario scripts"
+                    .into(),
+            );
+            Ok((report, Some(b)))
+        }
+        Err(e) => {
+            report.settle(1, 1);
+            report.summary = "BAKDATA.R3 could not be decoded".into();
+            report.errors.push(e.to_string());
+            Ok((report, None))
+        }
+    }
 }
 
 // ----- sprites -------------------------------------------------------------------------------
@@ -1006,19 +1464,47 @@ mod tests {
         assert!(index.success(), "{index:#?}");
         assert_eq!(index.edition.id, EditionId::KoreanDos);
 
-        // Text: SNR0M (raw) and SNR1M (LS11-wrapped) and IPPAN0M.
+        // Text: SNR0 (messages raw), SNR1 (messages LS11-wrapped), IPPAN0M and BAKDATA.
         let text = &index.assets["text"];
         assert_eq!(text.status, Status::Extracted, "{text:#?}");
-        assert_eq!(text.outputs, 3);
-        let snr0m = read_json(&target.join("text/snr0m.json"));
-        assert_eq!(snr0m["encoding"], "EUC-KR (cp949)");
-        let blocks = &snr0m["sections"][0]["blocks"];
-        assert!(blocks[0]["text"].as_str().unwrap().starts_with("유비는"));
-        assert_eq!(blocks[1]["text"], "\u{5}");
-        assert_eq!(snr0m["sections"][0]["base"], 2);
-        let snr1m = read_json(&target.join("text/snr1m.json"));
-        assert_eq!(snr1m["sections"].as_array().unwrap().len(), 2);
-        assert_eq!(index.assets["names"].status, Status::Unsupported);
+        assert_eq!(text.outputs, 5);
+        assert!(text.notes.is_empty(), "{text:#?}");
+        assert!(text.summary.contains("3 scenes"), "{}", text.summary);
+        let snr0 = read_json(&target.join("text/snr0.json"));
+        assert_eq!(snr0["encoding"], "EUC-KR (cp949)");
+        let scene = &snr0["scenes"][0];
+        assert_eq!(scene["message_base"], 2);
+        assert!(scene["strings"][0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("유비는"));
+        assert_eq!(scene["strings"][0]["used_by"][0], "narration");
+        let line = &scene["dialogues"][0]["lines"][1];
+        assert_eq!(line["speaker"], 1);
+        assert_eq!(line["speaker_name"], "관우");
+        let record = &scene["blocks"][1]["records"][1];
+        assert_eq!(record["trigger"]["kind_name"], "talk");
+        assert_eq!(record["trigger_person"], "관우");
+        let code = &scene["blocks"][0]["records"][0]["code"];
+        assert_eq!(code[0]["mnemonic"], "play_music");
+        assert!(code[2]["resolved"]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("유비: 천하가"));
+        let listing = std::fs::read_to_string(target.join("text/snr0.txt")).unwrap();
+        assert!(listing.contains("38 play_music song=2"), "{listing}");
+        let snr1 = read_json(&target.join("text/snr1.json"));
+        assert_eq!(snr1["scenes"].as_array().unwrap().len(), 2);
+        let pool = read_json(&target.join("text/ippan0m.json"));
+        assert_eq!(pool["strings"].as_array().unwrap().len(), 2);
+        let names = &index.assets["names"];
+        assert_eq!(names.status, Status::Extracted, "{names:#?}");
+        let officers = read_json(&target.join("text/officers.json"));
+        assert_eq!(officers.as_array().unwrap().len(), 384);
+        assert_eq!(officers[1]["name"], "관우");
+        assert_eq!(officers[1]["war"], 98);
+        let items = read_json(&target.join("text/items.json"));
+        assert_eq!(items[0]["name"], "청룡언월도");
 
         // Sprites: 2 composed sprites (+1 skipped entry) and a 5-cell chip sheet.
         let sprites = &index.assets["sprites"];
@@ -1146,7 +1632,8 @@ mod tests {
         let text = &index.assets["text"];
         assert_eq!(text.status, Status::Partial);
         assert!(text.errors[0].starts_with("SNR1M.R3:"), "{text:#?}");
-        assert!(!out.path().join("text/snr1m.json").exists());
+        assert!(!out.path().join("text/snr1.json").exists());
+        assert!(out.path().join("text/snr0.json").exists());
         let sprites = &index.assets["sprites"];
         assert_eq!(sprites.status, Status::Partial);
         assert!(sprites.errors[0].contains("HEXZCHP.R3"));
@@ -1205,12 +1692,14 @@ mod tests {
         .unwrap();
         assert!(index.success(), "{index:#?}");
         assert_eq!(index.edition.id, EditionId::ChineseDos);
-        let snr0m = read_json(&out.path().join("text/snr0m.json"));
-        assert_eq!(snr0m["encoding"], "Big5");
-        assert!(snr0m["sections"][0]["blocks"][0]["text"]
+        let snr0 = read_json(&out.path().join("text/snr0.json"));
+        assert_eq!(snr0["encoding"], "Big5");
+        let scene = &snr0["scenes"][0];
+        assert!(scene["strings"][0]["text"]
             .as_str()
             .unwrap()
             .starts_with("劉備"));
+        assert_eq!(scene["dialogues"][0]["lines"][0]["speaker_name"], "劉備");
     }
 
     #[test]
