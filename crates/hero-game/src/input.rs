@@ -16,7 +16,7 @@
 //! Screens that react to a key and then change state should call [`Input::consume`] so a later
 //! widget in the same frame does not see the same press again.
 
-use crate::gfx::{Canvas, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::Canvas;
 use macroquad::prelude::*;
 
 /// Delay before a held direction key starts repeating, in seconds.
@@ -138,6 +138,9 @@ pub struct Input {
     wheel: i32,
     any: bool,
     consumed: bool,
+    /// Size of the canvas the pointer positions refer to (zero before the first update, when
+    /// no pointer position is known yet).
+    canvas: Vec2,
 }
 
 impl Input {
@@ -148,6 +151,7 @@ impl Input {
     /// Read macroquad's input state for this frame. Called by the app once per frame.
     pub fn update(&mut self, dt: f32, canvas: &Canvas) {
         self.consumed = false;
+        self.canvas = canvas.size();
         let any_key = |keys: &[KeyCode]| keys.iter().any(|k| is_key_pressed(*k));
         self.confirm_key = any_key(&CONFIRM_KEYS);
         self.cancel_key = any_key(&CANCEL_KEYS);
@@ -187,7 +191,7 @@ impl Input {
                 });
             }
             if released || !self.left_down {
-                if !press.dragging && in_canvas(pointer) {
+                if !press.dragging && in_canvas(pointer, self.canvas) {
                     self.tap = Some(pointer);
                 }
                 self.press = None;
@@ -262,7 +266,7 @@ impl Input {
 
     /// Pointer position in virtual pixels, `None` when outside the canvas.
     pub fn pointer(&self) -> Option<Vec2> {
-        in_canvas(self.pointer).then_some(self.pointer)
+        in_canvas(self.pointer, self.canvas).then_some(self.pointer)
     }
 
     /// The pointer moved this frame (hover highlighting should follow only real movement, so a
@@ -328,8 +332,9 @@ impl Input {
     }
 }
 
-fn in_canvas(p: Vec2) -> bool {
-    p.x >= 0.0 && p.y >= 0.0 && p.x < VIRTUAL_W && p.y < VIRTUAL_H
+/// Whether `p` lies on a `canvas` sized canvas.
+fn in_canvas(p: Vec2, canvas: Vec2) -> bool {
+    p.x >= 0.0 && p.y >= 0.0 && p.x < canvas.x && p.y < canvas.y
 }
 
 #[cfg(test)]
@@ -375,9 +380,13 @@ mod tests {
 
     #[test]
     fn canvas_bounds() {
-        assert!(in_canvas(vec2(0.0, 0.0)));
-        assert!(in_canvas(vec2(479.9, 269.9)));
-        assert!(!in_canvas(vec2(480.0, 10.0)));
-        assert!(!in_canvas(vec2(-0.1, 10.0)));
+        let c = crate::gfx::DEFAULT_CANVAS;
+        assert!(in_canvas(vec2(0.0, 0.0), c));
+        assert!(in_canvas(vec2(479.9, 269.9), c));
+        assert!(!in_canvas(vec2(480.0, 10.0), c));
+        assert!(!in_canvas(vec2(-0.1, 10.0), c));
+        let vga = vec2(640.0, 480.0);
+        assert!(in_canvas(vec2(600.0, 400.0), vga));
+        assert!(!in_canvas(vec2(600.0, 480.0), vga));
     }
 }

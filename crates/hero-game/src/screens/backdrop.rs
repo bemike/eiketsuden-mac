@@ -1,8 +1,10 @@
 //! Procedural night landscape used behind the title, credits and game over screens when the
 //! pack has no title artwork: gradient sky, stars, moon, layered mountain ridges and mist.
-//! Everything is computed from fixed seeds, so it looks the same every frame.
+//! Everything is computed from fixed seeds, so it looks the same every frame. The composition is
+//! designed for a 270-pixel-high canvas and scales vertically with the canvas height; it spans
+//! the full width of any canvas.
 
-use crate::gfx::{fill_gradient_v, fill_rect, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_gradient_v, fill_rect};
 use macroquad::prelude::*;
 
 /// Deterministic pseudo random value in 0..1 for an integer seed.
@@ -25,24 +27,27 @@ fn ridge(x: f32, seed: u32, base: f32, amp: f32) -> f32 {
             + 0.15 * (x / 9.0 + p3).sin())
 }
 
-/// Draw the backdrop over the whole canvas. `time` animates the stars and mist slightly.
-pub fn draw_backdrop(time: f64) {
+/// Draw the backdrop over a `size` canvas. `time` animates the stars and mist slightly.
+pub fn draw_backdrop(size: Vec2, time: f64) {
     let t = time as f32;
+    let (w, h) = (size.x, size.y);
+    // Vertical positions below are designed for a 270-pixel-high canvas.
+    let k = h / 270.0;
     fill_gradient_v(
-        Rect::new(0.0, 0.0, VIRTUAL_W, VIRTUAL_H * 0.75),
+        Rect::new(0.0, 0.0, w, h * 0.75),
         Color::from_hex(0x05071a),
         Color::from_hex(0x2a2350),
     );
     fill_gradient_v(
-        Rect::new(0.0, VIRTUAL_H * 0.75, VIRTUAL_W, VIRTUAL_H * 0.25),
+        Rect::new(0.0, h * 0.75, w, h * 0.25),
         Color::from_hex(0x2a2350),
         Color::from_hex(0x120e24),
     );
 
     // Stars.
     for i in 0..70u32 {
-        let x = (hash01(i * 3) * VIRTUAL_W).floor();
-        let y = (hash01(i * 3 + 1) * VIRTUAL_H * 0.6).floor();
+        let x = (hash01(i * 3) * w).floor();
+        let y = (hash01(i * 3 + 1) * h * 0.6).floor();
         let tw = 0.55 + 0.45 * (t * (0.8 + hash01(i * 3 + 2) * 2.0) + i as f32).sin();
         let size = if i % 11 == 0 { 2.0 } else { 1.0 };
         fill_rect(
@@ -52,7 +57,7 @@ pub fn draw_backdrop(time: f64) {
     }
 
     // Moon with a soft halo, right of the centred title logo so the two never overlap.
-    let (mx, my) = (418.0, 50.0);
+    let (mx, my) = (w - 62.0, (50.0 * k).round());
     for (r, a) in [(34.0, 0.04), (26.0, 0.07), (20.0, 0.1)] {
         draw_circle(mx, my, r, Color::new(1.0, 0.92, 0.7, a));
     }
@@ -71,34 +76,30 @@ pub fn draw_backdrop(time: f64) {
         (37, 232.0, 36.0, 0x0e0d22),
     ];
     for (seed, base, amp, color) in layers {
+        let (base, amp) = (base * k, amp * k);
         let c = Color::from_hex(color);
         let step = 4.0;
         let mut x = 0.0;
-        while x < VIRTUAL_W {
+        while x < w {
             let y0 = ridge(x, seed, base, amp);
             let y1 = ridge(x + step, seed, base, amp);
-            draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, VIRTUAL_H), c);
-            draw_triangle(
-                vec2(x + step, y1),
-                vec2(x + step, VIRTUAL_H),
-                vec2(x, VIRTUAL_H),
-                c,
-            );
+            draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, h), c);
+            draw_triangle(vec2(x + step, y1), vec2(x + step, h), vec2(x, h), c);
             x += step;
         }
     }
 
     // Drifting mist band.
-    let drift = (t * 6.0) % VIRTUAL_W;
-    for k in 0..2 {
-        let x = drift - VIRTUAL_W * k as f32;
+    let drift = (t * 6.0) % w;
+    for i in 0..2 {
+        let x = drift - w * i as f32;
         fill_gradient_v(
-            Rect::new(x, 206.0, VIRTUAL_W, 18.0),
+            Rect::new(x, 206.0 * k, w, 18.0 * k),
             Color::new(0.7, 0.72, 0.9, 0.0),
             Color::new(0.7, 0.72, 0.9, 0.08),
         );
         fill_gradient_v(
-            Rect::new(x, 224.0, VIRTUAL_W, 14.0),
+            Rect::new(x, 224.0 * k, w, 14.0 * k),
             Color::new(0.7, 0.72, 0.9, 0.08),
             Color::new(0.7, 0.72, 0.9, 0.0),
         );

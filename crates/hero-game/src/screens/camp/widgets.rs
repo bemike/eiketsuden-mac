@@ -5,7 +5,7 @@
 use super::stats::OfficerStats;
 use crate::app::Ctx;
 use crate::audio::sfx;
-use crate::gfx::{fill_gradient_v, fill_rect, Align, FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_gradient_v, fill_rect, Align, FontId, Gfx, TextStyle};
 use crate::input::Dir;
 use crate::ui::art::{draw_background, draw_unit};
 use crate::ui::dialog::ConfirmEvent;
@@ -25,16 +25,39 @@ use macroquad::prelude::*;
 pub const TOP: f32 = 26.0;
 /// Offset of the first row below the caption strip of a list window.
 pub const LIST_TOP: f32 = 18.0;
-/// Top of the help bar at the bottom.
-pub const HELP_Y: f32 = VIRTUAL_H - 17.0;
+/// Horizontal gap between the list column and the panel of a two-column screen.
+pub const COLUMN_GAP: f32 = 6.0;
+
+/// Top of the help bar at the bottom of a canvas `canvas_h` pixels high.
+pub fn help_y(canvas_h: f32) -> f32 {
+    canvas_h - 17.0
+}
+
+/// Where the windows of a camp sub-screen go on a `canvas` sized canvas: below the header,
+/// above the help bar, 8 pixels in from the sides.
+pub fn content_rect(canvas: Vec2) -> Rect {
+    let top = TOP + 2.0;
+    Rect::new(8.0, top, canvas.x - 16.0, help_y(canvas.y) - 3.0 - top)
+}
+
+/// [`content_rect`] split into a list column `left_w` pixels wide and a panel right of it that
+/// takes the rest of the width.
+pub fn columns(canvas: Vec2, left_w: f32) -> (Rect, Rect) {
+    let c = content_rect(canvas);
+    let right_x = c.x + left_w + COLUMN_GAP;
+    (
+        Rect::new(c.x, c.y, left_w, c.h),
+        Rect::new(right_x, c.y, c.right() - right_x, c.h),
+    )
+}
 
 /// Background of every camp screen: the `camp` drama background (or its painted stand-in),
 /// darkened by `dim` (0..1) so windows stay readable.
 pub fn draw_camp_backdrop(ctx: &Ctx, dim: f32) {
-    fill_rect(crate::gfx::SCREEN, theme::BACKGROUND);
+    fill_rect(ctx.gfx.screen(), theme::BACKGROUND);
     draw_background(ctx, "camp", 1.0);
     fill_rect(
-        crate::gfx::SCREEN,
+        ctx.gfx.screen(),
         Color::new(0.01, 0.015, 0.05, dim.clamp(0.0, 1.0)),
     );
 }
@@ -46,7 +69,7 @@ pub fn draw_header(ctx: &Ctx, title: &str, gold: i64) {
     let amount = format::thousands(gold);
     let style = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
     let w = gfx.text_width(&amount, FontId::Main, 1);
-    let x = VIRTUAL_W - 10.0 - w;
+    let x = gfx.size().x - 10.0 - w;
     gfx.text(&amount, x, 2.0, style);
     draw_icon(ctx, "gold", vec2(x - 19.0, 2.0));
     gfx.text_aligned(
@@ -66,36 +89,35 @@ pub fn draw_help(ctx: &Ctx, text: &str) {
 
 /// Help line in a given colour; text wider than the screen is cut with `…`.
 pub fn draw_help_colored(ctx: &Ctx, text: &str, color: Color) {
+    let gfx = &ctx.gfx;
+    let canvas = gfx.size();
+    let y = help_y(canvas.y);
     fill_gradient_v(
-        Rect::new(0.0, HELP_Y - 3.0, VIRTUAL_W, VIRTUAL_H - HELP_Y + 3.0),
+        Rect::new(0.0, y - 3.0, canvas.x, canvas.y - y + 3.0),
         Color::new(0.0, 0.0, 0.05, 0.0),
         Color::new(0.0, 0.0, 0.05, 0.75),
     );
-    let gfx = &ctx.gfx;
-    let fitted = truncate_to(text, BACK_BUTTON.x - 16.0, |c| {
+    let fitted = truncate_to(text, back_button(canvas).x - 16.0, |c| {
         gfx.char_width(c, FontId::Small, 1)
     });
     gfx.text(
         &fitted,
         10.0,
-        HELP_Y + 1.0,
+        y + 1.0,
         TextStyle::small(color).shadow(theme::TEXT_SHADOW),
     );
 }
 
-/// The 돌아가기 button at the right end of the help bar: mouse and touch have no cancel key, so
-/// every camp sub-screen offers this button for it.
-pub const BACK_BUTTON: Rect = Rect {
-    x: VIRTUAL_W - 70.0,
-    y: HELP_Y - 2.0,
-    w: 62.0,
-    h: 16.0,
-};
+/// The 돌아가기 button at the right end of the help bar of a `canvas` sized canvas: mouse and
+/// touch have no cancel key, so every camp sub-screen offers this button for it.
+pub fn back_button(canvas: Vec2) -> Rect {
+    Rect::new(canvas.x - 70.0, help_y(canvas.y) - 2.0, 62.0, 16.0)
+}
 
 /// Whether the 돌아가기 button was tapped this frame (the tap is consumed and the cancel sound
 /// played).
 pub fn back_tapped(ctx: &mut Ctx) -> bool {
-    if ctx.input.tapped(BACK_BUTTON) {
+    if ctx.input.tapped(back_button(ctx.gfx.size())) {
         ctx.input.consume();
         ctx.sfx(sfx::CANCEL);
         true
@@ -106,7 +128,7 @@ pub fn back_tapped(ctx: &mut Ctx) -> bool {
 
 /// Draw the 돌아가기 button.
 pub fn draw_back_button(ctx: &Ctx) {
-    let r = BACK_BUTTON;
+    let r = back_button(ctx.gfx.size());
     let hover = ctx.input.hovering(r);
     draw_window_ex(r, WindowStyle::Panel, if hover { 1.0 } else { 0.85 });
     if hover {
@@ -489,7 +511,9 @@ pub struct QuantityDialog {
 }
 
 impl QuantityDialog {
+    /// A dialog centred on the canvas of `gfx`.
     pub fn new(
+        gfx: &Gfx,
         title: &str,
         note: &str,
         unit_price: i64,
@@ -499,6 +523,7 @@ impl QuantityDialog {
     ) -> QuantityDialog {
         let w = 260.0;
         let h = 110.0;
+        let canvas = gfx.size();
         QuantityDialog {
             title: title.to_string(),
             note: note.to_string(),
@@ -508,8 +533,8 @@ impl QuantityDialog {
             total_label: total_label.to_string(),
             buttons: TwoButtons::new(yes, "취소"),
             rect: Rect::new(
-                ((VIRTUAL_W - w) / 2.0).round(),
-                ((VIRTUAL_H - h) / 2.0).round(),
+                ((canvas.x - w) / 2.0).round(),
+                ((canvas.y - h) / 2.0).round(),
                 w,
                 h,
             ),
@@ -572,7 +597,7 @@ impl QuantityDialog {
 
     pub fn draw(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
-        fill_rect(crate::gfx::SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
+        fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
         draw_window(self.rect);
         let r = self.rect;
         gfx.text_aligned(
@@ -635,6 +660,24 @@ impl QuantityDialog {
 mod tests {
     use super::*;
     use crate::screens::camp::test_pack;
+
+    #[test]
+    fn content_and_columns_follow_the_canvas() {
+        let default = crate::gfx::DEFAULT_CANVAS;
+        // The base pack's layout.
+        assert_eq!(content_rect(default), Rect::new(8.0, 28.0, 464.0, 222.0));
+        assert_eq!(help_y(default.y), 253.0);
+        assert_eq!(back_button(default), Rect::new(410.0, 251.0, 62.0, 16.0));
+        let (list, panel) = columns(default, 262.0);
+        assert_eq!(list, Rect::new(8.0, 28.0, 262.0, 222.0));
+        assert_eq!(panel, Rect::new(276.0, 28.0, 196.0, 222.0));
+        // A bigger canvas gives the panel the extra width and both the extra height.
+        let vga = vec2(640.0, 480.0);
+        let (list, panel) = columns(vga, 262.0);
+        assert_eq!((list.w, list.h), (262.0, 432.0));
+        assert_eq!(panel.right(), 632.0);
+        assert!(panel.bottom() < help_y(vga.y) && back_button(vga).right() < vga.x);
+    }
 
     #[test]
     fn truncation() {

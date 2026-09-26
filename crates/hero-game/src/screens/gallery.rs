@@ -17,6 +17,11 @@
 //!    banner (`B`).
 //! 5. **화면** — opens the real screens (title, settings, credits, error, game over,
 //!    the game itself) and exercises the audio manager.
+//!
+//! `V` switches the canvas between the presentation profiles screens must lay out on
+//! ([`CANVAS_SIZES`]: the default 480×270, 640×480 and the smallest allowed, 320×200), so the
+//! widgets and the real screens can be checked without a pack that declares another canvas.
+//! Loading the game (화면 → 게임 시작) sets the pack's own canvas again.
 
 use super::backdrop::draw_backdrop;
 use super::credits::CreditsScreen;
@@ -28,7 +33,7 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::AssetState;
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{fill_rect, Align, Fit, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, Fit, FontId, TextStyle, DEFAULT_CANVAS};
 use crate::platform::unix_now;
 use crate::settings::{cycle, TextSpeed};
 use crate::ui::bars::{draw_gauge, draw_gauge_labeled, GaugeKind};
@@ -67,6 +72,14 @@ const WRAP_SAMPLE: &str = "황건적이 들고일어나 온 고을이 불타던 
     줄바꿈 문자는 그대로 지킵니다 — 英傑傳 (Eiketsuden).";
 const WRAP_MIN: f32 = 96.0;
 const WRAP_MAX: f32 = 440.0;
+
+/// Canvas sizes `V` cycles through: the default, the original's VGA screen and the smallest a
+/// pack may declare.
+pub const CANVAS_SIZES: [Vec2; 3] = [
+    DEFAULT_CANVAS,
+    Vec2::new(640.0, 480.0),
+    Vec2::new(320.0, 200.0),
+];
 
 /// Dialogue samples: speaker, portrait key, text. All text is original to this project.
 const DIALOGUE: [(Option<&str>, Option<&str>, &str); 3] = [
@@ -317,9 +330,30 @@ impl GalleryScreen {
         }
     }
 
-    fn tab_rect(i: usize) -> Rect {
-        let w = VIRTUAL_W / TABS.len() as f32;
+    /// Tab `i` of the bar across the top of a `canvas_w` wide canvas.
+    fn tab_rect(canvas_w: f32, i: usize) -> Rect {
+        let w = canvas_w / TABS.len() as f32;
         Rect::new((i as f32 * w).round(), 0.0, w.round(), TAB_H)
+    }
+
+    /// Widest wrap width the fonts page allows on the current canvas.
+    fn wrap_max(ctx: &Ctx) -> f32 {
+        WRAP_MAX.min(ctx.gfx.size().x - 40.0).max(WRAP_MIN)
+    }
+
+    /// `V`: switch to the next canvas size of [`CANVAS_SIZES`] and lay the pages out again.
+    fn cycle_canvas(&mut self, ctx: &mut Ctx) {
+        let current = ctx.gfx.size();
+        let i = CANVAS_SIZES.iter().position(|s| *s == current);
+        let next = CANVAS_SIZES[i.map_or(0, |i| (i + 1) % CANVAS_SIZES.len())];
+        ctx.gfx.canvas.set_size(next);
+        self.wrap_width = self.wrap_width.min(Self::wrap_max(ctx));
+        self.rewrap(ctx);
+        self.modal = Modal::None;
+        self.start_sample(ctx);
+        ctx.input.consume();
+        ctx.sfx(sfx::CURSOR);
+        ctx.toast(format!("캔버스 {}×{}", next.x, next.y));
     }
 
     fn rewrap(&mut self, ctx: &Ctx) {
@@ -383,7 +417,8 @@ impl GalleryScreen {
             }
         }
         if let Some(p) = input.tap() {
-            if let Some(i) = (0..n).find(|&i| Self::tab_rect(i).contains(p)) {
+            let canvas_w = ctx.gfx.size().x;
+            if let Some(i) = (0..n).find(|&i| Self::tab_rect(canvas_w, i).contains(p)) {
                 target = Some(i);
             }
         }
@@ -410,7 +445,7 @@ impl GalleryScreen {
             _ => 0.0,
         };
         if delta != 0.0 {
-            self.wrap_width = (self.wrap_width + delta).clamp(WRAP_MIN, WRAP_MAX);
+            self.wrap_width = (self.wrap_width + delta).clamp(WRAP_MIN, Self::wrap_max(ctx));
             self.rewrap(ctx);
             ctx.sfx(sfx::CURSOR);
         }
@@ -473,7 +508,7 @@ impl GalleryScreen {
             Modal::None => {}
         }
         if DIALOGUE_BUTTONS[0].pressed(ctx) {
-            let bottom = MessageBox::box_rect(true).y - 22.0;
+            let bottom = MessageBox::box_rect(ctx.gfx.size(), true).y - 22.0;
             let choice = ChoiceBox::new(
                 &ctx.gfx,
                 Some("어디로 향하시겠습니까?"),
@@ -571,12 +606,13 @@ impl GalleryScreen {
     // ----- drawing ---------------------------------------------------------------------------
 
     fn draw_tabs(&self, ctx: &Ctx) {
+        let canvas_w = ctx.gfx.size().x;
         fill_rect(
-            Rect::new(0.0, 0.0, VIRTUAL_W, TAB_H + 1.0),
+            Rect::new(0.0, 0.0, canvas_w, TAB_H + 1.0),
             theme::BORDER_OUTER,
         );
         for (i, label) in TABS.iter().enumerate() {
-            let r = Self::tab_rect(i);
+            let r = Self::tab_rect(canvas_w, i);
             let active = i == self.page;
             let style = if active {
                 WindowStyle::Normal
@@ -607,8 +643,9 @@ impl GalleryScreen {
         let label = TextStyle::small(theme::TEXT_DIM);
         let main = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
         let small = TextStyle::small(theme::TEXT).shadow(theme::TEXT_SHADOW);
+        let canvas = gfx.size();
 
-        let r = Rect::new(8.0, TOP, VIRTUAL_W - 16.0, 146.0);
+        let r = Rect::new(8.0, TOP, canvas.x - 16.0, 146.0);
         draw_window(r);
         let x = r.x + 10.0;
         let mut y = r.y + 6.0;
@@ -650,8 +687,8 @@ impl GalleryScreen {
         let w = Rect::new(
             8.0,
             r.bottom() + 5.0,
-            VIRTUAL_W - 16.0,
-            VIRTUAL_H - r.bottom() - 26.0,
+            canvas.x - 16.0,
+            canvas.y - r.bottom() - 26.0,
         );
         draw_window_ex(w, WindowStyle::Panel, 1.0);
         let c = content_rect(w);
@@ -674,15 +711,17 @@ impl GalleryScreen {
             draw_small_arrow(w.right() - 10.0, w.bottom() - 7.0, true, theme::TEXT_ACCENT);
         }
 
-        // Status line: scale and font state.
+        // Status line: canvas, scale and font state.
         let status = if gfx.fonts.missing().is_empty() {
             format!(
-                "S={}  창 {}×{}  캔버스 {}×{}  글꼴 정상",
+                "캔버스 {}×{} (V 전환)  S={}  창 {}×{}  렌더 {}×{}  글꼴 정상",
+                canvas.x,
+                canvas.y,
                 gfx.scale(),
                 screen_width(),
                 screen_height(),
-                480 * gfx.scale(),
-                270 * gfx.scale()
+                canvas.x * gfx.scale() as f32,
+                canvas.y * gfx.scale() as f32
             )
         } else {
             format!(
@@ -695,13 +734,14 @@ impl GalleryScreen {
         } else {
             theme::TEXT_BAD
         };
-        gfx.text(&status, 10.0, VIRTUAL_H - 15.0, TextStyle::small(color));
+        gfx.text(&status, 10.0, canvas.y - 15.0, TextStyle::small(color));
     }
 
     fn draw_widgets(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
         let label = TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW);
         let main = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
+        let canvas = gfx.size();
 
         // Left column: window styles, highlight, cursors, divider.
         let a = Rect::new(8.0, TOP, 144.0, 44.0);
@@ -727,7 +767,7 @@ impl GalleryScreen {
         draw_side_arrow(c.x + 24.0, ay, true, theme::CURSOR_ARROW);
         draw_small_arrow(c.x + 38.0, ay, false, theme::TEXT_ACCENT);
         draw_small_arrow(c.x + 48.0, ay, true, theme::TEXT_ACCENT);
-        let d = Rect::new(8.0, c.bottom() + 6.0, 144.0, VIRTUAL_H - c.bottom() - 14.0);
+        let d = Rect::new(8.0, c.bottom() + 6.0, 144.0, canvas.y - c.bottom() - 14.0);
         draw_window_ex(d, WindowStyle::Panel, 1.0);
         gfx.text("16×16 아이콘", d.x + 8.0, d.y + 5.0, label);
         for (i, key) in ["gold", "hp", "mp", "atk", "def", "move", "exp"]
@@ -748,7 +788,8 @@ impl GalleryScreen {
         );
 
         // Right column: sprites, image, portraits.
-        let s = Rect::new(318.0, TOP, 154.0, 50.0);
+        let right = canvas.x - 162.0;
+        let s = Rect::new(right, TOP, 154.0, 50.0);
         draw_window_ex(s, WindowStyle::Panel, 1.0);
         gfx.text("유닛 스프라이트 (걷기)", s.x + 8.0, s.y + 5.0, label);
         let walk = ((ctx.time * 4.0) as u32) % 4;
@@ -771,11 +812,11 @@ impl GalleryScreen {
                 false,
             );
         }
-        let img = Rect::new(318.0, s.bottom() + 6.0, 154.0, 64.0);
+        let img = Rect::new(right, s.bottom() + 6.0, 154.0, 64.0);
         draw_window_ex(img, WindowStyle::Panel, 1.0);
         draw_image(ctx, "bg/palace", inset(img, 4.0), Fit::Cover);
         gfx.text("bg/palace (Cover)", img.x + 6.0, img.bottom() - 16.0, label);
-        let p1 = Rect::new(318.0, img.bottom() + 6.0, 64.0, 80.0);
+        let p1 = Rect::new(right, img.bottom() + 6.0, 64.0, 80.0);
         draw_portrait(ctx, Some("liu_bei"), p1);
         let p2 = Rect::new(p1.right() + 8.0, p1.y, 64.0, 80.0);
         draw_portrait(ctx, None, p2);
@@ -799,8 +840,8 @@ impl GalleryScreen {
     fn draw_dialogue(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
         match ctx.media.texture_state("bg/palace") {
-            AssetState::Ready => draw_image(ctx, "bg/palace", SCREEN, Fit::Cover),
-            _ => draw_backdrop(ctx.time),
+            AssetState::Ready => draw_image(ctx, "bg/palace", gfx.screen(), Fit::Cover),
+            _ => draw_backdrop(gfx.size(), ctx.time),
         }
         for b in &DIALOGUE_BUTTONS {
             b.draw(ctx);
@@ -818,7 +859,7 @@ impl GalleryScreen {
             Modal::None => {}
             Modal::Choice(choice) => choice.draw(ctx),
             Modal::Confirm(dialog) => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.35));
+                fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35));
                 dialog.draw(ctx);
             }
         }
@@ -829,7 +870,7 @@ impl GalleryScreen {
         let label = TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW);
         let main = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
 
-        let g = Rect::new(8.0, TOP, 234.0, VIRTUAL_H - TOP - 8.0);
+        let g = Rect::new(8.0, TOP, 234.0, gfx.size().y - TOP - 8.0);
         draw_window(g);
         let x = g.x + 10.0;
         let w = g.w - 20.0;
@@ -921,9 +962,9 @@ impl GalleryScreen {
 
     fn draw_screens(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
-        draw_backdrop(ctx.time);
+        draw_backdrop(gfx.size(), ctx.time);
         self.screens_menu.draw(ctx);
-        let info = Rect::new(230.0, TOP, 242.0, 150.0);
+        let info = Rect::new(gfx.size().x - 250.0, TOP, 242.0, 150.0);
         draw_window(info);
         let label = TextStyle::small(theme::TEXT_DIM);
         let main = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
@@ -991,6 +1032,10 @@ impl Screen for GalleryScreen {
         if self.switch_page(ctx) {
             return Transition::None;
         }
+        if ctx.input.key_pressed(KeyCode::V) {
+            self.cycle_canvas(ctx);
+            return Transition::None;
+        }
         match self.page {
             PAGE_FONTS => self.update_fonts(ctx),
             PAGE_WIDGETS => self.update_widgets(ctx),
@@ -1003,7 +1048,7 @@ impl Screen for GalleryScreen {
     }
 
     fn draw(&self, ctx: &Ctx) {
-        fill_rect(SCREEN, theme::BACKGROUND);
+        fill_rect(ctx.gfx.screen(), theme::BACKGROUND);
         match self.page {
             PAGE_FONTS => self.draw_fonts(ctx),
             PAGE_WIDGETS => self.draw_widgets(ctx),
@@ -1022,14 +1067,13 @@ mod tests {
 
     #[test]
     fn tabs_tile_the_top_edge() {
-        let last = GalleryScreen::tab_rect(TABS.len() - 1);
-        assert_eq!(GalleryScreen::tab_rect(0).x, 0.0);
-        assert_eq!(last.right(), VIRTUAL_W);
-        for i in 1..TABS.len() {
-            assert_eq!(
-                GalleryScreen::tab_rect(i - 1).right(),
-                GalleryScreen::tab_rect(i).x
-            );
+        for canvas in CANVAS_SIZES {
+            let tab = |i| GalleryScreen::tab_rect(canvas.x, i);
+            assert_eq!(tab(0).x, 0.0);
+            assert_eq!(tab(TABS.len() - 1).right(), canvas.x);
+            for i in 1..TABS.len() {
+                assert_eq!(tab(i - 1).right(), tab(i).x);
+            }
         }
     }
 

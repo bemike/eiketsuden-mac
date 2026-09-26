@@ -6,13 +6,18 @@ use super::saveload::SaveLoadScreen;
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::bgm;
 use crate::flow::Flow;
-use crate::gfx::{fill_gradient_v, fill_rect, Align, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_gradient_v, fill_rect, Align, TextStyle};
 use crate::saves;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
 use macroquad::prelude::*;
 
 const MENU_W: f32 = 120.0;
+/// The heading, the message and the menu are grouped around the canvas centre: their tops are
+/// this far from the vertical centre (the heading and message above it, the menu below).
+const HEADING_ABOVE: f32 = 65.0;
+const MESSAGE_ABOVE: f32 = 5.0;
+const MENU_BELOW: f32 = 41.0;
 
 pub struct GameOverScreen {
     menu: Menu,
@@ -53,7 +58,11 @@ impl Screen for GameOverScreen {
             MenuItem::new("타이틀로"),
         ])
         .cancellable(false)
-        .at(((VIRTUAL_W - MENU_W) / 2.0).round(), 176.0, MENU_W);
+        .at(
+            ((ctx.gfx.size().x - MENU_W) / 2.0).round(),
+            (ctx.gfx.size().y / 2.0).round() + MENU_BELOW,
+            MENU_W,
+        );
         menu.set_cursor(cursor);
         self.menu = menu;
     }
@@ -71,20 +80,22 @@ impl Screen for GameOverScreen {
     }
 
     fn draw(&self, ctx: &Ctx) {
-        draw_backdrop(ctx.time);
+        let gfx = &ctx.gfx;
+        let (w, h) = (gfx.size().x, gfx.size().y);
+        let mid = (h / 2.0).round();
+        draw_backdrop(gfx.size(), ctx.time);
         // Blood-red dusk over the landscape.
         fill_gradient_v(
-            SCREEN,
+            gfx.screen(),
             Color::new(0.25, 0.0, 0.02, 0.55),
             Color::new(0.02, 0.0, 0.0, 0.85),
         );
         let alpha = (self.age / 1.2).min(1.0);
-        let gfx = &ctx.gfx;
         gfx.text_aligned(
             "패 배",
             0.0,
-            70.0,
-            VIRTUAL_W,
+            mid - HEADING_ABOVE,
+            w,
             Align::Center,
             TextStyle::main(theme::TEXT_BAD.with_alpha(alpha))
                 .size(3)
@@ -93,13 +104,13 @@ impl Screen for GameOverScreen {
         gfx.text_aligned(
             "군이 무너졌습니다. 기록을 불러와 다시 도전하십시오.",
             0.0,
-            130.0,
-            VIRTUAL_W,
+            mid - MESSAGE_ABOVE,
+            w,
             Align::Center,
             TextStyle::main(theme::TEXT.with_alpha(alpha)).shadow(theme::TEXT_SHADOW),
         );
         fill_rect(
-            Rect::new(0.0, VIRTUAL_H - 1.0, VIRTUAL_W, 1.0),
+            Rect::new(0.0, h - 1.0, w, 1.0),
             theme::TEXT_BAD.with_alpha(0.4),
         );
         self.menu.draw(ctx);

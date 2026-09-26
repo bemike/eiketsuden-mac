@@ -26,17 +26,17 @@ pub mod stats;
 pub mod tools;
 pub mod widgets;
 
-use self::deploy::{deploy_max, initial_selection, normalize, DeployScreen};
+use self::deploy::{deploy_max, initial_selection, normalize_deployment, DeployScreen};
 use self::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_officer_sprite,
-    officer_name, TwoButtons, TOP,
+    help_y, officer_name, TwoButtons, TOP,
 };
 use super::saveload::SaveLoadScreen;
 use super::settings::SettingsScreen;
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{fill_rect, Align, FontId, Gfx, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, FontId, Gfx, TextStyle};
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -132,13 +132,14 @@ impl SortieDialog {
             + 8.0
             + widgets::BUTTON_H
             + 12.0;
+        let canvas = gfx.size();
         SortieDialog {
             selection,
             objective,
             buttons: TwoButtons::new("출진", "취소"),
             rect: Rect::new(
-                ((VIRTUAL_W - SORTIE_W) / 2.0).round(),
-                ((VIRTUAL_H - h) / 2.0).round(),
+                ((canvas.x - SORTIE_W) / 2.0).round(),
+                ((canvas.y - h) / 2.0).round(),
                 SORTIE_W,
                 h.round(),
             ),
@@ -170,12 +171,13 @@ enum Popup {
 
 const MENU_X: f32 = 10.0;
 const MENU_W: f32 = 112.0;
-const PANEL: Rect = Rect {
-    x: 130.0,
-    y: TOP + 4.0,
-    w: 340.0,
-    h: 214.0,
-};
+
+/// The battle / army panel right of the command menu on a `canvas` sized canvas: it takes the
+/// rest of the width (10 pixels from the right edge) and ends 9 pixels above the help bar.
+fn panel_rect(canvas: Vec2) -> Rect {
+    let (x, y) = (130.0, TOP + 4.0);
+    Rect::new(x, y, canvas.x - 10.0 - x, help_y(canvas.y) - 9.0 - y)
+}
 
 /// The camp hub. See the module docs.
 pub struct CampScreen {
@@ -233,7 +235,7 @@ impl CampScreen {
     /// Current deployment for this camp's battle, normalised to its rules.
     fn deployment(&self, pack: &Pack, campaign: &CampaignState) -> Vec<Id> {
         match self.battle_def(pack) {
-            Some(def) => normalize(pack, def, campaign, &campaign.deployed),
+            Some(def) => normalize_deployment(pack, def, campaign, &campaign.deployed),
             None => Vec::new(),
         }
     }
@@ -347,9 +349,10 @@ impl CampScreen {
 
     fn draw_battle_panel(&self, ctx: &Ctx, pack: &Pack, campaign: &CampaignState, def: &BattleDef) {
         let gfx = &ctx.gfx;
-        let x = PANEL.x + 10.0;
-        let w = PANEL.w - 20.0;
-        let mut y = PANEL.y + 6.0;
+        let panel = panel_rect(gfx.size());
+        let x = panel.x + 10.0;
+        let w = panel.w - 20.0;
+        let mut y = panel.y + 6.0;
         draw_caption(gfx, "다음 전투", x, y);
         y += 13.0;
         gfx.text(
@@ -424,9 +427,10 @@ impl CampScreen {
         w: f32,
     ) {
         let gfx = &ctx.gfx;
+        let panel = panel_rect(gfx.size());
         let col_w = (w / 2.0).floor();
         let row_h = 26.0;
-        let rows = ((PANEL.bottom() - 4.0 - y) / row_h).floor().max(1.0) as usize;
+        let rows = ((panel.bottom() - 4.0 - y) / row_h).floor().max(1.0) as usize;
         let shown = ids.len().min(rows * 2);
         for (i, id) in ids.iter().take(shown).enumerate() {
             let Some(o) = campaign.officer(id) else {
@@ -455,7 +459,7 @@ impl CampScreen {
             gfx.text_aligned(
                 &format!("외 {}명", ids.len() - shown),
                 x,
-                PANEL.bottom() - 14.0,
+                panel.bottom() - 14.0,
                 w,
                 Align::Right,
                 TextStyle::small(theme::TEXT_DIM),
@@ -466,7 +470,7 @@ impl CampScreen {
     fn draw_sortie(&self, ctx: &Ctx, pack: &Pack, campaign: &CampaignState, dialog: &SortieDialog) {
         let gfx = &ctx.gfx;
         let r = dialog.rect;
-        fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.45));
+        fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.45));
         draw_window(r);
         let x = r.x + 12.0;
         let w = r.w - 24.0;
@@ -566,24 +570,25 @@ impl Screen for CampScreen {
 
     fn draw(&self, ctx: &Ctx) {
         let (Some(pack), Some(session)) = (ctx.pack.as_deref(), ctx.session.as_ref()) else {
-            fill_rect(SCREEN, theme::BACKGROUND);
+            fill_rect(ctx.gfx.screen(), theme::BACKGROUND);
             return;
         };
         let campaign = &session.campaign;
+        let panel = panel_rect(ctx.gfx.size());
         draw_camp_backdrop(ctx, 0.45);
         draw_header(ctx, &self.heading(pack), campaign.gold);
         self.menu.draw(ctx);
 
-        draw_window_ex(PANEL, WindowStyle::Panel, 0.94);
+        draw_window_ex(panel, WindowStyle::Panel, 0.94);
         match self.battle_def(pack) {
             Some(def) => self.draw_battle_panel(ctx, pack, campaign, def),
             None => {
-                let x = PANEL.x + 10.0;
+                let x = panel.x + 10.0;
                 draw_caption(
                     &ctx.gfx,
                     &format!("아군 {}명", campaign.roster.len()),
                     x,
-                    PANEL.y + 6.0,
+                    panel.y + 6.0,
                 );
                 let ids: Vec<Id> = campaign.roster.iter().map(|o| o.id.clone()).collect();
                 self.draw_officer_grid(
@@ -592,8 +597,8 @@ impl Screen for CampScreen {
                     campaign,
                     &ids,
                     x,
-                    PANEL.y + 20.0,
-                    PANEL.w - 20.0,
+                    panel.y + 20.0,
+                    panel.w - 20.0,
                 );
             }
         }
@@ -614,7 +619,7 @@ impl Screen for CampScreen {
             Popup::None => {}
             Popup::Sortie(dialog) => self.draw_sortie(ctx, pack, campaign, dialog),
             Popup::Confirm(_, dialog) => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
+                fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
                 dialog.draw(ctx);
             }
         }
@@ -642,6 +647,18 @@ mod tests {
         assert!(!without.contains(&Command::Deploy));
         assert_eq!(Command::Sortie.label(false), "다음으로");
         assert_eq!(with.len(), without.len() + 1);
+    }
+
+    #[test]
+    fn panel_fills_the_canvas_right_of_the_menu() {
+        // The base pack's layout.
+        assert_eq!(
+            panel_rect(crate::gfx::DEFAULT_CANVAS),
+            Rect::new(130.0, 30.0, 340.0, 214.0)
+        );
+        let r = panel_rect(vec2(640.0, 480.0));
+        assert_eq!((r.x, r.right()), (130.0, 630.0));
+        assert_eq!(r.bottom(), help_y(480.0) - 9.0);
     }
 
     #[test]

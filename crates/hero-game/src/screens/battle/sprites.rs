@@ -3,7 +3,8 @@
 //!
 //! Unit sheets have 4 columns (facing down, up, left, right) and 6 rows: 0–3 walk cycle (idle uses
 //! the cycle slowly), 4 attack pose, 5 hurt pose. A frame's `anchor` pixel is placed on the tile's
-//! bottom-centre pixel `(8, 15)`, so larger frames overhang the tile upwards and sideways.
+//! bottom-centre pixel (`(8, 15)` on the base pack's 16-pixel tiles, `(T/2, T-1)` on `T`-pixel
+//! tiles), so larger frames overhang the tile upwards and sideways.
 
 use hero_core::battledef::Side;
 use hero_core::geom::Dir;
@@ -22,7 +23,8 @@ pub struct SpriteDef {
 }
 
 impl Default for SpriteDef {
-    /// The documented default: a 16×16 frame standing on the tile's bottom-centre pixel.
+    /// The documented default: a 16×16 frame whose bottom-centre pixel stands on the tile's
+    /// bottom-centre pixel.
     fn default() -> SpriteDef {
         SpriteDef {
             frame: [16, 16],
@@ -129,9 +131,15 @@ pub fn pose_row(pose: Pose, time: f64, animate: bool) -> u32 {
     }
 }
 
-/// Top-left of a frame so its anchor lands on the tile's bottom-centre pixel.
-pub fn frame_origin(tile_top_left: Vec2, def: &SpriteDef) -> Vec2 {
-    tile_top_left + vec2(8.0 - def.anchor[0] as f32, 15.0 - def.anchor[1] as f32)
+/// Bottom-centre pixel of a `tile` pixel tile, relative to its top-left corner.
+pub fn tile_foot(tile: f32) -> Vec2 {
+    vec2((tile / 2.0).floor(), tile - 1.0)
+}
+
+/// Top-left of a frame so its anchor lands on the bottom-centre pixel of the `tile` pixel tile
+/// whose top-left corner is `tile_top_left`.
+pub fn frame_origin(tile_top_left: Vec2, tile: f32, def: &SpriteDef) -> Vec2 {
+    tile_top_left + tile_foot(tile) - vec2(def.anchor[0] as f32, def.anchor[1] as f32)
 }
 
 #[cfg(test)]
@@ -145,10 +153,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(units["chariot"].frame, [32, 24]);
-        let o = frame_origin(vec2(32.0, 48.0), &units["archer"]);
+        let o = frame_origin(vec2(32.0, 48.0), 16.0, &units["archer"]);
         // The anchor pixel (12, 23) of the frame sits on the tile pixel (8, 15).
         assert_eq!(o + vec2(12.0, 23.0), vec2(32.0 + 8.0, 48.0 + 15.0));
-        assert_eq!(frame_origin(Vec2::ZERO, &SpriteDef::default()), Vec2::ZERO);
+        assert_eq!(
+            frame_origin(Vec2::ZERO, 16.0, &SpriteDef::default()),
+            Vec2::ZERO
+        );
+        // On 32-pixel tiles the anchor sits on the tile pixel (16, 31).
+        let o = frame_origin(vec2(64.0, 96.0), 32.0, &units["archer"]);
+        assert_eq!(o + vec2(12.0, 23.0), vec2(64.0 + 16.0, 96.0 + 31.0));
+        assert_eq!(tile_foot(16.0), vec2(8.0, 15.0));
+        assert_eq!(tile_foot(48.0), vec2(24.0, 47.0));
 
         let fx = parse_fx("[fx.fire]\nframe = [32, 32]\nframes = 8\nfps = 12\n").unwrap();
         let fire = fx["fire"];

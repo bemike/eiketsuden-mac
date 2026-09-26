@@ -1,13 +1,16 @@
-//! Rendering foundation: the 480×270 virtual canvas, fonts and text, and drawing helpers.
+//! Rendering foundation: the virtual canvas, fonts and text, and drawing helpers.
 //!
 //! # Coordinate model
 //!
-//! Everything is drawn in **virtual pixels** on a 480×270 canvas ([`VIRTUAL_W`]×[`VIRTUAL_H`]).
-//! The canvas is a render target of `480·S × 270·S` real pixels, where `S` is the largest integer
-//! scale that fits the window (at least 1), presented centred and letterboxed with nearest
-//! filtering (only a window smaller than 480×270 shrinks the canvas, with linear filtering). A
-//! `Camera2D` maps the virtual rectangle onto the render target, so screens never deal with
-//! window sizes:
+//! Everything is drawn in **virtual pixels** on a canvas whose size is the loaded pack's
+//! presentation profile (`[presentation] canvas` in `pack.toml`, [`DEFAULT_CANVAS`] 480×270 when
+//! the pack does not set it and before a pack is loaded). Screens read it from [`Gfx::size`] /
+//! [`Gfx::screen`] and lay themselves out relative to its edges and centre; nothing assumes a
+//! fixed size. The canvas is a render target of `W·S × H·S` real pixels, where `S` is the
+//! largest integer scale that fits the window (at least 1), presented centred and letterboxed
+//! with nearest filtering (only a window smaller than the canvas shrinks it, with linear
+//! filtering). A `Camera2D` maps the virtual rectangle onto the render target, so screens never
+//! deal with window sizes:
 //!
 //! * pixel art drawn at virtual size ends up scaled by exactly `S` — crisp at every window size;
 //! * text is rasterised at `font_size · S` and drawn with `font_scale = 1/S` — one glyph texel
@@ -28,37 +31,48 @@
 //! [`wrap_text`] breaks Korean text at spaces, and between syllables only when a single word is
 //! longer than the line.
 
+use hero_core::pack::Presentation;
 use macroquad::color::hsl_to_rgb;
 use macroquad::prelude::*;
 
-/// Virtual canvas width in pixels.
-pub const VIRTUAL_W: f32 = 480.0;
-/// Virtual canvas height in pixels.
-pub const VIRTUAL_H: f32 = 270.0;
-/// The virtual canvas as a rectangle.
-pub const SCREEN: Rect = Rect {
-    x: 0.0,
-    y: 0.0,
-    w: VIRTUAL_W,
-    h: VIRTUAL_H,
-};
-/// Largest render target scale (3840×2160); bigger windows are letterboxed.
-pub const MAX_SCALE: u32 = 8;
+/// Canvas size before a pack is loaded and for packs without `[presentation] canvas`: the base
+/// pack's 480×270.
+pub const DEFAULT_CANVAS: Vec2 = Vec2::new(
+    Presentation::DEFAULT_CANVAS[0] as f32,
+    Presentation::DEFAULT_CANVAS[1] as f32,
+);
+/// Largest side of the render target in real pixels (3840 for the default canvas at `S = 8`);
+/// bigger windows are letterboxed. Keeps the texture within what every GPU supports.
+pub const MAX_TARGET_PX: f32 = 4096.0;
 
-/// Largest integer scale `S` such that `480·S × 270·S` fits `screen_w × screen_h` (min 1).
-pub fn integer_scale(screen_w: f32, screen_h: f32) -> u32 {
-    let s = (screen_w / VIRTUAL_W).min(screen_h / VIRTUAL_H).floor();
+/// Virtual canvas size for a presentation profile: its `canvas`, clamped to the range a pack may
+/// ask for ([`Presentation::MIN_CANVAS`] ..= [`Presentation::MAX_CANVAS`]; `Pack::validate`
+/// rejects anything else, so clamping only matters for the error screen of such a pack).
+pub fn canvas_size(presentation: &Presentation) -> Vec2 {
+    let side = |i: usize| {
+        presentation.canvas[i].clamp(Presentation::MIN_CANVAS[i], Presentation::MAX_CANVAS[i])
+            as f32
+    };
+    vec2(side(0), side(1))
+}
+
+/// Largest integer scale `S` such that `canvas · S` fits `screen_w × screen_h` (min 1), and no
+/// side of the render target exceeds [`MAX_TARGET_PX`].
+pub fn integer_scale(screen_w: f32, screen_h: f32, canvas: Vec2) -> u32 {
+    let max_scale = (MAX_TARGET_PX / canvas.x.max(canvas.y)).floor().max(1.0) as u32;
+    let s = (screen_w / canvas.x).min(screen_h / canvas.y).floor();
     if s.is_finite() && s >= 1.0 {
-        (s as u32).min(MAX_SCALE)
+        (s as u32).min(max_scale)
     } else {
         1
     }
 }
 
-/// Where the `480·scale × 270·scale` canvas is shown on a `screen_w × screen_h` window: centred,
-/// at 1:1 when it fits, otherwise shrunk to fit (only possible for windows below 480×270).
-pub fn present_rect(screen_w: f32, screen_h: f32, scale: u32) -> Rect {
-    let (w, h) = (VIRTUAL_W * scale as f32, VIRTUAL_H * scale as f32);
+/// Where the `canvas · scale` render target is shown on a `screen_w × screen_h` window: centred,
+/// at 1:1 when it fits, otherwise shrunk to fit (only possible for windows smaller than the
+/// canvas).
+pub fn present_rect(screen_w: f32, screen_h: f32, canvas: Vec2, scale: u32) -> Rect {
+    let (w, h) = (canvas.x * scale as f32, canvas.y * scale as f32);
     let fit = (screen_w / w).min(screen_h / h).clamp(0.0, 1.0);
     let (w, h) = (w * fit, h * fit);
     Rect::new(
@@ -69,8 +83,9 @@ pub fn present_rect(screen_w: f32, screen_h: f32, scale: u32) -> Rect {
     )
 }
 
-/// The virtual canvas: render target, camera and presentation rectangle.
+/// The virtual canvas: its size, render target, camera and presentation rectangle.
 pub struct Canvas {
+    size: Vec2,
     target: RenderTarget,
     camera: Camera2D,
     scale: u32,
@@ -79,30 +94,53 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn new() -> Canvas {
+    /// A canvas of `size` virtual pixels (see [`canvas_size`]).
+    pub fn new(size: Vec2) -> Canvas {
         let (sw, sh) = (screen_width(), screen_height());
-        let scale = integer_scale(sw, sh);
-        let (target, camera) = Self::make_target(scale);
+        let scale = integer_scale(sw, sh, size);
+        let (target, camera) = Self::make_target(size, scale);
         let canvas = Canvas {
+            size,
             target,
             camera,
             scale,
-            present: present_rect(sw, sh, scale),
+            present: present_rect(sw, sh, size, scale),
             screen: (sw, sh),
         };
         canvas.apply_present_filter();
         canvas
     }
 
-    fn make_target(scale: u32) -> (RenderTarget, Camera2D) {
-        let target = render_target((VIRTUAL_W as u32) * scale, (VIRTUAL_H as u32) * scale);
-        let mut camera = Camera2D::from_display_rect(SCREEN);
+    fn make_target(size: Vec2, scale: u32) -> (RenderTarget, Camera2D) {
+        let target = render_target(size.x as u32 * scale, size.y as u32 * scale);
+        let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, size.x, size.y));
         camera.render_target = Some(target.clone());
         (target, camera)
     }
 
+    /// Virtual canvas size in pixels.
+    pub fn size(&self) -> Vec2 {
+        self.size
+    }
+
+    /// Switch to another virtual size (a pack's presentation profile); recreates the render
+    /// target. Screens lay themselves out from [`Gfx::size`], so the next frame uses it.
+    pub fn set_size(&mut self, size: Vec2) {
+        if size == self.size {
+            return;
+        }
+        let (sw, sh) = self.screen;
+        self.size = size;
+        self.scale = integer_scale(sw, sh, size);
+        let (target, camera) = Self::make_target(size, self.scale);
+        self.target = target;
+        self.camera = camera;
+        self.present = present_rect(sw, sh, size, self.scale);
+        self.apply_present_filter();
+    }
+
     /// Nearest filtering when the canvas is shown 1:1 (the normal case); linear filtering when a
-    /// window smaller than 480×270 (a phone in portrait) forces it to shrink, where nearest
+    /// window smaller than the canvas (a phone in portrait) forces it to shrink, where nearest
     /// sampling would drop whole pixel rows and make text unreadable.
     fn apply_present_filter(&self) {
         let shrunk = self.present.w < self.target.texture.width();
@@ -121,15 +159,15 @@ impl Canvas {
             return false;
         }
         self.screen = (sw, sh);
-        let scale = integer_scale(sw, sh);
+        let scale = integer_scale(sw, sh, self.size);
         let changed = scale != self.scale;
         if changed {
-            let (target, camera) = Self::make_target(scale);
+            let (target, camera) = Self::make_target(self.size, scale);
             self.target = target;
             self.camera = camera;
             self.scale = scale;
         }
-        self.present = present_rect(sw, sh, self.scale);
+        self.present = present_rect(sw, sh, self.size, self.scale);
         self.apply_present_filter();
         changed
     }
@@ -168,24 +206,24 @@ impl Canvas {
 
     /// Window pixel position -> virtual position (may lie outside the canvas).
     pub fn screen_to_virtual(&self, p: Vec2) -> Vec2 {
-        screen_to_virtual(self.present, p)
+        screen_to_virtual(self.present, self.size, p)
     }
 }
 
 impl Default for Canvas {
     fn default() -> Self {
-        Canvas::new()
+        Canvas::new(DEFAULT_CANVAS)
     }
 }
 
-/// Pure mapping used by [`Canvas::screen_to_virtual`].
-pub fn screen_to_virtual(present: Rect, p: Vec2) -> Vec2 {
+/// Pure mapping used by [`Canvas::screen_to_virtual`]: `present` shows a `canvas` sized canvas.
+pub fn screen_to_virtual(present: Rect, canvas: Vec2, p: Vec2) -> Vec2 {
     if present.w <= 0.0 || present.h <= 0.0 {
         return Vec2::ZERO;
     }
     vec2(
-        (p.x - present.x) * VIRTUAL_W / present.w,
-        (p.y - present.y) * VIRTUAL_H / present.h,
+        (p.x - present.x) * canvas.x / present.w,
+        (p.y - present.y) * canvas.y / present.h,
     )
 }
 
@@ -361,9 +399,10 @@ pub struct Gfx {
 }
 
 impl Gfx {
+    /// A [`DEFAULT_CANVAS`] sized canvas with the fallback fonts.
     pub fn new() -> Gfx {
         Gfx {
-            canvas: Canvas::new(),
+            canvas: Canvas::new(DEFAULT_CANVAS),
             fonts: Fonts::fallback(),
         }
     }
@@ -371,6 +410,17 @@ impl Gfx {
     /// Integer canvas scale `S`.
     pub fn scale(&self) -> u32 {
         self.canvas.scale()
+    }
+
+    /// Virtual canvas size in pixels (the loaded pack's presentation profile).
+    pub fn size(&self) -> Vec2 {
+        self.canvas.size()
+    }
+
+    /// The whole virtual canvas as a rectangle at the origin.
+    pub fn screen(&self) -> Rect {
+        let s = self.size();
+        Rect::new(0.0, 0.0, s.x, s.y)
     }
 
     fn params(&self, font: FontId, size: u8, color: Color) -> TextParams<'_> {
@@ -770,38 +820,74 @@ mod tests {
 
     #[test]
     fn scale_and_presentation() {
-        assert_eq!(integer_scale(1440.0, 810.0), 3);
-        assert_eq!(integer_scale(1920.0, 1080.0), 4);
-        assert_eq!(integer_scale(1366.0, 768.0), 2);
-        assert_eq!(integer_scale(300.0, 200.0), 1);
-        assert_eq!(integer_scale(0.0, 0.0), 1);
-        assert_eq!(integer_scale(100_000.0, 100_000.0), MAX_SCALE);
+        let c = DEFAULT_CANVAS;
+        assert_eq!(c, vec2(480.0, 270.0));
+        assert_eq!(integer_scale(1440.0, 810.0, c), 3);
+        assert_eq!(integer_scale(1920.0, 1080.0, c), 4);
+        assert_eq!(integer_scale(1366.0, 768.0, c), 2);
+        assert_eq!(integer_scale(300.0, 200.0, c), 1);
+        assert_eq!(integer_scale(0.0, 0.0, c), 1);
+        // The default canvas goes up to 3840x2160.
+        assert_eq!(integer_scale(100_000.0, 100_000.0, c), 8);
 
-        let r = present_rect(1366.0, 768.0, 2);
+        let r = present_rect(1366.0, 768.0, c, 2);
         assert_eq!((r.x, r.y, r.w, r.h), (203.0, 114.0, 960.0, 540.0));
         // A window smaller than the canvas shrinks it to fit, keeping the aspect ratio.
-        let r = present_rect(240.0, 270.0, 1);
+        let r = present_rect(240.0, 270.0, c, 1);
         assert_eq!((r.w, r.h), (240.0, 135.0));
+    }
+
+    #[test]
+    fn other_canvas_sizes_scale_the_same_way() {
+        let vga = vec2(640.0, 480.0);
+        assert_eq!(integer_scale(1440.0, 810.0, vga), 1);
+        assert_eq!(integer_scale(1920.0, 1080.0, vga), 2);
+        assert_eq!(integer_scale(3840.0, 2160.0, vga), 4);
+        // The render target never exceeds MAX_TARGET_PX on either side.
+        let big = vec2(1280.0, 800.0);
+        assert_eq!(integer_scale(100_000.0, 100_000.0, big), 3);
+        assert_eq!(integer_scale(100_000.0, 100_000.0, vga), 6);
+        let r = present_rect(1920.0, 1080.0, vga, 2);
+        assert_eq!((r.x, r.y, r.w, r.h), (320.0, 60.0, 1280.0, 960.0));
+        // A window smaller than 640x480 shrinks the canvas (aspect kept).
+        let r = present_rect(320.0, 480.0, vga, 1);
+        assert_eq!((r.w, r.h), (320.0, 240.0));
+    }
+
+    #[test]
+    fn canvas_sizes_come_from_the_presentation_profile() {
+        assert_eq!(canvas_size(&Presentation::default()), DEFAULT_CANVAS);
+        let p = |w, h| Presentation { canvas: [w, h] };
+        assert_eq!(canvas_size(&p(640, 480)), vec2(640.0, 480.0));
+        // Out-of-range values (rejected by Pack::validate) are clamped for the error screen.
+        assert_eq!(canvas_size(&p(100, 5000)), vec2(320.0, 800.0));
     }
 
     #[test]
     fn mouse_mapping() {
         let present = Rect::new(203.0, 114.0, 960.0, 540.0);
+        let c = DEFAULT_CANVAS;
         assert_eq!(
-            screen_to_virtual(present, vec2(203.0, 114.0)),
+            screen_to_virtual(present, c, vec2(203.0, 114.0)),
             vec2(0.0, 0.0)
         );
         assert_eq!(
-            screen_to_virtual(present, vec2(1163.0, 654.0)),
+            screen_to_virtual(present, c, vec2(1163.0, 654.0)),
             vec2(480.0, 270.0)
         );
         assert_eq!(
-            screen_to_virtual(present, vec2(683.0, 384.0)),
+            screen_to_virtual(present, c, vec2(683.0, 384.0)),
             vec2(240.0, 135.0)
         );
         assert_eq!(
-            screen_to_virtual(Rect::new(0.0, 0.0, 0.0, 0.0), vec2(5.0, 5.0)),
+            screen_to_virtual(Rect::new(0.0, 0.0, 0.0, 0.0), c, vec2(5.0, 5.0)),
             Vec2::ZERO
+        );
+        // 640x480 shown at 2x in a 1920x1080 window.
+        let present = Rect::new(320.0, 60.0, 1280.0, 960.0);
+        assert_eq!(
+            screen_to_virtual(present, vec2(640.0, 480.0), vec2(960.0, 540.0)),
+            vec2(320.0, 240.0)
         );
     }
 

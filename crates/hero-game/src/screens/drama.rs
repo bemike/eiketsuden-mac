@@ -40,9 +40,7 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::{AssetState, UNKNOWN_PORTRAIT};
 use crate::audio::sfx;
 use crate::flow::Flow;
-use crate::gfx::{
-    fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
-};
+use crate::gfx::{fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle};
 use crate::screens::settings::SettingsScreen;
 use crate::ui::art::{background_state, draw_background, draw_portrait_card};
 use crate::ui::backlog::{Backlog, BacklogView};
@@ -142,19 +140,42 @@ fn slot_index(slot: Slot) -> usize {
     }
 }
 
-/// Stage portrait size (4:5, like the portrait art) and the y of its bottom edge, just above the
-/// message box portrait.
+/// Stage portrait size (4:5, like the portrait art) on canvases with room for it.
 const STAGE_PORTRAIT: Vec2 = Vec2::new(104.0, 130.0);
-const STAGE_BOTTOM: f32 = 186.0;
+/// Distance from the bottom edge of the canvas to the bottom edge of the stage portraits, just
+/// above the message box portrait.
+const STAGE_BOTTOM_MARGIN: f32 = 84.0;
+/// Room kept free above the stage portraits (for the toolbar, also in an overlay).
+const STAGE_TOP_MARGIN: f32 = 40.0;
+/// Largest distance from the left and right edges of the canvas to the centres of the side
+/// slots.
+const SIDE_SLOT_INSET: f32 = 116.0;
+/// Least horizontal gap between two slots.
+const SLOT_GAP: f32 = 8.0;
 
-/// Screen rectangle of portrait slot `index` (0 = left, 1 = centre, 2 = right).
-fn slot_rect(index: usize) -> Rect {
-    let cx = [116.0, VIRTUAL_W / 2.0, VIRTUAL_W - 116.0][index.min(2)];
+/// Size of the stage portraits on a `canvas` sized canvas: [`STAGE_PORTRAIT`], shrunk (keeping
+/// the 4:5 aspect) where the canvas is too low or too narrow for three of them.
+fn stage_portrait_size(canvas: Vec2) -> Vec2 {
+    let h = STAGE_PORTRAIT
+        .y
+        .min(canvas.y - STAGE_BOTTOM_MARGIN - STAGE_TOP_MARGIN);
+    let w = (h * 0.8).min((canvas.x - 4.0 * SLOT_GAP) / 3.0);
+    // A multiple of 4 wide, so the height is a whole number at 4:5.
+    let w = ((w / 4.0).floor() * 4.0).max(4.0);
+    vec2(w, w * 1.25)
+}
+
+/// Rectangle of portrait slot `index` (0 = left, 1 = centre, 2 = right) on a `canvas` sized
+/// canvas.
+fn slot_rect(canvas: Vec2, index: usize) -> Rect {
+    let size = stage_portrait_size(canvas);
+    let inset = SIDE_SLOT_INSET.min(canvas.x / 2.0 - size.x - SLOT_GAP);
+    let cx = [inset, canvas.x / 2.0, canvas.x - inset][index.min(2)];
     Rect::new(
-        (cx - STAGE_PORTRAIT.x / 2.0).round(),
-        STAGE_BOTTOM - STAGE_PORTRAIT.y,
-        STAGE_PORTRAIT.x,
-        STAGE_PORTRAIT.y,
+        (cx - size.x / 2.0).round(),
+        canvas.y - STAGE_BOTTOM_MARGIN - size.y,
+        size.x,
+        size.y,
     )
 }
 
@@ -273,7 +294,7 @@ impl Stage {
     fn draw_backdrop(ctx: &Ctx, backdrop: &Backdrop, alpha: f32) {
         match backdrop {
             Backdrop::Transparent => {}
-            Backdrop::Black => fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, alpha)),
+            Backdrop::Black => fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, alpha)),
             Backdrop::Image(key) => {
                 draw_background(ctx, key, alpha);
             }
@@ -300,19 +321,20 @@ impl Stage {
         } else {
             0.0
         };
+        let (screen, canvas) = (ctx.gfx.screen(), ctx.gfx.size());
         if dim > 0.0 {
-            fill_rect(SCREEN, Color::new(0.0, 0.0, 0.03, 0.22 * dim));
+            fill_rect(screen, Color::new(0.0, 0.0, 0.03, 0.22 * dim));
         }
         for (i, p) in &self.leaving {
-            draw_portrait_card(ctx, Some(&p.key), slot_rect(*i), p.alpha, p.light);
+            draw_portrait_card(ctx, Some(&p.key), slot_rect(canvas, *i), p.alpha, p.light);
         }
         for (i, p) in self.slots.iter().enumerate() {
             if let Some(p) = p {
-                draw_portrait_card(ctx, Some(&p.key), slot_rect(i), p.alpha, p.light);
+                draw_portrait_card(ctx, Some(&p.key), slot_rect(canvas, i), p.alpha, p.light);
             }
         }
         if self.fade > 0.0 {
-            fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, self.fade.min(1.0)));
+            fill_rect(screen, Color::new(0.0, 0.0, 0.0, self.fade.min(1.0)));
         }
     }
 }
@@ -363,7 +385,8 @@ impl TitleCard {
         if a <= 0.0 || self.lines.is_empty() {
             return;
         }
-        fill_rect(SCREEN, Color::new(0.0, 0.0, 0.02, 0.5 * a));
+        let (w, h) = (gfx.size().x, gfx.size().y);
+        fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.02, 0.5 * a));
         let head = TextStyle::main(theme::TEXT_ACCENT.with_alpha(a))
             .size(3)
             .shadow(Color::new(0.1, 0.03, 0.0, 0.9 * a));
@@ -371,7 +394,7 @@ impl TitleCard {
         // Subtitles at double size when they fit, else at normal size.
         let sub_size = if self.lines[1..]
             .iter()
-            .all(|l| gfx.text_width(l, FontId::Main, 2) <= VIRTUAL_W - 40.0)
+            .all(|l| gfx.text_width(l, FontId::Main, 2) <= w - 40.0)
         {
             2
         } else {
@@ -379,16 +402,16 @@ impl TitleCard {
         };
         let sub_h = gfx.line_height(FontId::Main, sub_size);
         let total = head_h + (self.lines.len() - 1) as f32 * (sub_h + 4.0);
-        let mut y = ((VIRTUAL_H - total) / 2.0).round() - 6.0;
+        let mut y = ((h - total) / 2.0).round() - 6.0;
 
         let head_w = gfx.text_width(&self.lines[0], FontId::Main, 3);
-        gfx.text_aligned(&self.lines[0], 0.0, y, VIRTUAL_W, Align::Center, head);
+        gfx.text_aligned(&self.lines[0], 0.0, y, w, Align::Center, head);
         // Gold rules on both sides of the heading, growing while it fades in.
         let reach = 90.0 * (self.age / TITLE_IN).min(1.0);
         let mid = (y + head_h / 2.0).round();
         let gap = head_w / 2.0 + 14.0;
         let gold = theme::TEXT_ACCENT;
-        let cx = VIRTUAL_W / 2.0;
+        let cx = w / 2.0;
         fill_gradient_h(
             Rect::new(cx - gap - reach, mid, reach, 1.0),
             gold.with_alpha(0.0),
@@ -404,7 +427,7 @@ impl TitleCard {
             .size(sub_size)
             .shadow(theme::TEXT_SHADOW.with_alpha(a));
         for line in &self.lines[1..] {
-            gfx.text_aligned(line, 0.0, y, VIRTUAL_W, Align::Center, sub);
+            gfx.text_aligned(line, 0.0, y, w, Align::Center, sub);
             y += sub_h + 4.0;
         }
     }
@@ -447,15 +470,17 @@ impl Notice {
         if a <= 0.0 {
             return;
         }
+        let canvas = gfx.size();
+        let w = canvas.x;
         let h = 64.0;
-        let y = ((VIRTUAL_H - h) / 2.0).round() - 20.0;
+        let y = ((canvas.y - h) / 2.0).round() - 20.0;
         let dark = Color::new(0.02, 0.03, 0.1, 0.88 * a);
         let mid = Color::new(0.1, 0.13, 0.36, 0.9 * a);
-        fill_gradient_h(Rect::new(0.0, y, VIRTUAL_W / 2.0, h), dark, mid);
-        fill_gradient_h(Rect::new(VIRTUAL_W / 2.0, y, VIRTUAL_W / 2.0, h), mid, dark);
+        fill_gradient_h(Rect::new(0.0, y, w / 2.0, h), dark, mid);
+        fill_gradient_h(Rect::new(w / 2.0, y, w / 2.0, h), mid, dark);
         let gold = theme::TEXT_ACCENT.with_alpha(a);
-        fill_rect(Rect::new(0.0, y, VIRTUAL_W, 1.0), gold);
-        fill_rect(Rect::new(0.0, y + h - 1.0, VIRTUAL_W, 1.0), gold);
+        fill_rect(Rect::new(0.0, y, w, 1.0), gold);
+        fill_rect(Rect::new(0.0, y + h - 1.0, w, 1.0), gold);
 
         let title = TextStyle::main(theme::TEXT.with_alpha(a))
             .size(2)
@@ -471,7 +496,7 @@ impl Notice {
             .map_or(0.0, |s| gfx.text_width(s, FontId::Main, 1));
         let block_w = art_w + 10.0 + title_w.max(sub_w);
         let slide = (1.0 - (self.age / NOTICE_IN).min(1.0)).powi(3) * 30.0;
-        let x0 = ((VIRTUAL_W - block_w) / 2.0).round() + slide.round();
+        let x0 = ((w - block_w) / 2.0).round() + slide.round();
         match &self.art {
             NoticeArt::Portrait(key) => {
                 draw_portrait_card(ctx, Some(key), Rect::new(x0, y + 4.0, 44.0, 55.0), a, 1.0);
@@ -652,10 +677,10 @@ const TOOL_TOP: f32 = 4.0;
 /// `OVERLAY_TOOL_TOP - 4` pixels high.
 pub const OVERLAY_TOOL_TOP: f32 = 20.0;
 
-/// Button rectangles laid out right to left from the top right corner, with their top at `top`;
-/// `width` measures a label.
-fn tool_layout(top: f32, width: impl Fn(&str) -> f32) -> Vec<(Tool, Rect)> {
-    let mut x = VIRTUAL_W - 4.0;
+/// Button rectangles laid out right to left from the top right corner of a `canvas_w` wide
+/// canvas, with their top at `top`; `width` measures a label.
+fn tool_layout(canvas_w: f32, top: f32, width: impl Fn(&str) -> f32) -> Vec<(Tool, Rect)> {
+    let mut x = canvas_w - 4.0;
     let mut out = Vec::new();
     for tool in Tool::ALL.into_iter().rev() {
         let w = (width(tool.label()) + 10.0).round();
@@ -668,7 +693,7 @@ fn tool_layout(top: f32, width: impl Fn(&str) -> f32) -> Vec<(Tool, Rect)> {
 }
 
 fn tool_rects(gfx: &Gfx, top: f32) -> Vec<(Tool, Rect)> {
-    tool_layout(top, |s| gfx.text_width(s, FontId::Small, 1))
+    tool_layout(gfx.size().x, top, |s| gfx.text_width(s, FontId::Small, 1))
 }
 
 // ----- the screen -----------------------------------------------------------------------------
@@ -1109,7 +1134,7 @@ impl DramaScreen {
                 let bottom = self
                     .last_text
                     .as_ref()
-                    .map_or(VIRTUAL_H - 70.0, |(d, _)| d.top() - 6.0);
+                    .map_or(ctx.gfx.size().y - 70.0, |(d, _)| d.top() - 6.0);
                 let choice = ChoiceBox::new(&ctx.gfx, None, &labels, None).with_bottom(bottom);
                 self.current = Current::Choice { choice, options };
             }
@@ -1372,11 +1397,11 @@ impl Screen for DramaScreen {
         match &self.popup {
             Popup::None => {}
             Popup::Menu(choice) => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
+                fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
                 choice.draw(ctx);
             }
             Popup::ConfirmSkip(dialog) => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
+                fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
                 dialog.draw(ctx);
             }
             Popup::Backlog(view) => view.draw(ctx),
@@ -1401,15 +1426,31 @@ mod tests {
         assert_eq!(portrait_light("liu_bei", &Spotlight::Nobody), DIMMED);
     }
 
+    /// Canvas sizes the layout tests run on: the default, VGA and the smallest allowed.
+    const CANVASES: [Vec2; 3] = [
+        crate::gfx::DEFAULT_CANVAS,
+        Vec2::new(640.0, 480.0),
+        Vec2::new(320.0, 200.0),
+    ];
+
     #[test]
     fn slots_sit_side_by_side_above_the_message_box() {
-        let (l, c, r) = (slot_rect(0), slot_rect(1), slot_rect(2));
-        assert!(l.right() < c.x && c.right() < r.x);
-        assert_eq!(c.center().x, VIRTUAL_W / 2.0);
-        assert!(r.right() <= VIRTUAL_W && l.x >= 0.0);
-        assert!(l.bottom() <= DialogueBox::box_rect(true).y);
-        // Portraits keep the 4:5 aspect of the portrait art.
-        assert_eq!(l.w * 5.0, l.h * 4.0);
+        // The base pack's layout is unchanged.
+        let default = crate::gfx::DEFAULT_CANVAS;
+        assert_eq!(slot_rect(default, 0), Rect::new(64.0, 56.0, 104.0, 130.0));
+        for canvas in CANVASES {
+            let (l, c, r) = (
+                slot_rect(canvas, 0),
+                slot_rect(canvas, 1),
+                slot_rect(canvas, 2),
+            );
+            assert!(l.right() < c.x && c.right() < r.x, "{canvas}");
+            assert_eq!(c.center().x, canvas.x / 2.0);
+            assert!(r.right() <= canvas.x && l.x >= 0.0);
+            assert!(l.bottom() <= DialogueBox::box_rect(canvas, true).y);
+            // Portraits keep the 4:5 aspect of the portrait art.
+            assert_eq!(l.w * 5.0, l.h * 4.0);
+        }
     }
 
     #[test]
@@ -1521,27 +1562,36 @@ mod tests {
 
     #[test]
     fn toolbar_fits_in_the_top_right_corner() {
-        let rects = tool_layout(TOOL_TOP, |s| s.chars().count() as f32 * 10.0);
-        assert_eq!(rects.len(), Tool::ALL.len());
-        assert_eq!(rects[0].0, Tool::Backlog);
-        assert!(rects.windows(2).all(|w| w[0].1.right() < w[1].1.x));
-        let last = rects.last().unwrap().1;
-        assert_eq!(last.right(), VIRTUAL_W - 4.0);
-        assert!(rects.iter().all(|(_, r)| r.x > VIRTUAL_W / 3.0));
-        assert!(rects.iter().all(|(_, r)| r.y == TOOL_TOP));
+        for canvas in CANVASES {
+            let rects = tool_layout(canvas.x, TOOL_TOP, |s| s.chars().count() as f32 * 10.0);
+            assert_eq!(rects.len(), Tool::ALL.len());
+            assert_eq!(rects[0].0, Tool::Backlog);
+            assert!(rects.windows(2).all(|w| w[0].1.right() < w[1].1.x));
+            let last = rects.last().unwrap().1;
+            assert_eq!(last.right(), canvas.x - 4.0);
+            assert!(rects.iter().all(|(_, r)| r.x > 0.0));
+            assert!(rects.iter().all(|(_, r)| r.y == TOOL_TOP));
+        }
+        let rects = tool_layout(480.0, TOOL_TOP, |s| s.chars().count() as f32 * 10.0);
+        assert!(rects.iter().all(|(_, r)| r.x > 480.0 / 3.0));
     }
 
+    /// The overlay toolbar sits between the top bar of the screen below (the battle HUD; that
+    /// pairing is checked in `screens::battle::hud`) and the stage portraits and message box.
     #[test]
-    fn overlay_toolbar_stays_clear_of_the_battle_top_bar() {
-        // The battle HUD's top bar (`screens::battle::hud::TOP_BAR_H`) is 16 px high.
-        const BATTLE_TOP_BAR_H: f32 = 16.0;
-        let rects = tool_layout(OVERLAY_TOOL_TOP, |s| s.chars().count() as f32 * 10.0);
-        assert!(rects.iter().all(|(_, r)| r.y >= BATTLE_TOP_BAR_H + 2.0));
-        // Still above the stage portraits and clear of the message box.
-        assert!(rects.iter().all(|(_, r)| r.bottom() < slot_rect(2).y));
-        assert!(rects
-            .iter()
-            .all(|(_, r)| r.bottom() < DialogueBox::box_rect(true).y));
+    fn overlay_toolbar_stays_above_the_stage() {
+        for canvas in CANVASES {
+            let rects = tool_layout(canvas.x, OVERLAY_TOOL_TOP, |s| {
+                s.chars().count() as f32 * 10.0
+            });
+            assert!(rects.iter().all(|(_, r)| r.y == OVERLAY_TOOL_TOP));
+            assert!(rects
+                .iter()
+                .all(|(_, r)| r.bottom() < slot_rect(canvas, 2).y));
+            assert!(rects
+                .iter()
+                .all(|(_, r)| r.bottom() < DialogueBox::box_rect(canvas, true).y));
+        }
     }
 
     #[test]

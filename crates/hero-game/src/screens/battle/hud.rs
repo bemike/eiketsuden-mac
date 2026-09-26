@@ -1,13 +1,13 @@
 //! Battle-specific drawing: top bar, unit and terrain panels, forecasts, range highlights, map
-//! cursor, floating numbers, banners and popups. Everything draws in virtual coordinates.
+//! cursor, floating numbers, banners and popups. Everything draws in virtual coordinates, laid
+//! out relative to the canvas size; map decorations take the tile size (`tile`, pixels) of the
+//! battle's tileset.
 
 use super::anim::{BannerView, FloatKind, FloatText, HudView, Popup, Tone, UnitView};
 use super::text;
-use super::tileset::TILE;
 use crate::app::Ctx;
 use crate::gfx::{
     fill_gradient_h, fill_gradient_v, fill_rect, stroke_rect, Align, FontId, Gfx, TextStyle,
-    VIRTUAL_W,
 };
 use crate::ui::bars::{draw_gauge, GaugeKind};
 use crate::ui::theme;
@@ -45,12 +45,15 @@ pub fn outlined(gfx: &Gfx, s: &str, x: f32, y: f32, style: TextStyle, outline: C
     gfx.text(s, x, y, plain);
 }
 
+/// The bar across the top of the canvas: battle name, turn, phase (from the left), weather and
+/// gold (from the right).
 pub fn draw_top_bar(ctx: &Ctx, name: &str, hud: &HudView, turn_limit: u32, gold: i64) {
     let gfx = &ctx.gfx;
-    let r = Rect::new(0.0, 0.0, VIRTUAL_W, TOP_BAR_H);
+    let w = gfx.size().x;
+    let r = Rect::new(0.0, 0.0, w, TOP_BAR_H);
     fill_gradient_v(r, theme::WIN_TOP, theme::WIN_BOTTOM);
     fill_rect(
-        Rect::new(0.0, TOP_BAR_H - 1.0, VIRTUAL_W, 1.0),
+        Rect::new(0.0, TOP_BAR_H - 1.0, w, 1.0),
         theme::BORDER_LIGHT.with_alpha(0.55),
     );
     let small = TextStyle::small(theme::TEXT).shadow(theme::TEXT_SHADOW);
@@ -71,15 +74,17 @@ pub fn draw_top_bar(ctx: &Ctx, name: &str, hud: &HudView, turn_limit: u32, gold:
         y,
         small.color(side_color(hud.phase)),
     );
-    draw_icon(ctx, text::weather_icon(hud.weather), vec2(318.0, 0.0));
-    gfx.text(text::weather_name(hud.weather), 336.0, y, small);
-    draw_icon(ctx, "gold", vec2(382.0, 0.0));
+    let weather_x = w - 162.0;
+    draw_icon(ctx, text::weather_icon(hud.weather), vec2(weather_x, 0.0));
+    gfx.text(text::weather_name(hud.weather), weather_x + 18.0, y, small);
+    let gold_x = w - 98.0;
+    draw_icon(ctx, "gold", vec2(gold_x, 0.0));
     let g = crate::ui::format::thousands(gold);
-    let gw = gfx.text(&g, 400.0, y, small.color(theme::TEXT_ACCENT));
+    let gw = gfx.text(&g, gold_x + 18.0, y, small.color(theme::TEXT_ACCENT));
     if hud.gold_found > 0 {
         gfx.text(
             &format!("+{}", hud.gold_found),
-            400.0 + gw + 3.0,
+            gold_x + 18.0 + gw + 3.0,
             y,
             small.color(theme::TEXT_GOOD),
         );
@@ -257,10 +262,11 @@ pub fn draw_terrain_panel(ctx: &Ctx, at: Vec2, t: &TerrainDef, treasure: bool, p
     }
 }
 
-/// Filled tile highlight with a lighter border, pulsing slightly.
-pub fn draw_tile_highlight(screen: Vec2, color: Color, time: f64) {
+/// Filled highlight of the `tile` pixel tile at `screen`, with a lighter border, pulsing
+/// slightly.
+pub fn draw_tile_highlight(screen: Vec2, tile: f32, color: Color, time: f64) {
     let pulse = 0.82 + 0.18 * ((time * 3.2).sin() as f32 * 0.5 + 0.5);
-    let r = Rect::new(screen.x, screen.y, TILE, TILE);
+    let r = Rect::new(screen.x, screen.y, tile, tile);
     fill_rect(r, color.with_alpha(color.a * pulse));
     let edge = Color::new(
         (color.r + 0.35).min(1.0),
@@ -269,7 +275,7 @@ pub fn draw_tile_highlight(screen: Vec2, color: Color, time: f64) {
         0.55 * pulse,
     );
     stroke_rect(
-        Rect::new(r.x + 1.0, r.y + 1.0, TILE - 2.0, TILE - 2.0),
+        Rect::new(r.x + 1.0, r.y + 1.0, tile - 2.0, tile - 2.0),
         edge,
     );
 }
@@ -281,11 +287,12 @@ pub const AIM_COLOR: Color = Color::new(0.72, 0.35, 1.0, 0.42);
 pub const AREA_COLOR: Color = Color::new(0.9, 0.55, 1.0, 0.6);
 pub const ITEM_COLOR: Color = Color::new(0.3, 0.9, 0.45, 0.45);
 
-/// Map cursor: four gold corner brackets that breathe in and out.
-pub fn draw_cursor(screen: Vec2, time: f64, color: Color) {
+/// Map cursor around the `tile` pixel tile at `screen`: four gold corner brackets that breathe
+/// in and out.
+pub fn draw_cursor(screen: Vec2, tile: f32, time: f64, color: Color) {
     let inset = if (time * 2.5).fract() < 0.5 { 0.0 } else { 1.0 };
     let (x0, y0) = (screen.x - 1.0 + inset, screen.y - 1.0 + inset);
-    let (x1, y1) = (screen.x + TILE + 1.0 - inset, screen.y + TILE + 1.0 - inset);
+    let (x1, y1) = (screen.x + tile + 1.0 - inset, screen.y + tile + 1.0 - inset);
     let l = 5.0;
     let dark = Color::new(0.0, 0.0, 0.0, 0.6);
     for (c, d) in [(dark, 1.0), (color, 0.0)] {
@@ -304,9 +311,9 @@ pub fn draw_cursor(screen: Vec2, time: f64, color: Color) {
     }
 }
 
-/// Mini HP bar under a unit.
-pub fn draw_mini_hp(screen: Vec2, hp: f32, max_hp: i32, alpha: f32) {
-    let r = Rect::new(screen.x + 2.0, screen.y + TILE - 2.0, TILE - 4.0, 3.0);
+/// Mini HP bar along the bottom of the unit's `tile` pixel tile at `screen`.
+pub fn draw_mini_hp(screen: Vec2, tile: f32, hp: f32, max_hp: i32, alpha: f32) {
+    let r = Rect::new(screen.x + 2.0, screen.y + tile - 2.0, tile - 4.0, 3.0);
     fill_rect(r, Color::new(0.0, 0.0, 0.0, 0.75 * alpha));
     let k = crate::ui::bars::ratio(hp, max_hp as f32);
     let w = ((r.w - 2.0) * k).ceil();
@@ -360,8 +367,8 @@ pub fn float_color(kind: FloatKind) -> Color {
     }
 }
 
-/// A rising number/text centred above `tile_screen` (top-left of its tile).
-pub fn draw_float(gfx: &Gfx, tile_screen: Vec2, f: &FloatText) {
+/// A rising number/text centred above `tile_screen` (top-left of its `tile` pixel tile).
+pub fn draw_float(gfx: &Gfx, tile_screen: Vec2, tile: f32, f: &FloatText) {
     let k = f.age / f.life;
     let rise = (f.age * 3.5).min(1.0) * 10.0 + f.row as f32 * 11.0;
     let alpha = if k > 0.75 {
@@ -380,7 +387,7 @@ pub fn draw_float(gfx: &Gfx, tile_screen: Vec2, f: &FloatText) {
     } else {
         0.0
     };
-    let x = (tile_screen.x + TILE / 2.0 - w / 2.0).round();
+    let x = (tile_screen.x + tile / 2.0 - w / 2.0).round();
     let y = (tile_screen.y - 8.0 - rise + bounce).round();
     let color = float_color(f.kind).with_alpha(alpha);
     let outline = if f.kind == FloatKind::Damage {
@@ -425,7 +432,8 @@ pub fn draw_banner(ctx: &Ctx, b: &BannerView, viewport: Rect) {
     let (dark, mid) = tone_colors(b.tone);
     let dark = dark.with_alpha(0.0);
     let mid = mid.with_alpha(0.88 * a);
-    let half = VIRTUAL_W / 2.0;
+    let canvas_w = gfx.size().x;
+    let half = canvas_w / 2.0;
     // Band opens from the centre.
     let open = (b.age / 0.2).min(1.0);
     let bw = half * open;
@@ -449,7 +457,7 @@ pub fn draw_banner(ctx: &Ctx, b: &BannerView, viewport: Rect) {
         .shadow(Color::new(0.0, 0.0, 0.0, 0.8 * a));
     let tw = gfx.text_width(&b.title, FontId::Main, 2);
     let icon_w = if b.icon.is_some() { 20.0 } else { 0.0 };
-    let x = ((VIRTUAL_W - tw - icon_w) / 2.0).round();
+    let x = ((canvas_w - tw - icon_w) / 2.0).round();
     if let Some(icon) = b.icon {
         draw_icon(ctx, icon, vec2(x, y + 9.0));
     }
@@ -459,7 +467,7 @@ pub fn draw_banner(ctx: &Ctx, b: &BannerView, viewport: Rect) {
             sub,
             0.0,
             y + 34.0,
-            VIRTUAL_W,
+            canvas_w,
             Align::Center,
             TextStyle::small(theme::TEXT_ACCENT.with_alpha(a)).shadow(Color::new(
                 0.0,
@@ -486,7 +494,7 @@ pub fn draw_popup(ctx: &Ctx, p: &Popup, state: &BattleState, viewport: Rect, bel
         viewport.y + 24.0
     };
     let r = Rect::new(
-        ((VIRTUAL_W - w) / 2.0).round(),
+        ((gfx.size().x - w) / 2.0).round(),
         (y + (1.0 - pop) * 6.0).round(),
         w,
         h,
@@ -524,7 +532,7 @@ pub fn draw_caption(ctx: &Ctx, s: &str, age: f32, viewport: Rect) {
     let a = (age / 0.12).min(1.0);
     let w = gfx.text_width(s, FontId::Main, 1) + 24.0;
     let r = Rect::new(
-        ((VIRTUAL_W - w) / 2.0).round(),
+        ((gfx.size().x - w) / 2.0).round(),
         viewport.y + 6.0,
         w.round(),
         22.0,
@@ -540,23 +548,21 @@ pub fn draw_caption(ctx: &Ctx, s: &str, age: f32, viewport: Rect) {
     );
 }
 
-/// Big 승리 / 패배 caption.
+/// Big 승리 / 패배 caption, a little above the middle of the canvas.
 pub fn draw_outcome(ctx: &Ctx, victory: bool, age: f32) {
     let gfx = &ctx.gfx;
+    let (canvas_w, canvas_h) = (gfx.size().x, gfx.size().y);
     let a = (age / 0.4).min(1.0);
-    fill_rect(
-        Rect::new(0.0, 0.0, VIRTUAL_W, crate::gfx::VIRTUAL_H),
-        Color::new(0.0, 0.0, 0.0, 0.35 * a),
-    );
+    fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35 * a));
     let (title, sub, tone) = if victory {
         ("승 리", "적군을 물리쳤다!", Tone::Good)
     } else {
         ("패 배", "아군이 패했다…", Tone::Enemy)
     };
     let h = 70.0;
-    let y = 90.0;
+    let y = ((canvas_h - h) / 2.0).round() - 10.0;
     let (dark, mid) = tone_colors(tone);
-    let half = VIRTUAL_W / 2.0;
+    let half = canvas_w / 2.0;
     let open = (age / 0.3).min(1.0);
     let bw = half * open;
     fill_gradient_h(
@@ -591,7 +597,7 @@ pub fn draw_outcome(ctx: &Ctx, victory: bool, age: f32) {
         title,
         0.0,
         y + 4.0,
-        VIRTUAL_W,
+        canvas_w,
         Align::Center,
         TextStyle::main(title_color.with_alpha(a))
             .size(3)
@@ -601,7 +607,7 @@ pub fn draw_outcome(ctx: &Ctx, victory: bool, age: f32) {
         sub,
         0.0,
         y + 52.0,
-        VIRTUAL_W,
+        canvas_w,
         Align::Center,
         TextStyle::main(theme::TEXT.with_alpha(a)).shadow(theme::TEXT_SHADOW),
     );
@@ -651,23 +657,22 @@ pub fn draw_frame(tex: &Texture2D, frame: Vec2, cell: (u32, u32), pos: Vec2, tin
     );
 }
 
-/// Title card shown when the battle opens: name, location, a thin line.
+/// Title card shown when the battle opens: name, location, a thin line, around the middle of
+/// the canvas.
 pub fn draw_title_card(ctx: &Ctx, name: &str, location: &str, age: f32) {
     let gfx = &ctx.gfx;
+    let (canvas_w, canvas_h) = (gfx.size().x, gfx.size().y);
     let a = (age / 0.5).min(1.0) * ((2.6 - age) / 0.4).clamp(0.0, 1.0);
-    fill_rect(
-        Rect::new(0.0, 0.0, VIRTUAL_W, crate::gfx::VIRTUAL_H),
-        Color::new(0.0, 0.0, 0.02, 0.55 + 0.25 * a),
-    );
-    let y = 100.0;
+    fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.02, 0.55 + 0.25 * a));
+    let y = (canvas_h / 2.0).round() - 35.0;
     let line_w = 220.0 * (age / 0.6).min(1.0);
     fill_gradient_h(
-        Rect::new(VIRTUAL_W / 2.0 - line_w, y + 36.0, line_w, 1.0),
+        Rect::new(canvas_w / 2.0 - line_w, y + 36.0, line_w, 1.0),
         theme::TEXT_ACCENT.with_alpha(0.0),
         theme::TEXT_ACCENT.with_alpha(a),
     );
     fill_gradient_h(
-        Rect::new(VIRTUAL_W / 2.0, y + 36.0, line_w, 1.0),
+        Rect::new(canvas_w / 2.0, y + 36.0, line_w, 1.0),
         theme::TEXT_ACCENT.with_alpha(a),
         theme::TEXT_ACCENT.with_alpha(0.0),
     );
@@ -675,7 +680,7 @@ pub fn draw_title_card(ctx: &Ctx, name: &str, location: &str, age: f32) {
         name,
         0.0,
         y,
-        VIRTUAL_W,
+        canvas_w,
         Align::Center,
         TextStyle::main(theme::TEXT.with_alpha(a))
             .size(2)
@@ -686,7 +691,7 @@ pub fn draw_title_card(ctx: &Ctx, name: &str, location: &str, age: f32) {
             location,
             0.0,
             y + 42.0,
-            VIRTUAL_W,
+            canvas_w,
             Align::Center,
             TextStyle::main(theme::TEXT_ACCENT.with_alpha(a)).shadow(theme::TEXT_SHADOW),
         );
@@ -705,8 +710,8 @@ pub fn draw_text_window(
     let w = 300.0;
     let h = 30.0 + lines as f32 * 15.0 + 22.0;
     let r = Rect::new(
-        ((VIRTUAL_W - w) / 2.0).round(),
-        ((crate::gfx::VIRTUAL_H - h) / 2.0).round(),
+        ((gfx.size().x - w) / 2.0).round(),
+        ((gfx.size().y - h) / 2.0).round(),
         w,
         h,
     );
@@ -774,11 +779,11 @@ pub fn draw_affinity_arrow(at: Vec2, up: bool) {
     draw_triangle(pts[0], pts[1], pts[2], c);
 }
 
-/// Twinkle marking an untaken treasure tile.
-pub fn draw_twinkle(tile_screen: Vec2, time: f64) {
+/// Twinkle in the top-right corner of an untaken treasure's `tile` pixel tile.
+pub fn draw_twinkle(tile_screen: Vec2, tile: f32, time: f64) {
     let k = ((time * 2.0).sin() as f32 * 0.5 + 0.5) * 0.8 + 0.2;
     let c = Color::from_hex(0xfff3b0).with_alpha(k);
-    let x = tile_screen.x + 12.0;
+    let x = tile_screen.x + tile - 4.0;
     let y = tile_screen.y + 2.0;
     fill_rect(Rect::new(x, y - 2.0, 1.0, 5.0), c);
     fill_rect(Rect::new(x - 2.0, y, 5.0, 1.0), c);

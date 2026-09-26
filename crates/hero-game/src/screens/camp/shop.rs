@@ -2,10 +2,10 @@
 //! price. Every purchase and sale goes through `CampaignState::buy` / `sell`, whose errors are
 //! shown as toasts.
 
-use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
+use super::widgets::{back_tapped, columns, draw_back_button, LIST_TOP};
 use super::widgets::{
     draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame, item_effect,
-    item_icon, slot_name, visible_rows, QuantityDialog, TOP,
+    item_icon, slot_name, visible_rows, QuantityDialog,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
@@ -102,18 +102,17 @@ fn owned(campaign: &CampaignState, item: &str) -> (u32, u32) {
     (campaign.item_count(item), equipped)
 }
 
-const LIST: Rect = Rect {
-    x: 8.0,
-    y: TOP + 20.0,
-    w: 250.0,
-    h: 204.0,
-};
-const PANEL: Rect = Rect {
-    x: 264.0,
-    y: TOP + 2.0,
-    w: 208.0,
-    h: 222.0,
-};
+/// Width of the item list; the panel right of it takes the rest of the canvas width.
+const LIST_W: f32 = 250.0;
+/// Height of the buy / sell tabs above the item list.
+const TABS_H: f32 = 18.0;
+
+/// The item list (below the tabs) and the item panel on a `canvas` sized canvas.
+fn layout(canvas: Vec2) -> (Rect, Rect) {
+    let (left, panel) = columns(canvas, LIST_W);
+    let list = Rect::new(left.x, left.y + TABS_H, left.w, left.h - TABS_H);
+    (list, panel)
+}
 const TAB_W: f32 = 60.0;
 
 /// The shop screen.
@@ -136,12 +135,14 @@ impl ShopScreen {
         }
     }
 
-    fn tab_rect(tab: Tab) -> Rect {
+    /// The buy / sell tab above the item list on a `canvas` sized canvas.
+    fn tab_rect(canvas: Vec2, tab: Tab) -> Rect {
         let i = match tab {
             Tab::Buy => 0.0,
             Tab::Sell => 1.0,
         };
-        Rect::new(LIST.x + i * (TAB_W + 4.0), TOP + 2.0, TAB_W, 18.0)
+        let (list, _) = layout(canvas);
+        Rect::new(list.x + i * (TAB_W + 4.0), list.y - TABS_H, TAB_W, TABS_H)
     }
 
     fn rebuild(&mut self, ctx: &Ctx) {
@@ -175,11 +176,12 @@ impl ShopScreen {
             })
             .collect();
         let cursor = self.menu.cursor();
-        let rows = ((LIST.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
+        let (list, _) = layout(ctx.gfx.size());
+        let rows = ((list.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
         let mut menu =
             Menu::new(items)
                 .rows(rows)
-                .at(LIST.x + 2.0, LIST.y + LIST_TOP, LIST.w - 4.0);
+                .at(list.x + 2.0, list.y + LIST_TOP, list.w - 4.0);
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 18.0;
@@ -221,6 +223,7 @@ impl ShopScreen {
                     return;
                 }
                 QuantityDialog::new(
+                    &ctx.gfx,
                     &format!("{} 사기", with_particle(&item.name, Particle::EulReul)),
                     &format!("한 개 {}", format::thousands(i64::from(item.price))),
                     i64::from(item.price),
@@ -249,6 +252,7 @@ impl ShopScreen {
                     format!("한 개 {} (정가의 절반)", format::thousands(price))
                 };
                 QuantityDialog::new(
+                    &ctx.gfx,
                     &format!("{} 팔기", with_particle(&item.name, Particle::EulReul)),
                     &note,
                     price,
@@ -336,7 +340,7 @@ impl Screen for ShopScreen {
         }
         if let Some(p) = ctx.input.tap() {
             for tab in [Tab::Buy, Tab::Sell] {
-                if Self::tab_rect(tab).contains(p) {
+                if Self::tab_rect(ctx.gfx.size(), tab).contains(p) {
                     ctx.input.consume();
                     self.switch_tab(ctx, tab);
                     return Transition::None;
@@ -370,11 +374,12 @@ impl Screen for ShopScreen {
         };
         let campaign = &session.campaign;
         let gfx = &ctx.gfx;
+        let (list, panel) = layout(gfx.size());
         draw_camp_backdrop(ctx, 0.8);
         draw_header(ctx, "상점", campaign.gold);
 
         for tab in [Tab::Buy, Tab::Sell] {
-            let r = Self::tab_rect(tab);
+            let r = Self::tab_rect(gfx.size(), tab);
             let on = self.tab == tab;
             draw_window_ex(
                 r,
@@ -409,16 +414,16 @@ impl Screen for ShopScreen {
             Tab::Buy => "파는 물건 · 값",
             Tab::Sell => "가진 물건 · 매각가",
         };
-        draw_list_frame(ctx, LIST, caption, true);
+        draw_list_frame(ctx, list, caption, true);
         if self.rows.is_empty() {
             gfx.text_aligned(
                 match self.tab {
                     Tab::Buy => "이곳에서는 파는 물건이 없습니다.",
                     Tab::Sell => "팔 물건이 없습니다.",
                 },
-                LIST.x,
-                LIST.y + LIST.h / 2.0 - 8.0,
-                LIST.w,
+                list.x,
+                list.y + list.h / 2.0 - 8.0,
+                list.w,
                 Align::Center,
                 TextStyle::main(theme::TEXT_DIM),
             );
@@ -432,15 +437,15 @@ impl Screen for ShopScreen {
         }
 
         // Details of the highlighted item.
-        draw_window_ex(PANEL, WindowStyle::Panel, 1.0);
+        draw_window_ex(panel, WindowStyle::Panel, 1.0);
         if let Some(item) = self
             .rows
             .get(self.menu.cursor())
             .and_then(|id| pack.item(id))
         {
-            let x = PANEL.x + 8.0;
-            let w = PANEL.w - 16.0;
-            let mut y = PANEL.y + 8.0;
+            let x = panel.x + 8.0;
+            let w = panel.w - 16.0;
+            let mut y = panel.y + 8.0;
             draw_icon(ctx, item_icon(item), vec2(x, y));
             gfx.text(
                 &item.name,
@@ -473,7 +478,7 @@ impl Screen for ShopScreen {
                 y,
                 TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
             );
-            let bottom = PANEL.bottom() - 52.0;
+            let bottom = panel.bottom() - 52.0;
             draw_divider(x, bottom, w);
             let (inv, equipped) = owned(campaign, &item.id);
             let small = TextStyle::small(theme::TEXT_DIM);

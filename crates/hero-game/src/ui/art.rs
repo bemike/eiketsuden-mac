@@ -17,7 +17,7 @@ use crate::app::Ctx;
 use crate::assets::AssetState;
 use crate::gfx::{
     draw_placeholder, draw_sprite_frame, draw_texture_fit, fill_gradient_v, fill_rect, key_color,
-    Align, Fit, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
+    Align, Fit, FontId, TextStyle,
 };
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
@@ -107,35 +107,44 @@ fn ridge(x: f32, seed: u32, base: f32, amp: f32) -> f32 {
             + 0.15 * (x / 11.0 + p3).sin())
 }
 
-fn draw_ridge(seed: u32, base: f32, amp: f32, color: Color) {
+/// A ridge filled down to the bottom of a `size` canvas.
+fn draw_ridge(size: Vec2, seed: u32, base: f32, amp: f32, color: Color) {
     let step = 4.0;
     let mut x = 0.0;
-    while x < VIRTUAL_W {
+    while x < size.x {
         let y0 = ridge(x, seed, base, amp);
         let y1 = ridge(x + step, seed, base, amp);
-        draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, VIRTUAL_H), color);
+        draw_triangle(vec2(x, y0), vec2(x + step, y1), vec2(x, size.y), color);
         draw_triangle(
             vec2(x + step, y1),
-            vec2(x + step, VIRTUAL_H),
-            vec2(x, VIRTUAL_H),
+            vec2(x + step, size.y),
+            vec2(x, size.y),
             color,
         );
         x += step;
     }
 }
 
-/// Procedural stand-in for background `key` (see [`fallback_palette`]).
-pub fn draw_fallback_background(key: &str, alpha: f32) {
+/// Procedural stand-in for background `key` (see [`fallback_palette`]) over a `size` canvas. The
+/// composition is designed for a 270-pixel-high canvas and scales vertically with the canvas
+/// height; it spans the full width, with the pillars of a hall mirrored at both edges.
+pub fn draw_fallback_background(size: Vec2, key: &str, alpha: f32) {
     let (top, bottom, scenery) = fallback_palette(key);
     let seed = key_seed(key);
-    fill_gradient_v(SCREEN, fade(top, alpha), fade(bottom, alpha));
+    let (w, h) = (size.x, size.y);
+    let k = h / 270.0;
+    fill_gradient_v(
+        Rect::new(0.0, 0.0, w, h),
+        fade(top, alpha),
+        fade(bottom, alpha),
+    );
     match scenery {
         Scenery::Plain => {}
         Scenery::Outdoor | Scenery::Night => {
             if scenery == Scenery::Night {
                 for i in 0..60u32 {
-                    let x = (hash01(seed ^ (i * 3)) * VIRTUAL_W).floor();
-                    let y = (hash01(seed ^ (i * 3 + 1)) * VIRTUAL_H * 0.55).floor();
+                    let x = (hash01(seed ^ (i * 3)) * w).floor();
+                    let y = (hash01(seed ^ (i * 3 + 1)) * h * 0.55).floor();
                     let a = 0.25 + 0.6 * hash01(i * 7 + 3);
                     fill_rect(
                         Rect::new(x, y, 1.0, 1.0),
@@ -152,22 +161,24 @@ pub fn draw_fallback_background(key: &str, alpha: f32) {
                 ),
                 0.8,
             );
-            draw_ridge(seed, 165.0, 55.0, fade(far, alpha));
+            draw_ridge(size, seed, 165.0 * k, 55.0 * k, fade(far, alpha));
             draw_ridge(
+                size,
                 seed.wrapping_add(17),
-                205.0,
-                40.0,
+                205.0 * k,
+                40.0 * k,
                 fade(shade(bottom, 0.9), alpha),
             );
             draw_ridge(
+                size,
                 seed.wrapping_add(41),
-                238.0,
-                22.0,
+                238.0 * k,
+                22.0 * k,
                 fade(shade(bottom, 0.55), alpha),
             );
             // Haze over the far ridge.
             fill_gradient_v(
-                Rect::new(0.0, 140.0, VIRTUAL_W, 60.0),
+                Rect::new(0.0, 140.0 * k, w, 60.0 * k),
                 fade(Color::new(top.r, top.g, top.b, 0.0), alpha),
                 fade(Color::new(top.r, top.g, top.b, 0.25), alpha),
             );
@@ -175,35 +186,35 @@ pub fn draw_fallback_background(key: &str, alpha: f32) {
         Scenery::Indoor => {
             // Floor.
             fill_gradient_v(
-                Rect::new(0.0, 190.0, VIRTUAL_W, 80.0),
+                Rect::new(0.0, 190.0 * k, w, h - 190.0 * k),
                 fade(shade(bottom, 1.6), alpha),
                 fade(shade(bottom, 0.6), alpha),
             );
-            // Pillars with a warm lantern glow between them.
+            // Pillars with a warm lantern glow between them, mirrored at both edges.
             let pillar = fade(shade(bottom, 0.7), alpha);
             let edge = fade(shade(top, 1.3), alpha * 0.5);
-            for (i, x) in [36.0, 132.0, 330.0, 426.0].into_iter().enumerate() {
-                fill_rect(Rect::new(x, 0.0, 18.0, 200.0), pillar);
-                fill_rect(Rect::new(x, 0.0, 2.0, 200.0), edge);
+            for (i, x) in [36.0, 132.0, w - 150.0, w - 54.0].into_iter().enumerate() {
+                fill_rect(Rect::new(x, 0.0, 18.0, 200.0 * k), pillar);
+                fill_rect(Rect::new(x, 0.0, 2.0, 200.0 * k), edge);
                 if i % 2 == 0 {
                     let gx = x + 48.0;
                     for (r, a) in [(26.0, 0.05), (16.0, 0.08), (8.0, 0.14)] {
-                        draw_circle(gx, 70.0, r, Color::new(1.0, 0.75, 0.4, a * alpha));
+                        draw_circle(gx, 70.0 * k, r, Color::new(1.0, 0.75, 0.4, a * alpha));
                     }
                 }
             }
             // Beam across the top.
-            fill_rect(Rect::new(0.0, 16.0, VIRTUAL_W, 10.0), pillar);
+            fill_rect(Rect::new(0.0, 16.0 * k, w, 10.0 * k), pillar);
         }
     }
     // Vignette.
     fill_gradient_v(
-        Rect::new(0.0, 0.0, VIRTUAL_W, 40.0),
+        Rect::new(0.0, 0.0, w, 40.0),
         Color::new(0.0, 0.0, 0.0, 0.35 * alpha),
         Color::new(0.0, 0.0, 0.0, 0.0),
     );
     fill_gradient_v(
-        Rect::new(0.0, VIRTUAL_H - 60.0, VIRTUAL_W, 60.0),
+        Rect::new(0.0, h - 60.0, w, 60.0),
         Color::new(0.0, 0.0, 0.0, 0.0),
         Color::new(0.0, 0.0, 0.0, 0.45 * alpha),
     );
@@ -217,14 +228,14 @@ pub fn draw_background(ctx: &Ctx, key: &str, alpha: f32) -> bool {
     match ctx.media.texture_state(&tex_key) {
         AssetState::Ready => match ctx.media.texture(&tex_key) {
             Some(t) => {
-                draw_texture_fit(&t, SCREEN, Fit::Cover, fade(WHITE, alpha));
+                draw_texture_fit(&t, ctx.gfx.screen(), Fit::Cover, fade(WHITE, alpha));
                 true
             }
             None => false,
         },
         AssetState::Loading => false,
         AssetState::Missing => {
-            draw_fallback_background(key, alpha);
+            draw_fallback_background(ctx.gfx.size(), key, alpha);
             true
         }
     }

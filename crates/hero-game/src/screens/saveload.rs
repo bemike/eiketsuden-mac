@@ -11,7 +11,7 @@
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
 use crate::flow::Flow;
-use crate::gfx::{fill_rect, Align, TextStyle, SCREEN, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, TextStyle};
 use crate::platform::unix_now;
 use crate::saves::{self, SaveSlot, SlotInfo, SlotStatus};
 use crate::ui::dialog::{ChoiceBox, ChoiceEvent, ConfirmDialog, ConfirmEvent};
@@ -60,12 +60,12 @@ enum Popup {
     },
 }
 
-const LIST_RECT: Rect = Rect {
-    x: 12.0,
-    y: 28.0,
-    w: 456.0,
-    h: 0.0,
-};
+/// Left edge and top of the slot list, below the title bar; it spans the canvas width with
+/// this margin on both sides.
+const LIST_MARGIN: f32 = 12.0;
+const LIST_TOP: f32 = 28.0;
+/// Space kept free below the slot details for the key help line.
+const FOOTER_H: f32 = 18.0;
 
 pub struct SaveLoadScreen {
     mode: Mode,
@@ -135,7 +135,8 @@ impl SaveLoadScreen {
         let cursor = self.menu.cursor();
         // A new menu starts on the first enabled slot: the first loadable save when loading,
         // the first manual slot when saving.
-        let mut menu = Menu::new(items).at(LIST_RECT.x, LIST_RECT.y, LIST_RECT.w);
+        let list_w = ctx.gfx.size().x - 2.0 * LIST_MARGIN;
+        let mut menu = Menu::new(items).at(LIST_MARGIN, LIST_TOP, list_w);
         menu.wrap = false;
         menu.tag_width = 64.0;
         // After an action keep the cursor on the same slot while it is still selectable.
@@ -316,7 +317,8 @@ impl Screen for SaveLoadScreen {
 
     fn draw(&self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
-        fill_rect(SCREEN, theme::BACKGROUND);
+        let (w, h) = (gfx.size().x, gfx.size().y);
+        fill_rect(gfx.screen(), theme::BACKGROUND);
         draw_title_bar(
             ctx,
             if self.saving() {
@@ -333,7 +335,7 @@ impl Screen for SaveLoadScreen {
             list.x,
             list.bottom() + 6.0,
             list.w,
-            252.0 - list.bottom() - 6.0,
+            h - FOOTER_H - list.bottom() - 6.0,
         );
         if info_rect.h >= 20.0 {
             draw_window_ex(info_rect, WindowStyle::Panel, 1.0);
@@ -387,8 +389,8 @@ impl Screen for SaveLoadScreen {
         gfx.text_aligned(
             "Z/Enter 선택 · X/Esc 돌아가기 · Delete 삭제",
             0.0,
-            255.0,
-            VIRTUAL_W - 8.0,
+            h - 15.0,
+            w - 8.0,
             Align::Right,
             TextStyle::small(theme::TEXT_DISABLED),
         );
@@ -396,11 +398,11 @@ impl Screen for SaveLoadScreen {
         match &self.popup {
             Popup::None => {}
             Popup::Actions { choice, .. } => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.35));
+                fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35));
                 choice.draw(ctx);
             }
             Popup::Confirm { dialog, .. } => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.35));
+                fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35));
                 dialog.draw(ctx);
             }
         }

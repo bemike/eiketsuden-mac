@@ -2,24 +2,26 @@
 //!
 //! # Rules
 //!
-//! They mirror how the battle engine builds a deployment (`BattleState::new`):
+//! The deployment is the battle engine's own ([`normalize_deployment`] and [`deploy_max`] from
+//! `hero_core::battle`, which `BattleState::new` places), so what the camp shows is what the
+//! battle places:
 //!
 //! * the lord and the battle's `deploy.required` officers are always deployed (locked in);
 //! * `deploy.forbidden` officers cannot be deployed;
 //! * at most `deploy.max` officers (and no more than the battle has deploy slots);
 //! * slots are filled in a fixed order: required officers (in `deploy.required` order), the lord,
-//!   then the other chosen officers in roster order — so what the camp shows is what the battle
-//!   places.
+//!   then the other chosen officers in roster order.
 //!
 //! When nothing has been chosen yet the selection is the engine's default (required, lord, then
 //! roster order up to the maximum). A list left over from an earlier battle is normalised to the
-//! new battle's rules.
+//! new battle's rules. This module adds what the screen needs on top: why an officer is locked
+//! or forbidden ([`DeployStatus`]) and toggling with player-facing errors ([`toggle`]).
 
 use super::stats::officer_stats;
-use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
+use super::widgets::{back_tapped, columns, draw_back_button, LIST_TOP};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_header, draw_help, draw_list_frame, draw_officer_sprite,
-    draw_stats_block, officer_name, portrait_key, visible_rows, TOP,
+    draw_stats_block, officer_name, portrait_key, visible_rows,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
@@ -34,6 +36,8 @@ use hero_core::campaign::CampaignState;
 use hero_core::data::Id;
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
+
+pub use hero_core::battle::{deploy_max, normalize_deployment};
 
 /// How an officer takes part in a battle's deployment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,11 +68,6 @@ impl DeployStatus {
     }
 }
 
-/// Most officers that may be deployed in `def`.
-pub fn deploy_max(def: &BattleDef) -> usize {
-    (def.deploy.max as usize).min(def.deploy.slots.len())
-}
-
 /// Status of `officer` in `def` (forbidden wins, as in the engine).
 pub fn deploy_status(pack: &Pack, def: &BattleDef, officer: &str) -> DeployStatus {
     if def.deploy.forbidden.iter().any(|f| f == officer) {
@@ -82,35 +81,10 @@ pub fn deploy_status(pack: &Pack, def: &BattleDef, officer: &str) -> DeployStatu
     }
 }
 
-/// The canonical deployment for `chosen`: locked officers first (required in `deploy.required`
-/// order, then lords in roster order), then the chosen free officers in roster order, at most
-/// [`deploy_max`]. Officers not in the army and forbidden officers are dropped.
-pub fn normalize(pack: &Pack, def: &BattleDef, campaign: &CampaignState, chosen: &[Id]) -> Vec<Id> {
-    let status = |id: &str| deploy_status(pack, def, id);
-    let mut out: Vec<Id> = Vec::new();
-    for id in &def.deploy.required {
-        if campaign.officer(id).is_some() && status(id).locked() && !out.contains(id) {
-            out.push(id.clone());
-        }
-    }
-    for o in &campaign.roster {
-        if status(&o.id) == DeployStatus::Lord && !out.contains(&o.id) {
-            out.push(o.id.clone());
-        }
-    }
-    for o in &campaign.roster {
-        if status(&o.id) == DeployStatus::Free && chosen.contains(&o.id) && !out.contains(&o.id) {
-            out.push(o.id.clone());
-        }
-    }
-    out.truncate(deploy_max(def));
-    out
-}
-
 /// The engine's default deployment: required officers, the lord, then roster order.
 pub fn default_selection(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Vec<Id> {
     let everyone: Vec<Id> = campaign.roster.iter().map(|o| o.id.clone()).collect();
-    normalize(pack, def, campaign, &everyone)
+    normalize_deployment(pack, def, campaign, &everyone)
 }
 
 /// What the camp shows first: the player's earlier choice (normalised to this battle), or the
@@ -119,7 +93,7 @@ pub fn initial_selection(pack: &Pack, def: &BattleDef, campaign: &CampaignState)
     if campaign.deployed.is_empty() {
         default_selection(pack, def, campaign)
     } else {
-        normalize(pack, def, campaign, &campaign.deployed)
+        normalize_deployment(pack, def, campaign, &campaign.deployed)
     }
 }
 
@@ -177,24 +151,15 @@ pub fn toggle(
         }
         chosen.push(officer.to_string());
     }
-    Ok(normalize(pack, def, campaign, &chosen))
+    Ok(normalize_deployment(pack, def, campaign, &chosen))
 }
 
 // ----- screen --------------------------------------------------------------------------------
 
-const LIST: Rect = Rect {
-    x: 8.0,
-    y: TOP + 2.0,
-    w: 262.0,
-    h: 222.0,
-};
+/// Width of the roster list; the panel of the selected officer right of it takes the rest of
+/// the canvas width (see [`columns`]).
+const LIST_W: f32 = 262.0;
 const ROW_H: f32 = 24.0;
-const PANEL: Rect = Rect {
-    x: 276.0,
-    y: TOP + 2.0,
-    w: 196.0,
-    h: 222.0,
-};
 /// Space left of the name for the check box and the unit sprite.
 const TAG_W: f32 = 42.0;
 
@@ -244,11 +209,12 @@ impl DeployScreen {
             })
             .collect();
         let cursor = self.menu.cursor();
-        let rows = ((LIST.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
+        let (list, _) = columns(ctx.gfx.size(), LIST_W);
+        let rows = ((list.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
         let mut menu =
             Menu::new(items)
                 .rows(rows)
-                .at(LIST.x + 2.0, LIST.y + LIST_TOP, LIST.w - 4.0);
+                .at(list.x + 2.0, list.y + LIST_TOP, list.w - 4.0);
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = TAG_W;
@@ -315,17 +281,18 @@ impl Screen for DeployScreen {
         };
         let campaign = &session.campaign;
         let gfx = &ctx.gfx;
+        let (list, panel) = columns(gfx.size(), LIST_W);
         draw_camp_backdrop(ctx, 0.8);
         draw_header(ctx, &format!("부대 편성 — {}", def.name), campaign.gold);
 
         // Roster list.
-        draw_list_frame(ctx, LIST, "무장", true);
+        draw_list_frame(ctx, list, "무장", true);
         let max = deploy_max(def);
         gfx.text_aligned(
             &format!("출진 {}/{}", self.selection.len(), max),
-            LIST.x,
-            LIST.y + 3.0,
-            LIST.w - 10.0,
+            list.x,
+            list.y + 3.0,
+            list.w - 10.0,
             Align::Right,
             TextStyle::small(if self.selection.len() == max {
                 theme::TEXT_NAME
@@ -385,13 +352,13 @@ impl Screen for DeployScreen {
         }
 
         // Selected officer.
-        draw_window_ex(PANEL, WindowStyle::Panel, 1.0);
+        draw_window_ex(panel, WindowStyle::Panel, 1.0);
         if let Some(o) = campaign.roster.get(self.menu.cursor()) {
-            let x = PANEL.x + 8.0;
+            let x = panel.x + 8.0;
             draw_portrait_card(
                 ctx,
                 Some(portrait_key(pack, &o.id)),
-                Rect::new(x, PANEL.y + 8.0, 64.0, 80.0),
+                Rect::new(x, panel.y + 8.0, 64.0, 80.0),
                 1.0,
                 1.0,
             );
@@ -399,13 +366,13 @@ impl Screen for DeployScreen {
             gfx.text(
                 officer_name(pack, &o.id),
                 tx,
-                PANEL.y + 8.0,
+                panel.y + 8.0,
                 TextStyle::main(theme::TEXT_NAME).shadow(theme::TEXT_SHADOW),
             );
             gfx.text(
                 &format!("{} Lv{}", class_name(pack, &o.class), o.level),
                 tx,
-                PANEL.y + 25.0,
+                panel.y + 25.0,
                 TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
             );
             let status = deploy_status(pack, def, &o.id);
@@ -416,12 +383,13 @@ impl Screen for DeployScreen {
                 (DeployStatus::Free, true) => ("출진", theme::TEXT_GOOD),
                 (DeployStatus::Free, false) => ("대기", theme::TEXT_DIM),
             };
-            gfx.text(text, tx, PANEL.y + 44.0, TextStyle::small(color));
+            gfx.text(text, tx, panel.y + 44.0, TextStyle::small(color));
             if let Some(stats) = officer_stats(pack, o) {
-                draw_stats_block(gfx, &stats, None, x, PANEL.y + 94.0, PANEL.w - 16.0);
+                draw_stats_block(gfx, &stats, None, x, panel.y + 94.0, panel.w - 16.0);
             }
         }
-        draw_divider(PANEL.x + 6.0, PANEL.y + 172.0, PANEL.w - 12.0);
+        // The deploy order sits at the bottom of the panel.
+        draw_divider(panel.x + 6.0, panel.bottom() - 50.0, panel.w - 12.0);
         let order: Vec<&str> = self
             .selection
             .iter()
@@ -429,15 +397,15 @@ impl Screen for DeployScreen {
             .collect();
         gfx.text(
             "출진 순서",
-            PANEL.x + 8.0,
-            PANEL.y + 177.0,
+            panel.x + 8.0,
+            panel.bottom() - 45.0,
             TextStyle::small(theme::TEXT_ACCENT),
         );
-        let lines = gfx.wrap(&order.join(" · "), FontId::Small, 1, PANEL.w - 16.0);
+        let lines = gfx.wrap(&order.join(" · "), FontId::Small, 1, panel.w - 16.0);
         gfx.text_lines(
             &lines[..lines.len().min(2)],
-            PANEL.x + 8.0,
-            PANEL.y + 191.0,
+            panel.x + 8.0,
+            panel.bottom() - 31.0,
             TextStyle::small(theme::TEXT),
         );
         draw_help(ctx, "Z 출진/대기 전환 · X 편성 완료");

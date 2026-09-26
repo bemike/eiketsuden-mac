@@ -17,7 +17,7 @@ const TITLE: &str = "영걸전 Reloaded";
 fn window_conf() -> Conf {
     Conf {
         window_title: TITLE.to_owned(),
-        // 3× the 480×270 virtual canvas.
+        // 3× the default 480×270 virtual canvas (packs may declare another one).
         window_width: 1440,
         window_height: 810,
         window_resizable: true,

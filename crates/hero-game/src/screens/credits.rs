@@ -15,14 +15,15 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::FileRequest;
 use crate::audio::bgm;
 use crate::flow::Flow;
-use crate::gfx::{fill_rect, Align, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, FontId, TextStyle};
 use crate::input::Dir;
 use crate::ui::theme;
 use macroquad::prelude::*;
 
 /// Automatic scroll speed in virtual pixels per second.
 const SCROLL_SPEED: f32 = 18.0;
-const TEXT_WIDTH: f32 = 400.0;
+/// Space kept free left and right of the centred lines, together.
+const TEXT_SIDE_MARGINS: f32 = 80.0;
 
 /// The engine's own credits, shown after the pack credits.
 pub fn engine_credits() -> String {
@@ -126,13 +127,15 @@ impl CreditsScreen {
         }
         text.push_str(&engine_credits());
         let gfx = &ctx.gfx;
-        self.lines = layout(&text, |s| gfx.wrap(s, FontId::Main, 1, TEXT_WIDTH));
+        let width = gfx.size().x - TEXT_SIDE_MARGINS;
+        self.lines = layout(&text, |s| gfx.wrap(s, FontId::Main, 1, width));
         self.total_height = self.lines.iter().map(Line::height).sum();
     }
 
-    fn max_scroll(&self) -> f32 {
-        // Scroll until the last line has passed the middle of the screen.
-        (self.total_height + VIRTUAL_H / 2.0).max(0.0)
+    /// Largest scroll offset on a canvas `canvas_h` pixels high: the roll starts below the
+    /// bottom edge and ends when the last line has passed the middle of the screen.
+    fn max_scroll(&self, canvas_h: f32) -> f32 {
+        (self.total_height + canvas_h / 2.0).max(0.0)
     }
 
     fn finish(&self) -> Transition {
@@ -205,9 +208,10 @@ impl Screen for CreditsScreen {
         } else {
             self.scroll += SCROLL_SPEED * ctx.dt;
         }
-        self.scroll = (self.scroll + manual).clamp(0.0, self.max_scroll());
+        let max_scroll = self.max_scroll(ctx.gfx.size().y);
+        self.scroll = (self.scroll + manual).clamp(0.0, max_scroll);
 
-        let at_end = self.scroll >= self.max_scroll();
+        let at_end = self.scroll >= max_scroll;
         if input.cancel() || (input.confirm() && (at_end || self.ending.is_none())) {
             return self.finish();
         }
@@ -218,20 +222,21 @@ impl Screen for CreditsScreen {
     }
 
     fn draw(&self, ctx: &Ctx) {
-        draw_backdrop(ctx.time);
-        fill_rect(SCREEN, Color::new(0.0, 0.0, 0.03, 0.55));
         let gfx = &ctx.gfx;
+        let (w, canvas_h) = (gfx.size().x, gfx.size().y);
+        draw_backdrop(gfx.size(), ctx.time);
+        fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.03, 0.55));
         // Lines start below the screen and move up.
-        let mut y = VIRTUAL_H - self.scroll;
+        let mut y = canvas_h - self.scroll;
         for line in &self.lines {
             let h = line.height();
-            if y + h > -40.0 && y < VIRTUAL_H + 4.0 {
+            if y + h > -40.0 && y < canvas_h + 4.0 {
                 match line {
                     Line::Heading(t) => gfx.text_aligned(
                         t,
                         0.0,
                         y,
-                        VIRTUAL_W,
+                        w,
                         Align::Center,
                         TextStyle::main(theme::TEXT_ACCENT)
                             .size(2)
@@ -241,7 +246,7 @@ impl Screen for CreditsScreen {
                         t,
                         0.0,
                         y + 2.0,
-                        VIRTUAL_W,
+                        w,
                         Align::Center,
                         TextStyle::main(theme::TEXT_NAME).shadow(theme::TEXT_SHADOW),
                     ),
@@ -249,7 +254,7 @@ impl Screen for CreditsScreen {
                         t,
                         0.0,
                         y,
-                        VIRTUAL_W,
+                        w,
                         Align::Center,
                         TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
                     ),
@@ -258,12 +263,12 @@ impl Screen for CreditsScreen {
             }
             y += h;
         }
-        if self.scroll >= self.max_scroll() && (ctx.time * 2.0).fract() < 0.7 {
+        if self.scroll >= self.max_scroll(canvas_h) && (ctx.time * 2.0).fract() < 0.7 {
             gfx.text_aligned(
                 "Z / 클릭: 돌아가기",
                 0.0,
-                VIRTUAL_H - 18.0,
-                VIRTUAL_W,
+                canvas_h - 18.0,
+                w,
                 Align::Center,
                 TextStyle::small(theme::TEXT_DIM),
             );

@@ -3,15 +3,15 @@
 //! equipment and biography.
 
 use super::stats::officer_stats;
-use super::widgets::{back_tapped, draw_back_button, BACK_BUTTON};
+use super::widgets::{back_button, back_tapped, content_rect, draw_back_button, help_y};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame,
     draw_officer_sprite, draw_stats_block, item_icon, officer_name, portrait_key, slot_icon,
-    slot_name, visible_rows, HELP_Y, TOP,
+    slot_name, visible_rows,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
-use crate::gfx::{Align, FontId, TextStyle, VIRTUAL_W};
+use crate::gfx::{Align, FontId, TextStyle};
 use crate::input::Dir;
 use crate::ui::art::draw_portrait_card;
 use crate::ui::bars::{draw_gauge, draw_gauge_labeled, GaugeKind};
@@ -24,12 +24,6 @@ use hero_core::data::ItemKind;
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
 
-const TABLE: Rect = Rect {
-    x: 8.0,
-    y: TOP + 2.0,
-    w: 464.0,
-    h: 222.0,
-};
 const ROW_H: f32 = 22.0;
 /// Column x offsets from the row's left edge, after the sprite and name.
 const COLUMNS: [(&str, f32); 8] = [
@@ -85,11 +79,13 @@ impl OfficersScreen {
             .iter()
             .map(|o| MenuItem::new(officer_name(pack, &o.id)))
             .collect();
-        let rows = ((TABLE.h - 36.0) / ROW_H).floor() as usize;
+        // The table (and the detail page) fill the camp's content area.
+        let table = content_rect(ctx.gfx.size());
+        let rows = ((table.h - 36.0) / ROW_H).floor() as usize;
         let cursor = self.menu.cursor();
         let mut menu = Menu::new(items)
             .rows(rows)
-            .at(TABLE.x + 2.0, TABLE.y + 30.0, TABLE.w - 4.0);
+            .at(table.x + 2.0, table.y + 30.0, table.w - 4.0);
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = 28.0;
@@ -100,10 +96,11 @@ impl OfficersScreen {
 
     fn draw_table(&self, ctx: &Ctx, pack: &Pack, roster: &[OfficerState]) {
         let gfx = &ctx.gfx;
-        draw_list_frame(ctx, TABLE, "무장 일람", true);
+        let table = content_rect(gfx.size());
+        draw_list_frame(ctx, table, "무장 일람", true);
         let head = TextStyle::small(theme::TEXT_DIM);
         let base = self.menu.row_rect(0).x;
-        let hy = TABLE.y + 16.0;
+        let hy = table.y + 16.0;
         gfx.text("이름", base + 40.0, hy, head);
         gfx.text(COLUMNS[0].0, base + COLUMNS[0].1, hy, head);
         // Number columns: headers right-aligned over their numbers.
@@ -150,7 +147,7 @@ impl OfficersScreen {
         let Some(def) = pack.officer(&o.id) else {
             return;
         };
-        let panel = TABLE;
+        let panel = content_rect(gfx.size());
         draw_window_ex(panel, WindowStyle::Panel, 1.0);
         let x = panel.x + 8.0;
         let y = panel.y + 8.0;
@@ -336,7 +333,7 @@ impl Screen for OfficersScreen {
                 _ => 0,
             };
             if let Some(p) = ctx.input.tap() {
-                step = if p.x < VIRTUAL_W / 2.0 { -1 } else { 1 };
+                step = if p.x < ctx.gfx.size().x / 2.0 { -1 } else { 1 };
             }
             if back || ctx.input.cancel() || ctx.input.confirm_key() {
                 ctx.input.consume();
@@ -384,8 +381,8 @@ impl Screen for OfficersScreen {
                 ctx.gfx.text_aligned(
                     &format!("{} / {}", i + 1, campaign.roster.len()),
                     0.0,
-                    HELP_Y + 1.0,
-                    BACK_BUTTON.x - 8.0,
+                    help_y(ctx.gfx.size().y) + 1.0,
+                    back_button(ctx.gfx.size()).x - 8.0,
                     Align::Right,
                     TextStyle::small(theme::TEXT_DIM),
                 );

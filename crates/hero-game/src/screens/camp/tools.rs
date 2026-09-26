@@ -2,14 +2,14 @@
 //! `CampaignState::use_item`. Every officer is listed with whether the chosen item works on them
 //! (a dry run of the same call decides) and, if not, why.
 
-use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
+use super::widgets::{back_tapped, columns, draw_back_button, LIST_TOP};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_header, draw_help, draw_list_frame, draw_officer_sprite,
-    item_effect, item_icon, officer_name, visible_rows, TOP,
+    item_effect, item_icon, officer_name, visible_rows,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
-use crate::gfx::{fill_rect, Align, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{fill_rect, Align, FontId, TextStyle};
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::korean::{with_particle, Particle};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -107,18 +107,8 @@ fn class_to(class: &str) -> String {
     with_particle(class, Particle::EulReul)
 }
 
-const ITEMS: Rect = Rect {
-    x: 8.0,
-    y: TOP + 2.0,
-    w: 196.0,
-    h: 222.0,
-};
-const OFFICERS: Rect = Rect {
-    x: 210.0,
-    y: TOP + 2.0,
-    w: 262.0,
-    h: 222.0,
-};
+/// Width of the item list; the officer list right of it takes the rest of the canvas width.
+const ITEMS_W: f32 = 196.0;
 const ROW_H: f32 = 24.0;
 
 /// Result shown after using an item.
@@ -185,11 +175,13 @@ impl ToolsScreen {
             })
             .collect();
         let cursor = self.item_menu.cursor();
-        let rows = ((ITEMS.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
-        let mut menu =
-            Menu::new(items)
-                .rows(rows)
-                .at(ITEMS.x + 2.0, ITEMS.y + LIST_TOP, ITEMS.w - 4.0);
+        let (items_rect, _) = columns(ctx.gfx.size(), ITEMS_W);
+        let rows = ((items_rect.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
+        let mut menu = Menu::new(items).rows(rows).at(
+            items_rect.x + 2.0,
+            items_rect.y + LIST_TOP,
+            items_rect.w - 4.0,
+        );
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 18.0;
@@ -219,11 +211,12 @@ impl ToolsScreen {
             })
             .collect();
         let cursor = self.officer_menu.cursor();
-        let rows = ((OFFICERS.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
+        let (_, officers_rect) = columns(ctx.gfx.size(), ITEMS_W);
+        let rows = ((officers_rect.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
         let mut menu = Menu::new(items).rows(rows).at(
-            OFFICERS.x + 2.0,
-            OFFICERS.y + LIST_TOP,
-            OFFICERS.w - 4.0,
+            officers_rect.x + 2.0,
+            officers_rect.y + LIST_TOP,
+            officers_rect.w - 4.0,
         );
         menu.framed = false;
         menu.row_height = ROW_H;
@@ -411,21 +404,22 @@ impl Screen for ToolsScreen {
         };
         let campaign = &session.campaign;
         let gfx = &ctx.gfx;
+        let (items_rect, officers_rect) = columns(gfx.size(), ITEMS_W);
         draw_camp_backdrop(ctx, 0.8);
         draw_header(ctx, "도구", campaign.gold);
 
-        draw_list_frame(ctx, ITEMS, "병과 도구", !self.choosing_officer);
+        draw_list_frame(ctx, items_rect, "병과 도구", !self.choosing_officer);
         if self.items.is_empty() {
             let lines = gfx.wrap(
                 "승급이나 병과 변경에 쓰는 도구가 없습니다. 도구상에서 사거나 전투에서 얻을 수 있습니다.",
                 FontId::Main,
                 1,
-                ITEMS.w - 20.0,
+                items_rect.w - 20.0,
             );
             gfx.text_lines(
                 &lines,
-                ITEMS.x + 10.0,
-                ITEMS.y + 30.0,
+                items_rect.x + 10.0,
+                items_rect.y + 30.0,
                 TextStyle::main(theme::TEXT_DIM),
             );
         } else {
@@ -437,7 +431,7 @@ impl Screen for ToolsScreen {
             }
         }
 
-        draw_list_frame(ctx, OFFICERS, "사용할 무장", self.choosing_officer);
+        draw_list_frame(ctx, officers_rect, "사용할 무장", self.choosing_officer);
         self.officer_menu.draw(ctx);
         let item = self.selected_item();
         for (i, row) in visible_rows(&self.officer_menu) {
@@ -483,11 +477,11 @@ impl Screen for ToolsScreen {
         match &self.popup {
             Popup::None => {}
             Popup::Confirm { dialog, .. } => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
+                fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
                 dialog.draw(ctx);
             }
             Popup::Outcome(outcome) => {
-                fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
+                fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
                 let w = 320.0;
                 let wrapped: Vec<String> = outcome
                     .lines
@@ -496,8 +490,8 @@ impl Screen for ToolsScreen {
                     .collect();
                 let h = 32.0 + wrapped.len() as f32 * 16.0 + 12.0;
                 let r = Rect::new(
-                    ((VIRTUAL_W - w) / 2.0).round(),
-                    ((VIRTUAL_H - h) / 2.0).round(),
+                    ((gfx.size().x - w) / 2.0).round(),
+                    ((gfx.size().y - h) / 2.0).round(),
                     w,
                     h,
                 );

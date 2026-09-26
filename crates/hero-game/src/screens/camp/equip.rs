@@ -3,11 +3,11 @@
 //! previews ATK / DEF / movement before → after with the battle engine's formulas.
 
 use super::stats::{officer_stats, preview_change, EquipChange};
-use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
+use super::widgets::{back_tapped, columns, draw_back_button, LIST_TOP};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_help_colored,
     draw_list_frame, draw_officer_sprite, draw_stats_block, item_effect, item_icon, officer_name,
-    portrait_key, slot_icon, slot_name, visible_rows, TOP,
+    portrait_key, slot_icon, slot_name, visible_rows,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
@@ -24,26 +24,23 @@ use macroquad::prelude::*;
 
 const SLOTS: [ItemKind; 3] = [ItemKind::Weapon, ItemKind::Armor, ItemKind::Accessory];
 
-const LIST: Rect = Rect {
-    x: 8.0,
-    y: TOP + 2.0,
-    w: 150.0,
-    h: 222.0,
-};
+/// Width of the officer list; the panel right of it takes the rest of the canvas width.
+const LIST_W: f32 = 150.0;
 const ROW_H: f32 = 24.0;
-const PANEL: Rect = Rect {
-    x: 164.0,
-    y: TOP + 2.0,
-    w: 308.0,
-    h: 222.0,
-};
-/// Item picker window, over the slot rows (portrait and stats stay visible for the preview).
-const PICKER: Rect = Rect {
-    x: PANEL.x + 4.0,
-    y: PANEL.y + 104.0,
-    w: PANEL.w - 8.0,
-    h: PANEL.h - 106.0,
-};
+
+/// The officer list, the panel of the selected officer and the item picker on a `canvas`
+/// sized canvas. The picker covers the slot rows of the panel (portrait and stats stay visible
+/// for the preview).
+fn layout(canvas: Vec2) -> (Rect, Rect, Rect) {
+    let (list, panel) = columns(canvas, LIST_W);
+    let picker = Rect::new(
+        panel.x + 4.0,
+        panel.y + 104.0,
+        panel.w - 8.0,
+        panel.h - 106.0,
+    );
+    (list, panel, picker)
+}
 
 /// One row of the item picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,11 +159,12 @@ impl EquipScreen {
             .map(|o| MenuItem::new(officer_name(pack, &o.id)).detail(format!("Lv{}", o.level)))
             .collect();
         let cursor = self.officers.cursor();
-        let rows = ((LIST.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
+        let (list, _, _) = layout(ctx.gfx.size());
+        let rows = ((list.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
         let mut menu =
             Menu::new(items)
                 .rows(rows)
-                .at(LIST.x + 2.0, LIST.y + LIST_TOP, LIST.w - 4.0);
+                .at(list.x + 2.0, list.y + LIST_TOP, list.w - 4.0);
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = 28.0;
@@ -193,7 +191,8 @@ impl EquipScreen {
             })
             .collect();
         let cursor = self.slots.cursor();
-        let mut menu = Menu::new(items).at(PANEL.x + 4.0, PANEL.y + 128.0, PANEL.w - 8.0);
+        let (_, panel, _) = layout(ctx.gfx.size());
+        let mut menu = Menu::new(items).at(panel.x + 4.0, panel.y + 128.0, panel.w - 8.0);
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 64.0;
@@ -239,11 +238,12 @@ impl EquipScreen {
                 }
             })
             .collect();
-        let rows = ((PICKER.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
+        let (_, _, picker) = layout(ctx.gfx.size());
+        let rows = ((picker.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
         let mut menu =
             Menu::new(items)
                 .rows(rows)
-                .at(PICKER.x + 2.0, PICKER.y + LIST_TOP, PICKER.w - 4.0);
+                .at(picker.x + 2.0, picker.y + LIST_TOP, picker.w - 4.0);
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 18.0;
@@ -382,11 +382,12 @@ impl Screen for EquipScreen {
         };
         let campaign = &session.campaign;
         let gfx = &ctx.gfx;
+        let (list, panel, picker) = layout(gfx.size());
         draw_camp_backdrop(ctx, 0.8);
         draw_header(ctx, "장비", campaign.gold);
 
         // Officer list.
-        draw_list_frame(ctx, LIST, "무장", matches!(self.focus, Focus::Officers));
+        draw_list_frame(ctx, list, "무장", matches!(self.focus, Focus::Officers));
         self.officers.draw(ctx);
         for (i, row) in visible_rows(&self.officers) {
             if let Some(o) = campaign.roster.get(i) {
@@ -401,17 +402,17 @@ impl Screen for EquipScreen {
         }
 
         // Officer panel.
-        draw_window_ex(PANEL, WindowStyle::Panel, 1.0);
+        draw_window_ex(panel, WindowStyle::Panel, 1.0);
         let Some(officer) = campaign.roster.get(self.officers.cursor()) else {
             draw_help(ctx, "X 돌아가기");
             draw_back_button(ctx);
             return;
         };
-        let x = PANEL.x + 8.0;
+        let x = panel.x + 8.0;
         draw_portrait_card(
             ctx,
             Some(portrait_key(pack, &officer.id)),
-            Rect::new(x, PANEL.y + 8.0, 64.0, 80.0),
+            Rect::new(x, panel.y + 8.0, 64.0, 80.0),
             1.0,
             1.0,
         );
@@ -419,14 +420,14 @@ impl Screen for EquipScreen {
         gfx.text(
             officer_name(pack, &officer.id),
             tx,
-            PANEL.y + 6.0,
+            panel.y + 6.0,
             TextStyle::main(theme::TEXT_NAME).shadow(theme::TEXT_SHADOW),
         );
         gfx.text_aligned(
             &format!("{} Lv{}", class_name(pack, &officer.class), officer.level),
             tx,
-            PANEL.y + 6.0,
-            PANEL.right() - 10.0 - tx,
+            panel.y + 6.0,
+            panel.right() - 10.0 - tx,
             Align::Right,
             TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
         );
@@ -458,12 +459,12 @@ impl Screen for EquipScreen {
                 &before,
                 preview.as_ref().map(|(_, a)| a),
                 tx,
-                PANEL.y + 26.0,
-                PANEL.right() - 10.0 - tx,
+                panel.y + 26.0,
+                panel.right() - 10.0 - tx,
             );
         }
-        draw_divider(x, PANEL.y + 110.0, PANEL.w - 16.0);
-        draw_caption(gfx, "장비", x, PANEL.y + 114.0);
+        draw_divider(x, panel.y + 110.0, panel.w - 16.0);
+        draw_caption(gfx, "장비", x, panel.y + 114.0);
         self.slots.draw(ctx);
         for (i, row) in visible_rows(&self.slots) {
             let slot = SLOTS[i];
@@ -482,15 +483,15 @@ impl Screen for EquipScreen {
             _ => equipped(campaign, &officer.id, SLOTS[self.slots.cursor().min(2)])
                 .map(|id| (id.clone(), Ok(()))),
         };
-        let desc_y = PANEL.y + 190.0;
-        draw_divider(x, desc_y - 4.0, PANEL.w - 16.0);
+        let desc_y = panel.bottom() - 32.0;
+        draw_divider(x, desc_y - 4.0, panel.w - 16.0);
         if let Some((id, allowed)) = described {
             if let Some(item) = pack.item(&id) {
                 let (text, color) = match &allowed {
                     Ok(()) => (item.desc.clone(), theme::TEXT),
                     Err(e) => (equip_error(pack, e), theme::TEXT_BAD),
                 };
-                let lines = gfx.wrap(&text, FontId::Small, 1, PANEL.w - 16.0);
+                let lines = gfx.wrap(&text, FontId::Small, 1, panel.w - 16.0);
                 gfx.text_lines(
                     &lines[..lines.len().min(2)],
                     x,
@@ -507,7 +508,7 @@ impl Screen for EquipScreen {
             menu,
         } = &self.focus
         {
-            draw_list_frame(ctx, PICKER, &format!("{} 고르기", slot_name(*slot)), true);
+            draw_list_frame(ctx, picker, &format!("{} 고르기", slot_name(*slot)), true);
             menu.draw(ctx);
             for (i, row) in visible_rows(menu) {
                 let icon = match &choices[i] {
