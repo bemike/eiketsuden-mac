@@ -185,6 +185,11 @@ class Sources:
         except KeyError as e:
             raise SourceError(f"{sid}: archive has no member {name!r}") from e
 
+    def members(self, sid: str) -> list[str]:
+        """Names of the members of a zip source."""
+        self.path(sid)
+        return self._zip(sid).namelist()
+
     def file(self, sid: str, part: str = "") -> bytes:
         return self.path(sid, part).read_bytes()
 

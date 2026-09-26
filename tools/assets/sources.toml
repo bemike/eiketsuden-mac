@@ -337,3 +337,30 @@ url = "https://opengameart.org/sites/default/files/Generic%20Asian%20Arrangement
 file = "music/springspring-generic-asian-arrangement.ogg"
 size = 2021257
 sha256 = "3f343590c0d591ff4be5b202d18ceeb2f516fa4703efa3dbf8d6ad392372c1ef"
+
+# ---------------------------------------------------------------------------------------------
+# Fonts (build_fonts.py): Hanja missing from Galmuri are taken from Fusion Pixel Font (OFL; no
+# Reserved Font Name in its OFL.txt). The archives also carry the licences of the fonts Fusion
+# Pixel is built from (Ark Pixel, Cubic 11, Boutique Bitmap 9x9, Galmuri).
+
+[sources.fusion_pixel_12]
+title = "Fusion Pixel Font 2026.09.01, 12px proportional (woff2)"
+author = "TakWolf"
+license = "OFL-1.1"
+license_url = "https://openfontlicense.org/"
+homepage = "https://github.com/TakWolf/fusion-pixel-font"
+url = "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.09.01/fusion-pixel-font-12px-proportional-ttf.woff2-v2026.09.01.zip"
+file = "fonts/fusion-pixel-font-12px-proportional-ttf.woff2-v2026.09.01.zip"
+size = 4630240
+sha256 = "c3e2c4cadac184a5b8e3e2e48e428c5740397db76f80b5879ae8720ad6db6b0a"
+
+[sources.fusion_pixel_10]
+title = "Fusion Pixel Font 2026.09.01, 10px proportional (woff2)"
+author = "TakWolf"
+license = "OFL-1.1"
+license_url = "https://openfontlicense.org/"
+homepage = "https://github.com/TakWolf/fusion-pixel-font"
+url = "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.09.01/fusion-pixel-font-10px-proportional-ttf.woff2-v2026.09.01.zip"
+file = "fonts/fusion-pixel-font-10px-proportional-ttf.woff2-v2026.09.01.zip"
+size = 2649656
+sha256 = "8cc700b05fcf9a8639a60e6287db973e4d1d48864f2cc3cbc77d0542419ee269"

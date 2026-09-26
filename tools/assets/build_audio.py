@@ -1,4 +1,4 @@
-"""Sound effects (`sfx/<key>.wav`) and fonts (`fonts/`) of the base pack."""
+"""Sound effects (`sfx/<key>.wav`) of the base pack."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from assetlib import Sources, write_text
+from assetlib import Sources
 
 SAMPLE_RATE = 44100
 
@@ -99,23 +99,4 @@ def build_sfx(src: Sources, pack: Path) -> list[str]:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         written.append(f"sfx/{sfx.key}.wav")
-    return written
-
-
-FONTS = {
-    "fonts/Galmuri11.ttf": "Galmuri11.ttf",
-    "fonts/Galmuri9.ttf": "Galmuri9.ttf",
-}
-
-
-def build_fonts(src: Sources, pack: Path) -> list[str]:
-    written = []
-    for out, member in FONTS.items():
-        path = pack / out
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(src.member("galmuri", member))
-        written.append(out)
-    licence = src.member("galmuri", "LICENSE.txt").decode("utf-8")
-    write_text(pack / "fonts" / "OFL.txt", licence.replace("\r\n", "\n"))
-    written.append("fonts/OFL.txt")
     return written

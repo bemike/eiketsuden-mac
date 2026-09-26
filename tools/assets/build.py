@@ -21,8 +21,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assetlib import PACK_DIR, SourceError, Sources
-from build_audio import build_fonts, build_sfx
+from build_audio import build_sfx
 from build_backgrounds import build_backgrounds
+from build_fonts import build_fonts
 from build_fx import build_fx
 from build_music import build_music
 from build_portraits import build_portraits
