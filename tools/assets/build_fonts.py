@@ -35,7 +35,9 @@ from assetlib import PACK_DIR, SourceError, Sources, write_text
 EXTRA_HANJA = "傕彧昱汜蟬褚郃龐"
 
 CJK = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
-TEXT_SUFFIXES = {".toml", ".drama", ".txt"}
+# The pack's own text: data files, dramas and the credits (not the licence texts in fonts/).
+TEXT_SUFFIXES = {".toml", ".drama"}
+TEXT_FILES = {"credits.txt"}
 
 FUSION_VERSION = "2026.09.01"
 
@@ -71,7 +73,7 @@ def pack_hanja(pack: Path = PACK_DIR) -> set[str]:
     """Every CJK ideograph in the pack's text files, plus EXTRA_HANJA."""
     chars = set(EXTRA_HANJA)
     for path in sorted(pack.rglob("*")):
-        if path.suffix in TEXT_SUFFIXES and path.is_file():
+        if (path.suffix in TEXT_SUFFIXES or path.name in TEXT_FILES) and path.is_file():
             chars.update(CJK.findall(path.read_text(encoding="utf-8")))
     return chars
 

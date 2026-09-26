@@ -72,7 +72,8 @@ size = 19938873
 sha256 = "c8b3d9861a62ae73c8b1178091401cd79994812437ef386413f6dd54856e60e7"
 
 # Portrait pages (繡像) of 增像全圖三國演義, a late-Qing lithographed edition of the novel, as
-# rendered by Wikimedia Commons from the CADAL scan (djvu pages 15-50, four figures per page). The
+# rendered by Wikimedia Commons from the CADAL scan (djvu pages 15-50, four figures per page; the
+# pages whose figures no portrait uses, 15 and 36, are not pinned). The
 # page renders are Wikimedia thumbnails of the {{PD-old}} djvu file; should Wikimedia ever re-render
 # them, fetch.py reports a hash mismatch and the parts must be re-pinned (the crop boxes in
 # portraits.toml stay valid for any 1920 px wide render).
@@ -86,7 +87,6 @@ url = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/CADAL07015122_%
 file = "xiuxiang/page{part}.jpg"
 
 [sources.xiuxiang.parts]
-15 = { size = 508123, sha256 = "0683b3eb1fde40535ac941c5f5d21f0acc4a4036efdbf7eeec6344ef40065ae7" }
 16 = { size = 396198, sha256 = "bbcd42326e8bf0498bafbb18c571e2d44d9a05046c65c5acc32a8020175abb9f" }
 17 = { size = 368631, sha256 = "889d6536879df7c7ecbe3292f890953e14eddca4cf66f79f51a768af2dbe9351" }
 18 = { size = 331006, sha256 = "402afa10d5e79c70a1d4d64f9f63152a6e8c05b71c172d1cb4b359762982e729" }
@@ -107,7 +107,6 @@ file = "xiuxiang/page{part}.jpg"
 33 = { size = 357362, sha256 = "2f4b002a812a4ef1811742f349ef3f2f36b704b6f9b0894503671ecbaa6f5312" }
 34 = { size = 348601, sha256 = "123356a935aca6126035ea1a6dc43cc02d664138869795342ec246639bbfa7fd" }
 35 = { size = 400290, sha256 = "2127d3b620b5556689144475bacd11784c96c6ac590025e6e24f23cf96a91d51" }
-36 = { size = 378816, sha256 = "34086072199a5e7789197a4909da63b56e2ee5ea9e692970f0aedfa1eba13095" }
 37 = { size = 394928, sha256 = "bcf7fc369e6ea0d0df4e17bef8af247bab5ddcae4127daefd55639a9348994d9" }
 38 = { size = 385947, sha256 = "cdace82a1f7d8fc1529d43e8b5331c6973565cc2667cdb8c546f7f2e77cdfc79" }
 39 = { size = 372983, sha256 = "868fde9e2e277cf5ee18c8b971151544bc7f9d4d7cde170e053a3ddf59e4025e" }
