@@ -19,7 +19,7 @@ The engine never embeds content; everything the player sees comes from a **data 
                 │
 ┌───────────────┴──────── hero-tools (bin) ────────┐   ┌──── data/base (base pack) ────┐
 │ validate <pack> · simulate <pack> (AI vs AI)     │   │ pack.toml, rules/, officers,   │
-│ (future) import-original <install dir>           │   │ campaign, battles/, dramas/,   │
+│ original probe|extract <dir> (hero-import)       │   │ campaign, battles/, dramas/,   │
 └──────────────────────────────────────────────────┘   │ gfx/, bgm/, sfx/, fonts/       │
                                                         └────────────────────────────────┘
 ```
@@ -30,7 +30,8 @@ The engine never embeds content; everything the player sees comes from a **data 
 |---|---|---|
 | `hero-core` | Game rules, data schema, pack loading/validation, drama scripting, campaign and save state. Deterministic (seeded [`Rng`](../crates/hero-core/src/rng.rs)); no graphics, no clock, no file I/O except the optional `DirSource`. | serde, toml, serde_json, thiserror |
 | `hero-game` | The game executable (`eiketsuden` / `eiketsuden.exe` / `eiketsuden.wasm`). | hero-core, macroquad |
-| `hero-tools` | Command line tools for pack authors and CI: `validate`, `simulate`. | hero-core |
+| `hero-tools` | Command line tools for pack authors and CI: `validate`, `simulate`, `info`; `original probe` / `original extract` for the importer. | hero-core, hero-import |
+| `hero-import` | Optional, experimental importer for an owned copy of the original game: edition probe and shareable manifest, LS11 / 6-byte-table containers, text, planar sprites and palettes → a media overlay folder that the game reads with `--original <dir>` (native only). See [ORIGINAL_DATA.md](ORIGINAL_DATA.md). | encoding_rs, png, sha2, serde, serde_json |
 
 ## Data flow
 
