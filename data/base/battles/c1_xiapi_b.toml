@@ -54,28 +54,28 @@ slots = [[14, 21], [15, 21], [13, 21], [16, 21], [14, 22], [15, 22], [13, 22], [
 side = "enemy"
 officer = "zhang_liao"
 class = "long_infantry"
-level = 18
+level = 17
 pos = [26, 14]
 ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "chen_gong"
-level = 18
+level = 17
 pos = [18, 16]
 ai = "defensive"
 
 [[units]]
 side = "enemy"
 officer = "xu_si"
-level = 17
+level = 16
 pos = [11, 16]
 ai = "defensive"
 
 [[units]]
 side = "enemy"
 officer = "wang_kai"
-level = 16
+level = 15
 pos = [19, 15]
 ai = "defensive"
 
@@ -84,7 +84,7 @@ ai = "defensive"
 side = "enemy"
 officer = "hou_cheng"
 class = "heavy_cavalry"
-level = 17
+level = 16
 pos = [6, 12]
 ai = "guard"
 
@@ -92,7 +92,7 @@ ai = "guard"
 side = "enemy"
 officer = "song_xian"
 class = "crossbow"
-level = 17
+level = 16
 pos = [23, 12]
 ai = "guard"
 
@@ -100,7 +100,7 @@ ai = "guard"
 side = "enemy"
 officer = "wei_xu"
 class = "long_infantry"
-level = 17
+level = 16
 pos = [14, 14]
 ai = "guard"
 
@@ -238,7 +238,7 @@ side = "ally"
 officer = "cao_cao"
 level = 20
 pos = [14, 23]
-ai = "defensive"
+ai = "hold"
 
 [[units]]
 side = "ally"

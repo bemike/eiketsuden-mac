@@ -17,8 +17,9 @@
 # 30 the men inside rise anyway. Hou Cheng brings the Red Hare with him (novel) and Lü Bu drops his
 # halberd; the two outer treasuries hold rice and a 원대서. Cao Cao's besieging army stands in the
 # south from the start but only holds its lines until the gate opens; its officers keep the same
-# levels whatever was chosen at Xiaopei. Squads are Lv14 (PC about 15-16) and two of the four
-# cavalry squads guard their camps, because the army has no allies on the field before the gate.
+# levels whatever was chosen at Xiaopei (Cao Cao himself holds his post until then). Officers are a
+# level below the PC values and squads Lv14 (PC about 15-16), and two of the four cavalry squads
+# guard their camps, because the Cao army only holds its lines before the gate opens.
 #
 # Map: the flooded city fills the north, ringed by its moat; outer camps with forts guard the west,
 # the east and the south-centre, and the army comes up the southern road.
@@ -75,35 +76,35 @@ slots = [[14, 21], [15, 21], [13, 21], [16, 21], [14, 22], [15, 22], [13, 22], [
 side = "enemy"
 officer = "zhang_liao"
 class = "long_infantry"
-level = 18
+level = 17
 pos = [26, 14]
 ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "gao_shun"
-level = 18
+level = 17
 pos = [3, 14]
 ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "chen_gong"
-level = 18
+level = 17
 pos = [18, 16]
 ai = "defensive"
 
 [[units]]
 side = "enemy"
 officer = "xu_si"
-level = 17
+level = 16
 pos = [11, 16]
 ai = "defensive"
 
 [[units]]
 side = "enemy"
 officer = "wang_kai"
-level = 16
+level = 15
 pos = [19, 15]
 ai = "defensive"
 
@@ -112,7 +113,7 @@ ai = "defensive"
 side = "enemy"
 officer = "hou_cheng"
 class = "heavy_cavalry"
-level = 17
+level = 16
 pos = [6, 12]
 ai = "guard"
 
@@ -120,7 +121,7 @@ ai = "guard"
 side = "enemy"
 officer = "song_xian"
 class = "crossbow"
-level = 17
+level = 16
 pos = [23, 12]
 ai = "guard"
 
@@ -128,7 +129,7 @@ ai = "guard"
 side = "enemy"
 officer = "wei_xu"
 class = "long_infantry"
-level = 17
+level = 16
 pos = [14, 14]
 ai = "guard"
 
@@ -266,7 +267,7 @@ side = "ally"
 officer = "cao_cao"
 level = 20
 pos = [14, 23]
-ai = "defensive"
+ai = "hold"
 
 [[units]]
 side = "ally"

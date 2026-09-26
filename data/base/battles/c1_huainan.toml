@@ -13,9 +13,9 @@
 # camp as allies and change sides under Xu Dan, the officer who historically let Lü Bu into
 # Xiapi. A ridge on the northern bank keeps the fort out of reach until after the betrayal: the
 # only way there is south over the long bridge, west along the southern bank and north over the
-# western bridge. Ji Ling is PC level 18 in the original; here 15 and the squads 10, because only
-# one bandit camp may have been cleared before, and Lü Bu's army lacks one squad (21 enemy units
-# instead of 22).
+# western bridge. Ji Ling is PC level 18 in the original; here 15, Lü Bu's officers 11-14 and the
+# squads 9-10, because only one bandit camp may have been cleared before, and Lü Bu's army lacks
+# one squad (21 enemy units instead of 22).
 #
 # Map: the Huai river runs east-west; the long bridge (two tiles wide) in the centre, a short one
 # in the west. Lü Bu's army appears in the north-west, between the army and the fort, and must
@@ -113,7 +113,7 @@ ai = "defensive"
 side = "enemy"
 name = "보병대"
 class = "short_infantry"
-level = 10
+level = 9
 pos = [15, 16]
 ai = "defensive"
 
@@ -121,7 +121,7 @@ ai = "defensive"
 side = "enemy"
 name = "보병대"
 class = "short_infantry"
-level = 10
+level = 9
 pos = [11, 15]
 ai = "aggressive"
 
@@ -129,7 +129,7 @@ ai = "aggressive"
 side = "enemy"
 name = "보병대"
 class = "short_infantry"
-level = 10
+level = 9
 pos = [19, 15]
 ai = "aggressive"
 
@@ -137,7 +137,7 @@ ai = "aggressive"
 side = "enemy"
 name = "기병대"
 class = "light_cavalry"
-level = 10
+level = 9
 pos = [9, 17]
 ai = "aggressive"
 
@@ -145,7 +145,7 @@ ai = "aggressive"
 side = "enemy"
 name = "기병대"
 class = "light_cavalry"
-level = 10
+level = 9
 pos = [21, 17]
 ai = "aggressive"
 
@@ -153,7 +153,7 @@ ai = "aggressive"
 side = "enemy"
 name = "무도가"
 class = "martial"
-level = 10
+level = 9
 pos = [13, 16]
 ai = "aggressive"
 
@@ -161,7 +161,7 @@ ai = "aggressive"
 side = "enemy"
 name = "군악대"
 class = "band"
-level = 10
+level = 9
 pos = [16, 20]
 ai = "defensive"
 
@@ -171,7 +171,7 @@ ai = "defensive"
 side = "enemy"
 officer = "zhang_liao"
 class = "long_infantry"
-level = 15
+level = 14
 pos = [4, 6]
 ai = "aggressive"
 group = "lu_bu"
@@ -179,7 +179,7 @@ group = "lu_bu"
 [[units]]
 side = "enemy"
 officer = "chen_gong"
-level = 14
+level = 13
 pos = [3, 5]
 ai = "aggressive"
 group = "lu_bu"
@@ -187,7 +187,7 @@ group = "lu_bu"
 [[units]]
 side = "enemy"
 officer = "song_xian"
-level = 12
+level = 11
 pos = [5, 5]
 ai = "aggressive"
 group = "lu_bu"
@@ -195,7 +195,7 @@ group = "lu_bu"
 [[units]]
 side = "enemy"
 officer = "wei_xu"
-level = 12
+level = 11
 pos = [4, 7]
 ai = "aggressive"
 group = "lu_bu"

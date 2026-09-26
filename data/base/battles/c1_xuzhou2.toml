@@ -13,8 +13,7 @@
 # south-west can only be reached through the city, i.e. after Cao Cao's army has arrived; that is
 # what chains the victory conditions; Cao Cao's army comes down on the eastern bank and has to force
 # its way through the city too, so a rear guard in the city can cover Liu Bei's escape; once Liu
-# Bei leaves by the western gate, Xiahou Yuan and a cavalry squad ride in from the north-west to
-# cut the road. Cao Cao
+# Bei leaves by the western gate, Xiahou Yuan rides in from the north-west to cut the road. Cao Cao
 # carries a 원군보고 (troops recover every turn). The garrison's squads are Lv16.
 #
 # Map: the Si river runs north-south; the army comes along the eastern road, the city's gates face
@@ -179,7 +178,7 @@ side = "enemy"
 officer = "xiahou_yuan"
 class = "heavy_cavalry"
 level = 20
-pos = [1, 1]
+pos = [2, 0]
 ai = "target"
 ai_target = "liu_bei"
 group = "cut_off"
@@ -200,16 +199,6 @@ level = 20
 pos = [22, 0]
 ai = "defensive"
 group = "cao"
-
-[[units]]
-side = "enemy"
-name = "기병대"
-class = "light_cavalry"
-level = 17
-pos = [3, 0]
-ai = "target"
-ai_target = "liu_bei"
-group = "cut_off"
 
 [[units]]
 side = "enemy"
@@ -279,6 +268,15 @@ side = "enemy"
 officer = "cheng_yu"
 level = 20
 pos = [17, 0]
+ai = "aggressive"
+group = "cao"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 17
+pos = [28, 2]
 ai = "aggressive"
 group = "cao"
 
