@@ -23,6 +23,9 @@
 # Flags set by chapter 1 (dramas unless noted):
 #   c1_route_a      1 Xindu / 2 Guangchuan          c1_route_b      1 Julu / 2 Qinghe
 #   c1_xiaopei      1 fight Cao Cao at Xiaopei / 0 truce
+#   c1_taishan, c1_xiaqiu1, c1_pengcheng1   1 once that bandit camp is cleared
+#   c1_bandits      number of bandit camps cleared   c1_bandit_next  camp picked in the menu (0 = done)
+#   c1_join_chang_xi, c1_join_shi_meng, c1_join_xia_kun   1 when Liu Bei won that chief over (battles)
 
 title = "유비전"
 start = "prologue_opening"
@@ -348,6 +351,144 @@ next = "c1_zhao_yun_leaves"
 type = "drama"
 id = "c1_zhao_yun_leaves"
 scene = "c1_zhao_yun_leaves"
+next = "c1_xiaopei_bandits"
+
+# ===================================================================================================
+# Chapter 1, act 3: 성난 이리, 여포의 방문
+#   bandit camps Mount Tai / Xiaqiu I / Pengcheng I (at least one, any order; the villagers' thanks
+#   grow with the number cleared) -> Huainan (Lü Bu's betrayal) -> flight to Xuchang
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_xiaopei_bandits"
+scene = "c1_xiaopei_bandits"
+next = "c1_bandit_menu"
+
+# Shows only the camps not cleared yet; "back to Xiaopei" appears once one camp is cleared.
+[[node]]
+type = "drama"
+id = "c1_bandit_menu"
+scene = "c1_bandit_menu"
+next = "c1_br_bandit_1"
+
+[[node]]
+type = "branch"
+id = "c1_br_bandit_1"
+flag = "c1_bandit_next"
+cmp = "=="
+value = 1
+then = "c1_camp_taishan"
+else = "c1_br_bandit_2"
+
+[[node]]
+type = "branch"
+id = "c1_br_bandit_2"
+flag = "c1_bandit_next"
+cmp = "=="
+value = 2
+then = "c1_camp_xiaqiu1"
+else = "c1_br_bandit_3"
+
+[[node]]
+type = "branch"
+id = "c1_br_bandit_3"
+flag = "c1_bandit_next"
+cmp = "=="
+value = 3
+then = "c1_camp_pengcheng1"
+else = "c1_peasants"
+
+[[node]]
+type = "camp"
+id = "c1_camp_taishan"
+title = "소패 — 태산 토벌 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_taishan"
+next = "c1_battle_taishan"
+
+[[node]]
+type = "battle"
+id = "c1_battle_taishan"
+battle = "c1_taishan"
+next = "c1_after_taishan"
+
+[[node]]
+type = "drama"
+id = "c1_after_taishan"
+scene = "c1_after_taishan"
+next = "c1_bandit_menu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiaqiu1"
+title = "소패 — 하구 토벌 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_xiaqiu1"
+next = "c1_battle_xiaqiu1"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiaqiu1"
+battle = "c1_xiaqiu1"
+next = "c1_after_xiaqiu1"
+
+[[node]]
+type = "drama"
+id = "c1_after_xiaqiu1"
+scene = "c1_after_xiaqiu1"
+next = "c1_bandit_menu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_pengcheng1"
+title = "소패 — 팽성 토벌 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_pengcheng1"
+next = "c1_battle_pengcheng1"
+
+[[node]]
+type = "battle"
+id = "c1_battle_pengcheng1"
+battle = "c1_pengcheng1"
+next = "c1_after_pengcheng1"
+
+[[node]]
+type = "drama"
+id = "c1_after_pengcheng1"
+scene = "c1_after_pengcheng1"
+next = "c1_bandit_menu"
+
+[[node]]
+type = "drama"
+id = "c1_peasants"
+scene = "c1_peasants"
+next = "c1_xuzhou_succession"
+
+[[node]]
+type = "drama"
+id = "c1_xuzhou_succession"
+scene = "c1_xuzhou_succession"
+next = "c1_camp_huainan"
+
+[[node]]
+type = "camp"
+id = "c1_camp_huainan"
+title = "서주 — 회남 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_great_encourage", "scroll_great_aid"]
+battle = "c1_huainan"
+next = "c1_battle_huainan"
+
+[[node]]
+type = "battle"
+id = "c1_battle_huainan"
+battle = "c1_huainan"
+next = "c1_flight_to_xuchang"
+
+[[node]]
+type = "drama"
+id = "c1_flight_to_xuchang"
+scene = "c1_flight_to_xuchang"
 next = "c1_finale"
 
 # ===================================================================================================

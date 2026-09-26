@@ -25,11 +25,17 @@ battles = [
   "battles/c1_beihai.toml",
   "battles/c1_xuzhou1.toml",
   "battles/c1_xiaopei.toml",
+  # Chapter 1, act 3: bandit camps and Huainan
+  "battles/c1_taishan.toml",
+  "battles/c1_xiaqiu1.toml",
+  "battles/c1_pengcheng1.toml",
+  "battles/c1_huainan.toml",
 ]
 dramas = [
   "dramas/prologue.drama",
   "dramas/c1_act1.drama",
   "dramas/c1_act2.drama",
+  "dramas/c1_act3.drama",
 ]
 
 [rules]
