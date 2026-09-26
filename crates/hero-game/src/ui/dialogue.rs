@@ -4,13 +4,39 @@
 //! It looks like [`super::message::MessageBox`] but is driven by the drama screen: besides
 //! confirm (complete the page, then turn it) it has a *fast* mode (빨리 넘기기) in which pages
 //! appear at once and turn by themselves after a short glance.
+//!
+//! Line breaks written in the script (indented continuation lines) are kept as long as every
+//! line fits the box; when one of them is too long and would leave a short orphan on a line of
+//! its own, the paragraph is reflowed as running text instead ([`layout_text`]).
 
+use super::art::draw_portrait_card;
 use super::textflow::Typewriter;
 use super::theme;
-use super::window::{draw_portrait, draw_small_arrow, draw_window_ex, WindowStyle};
+use super::window::{draw_small_arrow, draw_window_ex, WindowStyle};
 use crate::app::Ctx;
-use crate::gfx::{FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
+use crate::gfx::{wrap_text, FontId, Gfx, TextStyle, VIRTUAL_H, VIRTUAL_W};
 use macroquad::prelude::*;
+
+/// Wrap `text` to `width`: the script's line breaks are kept when each written line fits;
+/// otherwise the text is reflowed with the breaks read as spaces, if that needs fewer lines.
+/// `advance` is the width of one character.
+pub fn layout_text(text: &str, width: f32, advance: impl Fn(char) -> f32) -> Vec<String> {
+    let kept = wrap_text(text, width, &advance);
+    let written = text.split('\n').count();
+    if kept.len() <= written {
+        return kept;
+    }
+    let flowed = wrap_text(&text.replace('\n', " "), width, &advance);
+    if flowed.len() < kept.len() {
+        flowed
+    } else {
+        kept
+    }
+}
+
+fn layout(gfx: &Gfx, text: &str, width: f32) -> Vec<String> {
+    layout_text(text, width, |c| gfx.char_width(c, FontId::Main, 1))
+}
 
 /// Lines shown at once.
 pub const LINES_PER_PAGE: usize = 3;
@@ -56,7 +82,7 @@ impl DialogueBox {
             speaker: Some(speaker.to_string()).filter(|s| !s.is_empty()),
             portrait: portrait.map(str::to_string),
             centered: false,
-            writer: Typewriter::new(gfx.wrap(text, FontId::Main, 1, width), LINES_PER_PAGE),
+            writer: Typewriter::new(layout(gfx, text, width), LINES_PER_PAGE),
             idle: 0.0,
             finished: false,
         }
@@ -69,7 +95,7 @@ impl DialogueBox {
             speaker: None,
             portrait: None,
             centered: true,
-            writer: Typewriter::new(gfx.wrap(text, FontId::Main, 1, width), LINES_PER_PAGE),
+            writer: Typewriter::new(layout(gfx, text, width), LINES_PER_PAGE),
             idle: 0.0,
             finished: false,
         }
@@ -192,7 +218,13 @@ impl DialogueBox {
         let has_portrait = self.portrait.is_some();
         let b = Self::box_rect(has_portrait);
         if has_portrait {
-            draw_portrait(ctx, self.portrait.as_deref(), Self::portrait_rect());
+            draw_portrait_card(
+                ctx,
+                self.portrait.as_deref(),
+                Self::portrait_rect(),
+                1.0,
+                1.0,
+            );
         }
         let style = if self.centered {
             WindowStyle::Panel
@@ -239,5 +271,45 @@ impl DialogueBox {
         {
             draw_small_arrow(b.right() - 11.0, b.bottom() - 9.0, true, theme::TEXT_ACCENT);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gfx::is_cjk;
+
+    fn mono(c: char) -> f32 {
+        if is_cjk(c) {
+            2.0
+        } else {
+            1.0
+        }
+    }
+
+    #[test]
+    fn written_line_breaks_are_kept_when_they_fit() {
+        let text = "가나 다라\n마바 사아";
+        assert_eq!(
+            layout_text(text, 10.0, mono),
+            vec!["가나 다라", "마바 사아"]
+        );
+    }
+
+    #[test]
+    fn overlong_written_lines_are_reflowed() {
+        // The first written line is one word too long: keeping the break would leave "사아"
+        // alone on a line; running text needs fewer lines.
+        let text = "가나 다라 마바 사아\n자차 카타";
+        assert_eq!(
+            layout_text(text, 14.0, mono),
+            vec!["가나 다라 마바", "사아 자차 카타"]
+        );
+        // When reflowing does not help, the written breaks stay.
+        let text = "가나다라마바사아\n카타파하가나다";
+        assert_eq!(
+            layout_text(text, 14.0, mono),
+            vec!["가나다라마바사", "아", "카타파하가나다"]
+        );
     }
 }

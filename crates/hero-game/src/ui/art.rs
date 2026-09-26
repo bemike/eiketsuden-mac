@@ -7,7 +7,7 @@
 //! * a missing background is painted procedurally in the mood of its key (dusky sky and ridges for
 //!   `field`, lantern-lit pillars for `palace`, stars for `night`, ...);
 //! * a missing portrait uses `portraits/_unknown` (through [`crate::assets::Media::portrait`]),
-//!   then a head-and-shoulders silhouette;
+//!   then a name card: the officer's name written vertically in gold, like a placard;
 //! * a missing unit sheet shows the usual placeholder box.
 //!
 //! Hi-res art is drawn with a tint, so callers can fade (`alpha`) and dim (`light`) it.
@@ -17,8 +17,9 @@ use crate::app::Ctx;
 use crate::assets::AssetState;
 use crate::gfx::{
     draw_placeholder, draw_sprite_frame, draw_texture_fit, fill_gradient_v, fill_rect, key_color,
-    Fit, SCREEN, VIRTUAL_H, VIRTUAL_W,
+    Align, Fit, FontId, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W,
 };
+use hero_core::pack::Pack;
 use macroquad::prelude::*;
 
 /// Colour with its alpha multiplied by `a`.
@@ -294,8 +295,107 @@ pub fn draw_silhouette_alpha(r: Rect, alpha: f32) {
     );
 }
 
+/// What the name card of a portrait key shows: the officer's hanja name (or Korean name when it
+/// has none) and the Korean name as a caption; keys that are not officers show themselves.
+pub fn name_card_text(pack: Option<&Pack>, key: &str) -> (String, String) {
+    let officer = pack.and_then(|p| {
+        p.officer(key)
+            .or_else(|| p.officers.values().find(|o| o.portrait_key() == key))
+    });
+    match officer {
+        Some(o) if !o.hanja.is_empty() => (o.hanja.clone(), o.name.clone()),
+        Some(o) => (o.name.clone(), String::new()),
+        None => (key.to_string(), String::new()),
+    }
+}
+
+/// Largest text size (3, 2 or 1) at which `chars` glyphs stacked vertically fit a column of
+/// `width` × `height` virtual pixels (Galmuri glyphs are 12 px per size step).
+pub fn vertical_text_size(chars: usize, width: f32, height: f32) -> u8 {
+    for size in [3u8, 2] {
+        let s = f32::from(size);
+        if chars as f32 * (12.0 * s + 2.0) <= height && 12.0 * s <= width {
+            return size;
+        }
+    }
+    1
+}
+
+/// Stand-in for missing portrait art: the name written vertically in gold on a dark card, like
+/// a name placard, with the Korean name below.
+fn draw_name_card(ctx: &Ctx, key: &str, inner: Rect, alpha: f32, light: f32) {
+    let gfx = &ctx.gfx;
+    let (big, caption) = name_card_text(ctx.pack.as_deref(), key);
+    fill_gradient_v(
+        inner,
+        fade(shade(Color::from_hex(0x2c2552), light), alpha),
+        fade(shade(Color::from_hex(0x110d26), light), alpha),
+    );
+    let gold = shade(theme::TEXT_ACCENT, 0.35 + 0.65 * light);
+    if inner.w > 20.0 && inner.h > 20.0 {
+        crate::gfx::stroke_rect(
+            Rect::new(inner.x + 3.0, inner.y + 3.0, inner.w - 6.0, inner.h - 6.0),
+            fade(gold, 0.35 * alpha),
+        );
+    }
+    let show_caption = !caption.is_empty() && inner.h >= 60.0;
+    let caption_h = if show_caption { 14.0 } else { 0.0 };
+    let area = Rect::new(
+        inner.x + 4.0,
+        inner.y + 6.0,
+        inner.w - 8.0,
+        inner.h - 12.0 - caption_h,
+    );
+    let chars: Vec<char> = big.chars().collect();
+    let shadow = Color::new(0.0, 0.0, 0.0, 0.8 * alpha);
+    if chars.len() <= 4 {
+        let size = vertical_text_size(chars.len(), area.w, area.h);
+        let step = 12.0 * f32::from(size) + 2.0;
+        let lh = gfx.line_height(FontId::Main, size);
+        let total = chars.len() as f32 * step;
+        let mut y = (area.y + (area.h - total) / 2.0 - (lh - step) / 2.0).round();
+        let style = TextStyle::main(fade(gold, alpha)).size(size).shadow(shadow);
+        let mut buf = [0u8; 4];
+        for c in chars {
+            gfx.text_aligned(
+                c.encode_utf8(&mut buf),
+                area.x,
+                y,
+                area.w,
+                Align::Center,
+                style,
+            );
+            y += step;
+        }
+    } else {
+        let lines = gfx.wrap(&big, FontId::Small, 1, area.w);
+        let lh = gfx.line_height(FontId::Small, 1);
+        let y = area.y + (area.h - lines.len() as f32 * lh) / 2.0;
+        for (i, line) in lines.iter().enumerate() {
+            gfx.text_aligned(
+                line,
+                area.x,
+                y + i as f32 * lh,
+                area.w,
+                Align::Center,
+                TextStyle::small(fade(gold, alpha)),
+            );
+        }
+    }
+    if show_caption {
+        gfx.text_aligned(
+            &caption,
+            inner.x,
+            inner.bottom() - caption_h - 2.0,
+            inner.w,
+            Align::Center,
+            TextStyle::small(fade(shade(theme::TEXT, 0.4 + 0.6 * light), alpha)),
+        );
+    }
+}
+
 /// A framed portrait card (stage portraits of drama scenes, officer pages). `alpha` fades the
-/// whole card, `light` dims it (1 = full brightness).
+/// whole card, `light` dims it (1 = full brightness). Missing art is replaced by a name card.
 pub fn draw_portrait_card(ctx: &Ctx, key: Option<&str>, r: Rect, alpha: f32, light: f32) {
     let alpha = alpha.clamp(0.0, 1.0);
     if alpha <= 0.0 || r.w < 4.0 || r.h < 4.0 {
@@ -322,7 +422,12 @@ pub fn draw_portrait_card(ctx: &Ctx, key: Option<&str>, r: Rect, alpha: f32, lig
             );
         }
         Some(PortraitArt::Loading) => {}
-        Some(PortraitArt::Missing) | None => {
+        Some(PortraitArt::Missing) => {
+            if let Some(key) = key {
+                draw_name_card(ctx, key, inner, alpha, light);
+            }
+        }
+        None => {
             draw_silhouette_alpha(inner, alpha);
             if light < 1.0 {
                 fill_rect(inner, Color::new(0.0, 0.0, 0.0, (1.0 - light) * alpha));
@@ -379,6 +484,25 @@ mod tests {
         // Unknown keys get a stable palette.
         assert_eq!(fallback_palette("desert"), fallback_palette("desert"));
         assert_ne!(fallback_palette("desert").0, fallback_palette("snow").0);
+    }
+
+    #[test]
+    fn name_cards() {
+        let pack = crate::screens::camp::test_pack();
+        assert_eq!(
+            name_card_text(Some(&pack), "guan_yu"),
+            ("關羽".to_string(), "관우".to_string())
+        );
+        assert_eq!(
+            name_card_text(Some(&pack), "전령"),
+            ("전령".to_string(), String::new())
+        );
+        assert_eq!(name_card_text(None, "x").0, "x");
+        // Stage cards fit two big glyphs, message portraits smaller ones.
+        assert_eq!(vertical_text_size(2, 96.0, 108.0), 3);
+        assert_eq!(vertical_text_size(3, 56.0, 58.0), 1);
+        assert_eq!(vertical_text_size(2, 56.0, 58.0), 2);
+        assert_eq!(vertical_text_size(4, 10.0, 10.0), 1);
     }
 
     #[test]

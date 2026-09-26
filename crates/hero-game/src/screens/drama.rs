@@ -1056,8 +1056,12 @@ impl DramaScreen {
             Step::Narration(text) => {
                 self.backlog.push(None, &text);
                 if !skipping {
+                    let mut dialogue = DialogueBox::narration(&ctx.gfx, &text);
+                    if self.fast_now {
+                        dialogue.complete_page();
+                    }
                     self.current = Current::Text {
-                        dialogue: DialogueBox::narration(&ctx.gfx, &text),
+                        dialogue,
                         spotlight: Spotlight::Nobody,
                     };
                 }
@@ -1070,13 +1074,13 @@ impl DramaScreen {
                 self.backlog.push(Some(&speaker), &text);
                 if !skipping {
                     let spotlight = self.spotlight_for(portrait.as_deref());
+                    let mut dialogue =
+                        DialogueBox::speech(&ctx.gfx, &speaker, portrait.as_deref(), &text);
+                    if self.fast_now {
+                        dialogue.complete_page();
+                    }
                     self.current = Current::Text {
-                        dialogue: DialogueBox::speech(
-                            &ctx.gfx,
-                            &speaker,
-                            portrait.as_deref(),
-                            &text,
-                        ),
+                        dialogue,
                         spotlight,
                     };
                 }
