@@ -18,6 +18,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Fails at once, with a clear message, when the repository's Pages source is not set to
+      # "GitHub Actions" (a one-time setting, see docs/DEVELOPING.md "Publishing").
+      - uses: actions/configure-pages@v5
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
