@@ -62,7 +62,11 @@ impl Screen for DramaScreen {
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         let _ = ctx;
-        todo!("W2B: drama screen update for scene {} ({:?})", self.scene, self.end)
+        todo!(
+            "W2B: drama screen update for scene {} ({:?})",
+            self.scene,
+            self.end
+        )
     }
 
     fn draw(&self, ctx: &Ctx) {

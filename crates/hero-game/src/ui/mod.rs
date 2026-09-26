@@ -13,15 +13,25 @@
 //! | tooltip and hover delay | [`tooltip`] |
 //! | number/time formatting | [`mod@format`] |
 //! | colours and metrics | [`theme`] |
+//! | drama dialogue box (speech / narration, fast mode) | [`dialogue`] |
+//! | paged typewriter text (pure logic) | [`textflow`] |
+//! | backlog (최근 대사) model and window | [`backlog`] |
+//! | backgrounds, portrait cards, unit icons with fallbacks | [`art`] |
+//! | Korean particles (을/를, 이/가, ...) | [`korean`] |
 //!
 //! Widgets are plain structs owned by screens: call `update(&mut ctx)` while the widget has
 //! focus and `draw(&ctx)` every frame. They play the standard UI sounds themselves.
 
+pub mod art;
+pub mod backlog;
 pub mod bars;
 pub mod dialog;
+pub mod dialogue;
 pub mod format;
+pub mod korean;
 pub mod menu;
 pub mod message;
+pub mod textflow;
 pub mod theme;
 pub mod toast;
 pub mod tooltip;
