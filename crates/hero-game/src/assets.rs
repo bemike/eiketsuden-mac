@@ -16,6 +16,10 @@
 //! | sound | `sfx/cursor` | `sfx/cursor.wav`, else `sfx/cursor.ogg` |
 //! | icon | `gold` | cell of `gfx/ui/icons.png` listed in `gfx/ui/icons.toml` |
 //!
+//! When an original-data overlay is active (`--original <dir>`, native only, see
+//! [`crate::platform`]), every file above is looked up in the overlay first and then in the pack
+//! ([`DataRoot::media_paths`]); a file the overlay lacks falls back to the pack.
+//!
 //! A request returns `None` while the file is loading and after it failed; failures are logged
 //! once and never retried or fatal. Callers draw a fallback: [`Media::portrait`] falls back to
 //! `portraits/_unknown`, and `crate::ui` draws procedural placeholders for anything else. Pixel
@@ -178,16 +182,8 @@ impl<T> Slot<T> {
 }
 
 enum JobKind {
-    Texture {
-        key: String,
-    },
-    /// `paths` are the remaining candidate files, tried in order; `errors` collects why the
-    /// earlier candidates failed.
-    Sound {
-        key: String,
-        paths: Vec<String>,
-        errors: Vec<String>,
-    },
+    Texture { key: String },
+    Sound { key: String },
     IconIndex,
 }
 
@@ -203,7 +199,22 @@ enum Stage {
 
 struct Job {
     kind: JobKind,
+    /// Remaining candidate files (full paths / URLs), tried in order until one can be read.
+    paths: Vec<String>,
+    /// Why the earlier candidates failed.
+    errors: Vec<String>,
     stage: Stage,
+}
+
+impl Job {
+    fn new(kind: JobKind, paths: Vec<String>) -> Job {
+        Job {
+            kind,
+            paths,
+            errors: Vec::new(),
+            stage: Stage::Waiting,
+        }
+    }
 }
 
 /// Cells of `gfx/ui/icons.png`.
@@ -249,6 +260,17 @@ impl Media {
         &self.root
     }
 
+    /// Full paths to try for pack-relative media files `rels` (alternative formats of one
+    /// file, preferred first): every format in the original-data overlay before any in the
+    /// pack.
+    fn candidates(&self, rels: &[String]) -> Vec<String> {
+        let per_file: Vec<Vec<String>> = rels.iter().map(|r| self.root.media_paths(r)).collect();
+        let layers = per_file.iter().map(Vec::len).max().unwrap_or(0);
+        (0..layers)
+            .flat_map(|layer| per_file.iter().filter_map(move |p| p.get(layer).cloned()))
+            .collect()
+    }
+
     fn texture_filter(key: &str) -> FilterMode {
         if key.starts_with("portraits/") || key.starts_with("bg/") || key == "ui/title" {
             FilterMode::Linear
@@ -263,12 +285,12 @@ impl Media {
             return slot.state();
         }
         inner.textures.insert(key.to_string(), Slot::Loading);
-        inner.jobs.push_back(Job {
-            kind: JobKind::Texture {
+        inner.jobs.push_back(Job::new(
+            JobKind::Texture {
                 key: key.to_string(),
             },
-            stage: Stage::Waiting,
-        });
+            self.candidates(&[format!("gfx/{key}.png")]),
+        ));
         AssetState::Loading
     }
 
@@ -304,7 +326,7 @@ impl Media {
         if let Some(slot) = inner.sounds.get(key) {
             return slot.state();
         }
-        let paths = if let Some(name) = key.strip_prefix("sfx/") {
+        let files = if let Some(name) = key.strip_prefix("sfx/") {
             // The base pack ships its effects as WAV, so that is tried first: every failed probe
             // is a 404 in the browser console.
             vec![format!("sfx/{name}.wav"), format!("sfx/{name}.ogg")]
@@ -312,14 +334,12 @@ impl Media {
             vec![format!("{key}.ogg")]
         };
         inner.sounds.insert(key.to_string(), Slot::Loading);
-        inner.jobs.push_back(Job {
-            kind: JobKind::Sound {
+        inner.jobs.push_back(Job::new(
+            JobKind::Sound {
                 key: key.to_string(),
-                paths,
-                errors: Vec::new(),
             },
-            stage: Stage::Waiting,
-        });
+            self.candidates(&files),
+        ));
         AssetState::Loading
     }
 
@@ -355,10 +375,10 @@ impl Media {
         match &inner.icons {
             None => {
                 inner.icons = Some(Slot::Loading);
-                inner.jobs.push_back(Job {
-                    kind: JobKind::IconIndex,
-                    stage: Stage::Waiting,
-                });
+                inner.jobs.push_back(Job::new(
+                    JobKind::IconIndex,
+                    self.candidates(&[ICON_INDEX.to_string()]),
+                ));
                 None
             }
             Some(Slot::Ready(index)) => {
@@ -434,21 +454,15 @@ impl Media {
         loop {
             match &mut job.stage {
                 Stage::Waiting => {
-                    let path = match &mut job.kind {
-                        JobKind::Texture { key } => format!("gfx/{key}.png"),
-                        JobKind::Sound { paths, errors, .. } => {
-                            if paths.is_empty() {
-                                return Some(Outcome::Failed(errors.join("; ")));
-                            }
-                            paths.remove(0)
-                        }
-                        JobKind::IconIndex => ICON_INDEX.to_string(),
-                    };
-                    job.stage = Stage::Fetch(fetch(self.root.path(&path)));
+                    if job.paths.is_empty() {
+                        return Some(Outcome::Failed(job.errors.join("; ")));
+                    }
+                    let path = job.paths.remove(0);
+                    job.stage = Stage::Fetch(fetch(path));
                 }
                 Stage::Fetch(fut) => {
                     let result = poll_once(fut)?;
-                    match (result, &mut job.kind) {
+                    match (result, &job.kind) {
                         (Ok(bytes), JobKind::Sound { .. }) => {
                             job.stage = Stage::DecodeSound {
                                 future: Box::pin(
@@ -458,12 +472,12 @@ impl Media {
                             };
                         }
                         (Ok(bytes), _) => job.stage = Stage::Decode(bytes),
-                        (Err(e), JobKind::Sound { errors, .. }) => {
-                            // Try the next candidate (`.ogg` after `.wav`); fails once none is left.
-                            errors.push(e);
+                        (Err(e), _) => {
+                            // Try the next candidate (the pack after the overlay, `.ogg` after
+                            // `.wav`); fails once none is left.
+                            job.errors.push(e);
                             job.stage = Stage::Waiting;
                         }
-                        (Err(e), _) => return Some(Outcome::Failed(e)),
                     }
                 }
                 Stage::Decode(bytes) => {
@@ -577,6 +591,25 @@ mod tests {
         let idx: IconIndex = toml::from_str("[icons]\ngold = [0, 0]\nhp = [3, 1]\n").unwrap();
         assert_eq!(idx.tile_size, 16);
         assert_eq!(idx.icons["hp"], [3, 1]);
+    }
+
+    #[test]
+    fn media_candidates_prefer_the_overlay() {
+        let pack = Media::new(DataRoot::from_dir(std::path::Path::new("/p"), &[]));
+        assert_eq!(pack.candidates(&["gfx/a.png".into()]), vec!["/p/gfx/a.png"]);
+
+        let root = DataRoot::from_dir(std::path::Path::new("/p"), &[])
+            .with_media_overlay(std::path::Path::new("/o"));
+        let media = Media::new(root);
+        assert_eq!(
+            media.candidates(&["sfx/x.wav".into(), "sfx/x.ogg".into()]),
+            vec![
+                "/o/sfx/x.wav",
+                "/o/sfx/x.ogg",
+                "/p/sfx/x.wav",
+                "/p/sfx/x.ogg"
+            ]
+        );
     }
 
     #[test]

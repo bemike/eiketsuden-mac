@@ -1,6 +1,7 @@
 //! `eiketsuden` — the game executable (native) and `eiketsuden.wasm` (browser).
 //!
-//! Native command line: `eiketsuden [--data <pack dir>] [--gallery]`; web: `index.html#gallery`.
+//! Native command line: `eiketsuden [--data <pack dir>] [--original <overlay dir>] [--gallery]`;
+//! web: `index.html#gallery`.
 //! Everything else lives in the `hero_game` library (see its crate docs).
 
 // Release builds on Windows are GUI applications without a console window; panics are then
