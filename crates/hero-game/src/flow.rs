@@ -426,6 +426,7 @@ mod tests {
         // up, and gold and an item were found (those are kept only after a victory).
         battle.flags.insert("c1_exposed".into(), 1);
         battle.inventory.insert("bean".into(), 2);
+        battle.items_used.insert("bean".into(), 1);
         let unit = battle
             .units
             .iter_mut()

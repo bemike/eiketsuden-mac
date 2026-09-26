@@ -100,6 +100,7 @@ fn probe(pack: &Pack, officer: &OfficerState, hp: i32, mp: i32) -> BattleState {
         outcome: None,
         bonus_done: false,
         inventory: BTreeMap::new(),
+        items_used: BTreeMap::new(),
         gold_found: 0,
         items_found: Vec::new(),
         flags: BTreeMap::new(),
