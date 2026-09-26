@@ -19,7 +19,7 @@ The engine never embeds content; everything the player sees comes from a **data 
                 │
 ┌───────────────┴──────── hero-tools (bin) ────────┐   ┌──── data/base (base pack) ────┐
 │ validate <pack> · simulate <pack> (AI vs AI)     │   │ pack.toml, rules/, officers,   │
-│ original probe|extract <dir> (hero-import)       │   │ campaign, battles/, dramas/,   │
+│ original probe|extract|pack <dir> (hero-import)  │   │ campaign, battles/, dramas/,   │
 └──────────────────────────────────────────────────┘   │ gfx/, bgm/, sfx/, fonts/       │
                                                         └────────────────────────────────┘
 ```
@@ -30,8 +30,8 @@ The engine never embeds content; everything the player sees comes from a **data 
 |---|---|---|
 | `hero-core` | Game rules, data schema, pack loading (including layered packs) and validation, drama scripting, campaign and save state. Deterministic (seeded [`Rng`](../crates/hero-core/src/rng.rs)); no graphics, no clock, no file I/O except the optional `DirSource`. | serde, toml, serde_json, thiserror |
 | `hero-game` | The game executable (`eiketsuden` / `eiketsuden.exe` / `eiketsuden.wasm`). | hero-core, macroquad |
-| `hero-tools` | Command line tools for pack authors and CI: `validate`, `simulate`, `info`; `original probe` / `original extract` for the importer. | hero-core, hero-import |
-| `hero-import` | Optional, experimental importer for an owned copy of the original game: edition probe and shareable manifest, LS11 / 6-byte-table containers, TF-DCE portraits, planar sprites and palettes, maps, message text, scenario bytecode and the `BAKDATA` tables → a media overlay folder that the game reads with `--original <dir>` (native only). See [ORIGINAL_DATA.md](ORIGINAL_DATA.md); the verified file formats and the method are in [reverse-engineering/](reverse-engineering/README.md). | encoding_rs, png, sha2, serde, serde_json |
+| `hero-tools` | Command line tools for pack authors and CI: `validate`, `simulate`, `info`; `original probe` / `extract` / `pack` for the importer. | hero-core, hero-import |
+| `hero-import` | Optional, experimental importer for an owned copy of the original game: edition probe and shareable manifest, LS11 / 6-byte-table containers, TF-DCE portraits, planar sprites and palettes, maps, message text, scenario bytecode and the `BAKDATA` tables → a media overlay folder that the game reads with `--original <dir>` (native only), and the original-mode pack (`pack`). See [ORIGINAL_DATA.md](ORIGINAL_DATA.md); the verified file formats and the method are in [reverse-engineering/](reverse-engineering/README.md). | encoding_rs, png, sha2, serde, serde_json |
 
 ## Data flow
 
@@ -68,11 +68,11 @@ from the nearest pack that declares it. Paths are resolved lexically relative to
 the web build's fetched file map. The exact rules are in [MODDING.md](MODDING.md#layered-packs-extends)
 and the reasoning in [DECISIONS.md](DECISIONS.md) (D8).
 
-### Original mode (planned, not implemented)
+### Original mode (partly implemented)
 
 The long-term goal, like OpenRCT2 with RCT2's data, is an **original mode** that shows the game with
-the original's own assets, read from the player's legally owned copy. It is planned as a layered pack:
-the importer (`hero-import`, driven by `hero-tools original`) would write a pack into a local folder
+the original's own assets, read from the player's legally owned copy. It is a layered pack:
+the importer (`hero-import`, driven by `hero-tools original pack`) writes a pack into a local folder
 next to the base pack — `data/original/`, which is git-ignored — whose `pack.toml` says
 `extends = "../base"` and `[presentation] canvas = [640, 480]` (the original's VGA screen) and which lists
 or ships only what has been converted from the original. Everything not converted yet keeps coming
@@ -85,10 +85,10 @@ data/original/pack.toml    extends = "../base", canvas 640x480, lists what was c
 data/base/pack.toml        the complete, license-clean base pack
 ```
 
-Today the importer only
-writes the separate media overlay of [ORIGINAL_DATA.md](ORIGINAL_DATA.md) (`--original <dir>`, D6); no
-importer-built pack exists yet, and no mapping from original files to the pack's keys has been
-decided (see the roadmap there).
+Today the pack holds officer portraits, unit sheets and a 32-px terrain tileset learned from the
+original battle maps (mapping rules in `crates/hero-import/src/pack.rs` and ORIGINAL_DATA.md §4.5);
+map layouts, rules, scenario, UI and music still come from the base pack. The separate media overlay
+(`--original <dir>`, D6) remains for looking at the raw extraction.
 
 ## Determinism and testing
 

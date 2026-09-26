@@ -40,6 +40,16 @@ USAGE:
         must be new, empty or a previous extraction, and outside the install. Exits with 1
         when any kind failed.
 
+    hero-tools original pack <install_dir> --out <pack_dir> [--base <pack_dir>]
+                             [--edition korean-dos|chinese-dos]
+        EXPERIMENTAL. Write the original mode: a data pack that extends the base pack
+        (default: the `base` folder next to <pack_dir>, e.g. --out data/original) with the
+        original art the base pack's keys can be mapped to — officer portraits, unit sheets
+        and a 32-px battle-map tileset learned from the original maps — on a 640×480 canvas.
+        Play it with `eiketsuden --data <pack_dir>`. The folder must be new, empty or a
+        previous pack of this command, and outside the install; the written pack is then
+        validated. Exits with 1 when a kind failed or the pack does not validate.
+
     hero-tools help | --help | -h
     hero-tools --version";
 
@@ -68,6 +78,13 @@ pub enum Command {
         out: PathBuf,
         /// `None` when no kind option was given.
         selection: Option<Selection>,
+        edition: Option<EditionId>,
+    },
+    OriginalPack {
+        dir: PathBuf,
+        out: PathBuf,
+        /// The pack to extend; `None` = `base` next to `out`.
+        base: Option<PathBuf>,
         edition: Option<EditionId>,
     },
     Help,
@@ -104,11 +121,12 @@ fn split_inline(arg: &str) -> (&str, Option<String>) {
 
 fn parse_original(rest: &[String]) -> Result<Command, String> {
     let Some((sub, rest)) = rest.split_first() else {
-        return Err("`original` needs a subcommand: probe or extract".into());
+        return Err("`original` needs a subcommand: probe, extract or pack".into());
     };
-    let extract = match sub.as_str() {
-        "probe" => false,
-        "extract" => true,
+    let (extract, pack) = match sub.as_str() {
+        "probe" => (false, false),
+        "extract" => (true, false),
+        "pack" => (false, true),
         other => return Err(format!("unknown `original` subcommand `{other}`")),
     };
     let command = format!("original {sub}");
@@ -116,6 +134,7 @@ fn parse_original(rest: &[String]) -> Result<Command, String> {
     let mut out = None;
     let mut selection: Option<Selection> = None;
     let mut edition = None;
+    let mut base = None;
     let mut args = rest.iter();
     while let Some(arg) = args.next() {
         let (name, inline) = split_inline(arg);
@@ -131,11 +150,12 @@ fn parse_original(rest: &[String]) -> Result<Command, String> {
         };
         match name {
             "--out" => out = Some(PathBuf::from(value("a path")?)),
+            "--base" if pack => base = Some(PathBuf::from(value("a pack directory")?)),
             "--text" if extract => select(|s| s.text = true),
             "--sprites" if extract => select(|s| s.sprites = true),
             "--portraits" if extract => select(|s| s.portraits = true),
             "--maps" if extract => select(|s| s.maps = true),
-            "--edition" if extract => {
+            "--edition" if extract || pack => {
                 let v = value("an edition id")?;
                 edition = match EditionId::parse(&v) {
                     Some(id) if id.is_extractable() => Some(id),
@@ -154,7 +174,16 @@ fn parse_original(rest: &[String]) -> Result<Command, String> {
         }
     }
     let dir = dir.ok_or_else(|| format!("`{command}` needs an install directory"))?;
-    if extract {
+    if pack {
+        Ok(Command::OriginalPack {
+            dir,
+            out: out.ok_or(
+                "`original pack` needs `--out <pack_dir>` (e.g. data/original, next to data/base)",
+            )?,
+            base,
+            edition,
+        })
+    } else if extract {
         Ok(Command::OriginalExtract {
             dir,
             out: out
@@ -298,6 +327,32 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_str(&["original", "pack", "g", "--out", "data/original"]),
+            Ok(Command::OriginalPack {
+                dir: "g".into(),
+                out: "data/original".into(),
+                base: None,
+                edition: None
+            })
+        );
+        assert_eq!(
+            parse_str(&[
+                "original",
+                "pack",
+                "--base=b",
+                "g",
+                "--out=o",
+                "--edition",
+                "korean-dos"
+            ]),
+            Ok(Command::OriginalPack {
+                dir: "g".into(),
+                out: "o".into(),
+                base: Some("b".into()),
+                edition: Some(EditionId::KoreanDos)
+            })
+        );
+        assert_eq!(
             parse_str(&[
                 "original",
                 "extract",
@@ -362,6 +417,15 @@ mod tests {
                 "`--out` needs a path",
             ),
             (&["original", "extract", "g"][..], "needs `--out <dir>`"),
+            (&["original", "pack", "g"][..], "needs `--out <pack_dir>`"),
+            (
+                &["original", "extract", "g", "--out", "o", "--base", "b"][..],
+                "unknown option `--base`",
+            ),
+            (
+                &["original", "pack", "g", "--out", "o", "--text"][..],
+                "unknown option `--text` for `original pack`",
+            ),
             (
                 &[
                     "original",

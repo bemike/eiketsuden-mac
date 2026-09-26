@@ -1,6 +1,6 @@
 //! `hero-tools`: command line tools for Eiketsuden Reloaded data packs (`validate`,
 //! `simulate`, `info`) and the experimental importer for an owned copy of the original game
-//! (`original probe|extract`). See `hero-tools --help`, `docs/MODDING.md` and
+//! (`original probe|extract|pack`). See `hero-tools --help`, `docs/MODDING.md` and
 //! `docs/ORIGINAL_DATA.md`.
 
 mod cli;
@@ -61,6 +61,12 @@ fn main() -> ExitCode {
             selection,
             edition,
         } => original::run_extract(&dir, &out, selection, edition).map_err(Failure::Failed),
+        Command::OriginalPack {
+            dir,
+            out,
+            base,
+            edition,
+        } => original::run_pack(&dir, &out, base.as_deref(), edition).map_err(Failure::Failed),
     };
     exit_code(result)
 }

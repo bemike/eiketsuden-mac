@@ -1,12 +1,15 @@
-//! `hero-tools original probe|extract`: the experimental importer for a legally owned copy of
+//! `hero-tools original probe|extract|pack`: the experimental importer for a legally owned copy of
 //! the original game (see `docs/ORIGINAL_DATA.md` and the `hero-import` crate).
 
+use hero_core::pack::Severity;
 use hero_import::edition::{Edition, EditionId};
 use hero_import::extract::{self, Index, KindReport, Options, Selection, Status};
 use hero_import::install::lies_inside;
+use hero_import::pack::{self, BaseOfficer, BaseTerrain, PackIndex, PackOptions};
 use hero_import::probe::{self, Manifest};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 /// `original probe`: print what the folder holds and optionally save the shareable manifest.
 pub fn run_probe(dir: &Path, out: Option<&Path>) -> Result<bool, String> {
@@ -181,6 +184,150 @@ pub fn render_extract(dir: &Path, out_dir: &Path, index: &Index) -> String {
     out
 }
 
+/// The directory `to` relative to the directory `from` (which need not exist yet), with `/`
+/// separators, for `extends`.
+pub fn relative_dir(from: &Path, to: &Path) -> Result<String, String> {
+    let to = to
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", to.display()))?;
+    // Canonicalize the part of `from` that exists and append the rest.
+    let mut existing = from.to_path_buf();
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .ok_or_else(|| format!("{}: not a usable folder path", from.display()))?
+            .to_os_string();
+        rest.push(name);
+        existing = match existing.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+            _ => PathBuf::from("."),
+        };
+    }
+    let mut from_abs = existing
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", existing.display()))?;
+    for name in rest.into_iter().rev() {
+        from_abs.push(name);
+    }
+    let a: Vec<Component> = from_abs.components().collect();
+    let b: Vec<Component> = to.components().collect();
+    let common = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    if common == 0 {
+        return Err(format!(
+            "{} and {} are on different drives; `extends` must be a relative path, so put the \
+             pack next to the base pack (e.g. data/original next to data/base)",
+            from.display(),
+            to.display()
+        ));
+    }
+    let mut parts: Vec<String> = vec!["..".to_string(); a.len() - common];
+    for c in &b[common..] {
+        let Component::Normal(name) = c else {
+            return Err(format!("{}: unexpected path component", to.display()));
+        };
+        parts.push(
+            name.to_str()
+                .ok_or_else(|| format!("{}: the path is not UTF-8", to.display()))?
+                .to_string(),
+        );
+    }
+    if b.len() == common || a.len() == common {
+        return Err(format!(
+            "{} and the pack it extends, {}, must be separate folders (neither inside the other)",
+            from.display(),
+            to.display()
+        ));
+    }
+    Ok(parts.join("/"))
+}
+
+/// `original pack`: write the original-mode pack on top of `base` (default: `base` next to
+/// `out`) and validate it. `Ok(false)` when a kind failed or the written pack has errors.
+pub fn run_pack(
+    dir: &Path,
+    out: &Path,
+    base: Option<&Path>,
+    edition: Option<EditionId>,
+) -> Result<bool, String> {
+    let base = match base {
+        Some(b) => b.to_path_buf(),
+        None => out
+            .parent()
+            .map(|p| p.join("base"))
+            .ok_or_else(|| format!("{}: cannot find the base pack next to it", out.display()))?,
+    };
+    let parent = crate::load_pack(&base)?;
+    let extends = relative_dir(out, &base)?;
+    let sprites: BTreeSet<String> = parent.classes.values().map(|c| c.sprite.clone()).collect();
+    let options = PackOptions {
+        edition,
+        extends,
+        officers: parent
+            .officers
+            .values()
+            .map(|o| BaseOfficer {
+                id: o.id.to_string(),
+                name: o.name.clone(),
+                hanja: o.hanja.clone(),
+                portrait: o.portrait.clone().unwrap_or_else(|| o.id.to_string()),
+            })
+            .collect(),
+        terrain: parent
+            .terrain
+            .iter()
+            .map(|t| BaseTerrain {
+                id: t.id.to_string(),
+                tile: t.tile_key().to_string(),
+            })
+            .collect(),
+        sprites: sprites.into_iter().collect(),
+    };
+    let index = pack::write_pack(dir, out, &options).map_err(|e| e.to_string())?;
+    print!("{}", render_pack(dir, out, &index));
+    let written = crate::load_pack(out)?;
+    let issues = crate::validate::check(out, &written)?;
+    println!("\nValidation of the written pack:");
+    print!("{}", crate::validate::render(&written, &issues));
+    let valid = !issues.iter().any(|i| i.severity == Severity::Error);
+    if index.success() && valid {
+        println!(
+            "Play it (native builds): eiketsuden --data \"{}\"",
+            out.display()
+        );
+    }
+    Ok(index.success() && valid)
+}
+
+pub fn render_pack(dir: &Path, out_dir: &Path, index: &PackIndex) -> String {
+    let mut out = format!(
+        "Original pack: {} -> {} (extends {}, canvas {}×{})\n",
+        dir.display(),
+        out_dir.display(),
+        index.extends,
+        index.canvas[0],
+        index.canvas[1]
+    );
+    render_edition(&mut out, &index.edition);
+    for (kind, report) in &index.assets {
+        render_kind(&mut out, kind, report);
+    }
+    let _ = writeln!(
+        out,
+        "Wrote {} files and {} to {}.",
+        index.files.len(),
+        pack::PACK_INDEX,
+        out_dir.display()
+    );
+    if !index.success() {
+        let _ = writeln!(
+            out,
+            "Some asset kinds were not converted (marked with !); see above."
+        );
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +435,124 @@ mod tests {
         // Not an install at all: a clear error.
         let err = run_extract(&tmp.0.join("nope"), &out, None, None).unwrap_err();
         assert!(err.contains("nope"), "{err}");
+    }
+
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn relative_dirs_for_extends() {
+        let tmp = Temp::new("relative");
+        let base = tmp.0.join("data/base");
+        std::fs::create_dir_all(&base).unwrap();
+        assert_eq!(
+            relative_dir(&tmp.0.join("data/original"), &base),
+            Ok("../base".into())
+        );
+        assert_eq!(
+            relative_dir(&tmp.0.join("mods/deep/original"), &base),
+            Ok("../../../data/base".into())
+        );
+        std::fs::create_dir_all(tmp.0.join("data/original")).unwrap();
+        assert_eq!(
+            relative_dir(&tmp.0.join("data/original"), &base),
+            Ok("../base".into())
+        );
+        for inside in [base.clone(), base.join("sub"), tmp.0.join("data")] {
+            let err = relative_dir(&inside, &base).unwrap_err();
+            assert!(err.contains("separate folders"), "{err}");
+        }
+        assert!(relative_dir(&tmp.0.join("x"), &tmp.0.join("missing")).is_err());
+    }
+
+    #[test]
+    fn pack_is_written_next_to_its_base_and_validated() {
+        let tmp = Temp::new("pack");
+        let game = tmp.0.join("GAME");
+        std::fs::create_dir(&game).unwrap();
+        synthetic_install(&game);
+        copy_dir(&crate::tests::fixture_dir(), &tmp.0.join("data/base"));
+        let out = tmp.0.join("data/original");
+        // The tiny install has no battle maps and the fixture's classes are not the original's:
+        // the pack is written and loads, but the conversion reports failures.
+        assert_eq!(run_pack(&game, &out, None, None), Ok(false));
+        let manifest = std::fs::read_to_string(out.join("pack.toml")).unwrap();
+        assert!(manifest.contains("extends = \"../base\""), "{manifest}");
+        let pack = crate::load_pack(&out).unwrap();
+        assert_eq!(pack.layers.len(), 2);
+        assert_eq!(pack.manifest.presentation.canvas, [640, 480]);
+        let index = pack::write_pack(
+            &game,
+            &out,
+            &PackOptions {
+                extends: "../base".into(),
+                ..PackOptions::default()
+            },
+        )
+        .unwrap();
+        let text = render_pack(&game, &out, &index);
+        assert!(text.contains("tiles"), "{text}");
+        assert!(text.contains("FAILED"), "{text}");
+        // No base pack next to the output folder.
+        let err = run_pack(&game, &tmp.0.join("elsewhere/original"), None, None).unwrap_err();
+        assert!(err.contains("no pack.toml"), "{err}");
+    }
+
+    /// The whole conversion on a real install (`EIKETSU_ORIGINAL_DIR`, see
+    /// docs/ORIGINAL_DATA.md §6), on top of the repository's base pack.
+    #[test]
+    fn golden_original_pack() {
+        let Some(dir) = std::env::var_os("EIKETSU_ORIGINAL_DIR") else {
+            eprintln!("skipped: set EIKETSU_ORIGINAL_DIR to the game's data folder");
+            return;
+        };
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let work = root.join("target/golden-original-pack");
+        let _ = std::fs::remove_dir_all(&work);
+        let out = work.join("original");
+        let base = root.join("data/base");
+        assert_eq!(run_pack(Path::new(&dir), &out, Some(&base), None), Ok(true));
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(out.join(pack::PACK_INDEX)).unwrap()).unwrap();
+        // Every class, every terrain tile key and most officers of the base pack.
+        let files: Vec<&str> = json["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            files
+                .iter()
+                .filter(|f| f.starts_with("gfx/units/") && f.ends_with(".png"))
+                .count(),
+            57
+        );
+        let portraits = json["portraits"].as_array().unwrap().len();
+        assert!(portraits >= 100, "{portraits} portraits");
+        assert!(json["portraits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["officer"] == "yu_jin" && p["bakdata"] == 62));
+        let pack = crate::load_pack(&out).unwrap();
+        let tiles = std::fs::read_to_string(out.join("gfx/tiles/terrain.toml")).unwrap();
+        for t in &pack.terrain {
+            assert!(
+                tiles.contains(&format!("[tiles.{}]", t.tile_key())),
+                "{}",
+                t.id
+            );
+        }
     }
 }

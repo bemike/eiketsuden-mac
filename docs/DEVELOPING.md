@@ -25,6 +25,7 @@ cargo run -p hero-game                          # the game
 cargo run -p hero-game -- --gallery             # the UI gallery (needs only the fonts)
 cargo run -p hero-game -- --data path/to/pack   # another data pack
 cargo run -p hero-game -- --original path/to/overlay  # original-data overlay (see ORIGINAL_DATA.md)
+cargo run -p hero-game -- --data data/original       # original mode, after `hero-tools original pack`
 ```
 
 `--original <dir>` (or the `EIKETSUDEN_ORIGINAL` environment variable) adds an original-data

@@ -9,10 +9,6 @@
   - 무엇을: `units.toml`·`terrain.toml`·`fx.toml`의 serde 타입(SpriteDef/FxDef/Tileset)과 `validate_layer`를 hero-game에서 hero-core로 옮긴다. `Pack::missing_media`가 타입 오류를 Error로 보고하게 하고, 색인 파일을 `unknown_fields` 린트에 넣는다.
   - 왜: 지금은 검증기가 키 존재만 봐서 `anchor` 하나가 빠져도 validate는 통과하고, 게임에서는 스프라이트가 조용히 깨진다. 임포터도 같은 스키마를 써야 한다.
   - 영향 범위: hero-core `pack/media.rs`, hero-game `screens/battle/{sprites,tileset}.rs`, `docs/ASSETS.md`
-- [ ] **원작 오버레이와 원작 모드 팩의 위치 분리**
-  - 무엇을: `data/original/`을 오버레이 출력 위치(예: `data/original-media/`)와 원작 모드 팩 위치로 나누고, `.gitignore`를 `/data/original*/`로 넓힌다. 결정은 DECISIONS D8에 남긴다.
-  - 왜: 지금 두 용도가 같은 경로를 쓴다.
-  - 영향 범위: `docs/ORIGINAL_DATA.md`, `.gitignore`, `docs/DECISIONS.md`
 - [ ] **`[presentation]` 상속 규칙 확정**
   - 무엇을: 테이블 단위 상속을 유지할지, 필드 단위로 병합할지 정해 DECISIONS D8에 기록한다. MODDING에 "빈 `[presentation]`도 부모 값을 기본값으로 되돌린다"를 명시한다.
   - 왜: 필드를 하나 추가하는 순간 호환성을 깨는 변경이 된다.
@@ -25,6 +21,21 @@
   - 무엇을: 아이콘(항상 16×16 표시), 깃발 16×16, 초상 64×80, 글꼴 크기를 데이터로 조정할지 결정하고 ASSETS.md에 적는다.
   - 왜: 원작 해상도 팩 제작자가 무엇을 조정할 수 있는지 알 수 없다.
   - 영향 범위: `docs/ASSETS.md`, hero-game `ui/`
+
+## 원작 모드 팩 (2026-09-26 `original pack` 도입 후)
+
+- [ ] **학습 타일셋의 경계 개선**
+  - 무엇을: 초원·산지·황무지처럼 원작이 대각선·부분 칸으로 잇는 지형에 8방향 마스크나 칸 변형(`cells` 여러 개)을 학습시키거나, 원작 맵 자체(그림 층)를 쓰는 전투부터 우선한다.
+  - 왜: 4방향 최빈 칸만 써서 기본 팩 맵 위에서는 네모난 가장자리가 보인다.
+  - 영향 범위: hero-import `pack.rs`(`learn_tiles`), 엔진 `auto` 층 규칙(8방향이면 ASSETS.md 변경)
+- [ ] **진영 색 확정**
+  - 무엇을: `MAIN.EXE`에서 `HEXZCHR` 번호를 고르는 코드를 찾아 아군·적군·우군의 색을 확정하고 `PLAYER_ICON` 선택을 대체한다.
+  - 왜: 지금은 초록 = 아군이 선택이고 우군은 아군 색을 같이 쓴다.
+  - 영향 범위: hero-import `pack.rs`, STATUS 2절
+- [ ] **대응 못 한 무장 13명 재확인**
+  - 무엇을: `original-pack.json`의 `unmatched_officers` 중 판본에 있을 법한 이름(관흥 등)을 `BAKDATA` 전체와 대조해 별칭을 추가하거나 없음을 기록한다.
+  - 왜: 표기 차이로 놓친 얼굴이 있을 수 있다.
+  - 영향 범위: hero-import `pack.rs`(`NAME_ALIASES`)
 
 ## 견고성 · 회귀 방지
 

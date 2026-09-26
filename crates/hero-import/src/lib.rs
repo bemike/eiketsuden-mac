@@ -25,6 +25,7 @@
 //! | [`planar`], [`palette`], [`image`] | P3 | 4 bpp planar cells and packed images, palettes inside `MAIN.EXE`, indexed PNG output |
 //! | [`sprites`] | P3 | per-archive geometry, palette slot and entry groups of the sprite / chip archives |
 //! | [`extract`] | P1–P3 | conversion into a media overlay folder with an `index.json` |
+//! | [`pack`] | original mode | conversion into a layered data pack on top of the base pack (portraits, unit sheets, a tileset learned from the battle maps) |
 //!
 //! Every structural invariant (directory chains, exact decoded lengths, full input consumption,
 //! table sizes) is checked, and a violation is reported with a precise error rather than
@@ -39,6 +40,7 @@ pub mod install;
 pub mod ippan;
 pub mod ls11;
 pub mod maps;
+pub mod pack;
 pub mod palette;
 pub mod planar;
 pub mod probe;

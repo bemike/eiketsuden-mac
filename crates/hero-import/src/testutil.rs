@@ -3,7 +3,7 @@
 
 use crate::image::IndexedImage;
 use crate::text::{build_sections, dialogue_bytes, TextEncoding};
-use crate::{bakdata, ippan, ls11, palette, planar, scenario, table6, tfdce};
+use crate::{bakdata, ippan, ls11, maps, palette, planar, scenario, table6, tfdce};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -184,4 +184,63 @@ pub fn write_chinese_install(dir: &Path) {
         ["劉備", "關羽", "青龍偃月刀"],
         b"DOS/V disk 1\x1a\0\0\0",
     );
+}
+
+/// A Korean install with every map archive: two battle maps (the second on chip set 2)
+/// and their names, scene strips, one campaign map and one town and palace screen each.
+pub fn write_map_install(dir: &Path) {
+    write_korean_install(dir);
+    let names: Vec<Vec<u8>> = maps::TERRAIN_IDS
+        .iter()
+        .map(|s| s.as_bytes().to_vec())
+        .collect();
+    let refs: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
+    let mut exe = maps::build_exe_fixture(
+        &maps::ExeFixture {
+            second_set_maps: &[1],
+            backdrop: [0; maps::TERRAIN_COUNT],
+            ground: [5; maps::TERRAIN_COUNT],
+            terrain_names: &refs,
+            campaign_sizes: [(16, 4); maps::CHAPTERS],
+        },
+        0,
+    );
+    exe.extend(palette::build_bank(&palette_slots()));
+    std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
+    let ls11 = |name: &str, entries: &[Vec<u8>]| {
+        let refs: Vec<&[u8]> = entries.iter().map(Vec::as_slice).collect();
+        std::fs::write(dir.join(name), ls11::build(&refs)).unwrap();
+    };
+    ls11("HEXZCHP.R3", &[cells(80), cells(2), cells(3)]);
+    let map = |chip: u8, terrain: u8| {
+        maps::BattleMap {
+            width: 4,
+            height: 2,
+            chips: vec![0, 1, chip, chip, 2, 3, chip, chip],
+            terrain: vec![1, terrain],
+        }
+        .encode()
+    };
+    ls11(
+        "HEXZMAP.R3",
+        &[
+            map(81, 8),
+            map(82, 3),
+            b"\xb0\xa1\n\xb0\xa2 1\r\n\r\n\x1a".to_vec(),
+        ],
+    );
+    ls11("HEXBCHP.R3", &[cells(4)]);
+    ls11("HEXBMAP.R3", &[vec![3; 230], vec![1; 528]]);
+    ls11("MMAPBGPL.R3", &[cells(2)]);
+    let mut campaign = vec![1u8; 64];
+    campaign.extend([0x7f, 0xff]);
+    ls11("MMAP.R3", &[campaign]);
+    ls11("SMAPBGPL.R3", &[cells(2), cells(3)]);
+    let mut town = vec![1u8; 640];
+    town.extend(vec![maps::WALK_BLOCKED; 620]);
+    town[640 + 32] = maps::WALK_OPEN;
+    town[640 + 33] = 9;
+    town.extend([1, 7, 2, 3]);
+    ls11("SMAP.R3", std::slice::from_ref(&town));
+    ls11("PMAP.R3", &[town]);
 }
