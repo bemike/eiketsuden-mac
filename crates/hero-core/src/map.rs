@@ -10,7 +10,11 @@ pub enum MapError {
     #[error("map has no rows")]
     Empty,
     #[error("row {row} has width {got}, expected {expected}")]
-    Ragged { row: usize, got: usize, expected: usize },
+    Ragged {
+        row: usize,
+        got: usize,
+        expected: usize,
+    },
     #[error("unknown map glyph {glyph:?} at ({x}, {y})")]
     UnknownGlyph { glyph: char, x: usize, y: usize },
     #[error("legend maps {glyph:?} to unknown terrain `{terrain}`")]
@@ -147,7 +151,10 @@ mod tests {
     fn errors() {
         let terrain = vec![t("plain", '.')];
         let legend = BTreeMap::new();
-        assert_eq!(BattleMap::parse("", &legend, &terrain), Err(MapError::Empty));
+        assert_eq!(
+            BattleMap::parse("", &legend, &terrain),
+            Err(MapError::Empty)
+        );
         assert!(matches!(
             BattleMap::parse("..\n.", &legend, &terrain),
             Err(MapError::Ragged { .. })

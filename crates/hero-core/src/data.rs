@@ -501,6 +501,11 @@ mod tests {
                 turns: 1
             }
         );
-        assert_eq!(w.effects[2], Effect::ChangeClass { to: "archer".into() });
+        assert_eq!(
+            w.effects[2],
+            Effect::ChangeClass {
+                to: "archer".into()
+            }
+        );
     }
 }
