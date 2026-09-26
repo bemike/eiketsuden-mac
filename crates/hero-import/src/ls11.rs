@@ -1,15 +1,21 @@
 //! `LS11` archives: the `.R3` containers of the DOS/V builds.
 //!
-//! # Layout (all integers big-endian)
+//! # Layout
 //!
 //! ```text
-//! 0x000  16 B   "LS11" + 12 zero bytes
+//! 0x000  16 B   "LS11" or "Ls11" + 12 zero bytes
 //! 0x010  256 B  byte dictionary shared by every entry of the file
-//! 0x110  N×12 B directory: [compressed length][decoded length][absolute offset]
+//! 0x110  N×12 B directory: [compressed length][decoded length][absolute offset], u32 each
 //!        then a zero terminator (4 bytes in the known files; at most 15 zero bytes accepted)
 //! data   entry i starts at offset[i]; offset[i+1] = offset[i] + clen[i]; the last entry ends
 //!        exactly at the end of the file
 //! ```
+//!
+//! The spelling of the magic selects the byte order of the directory fields: `LS11` (upper-case
+//! `S`) is **big-endian**, `Ls11` (lower-case `s`) is **little-endian**. Both occur in the Korean
+//! DOS/V build: 21 archives are `LS11`, while `OPGRP.R3`, `END1GRP.R3` and `END2GRP.R3` (opening
+//! and ending graphics, read by `OPEN.EXE` / `END.EXE`) are `Ls11`. Dictionary, directory
+//! position, chain rules and bit stream are the same for both (verified on the real files).
 //!
 //! An entry whose compressed and decoded lengths are equal is stored raw. Otherwise it is an
 //! MSB-first bit stream of variable-length codes. A code is a prefix of `k` bits — `k − 1` one
@@ -40,11 +46,54 @@ const MAX_DIR_PADDING: usize = 15;
 /// Longest code prefix accepted; real codes stay far below (values < 2^25).
 const MAX_PREFIX_BITS: u32 = 24;
 
-/// Magics of the codec implemented here. The Eiketsuden files use `LS11`; the sequel's files
-/// spell it `Ls11` with the same layout and codec.
+/// Magics of the codec implemented here: `LS11` (big-endian directory) and `Ls11`
+/// (little-endian directory).
 const SUPPORTED_MAGICS: [&[u8; 4]; 2] = [b"LS11", b"Ls11"];
-/// Sibling container variants whose codecs are not documented.
+/// Sibling container variants whose codecs are not documented (none occurs in the Korean
+/// DOS/V build).
 const VARIANT_MAGICS: [&[u8; 4]; 4] = [b"Ls10", b"Ls12", b"LS10", b"LS12"];
+
+/// Byte order of the directory fields, selected by the spelling of the magic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ByteOrder {
+    /// `LS11`.
+    Big,
+    /// `Ls11`.
+    Little,
+}
+
+impl ByteOrder {
+    /// The magic that announces this byte order.
+    pub fn magic(self) -> &'static [u8; 4] {
+        match self {
+            ByteOrder::Big => b"LS11",
+            ByteOrder::Little => b"Ls11",
+        }
+    }
+
+    fn of_magic(magic: &[u8]) -> Option<ByteOrder> {
+        match magic {
+            b"LS11" => Some(ByteOrder::Big),
+            b"Ls11" => Some(ByteOrder::Little),
+            _ => None,
+        }
+    }
+
+    fn read_u32(self, data: &[u8], at: usize) -> u32 {
+        let b = [data[at], data[at + 1], data[at + 2], data[at + 3]];
+        match self {
+            ByteOrder::Big => u32::from_be_bytes(b),
+            ByteOrder::Little => u32::from_le_bytes(b),
+        }
+    }
+
+    fn write_u32(self, v: u32) -> [u8; 4] {
+        match self {
+            ByteOrder::Big => v.to_be_bytes(),
+            ByteOrder::Little => v.to_le_bytes(),
+        }
+    }
+}
 
 /// Whether `data` starts with a supported LS11 magic.
 pub fn has_magic(data: &[u8]) -> bool {
@@ -259,13 +308,10 @@ impl Entry {
 #[derive(Debug, Clone)]
 pub struct Archive<'a> {
     data: &'a [u8],
+    order: ByteOrder,
     dict: [u8; 256],
     entries: Vec<Entry>,
     data_start: usize,
-}
-
-fn be32(data: &[u8], at: usize) -> u32 {
-    u32::from_be_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])
 }
 
 impl<'a> Archive<'a> {
@@ -279,11 +325,11 @@ impl<'a> Archive<'a> {
                 magic: String::from_utf8_lossy(&data[..4]).into_owned(),
             });
         }
-        if !has_magic(data) {
+        let Some(order) = ByteOrder::of_magic(&data[..4]) else {
             let mut found = [0u8; 4];
             found.copy_from_slice(&data[..4]);
             return Err(Ls11Error::BadMagic { found });
-        }
+        };
         if data.len() < DIR_OFFSET + 4 {
             return Err(Ls11Error::TooShort { len: data.len() });
         }
@@ -306,15 +352,15 @@ impl<'a> Archive<'a> {
             if pos + 4 > data.len() {
                 return Err(Ls11Error::TruncatedDirectory { at: pos });
             }
-            let clen = be32(data, pos);
+            let clen = order.read_u32(data, pos);
             if pos + DIR_ENTRY_LEN > data.len() {
                 if clen == 0 {
                     break; // the zero terminator at the very end of an empty archive
                 }
                 return Err(Ls11Error::TruncatedDirectory { at: pos });
             }
-            let dlen = be32(data, pos + 4);
-            let offset = be32(data, pos + 8);
+            let dlen = order.read_u32(data, pos + 4);
+            let offset = order.read_u32(data, pos + 8);
             if clen == 0 && dlen == 0 && offset == 0 {
                 break;
             }
@@ -381,10 +427,16 @@ impl<'a> Archive<'a> {
         };
         Ok(Archive {
             data,
+            order,
             dict,
             entries,
             data_start,
         })
+    }
+
+    /// Byte order of the directory (from the magic).
+    pub fn byte_order(&self) -> ByteOrder {
+        self.order
     }
 
     /// The directory, in file order.
@@ -709,11 +761,16 @@ pub fn encode_stream(dict: &[u8; 256], data: &[u8]) -> Vec<u8> {
     w.out
 }
 
-/// Write an LS11 archive holding `entries`, in the layout of the known files: frequency-sorted
-/// dictionary, directory with a 4-byte zero terminator, chained data. An entry is stored
-/// compressed when that is smaller, raw otherwise (a compressed stream is never allowed to be
-/// exactly as long as the raw data, which would read back as "raw").
+/// Write an `LS11` (big-endian) archive holding `entries`, in the layout of the known files:
+/// frequency-sorted dictionary, directory with a 4-byte zero terminator, chained data. An entry
+/// is stored compressed when that is smaller, raw otherwise (a compressed stream is never
+/// allowed to be exactly as long as the raw data, which would read back as "raw").
 pub fn build(entries: &[&[u8]]) -> Vec<u8> {
+    build_with(ByteOrder::Big, entries)
+}
+
+/// [`build`] with a chosen directory byte order (`Ls11` for [`ByteOrder::Little`]).
+pub fn build_with(order: ByteOrder, entries: &[&[u8]]) -> Vec<u8> {
     let dict = frequency_dictionary(entries.iter().copied());
     let stored: Vec<(Vec<u8>, u32)> = entries
         .iter()
@@ -727,21 +784,26 @@ pub fn build(entries: &[&[u8]]) -> Vec<u8> {
             }
         })
         .collect();
-    assemble(&dict, &stored)
+    assemble_with(order, &dict, &stored)
 }
 
-/// Lay out an archive from already stored entries `(stored bytes, decoded length)`.
+/// Lay out a big-endian archive from already stored entries `(stored bytes, decoded length)`.
+#[cfg(test)]
 fn assemble(dict: &[u8; 256], stored: &[(Vec<u8>, u32)]) -> Vec<u8> {
+    assemble_with(ByteOrder::Big, dict, stored)
+}
+
+fn assemble_with(order: ByteOrder, dict: &[u8; 256], stored: &[(Vec<u8>, u32)]) -> Vec<u8> {
     let mut out = Vec::new();
-    out.extend_from_slice(b"LS11");
+    out.extend_from_slice(order.magic());
     out.resize(HEADER_LEN, 0);
     out.extend_from_slice(dict);
     let mut offset = DIR_OFFSET + stored.len() * DIR_ENTRY_LEN + 4;
     for (bytes, dlen) in stored {
         let clen = u32::try_from(bytes.len()).expect("entry fits in u32");
-        out.extend_from_slice(&clen.to_be_bytes());
-        out.extend_from_slice(&dlen.to_be_bytes());
-        out.extend_from_slice(&(offset as u32).to_be_bytes());
+        out.extend_from_slice(&order.write_u32(clen));
+        out.extend_from_slice(&order.write_u32(*dlen));
+        out.extend_from_slice(&order.write_u32(offset as u32));
         offset += bytes.len();
     }
     out.extend_from_slice(&[0; 4]);
@@ -857,6 +919,28 @@ mod tests {
     }
 
     #[test]
+    fn little_endian_variant_round_trips() {
+        let a = sample_text();
+        let b = noise(700, 9, 256);
+        let file = build_with(ByteOrder::Little, &[&a, &b]);
+        assert_eq!(&file[..4], b"Ls11");
+        // Directory fields are little-endian: entry 0 starts right after 2 entries + terminator.
+        let start = (DIR_OFFSET + 2 * DIR_ENTRY_LEN + 4) as u32;
+        assert_eq!(file[DIR_OFFSET + 8..DIR_OFFSET + 12], start.to_le_bytes());
+        let archive = Archive::parse(&file).unwrap();
+        assert_eq!(archive.byte_order(), ByteOrder::Little);
+        assert_eq!(archive.decode_all().unwrap(), vec![a.clone(), b.clone()]);
+        // The same bytes announced as big-endian do not parse as a valid chain.
+        let mut wrong = file.clone();
+        wrong[..4].copy_from_slice(b"LS11");
+        assert!(Archive::parse(&wrong).is_err());
+        assert_eq!(
+            Archive::parse(&build(&[&a])).unwrap().byte_order(),
+            ByteOrder::Big
+        );
+    }
+
+    #[test]
     fn empty_archive() {
         let file = build(&[]);
         assert_eq!(file.len(), DIR_OFFSET + 4);
@@ -866,6 +950,10 @@ mod tests {
             archive.decode(0),
             Err(Ls11Error::NoSuchEntry { index: 0, count: 0 })
         );
+    }
+
+    fn be32(data: &[u8], at: usize) -> u32 {
+        ByteOrder::Big.read_u32(data, at)
     }
 
     fn set_be32(file: &mut [u8], at: usize, v: u32) {
