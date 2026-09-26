@@ -1,0 +1,7 @@
+# Lint/format settings for the asset pipeline scripts: `uvx ruff check tools/assets` and
+# `uvx ruff format tools/assets`.
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
