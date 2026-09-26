@@ -226,7 +226,7 @@ pub fn write_pack(
         &install,
         &exe,
         options,
-        tiles.status == Status::Extracted,
+        matches!(tiles.status, Status::Extracted | Status::Partial),
         &mut output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
@@ -1104,11 +1104,19 @@ fn convert_tiles(
             return Ok(report);
         }
     };
-    let battle: Vec<(usize, BattleMap)> = entries
-        .iter()
-        .enumerate()
-        .filter_map(|(i, e)| BattleMap::parse(e).ok().map(|m| (i, m)))
-        .collect();
+    let mut battle: Vec<(usize, BattleMap)> = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        match BattleMap::parse(entry) {
+            Ok(map) => battle.push((i, map)),
+            // The last entry is the name list (as in the map extraction).
+            Err(_) if i + 1 == entries.len() && !battle.is_empty() => {}
+            Err(e) => report.errors.push(format!("HEXZMAP.R3 entry {i}: {e}")),
+        }
+    }
+    if battle.is_empty() {
+        report.summary = "HEXZMAP.R3 holds no readable battle map".into();
+        return Ok(report);
+    }
     let pairs: Vec<(&BattleMap, usize)> = battle
         .iter()
         .map(|(i, m)| (m, tables.chip_set_for(*i)))
@@ -1131,7 +1139,12 @@ fn convert_tiles(
     out.write("gfx/tiles/terrain.png", &png)?;
     out.write("gfx/tiles/terrain.toml", toml.as_bytes())?;
     report.outputs += 2;
-    report.status = Status::Extracted;
+    // Learned from the maps that could be read; a map that could not is an error.
+    report.status = if report.errors.is_empty() {
+        Status::Extracted
+    } else {
+        Status::Partial
+    };
     report.summary = format!(
         "{} terrain tiles from {} battle maps ({blocks} distinct 32-px blocks)",
         learned.tiles.len(),
@@ -1509,6 +1522,35 @@ mod tests {
         std::fs::write(foreign.join("pack.toml"), b"id = \"base\"").unwrap();
         let err = write_pack(src.path(), &foreign, &options()).unwrap_err();
         assert!(matches!(err, ExtractError::OutputNotEmpty(_)), "{err}");
+    }
+
+    #[test]
+    fn malformed_battle_maps_are_reported() {
+        let src = TempDir::new("pack-src-badmap");
+        write_pack_install(src.path());
+        let good = map(&[&[0, 0], &[3, 4]]).encode();
+        let names = b"\xb0\xa1\r\n\xb0\xa2\r\n\r\n\x1a".to_vec();
+        std::fs::write(
+            src.path().join("HEXZMAP.R3"),
+            ls11::build(&[&good, &[4, 4, 1, 2, 3], &names]),
+        )
+        .unwrap();
+        let out = TempDir::new("pack-out-badmap");
+        let index = write_pack(src.path(), out.path(), &options()).unwrap();
+        let tiles = &index.assets["tiles"];
+        assert_eq!(tiles.status, Status::Partial, "{tiles:#?}");
+        assert!(tiles.errors[0].contains("HEXZMAP.R3 entry 1"), "{tiles:#?}");
+        assert!(!index.success());
+        // The tileset from the readable maps is still written, and the unit sheets with it.
+        assert!(out.path().join("gfx/tiles/terrain.toml").is_file());
+        assert_eq!(index.assets["units"].status, Status::Extracted);
+
+        // No readable map at all: nothing is learned.
+        std::fs::write(src.path().join("HEXZMAP.R3"), ls11::build(&[&names])).unwrap();
+        let out = TempDir::new("pack-out-nomap");
+        let index = write_pack(src.path(), out.path(), &options()).unwrap();
+        assert_eq!(index.assets["tiles"].status, Status::Failed);
+        assert!(!out.path().join("gfx/tiles/terrain.toml").exists());
     }
 
     #[test]
