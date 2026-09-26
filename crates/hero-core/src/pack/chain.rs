@@ -13,7 +13,10 @@
 //!   a nearer layer defines again **overrides** the one of the farther layer. Within one pack an
 //!   id must still be unique.
 //! * `[presentation]` is inherited: the nearest layer that declares it wins, otherwise
-//!   [`Presentation::default`].
+//!   [`Presentation::default`]. The rule works on the **whole table**, not field by field: a
+//!   declared table replaces the parent's completely, and a field it omits (even every field, in
+//!   an empty `[presentation]`) takes the default, not the parent's value. Decide whether to
+//!   switch to per-field merging before adding a second field to [`Presentation`].
 //! * A chain holds at most [`MAX_CHAIN_DEPTH`] packs, every pack in it needs its own `id`, and a
 //!   pack cannot extend itself, directly or through others; a parent that does not exist is an
 //!   error.
