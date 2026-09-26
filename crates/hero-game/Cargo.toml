@@ -7,6 +7,12 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+# The frontend framework (screens, UI toolkit, platform layer) is a library so it can be unit
+# tested without a window and so every public item is usable by the screens built on top of it.
+[lib]
+name = "hero_game"
+path = "src/lib.rs"
+
 [[bin]]
 name = "eiketsuden"
 path = "src/main.rs"
