@@ -83,7 +83,7 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
 
 ## 5. Strategies
 
-* A unit knows the strategies in `learn` lists of its class **and all classes before it in the promotion chain** with
+* A unit knows the strategies in the `strategies` lists of its class **and all classes before it in the promotion chain** with
   `level ≤ unit level`. Casting needs `mp ≥ strategy.mp`; confused units cannot cast.
 * **Reach**: tiles of `strategy.range` offsets around the caster (`range8/12/20` include the caster's tile).
 * **Area**: `single` = the unit on the aimed tile; `cross` = units on the aimed tile and its 4 neighbours;
@@ -173,6 +173,10 @@ strategies impossible and water strategies deal +25%. Battles may override the c
 * Battle consumables (`battle_use = true`) come from the army inventory. A unit uses one as its action on itself or an
   orthogonally adjacent friendly unit (`effects`: `heal` restores exactly `power` HP, `morale` adds morale), or — for
   items with `strategy` — casts that strategy from its tile without paying MP.
+* A battle uses its own stock of consumables, copied from the army inventory when it starts. When it ends, won or
+  lost, exactly the consumables it used (`items_used`) are taken out of the inventory (never below 0). An item a
+  scene gives while the battle runs (`@item` in the intro or a `drama` event) reaches the inventory but cannot be
+  used in that battle — see [MODDING.md, Treasures](MODDING.md#treasures).
 * Treasure tiles give their item (to `items_found`) and/or gold (to `gold_found`) to the first player unit that ends a
   move there. Units with `drop` give that item to the player when defeated. Found items and gold only reach the
   campaign after a victory.

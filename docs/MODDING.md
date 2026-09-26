@@ -165,8 +165,24 @@ Rules of the chain (all errors when loading):
   `../base/rules/classes.toml` is the parent's classes file.
 
 The game reads `pack.toml` of the top pack, then of each parent, then every other text file of the
-chain; natively and in the browser alike. For the web build, publish the parent pack at its relative
-URL next to the child. One limit of the web build: the battle screen's media index files
+chain; natively and in the browser alike.
+
+**Layered packs in the web build.** The browser always loads the top pack from the fixed URL
+`data/base/` next to `index.html`, and resolves `extends` from there like any relative URL. So on the
+web:
+
+* The child pack sits in `<site>/data/base/`, whatever its directory is called natively.
+* Its parent must sit in a **sibling** directory with another name, for example `<site>/data/vanilla/`
+  with `extends = "../vanilla"` in the child. `extends = "../base"` (or the `"../../data/base"` of the
+  example above) points back at `data/base/`, the child itself, and the pack fails to load.
+* `tools/web/build.sh --data <pack>` and `build.ps1 -Data <pack>` copy **only** that one directory,
+  to `<out>/data/base/`; they do not copy the packs it extends. Copy each parent into the output
+  folder yourself (after the script, before serving or uploading), at the path its child's `extends`
+  names.
+
+Natively the same child works from any directory whose `extends` path reaches the parent, so a mod
+meant for both keeps its parent at a name other than `base` in both layouts (for example
+`data/vanilla/` next to `data/balance/`). One further limit of the web build: the battle screen's media index files
 (`units.toml`, `terrain.toml`, `fx.toml`) and `credits.txt` are read from the top pack only, because the
 browser cannot check whether a file exists without fetching it; natively they come from the first
 pack that has them. A child pack meant for the web ships its own copies of those files.
@@ -509,6 +525,15 @@ portrait = "jianyong"              # uses gfx/portraits/jianyong.png
 
 Player officers keep their level, EXP, class, stats and equipment between battles. An officer who leaves
 and joins again starts over from this definition.
+
+**Hanja and the fonts.** The base pack's fonts (`fonts/Galmuri11.ttf`, `fonts/Galmuri9.ttf`) hold only
+the Hanja that the base pack's own text uses (they are completed by the `fonts` step of
+[tools/assets](../tools/assets/README.md#fonts-fonts)). A Hanja that is not in them — in a `hanja` or
+`name` field, a scene or anywhere else in a mod — is drawn as a blank or a box, and neither
+`hero-tools validate` nor the game reports it. The `fonts` step scans `data/base` only: for new text
+there, rerun it; for a mod, ship fonts that cover your text in your pack's `fonts/` (a child pack's
+files replace its parent's), for example ones built by the `fonts` step with your characters added
+to `EXTRA_HANJA` in `build_fonts.py`.
 
 ## Battles
 
@@ -1027,10 +1052,16 @@ branch loops, battles no campaign node uses.
   a misspelt `rnage` in the archer class of `rules/classes.toml` is reported as field `class[archer].rnage`.
 * **Media** (natively, below the pack directory; for a layered pack in every pack of the chain, top pack
   first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries,
-  `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing or broken
-  `terrain.toml`/`fx.toml`, a missing terrain atlas image, terrain without a `[tiles.<key>]` entry, strategy
-  effects without an `fx.toml` entry or strip. W for missing portraits (the `_unknown` portrait is shown),
-  a missing `icons.toml` or unknown icon keys.
+  `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing
+  `terrain.toml`/`fx.toml` or one that is not valid TOML, a missing terrain atlas image, terrain without a
+  `[tiles.<key>]` entry, strategy effects without an `fx.toml` entry or strip. W for missing portraits (the
+  `_unknown` portrait is shown), a missing `icons.toml` or unknown icon keys. For the media index files
+  (`units.toml`, `terrain.toml`, `fx.toml`, `icons.toml`) this checks only the TOML syntax, the files
+  they name and that the entries the pack needs exist; it does not check the other fields' types or
+  values (`tile_size`, `frame`, `anchor`, `frames`, `fps`, …). An index with such a mistake (say
+  `tile_size = "48"`) passes validation; the game then logs a warning (stderr natively, the browser
+  console on the web) and falls back to defaults or placeholders (16×16 unit frames, for example), so
+  check a new index in the game.
 
 ## hero-tools
 

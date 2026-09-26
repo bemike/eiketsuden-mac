@@ -116,6 +116,11 @@ eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINA
   우선합니다. 원작 레이아웃을 기본 팩 키로 옮기는 매핑은 얼굴 디코딩(TF-DCE)과 맵 칩 매핑 이후의 과제입니다.
   이 오버레이는 미디어만 바꾸는 임시 경로이고, 장기 목표인 "원작 모드"는 기본 팩을 확장하는 팩으로 계획되어
   있습니다(8절).
+* **오버레이가 바꾸지 않는 것**: 오버레이는 이미지·사운드와 `gfx/ui/icons.toml`만 바꿉니다. 전투 화면의 색인
+  파일(`gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml`)은 오버레이에 같은 이름으로 두어도
+  읽지 않고 팩의 것을 그대로 씁니다. 그래서 프레임·타일 크기가 다른 시트(원작의 48×48/64×64 유닛 스프라이트,
+  다른 칩 크기의 타일 아틀라스)를 오버레이에 넣으면 팩의 프레임(24×24)과 `tile_size`(16)로 잘려 그려집니다.
+  이런 시트는 오버레이가 아니라 색인 파일과 함께 레이어드 팩(8절)으로 넣어야 합니다.
 * **웹 빌드는 지원하지 않습니다.** 브라우저에는 로컬 폴더를 읽는 경로가 없어 `--original`이 없습니다
   (향후 File System Access API/OPFS로 검토).
 
@@ -217,7 +222,9 @@ and the repository and CI contain no original bytes (tests use synthetic fixture
   `hero-tools original extract <dir> --out <overlay> [--text] [--sprites] [--portraits]`, then
   `eiketsuden --original <overlay>` (or `EIKETSUDEN_ORIGINAL`; native builds only). Media keys are looked up in
   the overlay first, then in the pack. The extracted keys live under `original/...` and do not replace the base
-  pack's own keys automatically yet.
+  pack's own keys automatically yet. The overlay replaces images, sounds and `gfx/ui/icons.toml` only: the
+  battle index files (`units.toml`, `terrain.toml`, `fx.toml`) always come from the pack, so sheets with other
+  frame or tile sizes belong in a layered pack (section 8), not in the overlay.
 * **Help wanted**: run `probe` on a Steam install (`steamapps/common/Eiketsuden1`) and attach the manifest to an
   issue. A manifest contains relative paths, sizes, SHA-256, the first 16 bytes of each file and container
   summaries — no game content, no absolute paths.
