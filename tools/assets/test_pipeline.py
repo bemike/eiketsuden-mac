@@ -5,10 +5,14 @@ Run with `python -m unittest discover -s tools/assets -p "test_*.py"`.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import build
 from assetlib import SourceError, load_sources
 from build_backgrounds import HIGHLIGHT_MAX, _tone_curve
 from build_fonts import EXTRA_HANJA, outline, pack_hanja, pixel_glyph, pixels
@@ -64,6 +68,53 @@ file = "book/page{part}.jpg"
         src = self.load('url = "https://example.org/f.zip"\nfile = "f.zip"\nsize = 3\nsha256 = "ff"\n')["book"]
         self.assertFalse(src.multipart)
         self.assertEqual(src.part().url, "https://example.org/f.zip")
+
+
+class OrphanTest(unittest.TestCase):
+    """Generated files that no step writes any more (e.g. the portrait of a removed officer)."""
+
+    WRITTEN = ["gfx/portraits/liu_bei.png", "gfx/ui/icons.png"]
+
+    def pack(self, root: Path) -> Path:
+        for rel in [*self.WRITTEN, "gfx/portraits/gongsun_yue.png", "gfx/ui/old.png", "officers.toml"]:
+            write(root, rel, "x")
+        return root
+
+    def fake_run(self, steps: list[str], out: Path) -> list[str]:
+        for rel in self.WRITTEN:
+            write(out, rel, "x")
+        return list(self.WRITTEN)
+
+    def test_only_directories_covered_by_every_writer_are_scanned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = self.pack(Path(tmp))
+            # gfx/ui is also written by `flags` and `title`, so a run without them cannot judge it
+            self.assertEqual(
+                build.orphans(pack, ["portraits", "icons"], self.WRITTEN), ["gfx/portraits/gongsun_yue.png"]
+            )
+            self.assertEqual(
+                build.orphans(pack, list(build.STEPS), self.WRITTEN),
+                ["gfx/portraits/gongsun_yue.png", "gfx/ui/old.png"],
+            )
+
+    def test_output_outside_the_owned_directories_is_refused(self) -> None:
+        with self.assertRaises(SourceError):
+            build.output_dir("gfx/maps/x.png")
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(SourceError):
+            build.orphans(Path(tmp), ["portraits"], ["officers.toml"])
+
+    def test_check_fails_on_orphans_and_build_removes_them(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(build, "run", self.fake_run):
+            pack = self.pack(Path(tmp))
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(build.check(["portraits"], pack), 1)
+            self.assertIn("gfx/portraits/gongsun_yue.png", err.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                build.build(["portraits"], pack)
+                self.assertEqual(build.check(["portraits"], pack), 0)
+            self.assertFalse((pack / "gfx/portraits/gongsun_yue.png").exists())
+            self.assertTrue((pack / "gfx/ui/old.png").exists(), "a directory the run did not cover is left alone")
+            self.assertTrue((pack / "officers.toml").exists())
 
 
 def portrait(key: str, figure: str, quad: str = "TR", stand_in: bool = False, mirror: bool = False) -> Portrait:
