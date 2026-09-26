@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the base pack's media (tiles, units, FX, UI, title, portraits, SFX, fonts) from the cached sources.
+"""Build the base pack's media (tiles, units, FX, UI, title, portraits, backgrounds, SFX, fonts) from the cached sources.
 
 Run tools/assets/fetch.py first. The build is deterministic: the same sources always give
 byte-identical files, so `--check` can verify that the committed outputs are up to date.
@@ -19,6 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assetlib import PACK_DIR, SourceError, Sources
+from build_backgrounds import build_backgrounds
 from build_audio import build_fonts, build_sfx
 from build_fx import build_fx
 from build_portraits import build_portraits
@@ -39,6 +40,7 @@ STEPS: dict[str, Step] = {
     "flags": build_flags,
     "title": build_title,
     "portraits": build_portraits,
+    "backgrounds": build_backgrounds,
 }
 
 # Steps that read other steps' outputs from the pack directory.

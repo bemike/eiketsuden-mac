@@ -122,3 +122,89 @@ file = "xiuxiang/page{part}.jpg"
 48 = { size = 313645, sha256 = "81d204470c25dedf30a355438f303547c7cde7380fcda060d31e3652b59689d2" }
 49 = { size = 368687, sha256 = "0f87b5c86301f68ee85c1ec00486a73cc7d3f77fd9e25cd0efd0df0413da3833" }
 50 = { size = 401729, sha256 = "a574e9a013b60a1e7e660ee1e85b51d9b01680b410b57adaba3ea05c054d496a" }
+
+# ---------------------------------------------------------------------------------------------
+# Drama backgrounds (build_backgrounds.py): photographs of public-domain Chinese paintings on
+# Wikimedia Commons (original files, not thumbnails).
+
+[sources.han_palace]
+title = "漢宮春曉圖 (Spring Morning in the Han Palace), detail — National Palace Museum, Taipei"
+author = "Qiu Ying (仇英), Ming dynasty"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:Spring_Morning_in_the_Han_Palace_(%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE).jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:Spring_Morning_in_the_Han_Palace_(%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE).jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/b/bf/Spring_Morning_in_the_Han_Palace_%28%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE%29.jpg"
+file = "paintings/han-palace-spring-morning.jpg"
+size = 7366487
+sha256 = "688ee3fae272a47851597363f8983b0266db41b7fa42251260a396d5c5be4d6e"
+
+[sources.qingming_qing]
+title = "清院本清明上河圖 (Along the River During the Qingming Festival, Qing Court Version), sections — National Palace Museum, Taipei"
+author = "Chen Mei (陳枚), Sun Hu (孫祜), Jin Kun (金昆), Dai Hong (戴洪) and Cheng Zhidao (程志道), 1736"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version)_03.jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version).jpg"
+file = "paintings/qingming-qing-court-{part}.jpg"
+
+[sources.qingming_qing.parts]
+03 = { size = 7010782, sha256 = "2eb0df95690d9db4b9af1d02e5e8ded447f7ec25e9a4e2b9faa2a4129f78282d", url = "https://upload.wikimedia.org/wikipedia/commons/9/99/Along_the_River_During_the_Qingming_Festival_%28Qing_Court_Version%29_03.jpg" }
+11 = { size = 6701533, sha256 = "0f35b422b05b269e7b42b084524015df7246617b1d07b0cb9d593b9ef496855e", url = "https://upload.wikimedia.org/wikipedia/commons/f/f8/Along_the_River_During_the_Qingming_Festival_%28Qing_Court_Version%29_11.jpg" }
+14 = { size = 7378851, sha256 = "e886c8ed383415bf9bf50a9f8b651d20017435a0d1ffb7b5fd6aec98325a4dcf", url = "https://upload.wikimedia.org/wikipedia/commons/6/6d/Along_the_River_During_the_Qingming_Festival_%28Qing_Court_Version%29_14.jpg" }
+
+[sources.wanshuyuan]
+title = "萬樹園賜宴圖 (Imperial Banquet in the Garden of Ten Thousand Trees), 1755 — Palace Museum, Beijing"
+author = "Jean-Denis Attiret (王致誠) with Giuseppe Castiglione (郎世寧) and other Qing court painters"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/a/ac/%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg"
+file = "paintings/wanshuyuan-banquet.jpg"
+size = 3081856
+sha256 = "dc5de94c46d7a56f8cc1dd11628210915d23991b48f2f43cf06f897b75d37d66"
+
+[sources.kangxi_tour]
+title = "康熙南巡圖 卷三: 濟南至泰山 (The Kangxi Emperor's Southern Inspection Tour, Scroll Three: Jinan to Mount Tai), detail DP105294 — The Metropolitan Museum of Art"
+author = "Wang Hui (王翬) and assistants, datable to 1698"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://commons.wikimedia.org/wiki/File:%E6%B8%85_%E7%8E%8B%E7%BF%AC_%E7%AD%89_%E5%BA%B7%E7%86%99%E5%8D%97%E5%B7%A1%E5%9C%96_%EF%BC%88%E5%8D%B7%E4%B8%89-_%E6%BF%9F%E5%8D%97%E8%87%B3%E6%B3%B0%E5%B1%B1%EF%BC%89_%E5%8D%B7-The_Kangxi_Emperor%27s_Southern_Inspection_Tour,_Scroll_Three-_Jinan_to_Mount_Tai_MET_DP105294.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/c/cc/%E6%B8%85_%E7%8E%8B%E7%BF%AC_%E7%AD%89_%E5%BA%B7%E7%86%99%E5%8D%97%E5%B7%A1%E5%9C%96_%EF%BC%88%E5%8D%B7%E4%B8%89-_%E6%BF%9F%E5%8D%97%E8%87%B3%E6%B3%B0%E5%B1%B1%EF%BC%89_%E5%8D%B7-The_Kangxi_Emperor%27s_Southern_Inspection_Tour%2C_Scroll_Three-_Jinan_to_Mount_Tai_MET_DP105294.jpg"
+file = "paintings/kangxi-tour-scroll3-DP105294.jpg"
+size = 1492573
+sha256 = "b0d02f25dc2714291e9100130db445e53f51ec51ddbe317d58831e630d3a4810"
+
+# The National Palace Museum publishes its open-data images under CC BY 4.0 (the credit line
+# of this Commons file says so); Commons marks the painting itself public domain. We attribute
+# as CC BY 4.0 asks.
+[sources.red_cliff]
+title = "赤壁圖 (Red Cliff), detail 5 — National Palace Museum, Taipei"
+author = "Wu Yuanzhi (武元直), Jin dynasty; photograph: National Palace Museum, Taipei (www.npm.gov.tw)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://commons.wikimedia.org/wiki/File:%E9%87%91%E6%AD%A6%E5%85%83%E7%9B%B4%E8%B5%A4%E5%A3%81%E5%9C%96_%E5%8D%B7%EF%BC%88%E5%B1%80%E9%83%A85%EF%BC%89.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/a/ad/%E9%87%91%E6%AD%A6%E5%85%83%E7%9B%B4%E8%B5%A4%E5%A3%81%E5%9C%96_%E5%8D%B7%EF%BC%88%E5%B1%80%E9%83%A85%EF%BC%89.jpg"
+file = "paintings/wu-yuanzhi-red-cliff-5.jpg"
+size = 204871
+sha256 = "ce824ce1cb360cd5539b8ea731fd1ffae9276556ce0d0788b99bc531621d9d95"
+
+[sources.minghuang]
+title = "明皇幸蜀圖 (Emperor Minghuang's Journey to Shu) — Freer Gallery of Art, Smithsonian"
+author = "attributed to Qiu Ying (仇英), Ming dynasty"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:Emperor_Minghuang%27s_Journey_to_Sichuan,_Freer_Gallery_of_Art.jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:Emperor_Minghuang%27s_Journey_to_Sichuan,_Freer_Gallery_of_Art.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/2/26/Emperor_Minghuang%27s_Journey_to_Sichuan%2C_Freer_Gallery_of_Art.jpg"
+file = "paintings/minghuang-journey-to-shu.jpg"
+size = 3129274
+sha256 = "1805e7d9a60895952277f6b70394538868f003b6d11804318b2a1f358685ed76"
+
+[sources.thousand_li]
+title = "千里江山圖 (A Thousand Li of Rivers and Mountains), section 1, 1113 — Palace Museum, Beijing"
+author = "Wang Ximeng (王希孟), Northern Song"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://commons.wikimedia.org/wiki/File:A_Thousand_Li_of_Rivers_and_Mountains_Section_1.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/e/e8/A_Thousand_Li_of_Rivers_and_Mountains_Section_1.jpg"
+file = "paintings/thousand-li-section1.jpg"
+size = 3181669
+sha256 = "04144c41e10bad075565ea361d369a7f2eef9a22636b52e77acb0d854a5e15e9"

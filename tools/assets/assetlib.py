@@ -69,9 +69,9 @@ def load_sources(path: Path = TOOLS_DIR / "sources.toml") -> dict[str, Source]:
     """Parse sources.toml.
 
     A plain source pins one file (`file`, `url`, `size`, `sha256`). A source made of several files
-    of the same work (e.g. the scanned pages of a book) gives `file` and `url` as templates with a
-    `{part}` placeholder and pins each file in a `[sources.<id>.parts]` table of
-    `<part> = { size = ..., sha256 = "..." }`.
+    of the same work (e.g. the scanned pages of a book) gives `file` (and usually `url`) as a
+    template with a `{part}` placeholder and pins each file in a `[sources.<id>.parts]` table of
+    `<part> = { size = ..., sha256 = "..." }`; a part may give its own `url` instead.
     """
     with path.open("rb") as f:
         doc = tomllib.load(f)
@@ -79,18 +79,24 @@ def load_sources(path: Path = TOOLS_DIR / "sources.toml") -> dict[str, Source]:
     for sid, entry in doc["sources"].items():
         itch = entry.get("itch", {})
         if "parts" in entry:
-            if "{part}" not in entry["file"] or "{part}" not in entry.get("url", ""):
-                raise SourceError(f"{sid}: a source with parts needs `file` and `url` templates containing {{part}}")
-            parts = tuple(
-                Part(
-                    name=name,
-                    file=entry["file"].format(part=name),
-                    url=entry["url"].format(part=name),
-                    size=int(p["size"]),
-                    sha256=p["sha256"].lower(),
+            if "{part}" not in entry["file"]:
+                raise SourceError(f"{sid}: a source with parts needs a `file` template containing {{part}}")
+            template = entry.get("url", "")
+            parts = []
+            for name, p in entry["parts"].items():
+                url = p.get("url") or template.format(part=name)
+                if not url or ("url" not in p and "{part}" not in template):
+                    raise SourceError(f"{sid}[{name}]: no url (give the part a url or the source a {{part}} template)")
+                parts.append(
+                    Part(
+                        name=name,
+                        file=entry["file"].format(part=name),
+                        url=url,
+                        size=int(p["size"]),
+                        sha256=p["sha256"].lower(),
+                    )
                 )
-                for name, p in entry["parts"].items()
-            )
+            parts = tuple(parts)
         else:
             parts = (
                 Part(
