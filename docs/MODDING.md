@@ -7,7 +7,10 @@ content. This guide is the complete reference for writing or changing a pack.
 * The **formulas** that use the numbers below are in [RULES.md](RULES.md).
 * The **media conventions** (image sizes, sprite sheet layouts, atlas files) are in [ASSETS.md](ASSETS.md).
 * The small test pack in [`crates/hero-core/tests/fixtures/mini/`](../crates/hero-core/tests/fixtures/mini/)
-  uses almost every feature and passes validation without a single warning; it is a good place to copy from.
+  uses almost every feature and passes `Pack::validate` (stages 1 and 2 of [Validation](#validation))
+  without a single warning; it is a good place to copy the data files from. It ships no media, so
+  `hero-tools validate` also reports its missing media files (stage 3) and fails on them; copy `gfx/`,
+  `bgm/`, `sfx/` and `fonts/` from `data/base` (or make your own) for a pack that passes the tool too.
 
 Contents: [Quick start](#quick-start) · [Conventions](#conventions) · [pack.toml](#packtoml) ·
 [rules/game.toml](#rulesgametoml) · [rules/terrain.toml](#rulesterraintoml) · [Ranges](#ranges) ·
@@ -71,7 +74,7 @@ id = "base"                       # machine id; save games remember it
 name = "영걸전 Reloaded 기본 팩"
 version = "1.0.0"
 authors = ["Eiketsuden Reloaded contributors"]
-license = "CC-BY-4.0 (text), see CREDITS.md (media)"
+license = "CC-BY-SA-4.0 (text) / see CREDITS.md (media)"
 description = "The Romance of the Three Kingdoms campaign, told again from Liu Bei's side."
 officers = "officers.toml"
 campaign = "campaign.toml"
@@ -163,7 +166,7 @@ glyph = "T"
 defense = 20
 elements = ["fire", "earth"]
 boost = ["fire"]
-cost = { foot = 2, special = 1 }     # no `horse` entry: cavalry cannot enter
+cost = { foot = 2, mountain = 1 }    # no `horse` entry: cavalry cannot enter
 
 [[terrain]]
 id = "village"
@@ -173,7 +176,7 @@ defense = 10
 heal_hp = 10
 heal_morale = 5
 elements = ["fire"]
-cost = { foot = 1, horse = 1, special = 1 }
+cost = { foot = 1, horse = 1, mountain = 1 }
 
 [[terrain]]
 id = "river"
@@ -195,8 +198,11 @@ glyph = "~"                          # no cost at all: impassable for everyone
 | `tile` | string | the id | Tile key in `gfx/tiles/terrain.toml` (several terrain types can share a look). |
 
 **Move types** are free ids that connect classes to terrain: a class has one `move_type`, and each terrain
-lists what it costs for each move type. The base pack uses `foot`, `horse` and `special` (mountain-capable
-bandits). Deploy slots must be passable for the move type `foot` when the pack defines it.
+lists what it costs for each move type. The base pack uses `foot` (infantry and archer lines, sorcerers,
+civilians), `horse` (cavalry line), `mountain` (bandit line, martial artists, beast tamers, tribesmen: the
+only move type that may climb mountains) and `slow` (supply wagons, military bands); the mini test pack
+calls its mountain type `special`. A class whose move type has a cost on no terrain is a validation error
+(its units could never move). Deploy slots must be passable for the move type `foot` when the pack defines it.
 
 ## Ranges
 
@@ -836,8 +842,10 @@ specified in [ASSETS.md](ASSETS.md). Every third-party file must be credited in 
 
 ## Validation
 
-Problems are found in three stages. **Errors** make a pack unusable (the game refuses to start it and
-`hero-tools validate` exits with 1); **warnings** point at content that is legal but probably a mistake.
+Problems are found in three stages. **Errors** of stages 1 and 2 make a pack unusable: the game refuses to
+start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing media) fail only
+`hero-tools validate`; the game still starts and draws placeholders for what is missing (see
+[DEVELOPING.md](DEVELOPING.md#running-natively)). **Warnings** point at content that is legal but probably a mistake.
 
 ### 1. Loading (always an error; the first one stops loading)
 

@@ -1,4 +1,4 @@
-# Chapter 1, act 3 (성난 이리, 여포의 방문), bandit camp 2: 하구 전투 1 (First battle of Xiaqiu).
+# Chapter 1, act 3 (서주의 새 주인), bandit camp 2: 하구 전투 1 (First battle of Xiaqiu).
 # Game-original bandit suppression near Xiaopei.
 #
 # PC original: 30 turns, 7 deployable officers; enemy chief Lv12 (bandit) who only moves once a
@@ -10,7 +10,10 @@
 # character invented by KOEI).
 #
 # Map: open farmland with a village in the north-west where the army starts; the mountains of the
-# south-east hold the bandits' camp, reached by wasteland trails, and a treasury on a high ledge.
+# south-east hold the bandits' camp and a treasury on a high ledge. One wasteland trail (x = 20)
+# climbs from the farmland's eastern edge into the camp, so foot and horse units can reach every
+# enemy (the victory is to defeat them all); the trail leaving the camp to the south-west and the
+# treasury ledge are open to mountain units only. Every enemy outside the camp is aggressive.
 
 id = "c1_xiaqiu1"
 name = "하구 전투"
@@ -150,7 +153,7 @@ name = "산적"
 class = "bandit"
 level = 7
 pos = [26, 13]
-ai = "defensive"
+ai = "aggressive"
 
 # --- Events ---------------------------------------------------------------------------------------
 

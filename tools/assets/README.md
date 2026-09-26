@@ -21,7 +21,10 @@ python tools/assets/preview.py          # review sheets in tools/assets/.cache/p
 ```
 
 The build is deterministic: the same sources give byte-identical outputs, so `--check` proves the
-committed pack matches the pipeline. Two steps also depend on tool versions: `music` on the ffmpeg /
+committed pack matches the pipeline. The pipeline owns `gfx/{tiles,units,fx,ui,portraits,bg}`, `bgm`,
+`sfx` and `fonts` (`OUTPUT_DIRS` in `build.py`): once every step writing into one of them has run, a
+file there that no step produced (the portrait of a removed officer, say) is an orphan. A build
+deletes orphans and `--check` fails on them, so hand-made files do not belong in these directories. Two steps also depend on tool versions: `music` on the ffmpeg /
 libvorbis build (the committed files were made with ffmpeg 8.1.2, gyan.dev full build) and
 `portraits` / `backgrounds` / every image step on Pillow's resampling and quantisation; a different
 version may give slightly different bytes, so compare with `--check` on the same tools. A full build fails if a source pinned in `sources.toml` is not
@@ -183,7 +186,10 @@ source file of each key): `cursor`, `confirm`, `cancel`, `error`, `step`, `hit`,
 
 192x240 head-and-shoulders crops of the full-length figures in the portrait section of
 增像全圖三國演義 (a late-Qing illustrated edition of the novel, public domain), levelled, lightly
-denoised, recoloured to indigo ink on warm paper and framed. `portraits.toml` maps every officer of
+denoised, recoloured to indigo ink on warm paper and framed. Two officers whose figure in that book
+does not read as a face at this size take theirs from other pinned public-domain works with the
+same treatment: 劉備 from 三才圖會 (1609) and 張飛 from a Ming hanging scroll (entries with
+`source` and `panel` in `portraits.toml`). `portraits.toml` maps every officer of
 `data/base/officers.toml` to a figure (page, quarter, face point, crop width, optional `erase`
 rectangles for printed text); the build refuses a table that misses an officer, names the wrong
 figure, uses a reserved figure as a stand-in or uses a figure more than twice, and lists entries no

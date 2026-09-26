@@ -122,6 +122,32 @@ file = "xiuxiang/page{part}.jpg"
 49 = { size = 368687, sha256 = "0f87b5c86301f68ee85c1ec00486a73cc7d3f77fd9e25cd0efd0df0413da3833" }
 50 = { size = 401729, sha256 = "a574e9a013b60a1e7e660ee1e85b51d9b01680b410b57adaba3ea05c054d496a" }
 
+# The book draws 劉備 with hardly a line in the face and 張飛 turned away, so their portraits come
+# from two other public-domain works (see portraits.toml). The 三才圖會 page is Wikimedia's 3840 px
+# render of the National Diet Library scan (a PDF); like the 繡像 pages it must be re-pinned if
+# Wikimedia ever re-renders it.
+[sources.sancai_liu_bei]
+title = "三才圖會 (Sancai Tuhui, 1609), 人物 卷, 漢昭烈帝像 — National Diet Library scan, vol. 7 part 1, page 63"
+author = "Wang Qi (王圻) and Wang Siyi (王思義), Ming dynasty; scan: National Diet Library, Japan"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/Template:PD-old"
+homepage = "https://commons.wikimedia.org/wiki/File:NDL2574372_%E4%B8%89%E6%89%8D%E5%9C%96%E6%9C%83_106%E5%8D%B7.(7)_part1.pdf"
+url = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/NDL2574372_%E4%B8%89%E6%89%8D%E5%9C%96%E6%9C%83_106%E5%8D%B7.%287%29_part1.pdf/page63-3840px-NDL2574372_%E4%B8%89%E6%89%8D%E5%9C%96%E6%9C%83_106%E5%8D%B7.%287%29_part1.pdf.jpg"
+file = "portraits/sancai-tuhui-liu-bei.jpg"
+size = 1735376
+sha256 = "4fb014ca815ee5645857d04f5fbe1fd9e031587374259dd7728143837f9c87f1"
+
+[sources.ming_zhang_fei]
+title = "明人畫張飛像軸 (Portrait of Zhang Fei, hanging scroll) — Palace Museum, Beijing"
+author = "anonymous Ming-dynasty court painter"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/Template:PD-Art"
+homepage = "https://commons.wikimedia.org/wiki/File:%E6%98%8E%E4%BA%BA%E7%94%BB%E5%BC%A0%E9%A3%9E%E5%83%8F%E8%BD%B4.png"
+url = "https://upload.wikimedia.org/wikipedia/commons/5/5a/%E6%98%8E%E4%BA%BA%E7%94%BB%E5%BC%A0%E9%A3%9E%E5%83%8F%E8%BD%B4.png"
+file = "portraits/ming-zhang-fei.png"
+size = 17449397
+sha256 = "a87145289c09ccfc938584f4915eeb04be94ea6ca3f789dd569b562e451cfd9b"
+
 # ---------------------------------------------------------------------------------------------
 # Drama backgrounds (build_backgrounds.py): photographs of public-domain Chinese paintings on
 # Wikimedia Commons (original files, not thumbnails).

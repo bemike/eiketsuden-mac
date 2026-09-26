@@ -100,15 +100,16 @@ a tab switch pages. Check it at a few window sizes after changing anything in `g
   wheel), media by key from `ctx.media`, music and effects through `ctx.audio` / `ctx.sfx(key)`.
 * Widgets in `ui/` (windows, menus, message box, dialogs, gauges, toasts, tooltips) are plain structs:
   `update(&mut ctx)` while focused, `draw(&ctx)` every frame.
-* Campaign screens plug into the game flow in **one place**: `flow::node_screen` (and
-  `flow::battle_screen` for mid-battle saves). Until a screen is wired there, the node shows a
-  development placeholder that says so and offers shortcuts to walk the campaign. A finished drama or
-  camp screen returns `Transition::Flow(Flow::Advance)`, the battle screen
-  `Transition::Flow(Flow::BattleEnded(state))`. Moving to another node autosaves, except onto an
-  `Ending`: the autosave keeps the last point before it, so 이어하기 retries instead of replaying the
-  ending.
-* Save slots (`saves`) and the save/load screen (`screens::saveload::SaveLoadScreen::save(session
-  snapshot)`) are ready for the camp screen; `flow::Session::to_save` builds the snapshot.
+* Campaign screens plug into the game flow in **one place**: `flow::node_screen` maps every node
+  type to its screen (`Drama` → `DramaScreen`, `Camp` → `CampScreen`, `Battle` → `BattleScreen`,
+  `Ending` → `DramaScreen::ending` or `CreditsScreen::ending`), and `flow::battle_screen` resumes a
+  mid-battle save. A new node type needs an arm there. A finished drama or camp screen returns
+  `Transition::Flow(Flow::Advance)`, the battle screen `Transition::Flow(Flow::BattleEnded(state))`;
+  `Flow::Advance` autosaves, except onto an `Ending`: the autosave keeps the last point before it, so
+  이어하기 retries instead of replaying the ending.
+* Save slots live in `saves`; the camp screen and the battle menu push
+  `screens::saveload::SaveLoadScreen::save(snapshot)` with the snapshot from `flow::Session::to_save`,
+  and the title and game over screens push `SaveLoadScreen::load`.
 
 ## Publishing
 

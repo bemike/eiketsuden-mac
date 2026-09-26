@@ -1,4 +1,4 @@
-# 제1장 3막 — 성난 이리, 여포의 방문. Scenes of the base pack's chapter 1, act 3.
+# 제1장 3막 — 서주의 새 주인. Scenes of the base pack's chapter 1, act 3.
 #
 # Original text written for Eiketsuden Reloaded after the public-domain novel (chapters 12-16: Tao
 # Qian gives Xuzhou to Liu Bei, Lü Bu takes refuge in Xiaopei, Yuan Shu's attack, Lü Bu seizes
@@ -17,7 +17,7 @@
 @bg town
 @bgm peace
 @title 제1장
-    성난 이리, 여포의 방문
+    서주의 새 주인
 @narr 흥평 원년(194년). 유비는 도겸의 청을 받아들여 서주 북쪽의 소패성에 머물렀다.
 @show liu_bei left
 @show sun_qian right

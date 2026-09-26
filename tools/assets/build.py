@@ -6,6 +6,10 @@ Steps: tiles, units, FX, UI, title art, portraits, drama backgrounds, music, SFX
 Run tools/assets/fetch.py first. The build is deterministic: the same sources always give
 byte-identical files, so `--check` can verify that the committed outputs are up to date.
 
+The pipeline owns the output directories in OUTPUT_DIRS: once every step writing into a directory
+has run, a file there that no step wrote is an orphan (e.g. the portrait of a removed officer). A
+build removes orphans and `--check` fails on them.
+
 Usage:
     python tools/assets/build.py                 # everything into data/base
     python tools/assets/build.py terrain units   # selected steps (plus the steps they depend on)
@@ -51,6 +55,19 @@ STEPS: dict[str, Step] = {
 # Steps that read other steps' outputs from the pack directory.
 DEPENDS: dict[str, list[str]] = {"title": ["terrain", "units", "flags"]}
 
+# Pack directories that only the pipeline writes, with the steps that write into each.
+OUTPUT_DIRS: dict[str, frozenset[str]] = {
+    "gfx/tiles": frozenset({"terrain"}),
+    "gfx/units": frozenset({"units"}),
+    "gfx/fx": frozenset({"fx"}),
+    "gfx/ui": frozenset({"icons", "flags", "title"}),
+    "gfx/portraits": frozenset({"portraits"}),
+    "gfx/bg": frozenset({"backgrounds"}),
+    "bgm": frozenset({"music"}),
+    "sfx": frozenset({"sfx"}),
+    "fonts": frozenset({"fonts"}),
+}
+
 
 def resolve(steps: list[str]) -> list[str]:
     """The requested steps and their dependencies, in the canonical STEPS order."""
@@ -58,6 +75,31 @@ def resolve(steps: list[str]) -> list[str]:
     for name in steps:
         wanted.update(DEPENDS.get(name, []))
     return [name for name in STEPS if name in wanted]
+
+
+def output_dir(rel: str) -> str:
+    """The OUTPUT_DIRS entry that holds the generated file `rel` (a pack-relative POSIX path)."""
+    for d in OUTPUT_DIRS:
+        if rel.startswith(d + "/"):
+            return d
+    raise SourceError(f"{rel} is written outside the pipeline's output directories (add it to OUTPUT_DIRS)")
+
+
+def orphans(pack: Path, steps: list[str], written: list[str]) -> list[str]:
+    """Files under `pack` in the output directories that `steps` fully cover but did not write."""
+    keep = set(written)
+    for rel in written:
+        output_dir(rel)
+    ran = set(steps)
+    out = []
+    for d, writers in OUTPUT_DIRS.items():
+        if not writers <= ran or not (pack / d).is_dir():
+            continue
+        for path in (pack / d).rglob("*"):
+            rel = path.relative_to(pack).as_posix()
+            if path.is_file() and rel not in keep:
+                out.append(rel)
+    return sorted(out)
 
 
 def run(steps: list[str], out: Path) -> list[str]:
@@ -79,17 +121,31 @@ def run(steps: list[str], out: Path) -> list[str]:
     return written
 
 
-def check(steps: list[str]) -> int:
+def build(steps: list[str], out: Path) -> None:
+    """Run the steps into `out` and remove the orphans they leave there."""
+    written = run(steps, out)
+    removed = orphans(out, steps, written)
+    for rel in removed:
+        (out / rel).unlink()
+    if removed:
+        print("removed (no step produces them any more):", *removed, sep="\n  ")
+
+
+def check(steps: list[str], pack: Path = PACK_DIR) -> int:
     with tempfile.TemporaryDirectory(prefix="hero-assets-") as tmp:
         written = run(steps, Path(tmp))
         stale = []
         for rel in written:
             new = (Path(tmp) / rel).read_bytes()
-            old_path = PACK_DIR / rel
+            old_path = pack / rel
             if not old_path.exists() or old_path.read_bytes() != new:
                 stale.append(rel)
+    extra = orphans(pack, steps, written)
     if stale:
         print("out of date (run tools/assets/build.py):", *stale, sep="\n  ", file=sys.stderr)
+    if extra:
+        print("not produced by the pipeline (run tools/assets/build.py):", *extra, sep="\n  ", file=sys.stderr)
+    if stale or extra:
         return 1
     print(f"all {len(written)} generated files are up to date")
     return 0
@@ -108,7 +164,7 @@ def main(argv: list[str]) -> int:
     try:
         if args.check:
             return check(steps)
-        run(steps, args.out)
+        build(steps, args.out)
     except SourceError as e:
         print(f"ERROR {e}", file=sys.stderr)
         return 1

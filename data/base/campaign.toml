@@ -22,6 +22,7 @@
 #
 # Flags set by chapter 1 (dramas unless noted):
 #   c1_route_a      1 Xindu / 2 Guangchuan          c1_route_b      1 Julu / 2 Qinghe
+#   c1_yan_gang_fell  1 when Yan Gang fell at Qinghe (battle)
 #   c1_xiaopei      1 fight Cao Cao at Xiaopei / 0 truce
 #   c1_taishan, c1_xiaqiu1, c1_pengcheng1   1 once that bandit camp is cleared
 #   c1_bandits      number of bandit camps cleared   c1_bandit_next  camp picked in the menu (0 = done)
@@ -90,7 +91,7 @@ scene = "prologue_coalition_breaks"
 next = "c1_pingyuan"
 
 # ===================================================================================================
-# Chapter 1, act 1: 북방의 전란 (Jieqiao)
+# Chapter 1, act 1: 원소와 공손찬 (Jieqiao)
 #   [Xindu | Guangchuan] -> [Julu | Qinghe] -> Jieqiao (roster by the second choice)
 # ===================================================================================================
 
@@ -276,7 +277,7 @@ scene = "c1_after_jieqiao"
 next = "c1_beihai_call"
 
 # ===================================================================================================
-# Chapter 1, act 2: 북해, 서주 원군
+# Chapter 1, act 2: 구원의 길
 #   Beihai -> Xuzhou I -> {Xiaopei (fight Cao Cao) | truce: twin swords}; Zhao Yun is lent for the act
 # ===================================================================================================
 
@@ -356,7 +357,7 @@ scene = "c1_zhao_yun_leaves"
 next = "c1_xiaopei_bandits"
 
 # ===================================================================================================
-# Chapter 1, act 3: 성난 이리, 여포의 방문
+# Chapter 1, act 3: 서주의 새 주인
 #   bandit camps Mount Tai / Xiaqiu I / Pengcheng I (at least one, any order; the villagers' thanks
 #   grow with the number cleared) -> Huainan (Lü Bu's betrayal) -> flight to Xuchang
 # ===================================================================================================
@@ -494,7 +495,7 @@ scene = "c1_flight_to_xuchang"
 next = "c1_lubu_campaign"
 
 # ===================================================================================================
-# Chapter 1, act 4: 여포 토벌전
+# Chapter 1, act 4: 하비의 물길
 #   [Xiaqiu II (with Xun Yu, Cao Ren, Cao Hong) | Pengcheng II (with Guo Jia and the Xiahou)]
 #   -> Xiapi (without Gao Shun if Zhang Fei beat him at Pengcheng) -> the end of Lü Bu
 # ===================================================================================================
@@ -592,7 +593,7 @@ scene = "c1_lubu_end"
 next = "c1_jade_belt"
 
 # ===================================================================================================
-# Chapter 1, act 5: 서주 공방전
+# Chapter 1, act 5: 옥대의 밀조
 #   jade-belt affair (careless answers end the game) -> Guangling -> Xuzhou II (flight) -> end
 # ===================================================================================================
 

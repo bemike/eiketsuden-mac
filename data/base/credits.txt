@@ -7,12 +7,14 @@ GPL-3.0-or-later
 ## 시나리오와 데이터
 Eiketsuden Reloaded contributors
 이야기와 대사는 『삼국지연의』(나관중)를 바탕으로 새로 썼습니다.
-CC BY-SA 4.0
+CC BY-SA 4.0 https://creativecommons.org/licenses/by-sa/4.0/
 
 ## 초상화
 『增像全圖三國演義』 수상(繡像), 청말 석판화, 작자 미상 — 퍼블릭 도메인
 스캔: CADAL 07015122 (복단대학 도서관), Wikimedia Commons
 책에 그림이 없는 인물은 같은 책의 다른 인물 그림으로 대신했습니다(tools/assets/portraits.toml).
+유비: 『三才圖會』(1609) 漢昭烈帝像, 일본 국립국회도서관 소장본 — 퍼블릭 도메인
+장비: 「明人畫張飛像軸」, 명대 작자 미상 — 고궁박물원(베이징), 퍼블릭 도메인
 
 ## 배경
 「漢宮春曉圖」 仇英 — 국립고궁박물원(타이베이), 퍼블릭 도메인
@@ -20,6 +22,7 @@ CC BY-SA 4.0
 「萬樹園賜宴圖」 王致誠(Jean-Denis Attiret)·郎世寧 외 — 고궁박물원(베이징), 퍼블릭 도메인
 「康熙南巡圖 卷三」 王翬 외 — The Metropolitan Museum of Art, CC0
 「赤壁圖」 武元直 — National Palace Museum, Taipei, CC BY 4.0 @ www.npm.gov.tw (잘라 내고 색을 보정함)
+https://creativecommons.org/licenses/by/4.0/
 「明皇幸蜀圖」 전 仇英 — Freer Gallery of Art, 퍼블릭 도메인
 「千里江山圖」 王希孟 — 고궁박물원(베이징), CC0
 
@@ -30,8 +33,11 @@ Licensed under Creative Commons: By Attribution 4.0
 http://creativecommons.org/licenses/by/4.0/
 
 "Views From Atop the Jade Kings Throne" — Hitctrl (OpenGameArt.org), CC BY 3.0
+https://creativecommons.org/licenses/by/3.0/
 "Samurai Nights" — Majadroid (OpenGameArt.org), CC BY 4.0
+https://creativecommons.org/licenses/by/4.0/
 "Generic 2 minute Asian Arrangement" — Spring Spring (OpenGameArt.org), CC BY 3.0
+https://creativecommons.org/licenses/by/3.0/
 "10 fanfares" — Spring Spring (OpenGameArt.org), CC0
 "Death of a Ninja (Game Over)" — Joth (OpenGameArt.org), CC0
 모든 곡은 잘라 내고 음량을 맞춰 다시 인코딩했습니다.
@@ -39,7 +45,8 @@ http://creativecommons.org/licenses/by/4.0/
 ## 그래픽
 Ninja Adventure Asset Pack — Pixel-Boy, AAA (CC0)
 Mini World Sprites — Shade (CC0)
-Toen's Medieval Strategy Sprite Pack — Andre Mari Coppola (Toen), CC BY 4.0
+Toen's Medieval Strategy Sprite Pack — Andre Mari Coppola (Toen), CC BY 4.0 (색을 바꾸고 다시 구성함)
+https://creativecommons.org/licenses/by/4.0/
 Chinese Icons — Pixel Archer (CC0)
 이 프로젝트를 위해 그린 픽셀 아트 — CC0
 
@@ -52,3 +59,4 @@ Fusion Pixel Font — TakWolf, SIL Open Font License 1.1
 Galmuri에 없는 한자를 Fusion Pixel Font에서 옮겨 오거나 Galmuri의 글자를 조합해 채운 수정판(Galmuri11 ER, Galmuri9 ER)을 씁니다.
 
 자세한 출처와 라이선스는 CREDITS.md에 있습니다.
+https://github.com/jeiel85/eiketsuden-reloaded/blob/main/CREDITS.md

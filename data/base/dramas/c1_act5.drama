@@ -1,4 +1,4 @@
-# 제1장 5막 — 서주 공방전. Scenes of the base pack's chapter 1, act 5, and the end of the chapter.
+# 제1장 5막 — 옥대의 밀조. Scenes of the base pack's chapter 1, act 5, and the end of the chapter.
 #
 # Original text written for Eiketsuden Reloaded after the public-domain novel (chapters 20-24: the
 # emperor's uncle, the hunt at Xutian, the secret edict in the jade belt, the talk of heroes over
@@ -15,7 +15,7 @@
 @bg palace
 @bgm tension
 @title 제1장
-    서주 공방전
+    옥대의 밀조
 @narr 허도. 조조는 여포를 멸한 공을 앞세워 조정을 제 손아귀에 넣었다.
     어린 헌제는 조조의 눈치를 보며 하루하루를 보냈다.
 @narr 헌제는 족보를 살펴보고 유비가 경제의 후손임을 알게 되었다.
