@@ -628,6 +628,39 @@ fn hp_below_trigger_changes_ai_modes() {
     );
 }
 
+/// `set_ai` replaces every AI field: an omitted `ai_pos` clears the destination (the validator
+/// says so for `advance`, which then behaves as `aggressive`).
+#[test]
+fn set_ai_replaces_the_destination_and_target() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::TurnStart {
+            turn: 1,
+            side: Side::Player,
+        },
+        vec![EventAction::SetAi {
+            target: "rider".into(),
+            ai: AiMode::Advance,
+            ai_target: None,
+            ai_pos: None,
+        }],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    let rider = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    tag(&mut st, rider, "rider");
+    st.units[rider].ai = AiMode::Target;
+    st.units[rider].ai_target = Some("nobody".into());
+    st.units[rider].ai_pos = Some(p(0, 7));
+    st.begin(&pack);
+    let u = &st.units[rider];
+    assert_eq!(
+        (u.ai, u.ai_target.as_deref(), u.ai_pos),
+        (AiMode::Advance, None, None)
+    );
+}
+
 #[test]
 fn repeatable_events_fire_after_every_check() {
     let mut def = battle(OPEN_MAP);

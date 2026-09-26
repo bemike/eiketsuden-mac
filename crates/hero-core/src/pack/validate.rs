@@ -1206,7 +1206,10 @@ impl<'a> Validator<'a> {
                     self.position(ctx, map, *p, 0);
                 }
                 if *ai == AiMode::Advance && ai_pos.is_none() {
-                    self.warn(ctx, "set_ai to `advance` without an ai_pos keeps the unit's previous destination");
+                    self.warn(
+                        ctx,
+                        "set_ai to `advance` without an ai_pos clears the destination; the unit then behaves as `aggressive`",
+                    );
                 }
             }
             EventAction::Retreat { target } => self.reference(ctx, names, "target", target),

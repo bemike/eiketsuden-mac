@@ -660,6 +660,15 @@ fn battle_logic_checks() {
             "battle b01 event #1",
             "turn 30 is after turn_limit 20",
         ),
+        warning(
+            &[(
+                B01,
+                "target = \"militia\", ai = \"flee\"",
+                "target = \"militia\", ai = \"advance\"",
+            )],
+            "battle b01 event #4",
+            "without an ai_pos clears the destination; the unit then behaves as `aggressive`",
+        ),
         error(
             &[(
                 B02,

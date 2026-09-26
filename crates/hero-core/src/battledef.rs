@@ -181,6 +181,9 @@ pub enum EventAction {
     Spawn {
         group: String,
     },
+    /// Replace the AI of every unit `target` names. All AI fields are replaced: an omitted
+    /// `ai_target` or `ai_pos` is cleared (`guard` without `ai_pos` guards the current tile;
+    /// `advance` without `ai_pos` behaves as `aggressive`).
     SetAi {
         target: String,
         ai: AiMode,
