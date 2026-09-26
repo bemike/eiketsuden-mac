@@ -54,6 +54,44 @@ pub struct PackManifest {
     pub battles: Vec<String>,
     /// Drama script files.
     pub dramas: Vec<String>,
+    /// `[presentation]`: how the pack wants to be shown (see [`Presentation`]).
+    #[serde(default)]
+    pub presentation: Presentation,
+}
+
+/// `[presentation]` of `pack.toml`: the pack's screen model. The frontend lays every screen out
+/// on a virtual canvas of this size and scales it to the window (`docs/ASSETS.md`). The tile
+/// size of battle maps comes from the pack's tileset (`gfx/tiles/terrain.toml`) and unit frame
+/// sizes from `gfx/units/units.toml`, so they are not repeated here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Presentation {
+    /// Virtual canvas `[width, height]` in pixels, within [`Presentation::MIN_CANVAS`] ..=
+    /// [`Presentation::MAX_CANVAS`] (checked by [`Pack::validate`]).
+    pub canvas: [u32; 2],
+}
+
+impl Presentation {
+    /// Canvas of packs without `[presentation]`: the base pack's 480×270.
+    pub const DEFAULT_CANVAS: [u32; 2] = [480, 270];
+    /// Smallest canvas a pack may ask for (320×200, the classic VGA mode 13h screen).
+    pub const MIN_CANVAS: [u32; 2] = [320, 200];
+    /// Largest canvas a pack may ask for.
+    pub const MAX_CANVAS: [u32; 2] = [1280, 800];
+
+    /// Whether both canvas sides lie within [`Presentation::MIN_CANVAS`] ..=
+    /// [`Presentation::MAX_CANVAS`].
+    pub fn canvas_in_range(&self) -> bool {
+        (0..2).all(|i| (Self::MIN_CANVAS[i]..=Self::MAX_CANVAS[i]).contains(&self.canvas[i]))
+    }
+}
+
+impl Default for Presentation {
+    fn default() -> Presentation {
+        Presentation {
+            canvas: Presentation::DEFAULT_CANVAS,
+        }
+    }
 }
 
 impl PackManifest {

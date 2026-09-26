@@ -1,7 +1,7 @@
 //! Cross-reference checks behind [`Pack::validate`]. Every check is documented for modders in
 //! `docs/MODDING.md` ("Validation"); keep the two in sync.
 
-use super::{Issue, Pack, Severity};
+use super::{Issue, Pack, Presentation, Severity};
 use crate::battledef::{AiMode, BattleDef, Condition, EventAction, Side, Trigger, UnitSpawn};
 use crate::campaign::Node;
 use crate::data::{ClassDef, Effect, Equipment, ItemKind, RangeSpec, StrategyKind, TargetSide};
@@ -16,6 +16,7 @@ pub(super) const FOOT_MOVE_TYPE: &str = "foot";
 
 pub(super) fn validate(pack: &Pack) -> Vec<Issue> {
     let mut v = Validator::new(pack);
+    v.presentation();
     v.rules();
     v.terrain();
     v.classes();
@@ -140,6 +141,22 @@ impl<'a> Validator<'a> {
 
     fn level_ok(&self, level: u32) -> bool {
         (1..=self.pack.rules.level_cap).contains(&level)
+    }
+
+    // ----- pack.toml [presentation] ---------------------------------------------------------
+
+    fn presentation(&mut self) {
+        let p = self.pack.manifest.presentation;
+        if !p.canvas_in_range() {
+            let [min, max] = [Presentation::MIN_CANVAS, Presentation::MAX_CANVAS];
+            self.error(
+                super::MANIFEST_FILE,
+                format!(
+                    "presentation.canvas {}x{} is outside {}x{} ..= {}x{} (each side on its own)",
+                    p.canvas[0], p.canvas[1], min[0], min[1], max[0], max[1]
+                ),
+            );
+        }
     }
 
     // ----- rules/game.toml -----------------------------------------------------------------
