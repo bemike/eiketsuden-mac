@@ -25,7 +25,7 @@ tile key for each.
 | `grass` | `,` | 초원 grassland | yes |
 | `road` | `_` | 길 road (plain rules, road look) | yes |
 | `forest` | `T` | 숲 forest | yes (not cavalry) |
-| `mountain` | `^` | 산지 mountain | special classes only |
+| `mountain` | `^` | 산지 mountain | `mountain` move type only (bandit line, martial artists, beast tamers, tribesmen) |
 | `wasteland` | `:` | 황무지 wasteland | yes (slow for cavalry/supply) |
 | `bridge` | `=` | 다리 bridge | yes |
 | `castle` | `c` | 성내 castle floor | yes |
@@ -93,11 +93,13 @@ Layout (same as the Ninja Adventure character sheets): **4 columns = facing down
 
 ```toml
 [sprites.short_infantry]
-frame = [16, 16]      # frame size in pixels
-anchor = [8, 15]      # frame pixel placed on the tile's bottom-centre pixel (8, 15)
+frame = [24, 24]      # frame size in pixels
+anchor = [12, 23]     # frame pixel placed on the tile's bottom-centre pixel (8, 15)
 ```
 
-Frames larger than 16×16 (cavalry 24×24) overhang the tile upwards/sideways around the anchor.
+Frames larger than the 16×16 tile overhang it upwards and sideways around the anchor. Every base pack sheet
+uses 24×24 frames (the chariot 32×24, anchor `[16, 23]`); a 16×16 frame with anchor `[8, 15]` fits the tile
+exactly.
 
 ## Portraits — `gfx/portraits/<key>.png`
 
@@ -137,7 +139,10 @@ SFX keys used by the engine: `cursor`, `confirm`, `cancel`, `error`, `step`, `hi
 
 ## Fonts — `fonts/`
 
-`Galmuri11.ttf` (UI and dialogue, nominal 12 px), `Galmuri9.ttf` (small numbers, nominal 10 px), `OFL.txt`.
+`Galmuri11.ttf` (UI and dialogue, nominal 12 px), `Galmuri9.ttf` (small numbers, nominal 10 px), `OFL.txt`
+(Galmuri's licence) and `OFL-FusionPixel.txt` (the licences of Fusion Pixel Font and the fonts it is built from).
+The base pack's two fonts are OFL Modified Versions that contain Fusion Pixel glyphs, so both licence files must
+travel with them: a pack that copies `fonts/` copies all four files.
 
 ## Licensing
 
