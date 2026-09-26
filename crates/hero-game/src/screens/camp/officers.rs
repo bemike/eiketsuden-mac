@@ -6,7 +6,7 @@ use super::stats::officer_stats;
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame,
     draw_officer_sprite, draw_stats_block, item_icon, officer_name, portrait_key, slot_icon,
-    slot_name, visible_rows, TOP,
+    slot_name, visible_rows, HELP_Y, TOP,
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
@@ -84,11 +84,11 @@ impl OfficersScreen {
             .iter()
             .map(|o| MenuItem::new(officer_name(pack, &o.id)))
             .collect();
-        let rows = ((TABLE.h - 34.0) / ROW_H).floor() as usize;
+        let rows = ((TABLE.h - 36.0) / ROW_H).floor() as usize;
         let cursor = self.menu.cursor();
         let mut menu = Menu::new(items)
             .rows(rows)
-            .at(TABLE.x + 2.0, TABLE.y + 28.0, TABLE.w - 4.0);
+            .at(TABLE.x + 2.0, TABLE.y + 30.0, TABLE.w - 4.0);
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = 28.0;
@@ -102,12 +102,15 @@ impl OfficersScreen {
         draw_list_frame(ctx, TABLE, "무장 일람", true);
         let head = TextStyle::small(theme::TEXT_DIM);
         let base = self.menu.row_rect(0).x;
-        for (label, dx) in COLUMNS {
-            if !label.is_empty() {
-                gfx.text(label, base + dx, TABLE.y + 16.0, head);
-            }
+        let hy = TABLE.y + 16.0;
+        gfx.text("이름", base + 40.0, hy, head);
+        gfx.text(COLUMNS[0].0, base + COLUMNS[0].1, hy, head);
+        // Number columns: headers right-aligned over their numbers.
+        for k in 1..COLUMNS.len() - 1 {
+            let (label, x0) = COLUMNS[k];
+            let x1 = COLUMNS[k + 1].1 - 10.0;
+            gfx.text_aligned(label, base + x0, hy, x1 - x0, Align::Right, head);
         }
-        gfx.text("이름", base + 40.0, TABLE.y + 16.0, head);
         self.menu.draw(ctx);
         let value = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
         for (i, row) in visible_rows(&self.menu) {
@@ -141,7 +144,7 @@ impl OfficersScreen {
         }
     }
 
-    fn draw_detail(&self, ctx: &Ctx, pack: &Pack, o: &OfficerState, index: usize, count: usize) {
+    fn draw_detail(&self, ctx: &Ctx, pack: &Pack, o: &OfficerState) {
         let gfx = &ctx.gfx;
         let Some(def) = pack.officer(&o.id) else {
             return;
@@ -309,14 +312,6 @@ impl OfficersScreen {
             bio_y,
             TextStyle::main(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW),
         );
-        gfx.text_aligned(
-            &format!("{} / {}", index + 1, count),
-            0.0,
-            4.0,
-            VIRTUAL_W - 90.0,
-            Align::Right,
-            TextStyle::small(theme::TEXT_DIM),
-        );
     }
 }
 
@@ -373,8 +368,16 @@ impl Screen for OfficersScreen {
                     &format!("무장 정보 — {}", officer_name(pack, &o.id)),
                     campaign.gold,
                 );
-                self.draw_detail(ctx, pack, o, i, campaign.roster.len());
+                self.draw_detail(ctx, pack, o);
                 draw_help(ctx, "←→ 다른 무장 · X 목록으로");
+                ctx.gfx.text_aligned(
+                    &format!("{} / {}", i + 1, campaign.roster.len()),
+                    0.0,
+                    HELP_Y + 1.0,
+                    VIRTUAL_W - 10.0,
+                    Align::Right,
+                    TextStyle::small(theme::TEXT_DIM),
+                );
             }
             None => {
                 draw_header(ctx, "무장 정보", campaign.gold);

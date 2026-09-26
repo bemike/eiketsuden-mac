@@ -23,6 +23,8 @@ use macroquad::prelude::*;
 
 /// Top of the content below the header.
 pub const TOP: f32 = 26.0;
+/// Offset of the first row below the caption strip of a list window.
+pub const LIST_TOP: f32 = 18.0;
 /// Top of the help bar at the bottom.
 pub const HELP_Y: f32 = VIRTUAL_H - 17.0;
 

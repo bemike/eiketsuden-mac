@@ -2,6 +2,7 @@
 //! price. Every purchase and sale goes through `CampaignState::buy` / `sell`, whose errors are
 //! shown as toasts.
 
+use super::widgets::LIST_TOP;
 use super::widgets::{
     draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame, item_effect,
     item_icon, slot_name, visible_rows, QuantityDialog, TOP,
@@ -174,10 +175,11 @@ impl ShopScreen {
             })
             .collect();
         let cursor = self.menu.cursor();
-        let rows = ((LIST.h - 20.0) / 18.0).floor() as usize;
-        let mut menu = Menu::new(items)
-            .rows(rows)
-            .at(LIST.x + 2.0, LIST.y + 14.0, LIST.w - 4.0);
+        let rows = ((LIST.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
+        let mut menu =
+            Menu::new(items)
+                .rows(rows)
+                .at(LIST.x + 2.0, LIST.y + LIST_TOP, LIST.w - 4.0);
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 18.0;

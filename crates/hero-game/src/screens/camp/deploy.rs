@@ -16,6 +16,7 @@
 //! new battle's rules.
 
 use super::stats::officer_stats;
+use super::widgets::LIST_TOP;
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_header, draw_help, draw_list_frame, draw_officer_sprite,
     draw_stats_block, officer_name, portrait_key, visible_rows, TOP,
@@ -235,10 +236,11 @@ impl DeployScreen {
             })
             .collect();
         let cursor = self.menu.cursor();
-        let rows = ((LIST.h - 24.0) / ROW_H).floor() as usize;
-        let mut menu = Menu::new(items)
-            .rows(rows)
-            .at(LIST.x + 2.0, LIST.y + 14.0, LIST.w - 4.0);
+        let rows = ((LIST.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
+        let mut menu =
+            Menu::new(items)
+                .rows(rows)
+                .at(LIST.x + 2.0, LIST.y + LIST_TOP, LIST.w - 4.0);
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = TAG_W;

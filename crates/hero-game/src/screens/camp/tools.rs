@@ -2,6 +2,7 @@
 //! `CampaignState::use_item`. Every officer is listed with whether the chosen item works on them
 //! (a dry run of the same call decides) and, if not, why.
 
+use super::widgets::LIST_TOP;
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_header, draw_help, draw_list_frame, draw_officer_sprite,
     item_effect, item_icon, officer_name, visible_rows, TOP,
@@ -184,10 +185,11 @@ impl ToolsScreen {
             })
             .collect();
         let cursor = self.item_menu.cursor();
-        let rows = ((ITEMS.h - 20.0) / 18.0).floor() as usize;
-        let mut menu = Menu::new(items)
-            .rows(rows)
-            .at(ITEMS.x + 2.0, ITEMS.y + 14.0, ITEMS.w - 4.0);
+        let rows = ((ITEMS.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
+        let mut menu =
+            Menu::new(items)
+                .rows(rows)
+                .at(ITEMS.x + 2.0, ITEMS.y + LIST_TOP, ITEMS.w - 4.0);
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 18.0;
@@ -217,16 +219,21 @@ impl ToolsScreen {
             })
             .collect();
         let cursor = self.officer_menu.cursor();
-        let rows = ((OFFICERS.h - 20.0) / ROW_H).floor() as usize;
-        let mut menu =
-            Menu::new(items)
-                .rows(rows)
-                .at(OFFICERS.x + 2.0, OFFICERS.y + 14.0, OFFICERS.w - 4.0);
+        let rows = ((OFFICERS.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
+        let mut menu = Menu::new(items).rows(rows).at(
+            OFFICERS.x + 2.0,
+            OFFICERS.y + LIST_TOP,
+            OFFICERS.w - 4.0,
+        );
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = 28.0;
         menu.wrap = false;
-        menu.set_cursor(cursor);
+        // Keep the cursor on the same officer while it can still be chosen; otherwise the menu
+        // starts on the first officer the item works on.
+        if menu.items.get(cursor).is_some_and(|it| it.enabled) {
+            menu.set_cursor(cursor);
+        }
         menu.active = self.choosing_officer;
         self.officer_menu = menu;
     }
@@ -244,7 +251,7 @@ impl ToolsScreen {
                 let name = officer_name(&pack, &officer.id);
                 let item_name = pack.item(item).map_or(item.as_str(), |i| i.name.as_str());
                 let text = format!(
-                    "{}에게 {} 사용할까요? {} → {}",
+                    "{}에게 {} 사용할까요?\n{} → {}",
                     name,
                     with_particle(item_name, Particle::EulReul),
                     class_name(&pack, &officer.class),
@@ -346,7 +353,8 @@ impl Screen for ToolsScreen {
                 if ctx.input.confirm() || ctx.input.cancel() {
                     ctx.input.consume();
                     ctx.sfx(sfx::CONFIRM);
-                    self.choosing_officer = !self.items.is_empty() && self.choosing_officer;
+                    // The item was used up or changed places: pick an item again.
+                    self.choosing_officer = false;
                     self.rebuild(ctx);
                 } else {
                     self.popup = Popup::Outcome(outcome);
@@ -374,8 +382,13 @@ impl Screen for ToolsScreen {
         }
         match self.item_menu.update(ctx) {
             MenuEvent::Selected(_) => {
-                self.choosing_officer = true;
-                self.rebuild(ctx);
+                if self.officer_menu.items.iter().any(|it| it.enabled) {
+                    self.choosing_officer = true;
+                    self.rebuild(ctx);
+                } else {
+                    ctx.sfx(sfx::ERROR);
+                    ctx.toast("지금 이 도구를 쓸 수 있는 무장이 없습니다.");
+                }
             }
             MenuEvent::Moved(_) => self.rebuild_officers(ctx),
             MenuEvent::Cancelled => return Transition::Pop,

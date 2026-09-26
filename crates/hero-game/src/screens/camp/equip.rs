@@ -3,6 +3,7 @@
 //! previews ATK / DEF / movement before → after with the battle engine's formulas.
 
 use super::stats::{officer_stats, preview_change, EquipChange};
+use super::widgets::LIST_TOP;
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_help_colored,
     draw_list_frame, draw_officer_sprite, draw_stats_block, item_effect, item_icon, officer_name,
@@ -161,10 +162,11 @@ impl EquipScreen {
             .map(|o| MenuItem::new(officer_name(pack, &o.id)).detail(format!("Lv{}", o.level)))
             .collect();
         let cursor = self.officers.cursor();
-        let rows = ((LIST.h - 20.0) / ROW_H).floor() as usize;
-        let mut menu = Menu::new(items)
-            .rows(rows)
-            .at(LIST.x + 2.0, LIST.y + 14.0, LIST.w - 4.0);
+        let rows = ((LIST.h - LIST_TOP - 4.0) / ROW_H).floor() as usize;
+        let mut menu =
+            Menu::new(items)
+                .rows(rows)
+                .at(LIST.x + 2.0, LIST.y + LIST_TOP, LIST.w - 4.0);
         menu.framed = false;
         menu.row_height = ROW_H;
         menu.tag_width = 28.0;
@@ -237,11 +239,11 @@ impl EquipScreen {
                 }
             })
             .collect();
-        let rows = ((PICKER.h - 20.0) / 18.0).floor() as usize;
+        let rows = ((PICKER.h - LIST_TOP - 4.0) / 18.0).floor() as usize;
         let mut menu =
             Menu::new(items)
                 .rows(rows)
-                .at(PICKER.x + 2.0, PICKER.y + 14.0, PICKER.w - 4.0);
+                .at(PICKER.x + 2.0, PICKER.y + LIST_TOP, PICKER.w - 4.0);
         menu.framed = false;
         menu.row_height = 18.0;
         menu.tag_width = 18.0;

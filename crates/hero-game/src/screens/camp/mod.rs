@@ -36,7 +36,7 @@ use super::settings::SettingsScreen;
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{fill_rect, Align, FontId, TextStyle, SCREEN};
+use crate::gfx::{fill_rect, Align, FontId, Gfx, TextStyle, SCREEN, VIRTUAL_H, VIRTUAL_W};
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -100,18 +100,67 @@ fn commands(has_battle: bool) -> Vec<Command> {
     v
 }
 
-/// The deployment confirmation (출진).
+/// The deployment confirmation (출진): battle, objective and the deployed officers with their
+/// unit sprites.
 struct SortieDialog {
     selection: Vec<Id>,
+    objective: Vec<String>,
     buttons: TwoButtons,
+    rect: Rect,
 }
 
-const SORTIE: Rect = Rect {
-    x: 100.0,
-    y: 62.0,
-    w: 280.0,
-    h: 146.0,
-};
+const SORTIE_W: f32 = 300.0;
+/// One deployed officer: sprite above, name below.
+const CELL: Vec2 = Vec2::new(46.0, 40.0);
+
+impl SortieDialog {
+    fn new(gfx: &Gfx, def: &BattleDef, selection: Vec<Id>) -> SortieDialog {
+        let inner_w = SORTIE_W - 24.0;
+        let mut objective = gfx.wrap(
+            &format!("승리 조건: {}", def.objective),
+            FontId::Main,
+            1,
+            inner_w,
+        );
+        objective.truncate(2);
+        let h = 8.0
+            + 20.0
+            + 17.0
+            + 16.0 * objective.len() as f32
+            + 8.0
+            + Self::cell_rows(selection.len()) as f32 * CELL.y
+            + 8.0
+            + widgets::BUTTON_H
+            + 12.0;
+        SortieDialog {
+            selection,
+            objective,
+            buttons: TwoButtons::new("출진", "취소"),
+            rect: Rect::new(
+                ((VIRTUAL_W - SORTIE_W) / 2.0).round(),
+                ((VIRTUAL_H - h) / 2.0).round(),
+                SORTIE_W,
+                h.round(),
+            ),
+        }
+    }
+
+    fn per_row() -> usize {
+        ((SORTIE_W - 24.0) / CELL.x).floor().max(1.0) as usize
+    }
+
+    fn cell_rows(n: usize) -> usize {
+        n.div_ceil(Self::per_row()).max(1)
+    }
+
+    /// Centre x and top y of the button row.
+    fn buttons_at(&self) -> (f32, f32) {
+        (
+            self.rect.x + self.rect.w / 2.0,
+            self.rect.bottom() - 10.0 - widgets::BUTTON_H,
+        )
+    }
+}
 
 enum Popup {
     None,
@@ -226,10 +275,9 @@ impl CampScreen {
                         ctx.toast("출진할 무장이 없습니다. 부대를 편성하세요.");
                         return Transition::None;
                     }
-                    self.popup = Popup::Sortie(SortieDialog {
-                        selection,
-                        buttons: TwoButtons::new("출진", "취소"),
-                    });
+                    if let Some(def) = self.battle_def(&pack) {
+                        self.popup = Popup::Sortie(SortieDialog::new(&ctx.gfx, def, selection));
+                    }
                 } else {
                     self.popup = Popup::Confirm(
                         Command::Sortie,
@@ -270,8 +318,7 @@ impl CampScreen {
         match std::mem::replace(&mut self.popup, Popup::None) {
             Popup::None => None,
             Popup::Sortie(mut dialog) => {
-                let cx = SORTIE.x + SORTIE.w / 2.0;
-                let y = SORTIE.bottom() - 26.0;
+                let (cx, y) = dialog.buttons_at();
                 match dialog.buttons.update(ctx, cx, y, true) {
                     ConfirmEvent::Yes => {
                         if let Some(session) = ctx.session.as_mut() {
@@ -416,18 +463,19 @@ impl CampScreen {
         }
     }
 
-    fn draw_sortie(&self, ctx: &Ctx, pack: &Pack, dialog: &SortieDialog) {
+    fn draw_sortie(&self, ctx: &Ctx, pack: &Pack, campaign: &CampaignState, dialog: &SortieDialog) {
         let gfx = &ctx.gfx;
+        let r = dialog.rect;
         fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.45));
-        draw_window(SORTIE);
-        let x = SORTIE.x + 12.0;
-        let w = SORTIE.w - 24.0;
-        let mut y = SORTIE.y + 8.0;
+        draw_window(r);
+        let x = r.x + 12.0;
+        let w = r.w - 24.0;
+        let mut y = r.y + 8.0;
         gfx.text_aligned(
             "출진하시겠습니까?",
-            SORTIE.x,
+            r.x,
             y,
-            SORTIE.w,
+            r.w,
             Align::Center,
             TextStyle::main(theme::TEXT_ACCENT).shadow(theme::TEXT_SHADOW),
         );
@@ -447,33 +495,40 @@ impl CampScreen {
                 Align::Right,
                 TextStyle::small(theme::TEXT_DIM),
             );
-            y += 17.0;
-            let lines = gfx.wrap(&format!("승리 조건: {}", def.objective), FontId::Main, 1, w);
-            gfx.text_lines(
-                &lines[..lines.len().min(2)],
-                x,
-                y,
-                TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
-            );
-            y += 16.0 * lines.len().clamp(1, 2) as f32 + 2.0;
         }
-        draw_divider(x, y, w);
-        y += 5.0;
-        let names: Vec<&str> = dialog
-            .selection
-            .iter()
-            .map(|id| officer_name(pack, id))
-            .collect();
-        let lines = gfx.wrap(&names.join(" · "), FontId::Main, 1, w);
+        y += 17.0;
         gfx.text_lines(
-            &lines[..lines.len().min(2)],
+            &dialog.objective,
             x,
             y,
             TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
         );
-        dialog
-            .buttons
-            .draw(ctx, SORTIE.x + SORTIE.w / 2.0, SORTIE.bottom() - 26.0);
+        y += 16.0 * dialog.objective.len() as f32 + 3.0;
+        draw_divider(x, y, w);
+        y += 5.0;
+        // Deployed officers, in slot order, centred row by row.
+        let per_row = SortieDialog::per_row();
+        for (row, chunk) in dialog.selection.chunks(per_row).enumerate() {
+            let row_w = chunk.len() as f32 * CELL.x;
+            let x0 = r.x + ((r.w - row_w) / 2.0).round();
+            let top = y + row as f32 * CELL.y;
+            for (i, id) in chunk.iter().enumerate() {
+                let cx = x0 + i as f32 * CELL.x + CELL.x / 2.0;
+                if let Some(o) = campaign.officer(id) {
+                    draw_officer_sprite(ctx, pack, o, vec2(cx, top + 24.0), true);
+                }
+                gfx.text_aligned(
+                    officer_name(pack, id),
+                    cx - CELL.x / 2.0,
+                    top + 25.0,
+                    CELL.x,
+                    Align::Center,
+                    TextStyle::small(theme::TEXT).shadow(theme::TEXT_SHADOW),
+                );
+            }
+        }
+        let (cx, by) = dialog.buttons_at();
+        dialog.buttons.draw(ctx, cx, by);
     }
 }
 
@@ -557,7 +612,7 @@ impl Screen for CampScreen {
         }
         match &self.popup {
             Popup::None => {}
-            Popup::Sortie(dialog) => self.draw_sortie(ctx, pack, dialog),
+            Popup::Sortie(dialog) => self.draw_sortie(ctx, pack, campaign, dialog),
             Popup::Confirm(_, dialog) => {
                 fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.4));
                 dialog.draw(ctx);
