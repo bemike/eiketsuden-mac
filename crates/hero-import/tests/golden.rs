@@ -391,6 +391,27 @@ fn check_korean_scenario_facts(install: &InstallDir) {
         assert_eq!(b.class, Some(6), "{boss} is light cavalry");
     }
 
+    // IPPAN0.R3 / IPPAN0M.R3: four chapter chunks that tile both files (the chunk offsets and
+    // lengths equal the table in MAIN.EXE) and reference every one of the 653 strings.
+    let (index, pool) = (
+        read(install, "IPPAN0.R3"),
+        message_bytes(install, "IPPAN0M.R3").1,
+    );
+    let chapters = hero_import::ippan::parse(&index, &pool).expect("IPPAN0 layout");
+    let shape: Vec<(usize, usize, usize)> = chapters
+        .iter()
+        .map(|c| (c.len, c.pool_base, c.lines.iter().flatten().count()))
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            (957, 0, 181),
+            (785, 11_301, 161),
+            (1047, 20_619, 188),
+            (851, 31_291, 123)
+        ]
+    );
+
     // BAKDATA.R3: Cao Cao LEAD 98 / WAR 75, Jiang Wei INT 94 (published stats).
     let find = |name: &str| names.officers.iter().find(|o| o.name == name).unwrap();
     let cao = find("조조");

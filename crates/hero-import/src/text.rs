@@ -19,9 +19,8 @@
 //!
 //! Every byte of every section of the verified copy is covered by exactly these items.
 //!
-//! **`IPPAN0M.R3`** has no table: it is a pool of 653 NUL-terminated strings addressed by
-//! absolute offset (from the index file `IPPAN0.R3`, not decoded yet); [`split_strings`] lists
-//! them.
+//! **`IPPAN0M.R3`** has no table: it is a pool of 653 NUL-terminated strings, the townspeople's
+//! lines, addressed through `IPPAN0.R3` (see [`crate::ippan`]); [`split_strings`] lists them.
 
 use serde::Serialize;
 use std::fmt;

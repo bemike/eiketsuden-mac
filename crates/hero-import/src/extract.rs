@@ -13,7 +13,8 @@
 //! <out>/text/snr<n>.json                  chapter n: decoded event scripts of every scene with
 //!                                         the dialogues and strings they show (UTF-8)
 //! <out>/text/snr<n>.txt                   the same as a plain-text listing
-//! <out>/text/ippan0m.json                 the generic string pool
+//! <out>/text/ippan0m.json                 the townspeople string pool
+//! <out>/text/townsfolk_talk.json          townspeople of every town with their lines
 //! <out>/text/officers.json, items.json,   BAKDATA.R3 master tables
 //!            townsfolk.json
 //! ```
@@ -440,8 +441,8 @@ const SCENARIO_NOTE: &str = "Scripts decoded from the scenario bytecode; message
     BAKDATA.R3. `resolved` repeats the referenced names and text for reading. Names marked \
     op_xx and summaries marked unverified are not pinned down yet (docs/ORIGINAL_DATA.md §10).";
 
-const POOL_NOTE: &str = "NUL-terminated strings addressed by absolute offset from IPPAN0.R3 \
-    (whose layout is not decoded yet).";
+const POOL_NOTE: &str = "NUL-terminated strings (the townspeople's lines, indexed by \
+    IPPAN0.R3; see townsfolk_talk.json).";
 
 #[derive(Serialize)]
 struct TextBlock {
@@ -960,6 +961,15 @@ fn extract_text(
                         },
                     )?;
                     report.outputs += 1;
+                    if let Some(index) = read_source(install, IPPAN_INDEX, &mut report)? {
+                        match townsfolk_talk(&index, &message_data, &look) {
+                            Ok(file) => {
+                                out.write_json(&format!("{TEXT_DIR}/townsfolk_talk.json"), &file)?;
+                                report.outputs += 1;
+                            }
+                            Err(e) => report.errors.push(e.to_string()),
+                        }
+                    }
                 }
                 Err(e) => {
                     failed += 1;
@@ -1022,6 +1032,95 @@ fn extract_text(
         )
     };
     Ok(report)
+}
+
+/// Index of the townspeople chatter.
+pub const IPPAN_INDEX: &str = "IPPAN0.R3";
+
+const TALK_NOTE: &str = "Townspeople of each chapter's towns (IPPAN0.R3) and their lines \
+    (IPPAN0M.R3). An entry is both the townsperson (BAKDATA.R3 townspeople) and the line; the \
+    game places the group whose key matches a game-state value (125 = default group).";
+
+#[derive(Serialize)]
+struct TalkFile {
+    note: &'static str,
+    chapters: Vec<TalkChapter>,
+}
+
+#[derive(Serialize)]
+struct TalkChapter {
+    /// Scenario chapter (1-4).
+    chapter: usize,
+    pool_base: usize,
+    towns: Vec<TalkTown>,
+}
+
+#[derive(Serialize)]
+struct TalkTown {
+    town: usize,
+    groups: Vec<TalkGroup>,
+}
+
+#[derive(Serialize)]
+struct TalkGroup {
+    key: u8,
+    people: Vec<TalkLine>,
+}
+
+#[derive(Serialize)]
+struct TalkLine {
+    entry: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    text: String,
+}
+
+/// The townspeople chatter of every chapter.
+fn townsfolk_talk(
+    index: &[u8],
+    pool: &[u8],
+    look: &Lookup<'_>,
+) -> Result<TalkFile, crate::ippan::IppanError> {
+    let chapters = crate::ippan::parse(index, pool)?;
+    let chapters = chapters
+        .iter()
+        .enumerate()
+        .map(|(c, ch)| TalkChapter {
+            chapter: c + 1,
+            pool_base: ch.pool_base,
+            towns: ch
+                .towns
+                .iter()
+                .map(|t| TalkTown {
+                    town: t.index,
+                    groups: t
+                        .groups
+                        .iter()
+                        .map(|g| TalkGroup {
+                            key: g.key,
+                            people: g
+                                .entries
+                                .iter()
+                                .map(|&e| TalkLine {
+                                    entry: e,
+                                    name: look.names.and_then(|n| {
+                                        n.townsfolk.get(e as usize).map(|p| p.name.clone())
+                                    }),
+                                    text: ch.lines[e as usize]
+                                        .map(|b| look.encoding.decode(b).text)
+                                        .unwrap_or_default(),
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+        .collect();
+    Ok(TalkFile {
+        note: TALK_NOTE,
+        chapters,
+    })
 }
 
 /// Decode `BAKDATA.R3` and write the officer, item and townsperson tables.
@@ -1471,7 +1570,7 @@ mod tests {
         // Text: SNR0 (messages raw), SNR1 (messages LS11-wrapped), IPPAN0M and BAKDATA.
         let text = &index.assets["text"];
         assert_eq!(text.status, Status::Extracted, "{text:#?}");
-        assert_eq!(text.outputs, 5);
+        assert_eq!(text.outputs, 6);
         assert!(text.notes.is_empty(), "{text:#?}");
         assert!(text.summary.contains("3 scenes"), "{}", text.summary);
         let snr0 = read_json(&target.join("text/snr0.json"));
@@ -1501,6 +1600,13 @@ mod tests {
         assert_eq!(snr1["scenes"].as_array().unwrap().len(), 2);
         let pool = read_json(&target.join("text/ippan0m.json"));
         assert_eq!(pool["strings"].as_array().unwrap().len(), 2);
+        let talk = read_json(&target.join("text/townsfolk_talk.json"));
+        let people = &talk["chapters"][0]["towns"][0]["groups"][0]["people"];
+        assert_eq!(people[1]["entry"], 1);
+        assert!(people[1]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("승리하였다"));
         let names = &index.assets["names"];
         assert_eq!(names.status, Status::Extracted, "{names:#?}");
         let officers = read_json(&target.join("text/officers.json"));

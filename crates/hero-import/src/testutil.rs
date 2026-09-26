@@ -3,7 +3,7 @@
 
 use crate::image::IndexedImage;
 use crate::text::{build_sections, dialogue_bytes, TextEncoding};
-use crate::{bakdata, ls11, palette, planar, scenario, table6, tfdce};
+use crate::{bakdata, ippan, ls11, palette, planar, scenario, table6, tfdce};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -107,11 +107,12 @@ fn write_dos_v_install(
     let (m2, d2) = fixture_scene(&enc, lines[2], [lines[3], lines[0]]);
     write(dir, "SNR1M.R3", &ls11::build(&[&build_sections(&[m1, m2])]));
     write(dir, "SNR1D.R3", &ls11::build(&[&d1, &d2]));
-    // IPPAN0M: a string pool.
-    let mut pool = enc(lines[2]);
-    pool.push(0);
-    pool.extend(enc(lines[3]));
-    pool.push(0);
+    // IPPAN0 / IPPAN0M: one chapter, one town whose default group says both lines.
+    let (index, pool) = ippan::build(&[(
+        vec![vec![(125, vec![0, 1])]],
+        vec![enc(lines[2]), enc(lines[3])],
+    )]);
+    write(dir, "IPPAN0.R3", &index);
     write(dir, "IPPAN0M.R3", &pool);
     write(
         dir,
