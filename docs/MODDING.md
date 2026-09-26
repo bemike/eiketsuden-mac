@@ -11,8 +11,11 @@ content. This guide is the complete reference for writing or changing a pack.
   without a single warning; it is a good place to copy the data files from. It ships no media, so
   `hero-tools validate` also reports its missing media files (stage 3) and fails on them; copy `gfx/`,
   `bgm/`, `sfx/` and `fonts/` from `data/base` (or make your own) for a pack that passes the tool too.
+  [`mini_ext`](../crates/hero-core/tests/fixtures/mini_ext/) next to it is a [layered pack](#layered-packs-extends)
+  on top of `mini`: it replaces `rules/game.toml` and the campaign, adds a battle and replaces a scene.
 
 Contents: [Quick start](#quick-start) · [Conventions](#conventions) · [pack.toml](#packtoml) ·
+[Layered packs](#layered-packs-extends) ·
 [rules/game.toml](#rulesgametoml) · [rules/terrain.toml](#rulesterraintoml) · [Ranges](#ranges) ·
 [rules/classes.toml](#rulesclassestoml) · [Effects](#effects) · [rules/strategies.toml](#rulesstrategiestoml) ·
 [rules/items.toml](#rulesitemstoml) · [officers.toml](#officerstoml) · [Battles](#battles) ·
@@ -41,6 +44,10 @@ my_pack/
 
 The file names and folders are free: `pack.toml` lists every text file, so only `pack.toml` itself has a
 fixed name. Media files follow the fixed layout of [ASSETS.md](ASSETS.md).
+
+A pack does not have to be complete: with `extends = "../base"` it is built on another pack and lists
+only what it adds or replaces (see [Layered packs](#layered-packs-extends)). That is the easiest way to
+make a balance mod, add a battle or restyle the media of an existing pack.
 
 Typical workflow:
 
@@ -91,20 +98,82 @@ items = "rules/items.toml"
 
 | field | type | required | meaning |
 |---|---|---|---|
-| `id` | string | yes | Machine id of the pack. |
+| `id` | string | yes | Machine id of the pack. Every pack of a [chain](#layered-packs-extends) needs its own id. |
 | `name` | string | yes | Display name. |
 | `version` | string | yes | Pack version (free form, e.g. `1.2.0`). |
 | `authors` | list of strings | no | Credits. |
 | `license` | string | no | Licence summary of the content (every media file also goes into `CREDITS.md`). |
 | `description` | string | no | One or two sentences for the pack list. |
-| `rules.game` / `.terrain` / `.classes` / `.strategies` / `.items` | path | yes | The five rules files. |
-| `officers` | path | yes | Officer list. |
-| `campaign` | path | yes | Campaign graph. |
-| `battles` | list of paths | yes | Battle files, one battle each (may be empty). |
-| `dramas` | list of paths | yes | Drama scripts, any number of scenes each (may be empty). |
+| `extends` | directory | no | The pack this one is built on, relative to this pack's directory (`../base`). See [Layered packs](#layered-packs-extends). |
+| `rules.game` / `.terrain` / `.classes` / `.strategies` / `.items` | path | yes, unless `extends` | The five rules files. |
+| `officers` | path | yes, unless `extends` | Officer list. |
+| `campaign` | path | yes, unless `extends` | Campaign graph. |
+| `battles` | list of paths | no (`[]`) | Battle files, one battle each. |
+| `dramas` | list of paths | no (`[]`) | Drama scripts, any number of scenes each. |
+| `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[320, 200]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
+
+```toml
+[presentation]
+canvas = [640, 480]      # e.g. a pack made from the 640x480 original game
+```
 
 Paths are relative to the pack directory, use `/`, must not contain `..`, `\` or `:`, and no file may be
-listed twice. The web build fetches exactly these files, so a file that is not listed is never loaded.
+listed twice. The web build fetches exactly these files (and those of the packs it extends), so a file
+that is not listed is never loaded.
+
+## Layered packs (`extends`)
+
+A pack that says `extends = "<directory>"` is a **child** built on top of its **parent**, the pack in
+that directory; the parent may extend another pack in turn. The packs involved form a **chain**, from
+the pack that is loaded (the **top** pack) down to the pack without `extends`.
+
+```toml
+# mods/balance/pack.toml: other item prices and rewritten scenes, everything else from the base pack
+id = "balance"
+name = "Balance mod"
+version = "0.1.0"
+extends = "../../data/base"          # mods/balance/../../data/base = data/base
+dramas = ["dramas/rewrites.drama"]   # scenes with the ids of base scenes replace them
+
+[rules]
+items = "rules/items.toml"           # replaces the base items.toml as a whole
+```
+
+What the chain provides:
+
+| part | rule |
+|---|---|
+| `rules.game`, `.terrain`, `.classes`, `.strategies`, `.items`, `officers`, `campaign` | Each comes from the **nearest** pack that lists it, starting with the top pack: a child's file **replaces** its parent's as a whole (there is no merging inside a file, so a child `items.toml` must hold every item the pack needs). Some pack of the chain must list each of them. |
+| `battles` | The **union** of every pack's battle files. A battle whose `id` a nearer pack defines again **overrides** the farther pack's battle with that id. Within one pack a battle id must still be unique. |
+| `dramas` | The same for scene ids: every pack's scenes, a nearer pack's scene replacing a farther pack's scene with the same id (`== b01_outro` in a child replaces the parent's `b01_outro`). |
+| `[presentation]` | Inherited: the nearest pack that has a `[presentation]` table decides; without any, `[480, 270]`. |
+| media (`gfx/`, `bgm/`, `sfx/`, `fonts/`, `credits.txt`) | Every media file is looked up in the top pack first, then in each parent in chain order; the first pack that has the file wins. This includes the media index files `gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml` and `gfx/ui/icons.toml`: a child's index **replaces** its parent's as a whole, so copy the entries you keep. |
+| `id`, `name`, `version`, `authors`, `license`, `description` | The top pack's. Save games remember the top pack's `id`, so saves of the parent pack do not load in the child and vice versa. |
+
+Rules of the chain (all errors when loading):
+
+* `extends` is a directory relative to the pack that names it, written with `/` (no `\`, no `:`, not
+  absolute). Paths are resolved **lexically**, like URLs: `..` removes the previous path segment, so
+  `extends = "../base"` in `mods/balance` means `mods/base`, and a symbolic link to a pack directory
+  counts as the directory it appears to be.
+* A chain holds at most **4 packs** (a pack and three it builds on, directly or indirectly).
+* A pack cannot extend itself, directly or through other packs, and two packs of a chain cannot share
+  an `id`.
+* A parent directory without a readable `pack.toml` is an error that names the `extends` line.
+* Error messages and validation contexts name files by their path relative to the top pack:
+  `../base/rules/classes.toml` is the parent's classes file.
+
+The game reads `pack.toml` of the top pack, then of each parent, then every other text file of the
+chain; natively and in the browser alike. For the web build, publish the parent pack at its relative
+URL next to the child. One limit of the web build: the battle screen's media index files
+(`units.toml`, `terrain.toml`, `fx.toml`) and `credits.txt` are read from the top pack only, because the
+browser cannot check whether a file exists without fetching it; natively they come from the first
+pack that has them. A child pack meant for the web ships its own copies of those files.
+
+`hero-tools validate`, `info` and `simulate` take the top pack directory and work on the whole chain.
+`validate` checks unknown keys in every `pack.toml`, in the rules, officer and campaign files in use (a
+parent's file that the child replaces is not checked) and in every battle file of the chain, and it
+looks for media in every pack of the chain.
 
 ## rules/game.toml
 
@@ -554,7 +623,14 @@ literal string (`'''`) instead.
 | `forbidden` | list of officer ids | `[]` | Officers that may not be deployed (never the lord). |
 | `slots` | list of positions | required | Deployment tiles, filled in order (required officers first). Each must be inside the map, passable for `foot` and unique. |
 
-Player officers are never listed in `units`: they come from the army through the deploy screen.
+The player's officers normally come from the army through the deploy screen and are not listed in
+`units`. A `side = "player"` unit is a guest on the player's side (controlled by the player) with one
+exception: when its `officer` is in the army at that point, the battle places **the army's officer**
+there — with the army's class, level, EXP, stats and equipment, which the unit's `class`, `level`,
+`stats` and `equip` do not change — and that officer takes no deploy slot and is not placed a second
+time. The unit's position, `ai`, `tag`, `group`, `commander` and `drop` still apply, and the officer's
+progress in the battle is kept afterwards like any deployed officer's. A player guest who is not in the
+army is built from `officers.toml` and does not join it.
 
 ### Units
 
@@ -636,7 +712,7 @@ Actions:
 |---|---|---|
 | `drama` | `scene` | Play a drama scene now. |
 | `spawn` | `group` | Bring every unit of that reinforcement group onto the map. |
-| `set_ai` | `target`, `ai`, `ai_target` (opt.), `ai_pos` (opt.) | Change a unit's behaviour. |
+| `set_ai` | `target`, `ai`, `ai_target` (opt.), `ai_pos` (opt.) | Change a unit's behaviour. The new values replace the old ones completely: a left-out `ai_target` or `ai_pos` is **cleared**, not kept. Without `ai_pos`, `guard` guards the tile the unit stands on now, and `advance` has no destination, so the unit behaves as `aggressive`. |
 | `retreat` | `target` | Remove a unit without a fight (duel loser, escape). |
 | `level_up` | `target`, `amount` | Grant levels. |
 | `give_item` | `item` | Give the player an item (kept after a victory). |
@@ -653,8 +729,12 @@ Actions:
 | `gold` | integer ≥ 0 | 0 | Gold given with it. |
 
 Found items and gold, drops and event gifts reach the army only after a **victory**. The battle's level,
-EXP, class and equipment changes of deployed officers, and the battle consumables used, are kept after
-a defeat too.
+EXP, class and equipment changes of deployed officers are kept after a defeat too, and so is the use of
+consumables: the battle counts every consumable it uses, and when it ends, won or lost, exactly those
+are taken out of the army's inventory (never below 0). A battle uses its own stock, copied from the
+inventory when it starts, so an item a scene gives while the battle runs (`@item` in the intro or in a
+`drama` event action) reaches the inventory but cannot be used in that battle; validation warns about
+it. The outro plays after the battle has ended, and its `@item` works as in any scene.
 
 ## campaign.toml
 
@@ -852,14 +932,21 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
 * A listed file is missing, is not valid TOML, or a field has the wrong type or is missing (the message
   names the file and the TOML position).
 * A list file uses an unknown top-level table (`[[classes]]` instead of `[[class]]`).
-* `pack.toml` paths that leave the pack or use `\`, and files listed twice.
+* `pack.toml` paths that leave the pack or use `\`, and files listed twice; `presentation.canvas`
+  outside `[320, 200]`..`[1280, 800]`; a pack without `extends` that does not list all five rules files,
+  `officers` and `campaign`.
+* [Layered packs](#layered-packs-extends): an `extends` that is not a relative `/` directory, a parent
+  without a readable `pack.toml`, a pack that extends itself (directly or through others), two packs of
+  a chain with the same `id`, more than 4 packs in a chain, a rules file, `officers` or `campaign` that
+  no pack of the chain lists.
 * Empty or duplicate ids of terrain, classes, strategies, items, officers, campaign nodes and battles;
-  two terrain types with the same glyph.
+  two terrain types with the same glyph. (In a chain, battle ids must be unique within each pack; a
+  nearer pack's battle overrides a farther pack's.)
 * A battle map that cannot be parsed (no rows, rows of different width, unknown glyph, legend key longer
   than one character, legend naming unknown terrain).
 * Drama syntax errors (reported as `file: line N: ...`): unknown commands, jumps to unknown labels,
   duplicate labels, commands outside a scene, malformed `@choice`, `@if`, `@set`, `@wait` ...
-* The same scene id in two scenes, in one file or across files.
+* The same scene id in two scenes, in one file or across files of one pack.
 
 ### 2. Cross-references (`Pack::validate`)
 
@@ -897,7 +984,9 @@ not fit its slot. W: empty name, stats outside 0..=100, equipment not meant for 
 **Battles** — E: `turn_limit` 0, legend naming unknown terrain, no victory condition and no event granting
 victory, `spawn` of a group without units, treasures outside the map / on the same tile / with unknown
 items / negative gold, negative `reward_gold`, unknown `intro`/`outro` scenes. W: empty name, no enemy
-units, a group no event spawns, a treasure that gives nothing.
+units, a group no event spawns, a treasure that gives nothing, `@item` of a battle consumable in the
+battle's intro or in a scene of a `drama` action (the item cannot be used in that battle; see
+[Treasures](#treasures)).
 *Deployment* — E: `max` 0 or larger than the number of slots, unknown required or forbidden officers, an
 officer both required and forbidden, forbidding the lord, more must-deploy officers (required + lord) than
 `max`, slots outside the map, not passable for `foot` (or, in packs without `foot`, for any class) or
@@ -908,7 +997,8 @@ impassable for the unit's move type, or shared with another starting unit or a d
 duplicate tags, `ai = "target"` without `ai_target`, `ai_target` naming nothing, `ai_pos` outside the map,
 bad equipment, unknown `drop` items. W: `stats` on named officers, generic units without `name`,
 reinforcements on impassable tiles (they are shifted), tags equal to an officer id, equipment not meant
-for the unit's family.
+for the unit's family, a `side = "player"` unit naming a starting officer (the army's officer is placed
+there, see [Units](#units)).
 *Conditions, triggers, actions* — E: unit references that match nothing, positions outside the map,
 negative radius, `defeat_all` without enemies on the map at the start, `defeat_commander` without an enemy
 commander, `survive_turns`/`turn_start` with turn 0, `hp_below` outside 1..=100, unknown scenes, unknown
@@ -931,7 +1021,8 @@ branch loops, battles no campaign node uses.
 
 * **Unknown keys** (W): every TOML key the schema does not know, reported with its file and path, e.g.
   a misspelt `rnage` in the archer class of `rules/classes.toml` is reported as field `class[archer].rnage`.
-* **Media** (natively, below the pack directory): E for missing unit sheets and `units.toml` entries,
+* **Media** (natively, below the pack directory; for a layered pack in every pack of the chain, top pack
+  first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries,
   `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing or broken
   `terrain.toml`/`fx.toml`, a missing terrain atlas image, terrain without a `[tiles.<key>]` entry, strategy
   effects without an `fx.toml` entry or strip. W for missing portraits (the `_unknown` portrait is shown),
@@ -951,8 +1042,9 @@ hero-tools --help | --version
 
 * **validate** — loads the pack, runs every check of [Validation](#validation) and prints the errors, then
   the warnings, then a summary line (`0 errors, 2 warnings: OK`).
-* **info** — prints the pack's name, licence and how many terrain types, classes, strategies, items,
-  officers, battles, scenes (with the number of dialogue lines) and campaign nodes it has.
+* **info** — prints the pack's name, the packs it extends, licence, canvas size and how many terrain
+  types, classes, strategies, items, officers, battles, scenes (with the number of dialogue lines) and
+  campaign nodes it has.
 * **simulate** — refuses packs with validation errors, then plays every battle (campaign order first, then
   battles the campaign does not use; or only `--battle ID`) AI against AI with seeds `1..=N` (default 4),
   for at most 200 phases each. The player army is a new game's starting army plus the battle's required
@@ -961,3 +1053,6 @@ hero-tools --help | --version
   are deployed first, then the roster up to `deploy.max`. It prints the win rate and average turns per
   battle, warns about battles that are never or always won, and fails (exit 1) when a battle panics, cannot
   be set up or does not finish within 200 phases.
+
+Every command takes the top pack directory of a [layered pack](#layered-packs-extends) and works on the
+whole chain.
