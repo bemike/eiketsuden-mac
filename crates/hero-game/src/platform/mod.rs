@@ -1,12 +1,16 @@
 //! Platform layer: everything that differs between the native build and the browser build.
 //!
-//! * [`LaunchOptions`] — command line (`--data <dir>`, `--gallery`) natively, the URL hash
-//!   (`#gallery`) on the web.
+//! * [`LaunchOptions`] — command line (`--data <dir>`, `--original <dir>`, `--gallery`) natively,
+//!   the URL hash (`#gallery`) on the web.
 //! * [`DataRoot`] — where the data pack lives. Natively it is resolved from `--data`, the
 //!   `EIKETSUDEN_DATA` environment variable, `<exe dir>/data/base` and `./data/base` (first match
 //!   wins); on the web it is the relative URL `data/base/` next to `index.html`. All pack files are
 //!   read through [`DataRoot::path`] + `macroquad::file::load_file`, which is a file read natively
 //!   and an HTTP fetch on the web.
+//! * The optional **original-data overlay** (native only): a folder written by
+//!   `hero-tools original extract` from the player's own copy of the original game, chosen with
+//!   `--original <dir>` or the `EIKETSUDEN_ORIGINAL` environment variable. Media files are looked
+//!   up there first ([`DataRoot::media_paths`]), then in the pack. The web build has no overlay.
 //! * [`unix_now`] — wall clock time for save timestamps.
 //! * [`storage`] — key/value persistence for saves and settings (files natively,
 //!   `localStorage` on the web).
@@ -19,12 +23,18 @@ use std::path::{Path, PathBuf};
 
 /// Environment variable that points at the data pack directory (native builds).
 pub const DATA_ENV: &str = "EIKETSUDEN_DATA";
+/// Environment variable that points at an original-data overlay folder (native builds).
+pub const ORIGINAL_ENV: &str = "EIKETSUDEN_ORIGINAL";
+/// File every overlay folder written by `hero-tools original extract` contains.
+pub const OVERLAY_INDEX: &str = "index.json";
 
 /// Options chosen when the game was launched.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LaunchOptions {
     /// Explicit data pack directory (`--data <dir>`), native only.
     pub data_dir: Option<PathBuf>,
+    /// Original-data overlay folder (`--original <dir>`), native only.
+    pub original_dir: Option<PathBuf>,
     /// Start the UI gallery dev screen instead of the game (`--gallery` / `#gallery`).
     pub gallery: bool,
     /// Problems found while parsing the options (unknown flags, ...). Logged at startup.
@@ -57,9 +67,17 @@ impl LaunchOptions {
                         .warnings
                         .push("--data needs a directory argument".into()),
                 },
+                "--original" => match args.next() {
+                    Some(dir) => opts.original_dir = Some(PathBuf::from(dir)),
+                    None => opts
+                        .warnings
+                        .push("--original needs a directory argument".into()),
+                },
                 other => {
                     if let Some(dir) = other.strip_prefix("--data=") {
                         opts.data_dir = Some(PathBuf::from(dir));
+                    } else if let Some(dir) = other.strip_prefix("--original=") {
+                        opts.original_dir = Some(PathBuf::from(dir));
                     } else {
                         opts.warnings
                             .push(format!("unknown argument `{other}` ignored"));
@@ -95,10 +113,22 @@ pub struct DataRoot {
     display: String,
     /// Every location that was considered, in order (for the "pack not found" error screen).
     candidates: Vec<String>,
+    /// Prefix of the original-data overlay (ends with a separator), native only.
+    media_overlay: Option<String>,
+}
+
+/// Turn a directory into a path prefix that pack-relative paths can be appended to.
+fn dir_prefix(dir: &Path) -> String {
+    let mut prefix = dir.to_string_lossy().into_owned();
+    if !prefix.is_empty() && !prefix.ends_with('/') && !prefix.ends_with('\\') {
+        prefix.push('/');
+    }
+    prefix
 }
 
 impl DataRoot {
-    /// Resolve the data pack location for this platform.
+    /// Resolve the data pack location (and, natively, the original-data overlay) for this
+    /// platform.
     pub fn resolve(opts: &LaunchOptions) -> DataRoot {
         #[cfg(target_arch = "wasm32")]
         {
@@ -117,7 +147,24 @@ impl DataRoot {
                 exe_dir.as_deref(),
                 |p| p.join("pack.toml").is_file(),
             );
-            DataRoot::from_dir(&dir, &candidates)
+            let root = DataRoot::from_dir(&dir, &candidates);
+            let original_env = std::env::var_os(ORIGINAL_ENV).map(PathBuf::from);
+            match resolve_overlay_dir(opts.original_dir.as_deref(), original_env.as_deref(), |p| {
+                p.join(OVERLAY_INDEX).is_file()
+            }) {
+                Ok(Some(overlay)) => {
+                    macroquad::logging::info!(
+                        "media: original-data overlay {} (looked up before the pack)",
+                        overlay.display()
+                    );
+                    root.with_media_overlay(&overlay)
+                }
+                Ok(None) => root,
+                Err(why) => {
+                    macroquad::logging::warn!("{}", why);
+                    root
+                }
+            }
         }
     }
 
@@ -131,26 +178,48 @@ impl DataRoot {
             display: prefix.clone(),
             candidates: vec![prefix.clone()],
             prefix,
+            media_overlay: None,
         }
     }
 
     /// A root on the local file system. Pack-relative paths are appended with `/`, which every
     /// supported OS (Windows included) accepts as a separator.
     pub fn from_dir(dir: &Path, candidates: &[PathBuf]) -> DataRoot {
-        let mut prefix = dir.to_string_lossy().into_owned();
-        if !prefix.is_empty() && !prefix.ends_with('/') && !prefix.ends_with('\\') {
-            prefix.push('/');
-        }
         DataRoot {
-            prefix,
+            prefix: dir_prefix(dir),
             display: dir.display().to_string(),
             candidates: candidates.iter().map(|p| p.display().to_string()).collect(),
+            media_overlay: None,
         }
+    }
+
+    /// The same root with an original-data overlay folder whose media files take precedence.
+    pub fn with_media_overlay(mut self, dir: &Path) -> DataRoot {
+        self.media_overlay = Some(dir_prefix(dir));
+        self
     }
 
     /// Path or URL of a pack-relative file (`fonts/Galmuri11.ttf`), for `load_file`.
     pub fn path(&self, rel: &str) -> String {
         format!("{}{}", self.prefix, rel.trim_start_matches('/'))
+    }
+
+    /// Candidate paths of a pack-relative **media** file, in lookup order: the original-data
+    /// overlay (when one is active), then the pack. Text files of the pack (rules, dramas) are
+    /// never overlaid; use [`DataRoot::path`] for them.
+    pub fn media_paths(&self, rel: &str) -> Vec<String> {
+        let rel = rel.trim_start_matches('/');
+        let mut paths = Vec::with_capacity(2);
+        if let Some(overlay) = &self.media_overlay {
+            paths.push(format!("{overlay}{rel}"));
+        }
+        paths.push(self.path(rel));
+        paths
+    }
+
+    /// Prefix of the active original-data overlay, if any.
+    pub fn media_overlay(&self) -> Option<&str> {
+        self.media_overlay.as_deref()
     }
 
     /// Where the pack is, for messages.
@@ -191,6 +260,28 @@ pub fn resolve_data_dir(
         .cloned()
         .unwrap_or_else(|| PathBuf::from("data").join("base"));
     (chosen, candidates)
+}
+
+/// Pick the original-data overlay folder: `--original` wins over the environment variable (an
+/// empty variable counts as unset). A folder without [`OVERLAY_INDEX`] is refused with a
+/// message saying how to create one, so pointing at the install itself is caught.
+pub fn resolve_overlay_dir(
+    arg: Option<&Path>,
+    env: Option<&Path>,
+    is_overlay: impl Fn(&Path) -> bool,
+) -> Result<Option<PathBuf>, String> {
+    let Some(dir) = arg.or(env.filter(|d| !d.as_os_str().is_empty())) else {
+        return Ok(None);
+    };
+    if is_overlay(dir) {
+        Ok(Some(dir.to_path_buf()))
+    } else {
+        Err(format!(
+            "original-data overlay {} ignored: it has no {OVERLAY_INDEX}. Create one from your own \
+             copy with `hero-tools original extract <install> --out <dir>` (see docs/ORIGINAL_DATA.md)",
+            dir.display()
+        ))
+    }
 }
 
 /// Seconds since the Unix epoch (0 if the clock is unavailable or before 1970).
@@ -294,6 +385,57 @@ mod tests {
         let o = LaunchOptions::parse_args(args(&["--data"]));
         assert_eq!(o.data_dir, None);
         assert_eq!(o.warnings.len(), 1);
+
+        let o = LaunchOptions::parse_args(args(&["--original", "D:/overlay"]));
+        assert_eq!(o.original_dir, Some(PathBuf::from("D:/overlay")));
+        let o = LaunchOptions::parse_args(args(&["--original=/o", "--data=/d"]));
+        assert_eq!(o.original_dir, Some(PathBuf::from("/o")));
+        assert_eq!(o.data_dir, Some(PathBuf::from("/d")));
+        let o = LaunchOptions::parse_args(args(&["--original"]));
+        assert_eq!(o.original_dir, None);
+        assert_eq!(o.warnings, vec!["--original needs a directory argument"]);
+    }
+
+    #[test]
+    fn overlay_dir_precedence_and_validation() {
+        let yes = |_: &Path| true;
+        assert_eq!(resolve_overlay_dir(None, None, yes), Ok(None));
+        assert_eq!(
+            resolve_overlay_dir(None, Some(Path::new("")), yes),
+            Ok(None)
+        );
+        assert_eq!(
+            resolve_overlay_dir(Some(Path::new("/a")), Some(Path::new("/b")), yes),
+            Ok(Some(PathBuf::from("/a")))
+        );
+        assert_eq!(
+            resolve_overlay_dir(None, Some(Path::new("/b")), yes),
+            Ok(Some(PathBuf::from("/b")))
+        );
+        let err = resolve_overlay_dir(Some(Path::new("/install")), None, |_| false).unwrap_err();
+        assert!(err.contains("/install"), "{err}");
+        assert!(err.contains("hero-tools original extract"), "{err}");
+    }
+
+    #[test]
+    fn media_paths_try_the_overlay_first() {
+        let root = DataRoot::from_dir(Path::new("/games/hero/data/base"), &[]);
+        assert_eq!(
+            root.media_paths("gfx/a.png"),
+            vec!["/games/hero/data/base/gfx/a.png"]
+        );
+        assert_eq!(root.media_overlay(), None);
+        let root = root.with_media_overlay(Path::new("/home/me/overlay"));
+        assert_eq!(
+            root.media_paths("/gfx/a.png"),
+            vec![
+                "/home/me/overlay/gfx/a.png",
+                "/games/hero/data/base/gfx/a.png"
+            ]
+        );
+        assert_eq!(root.media_overlay(), Some("/home/me/overlay/"));
+        // Pack text files are never overlaid.
+        assert_eq!(root.path("pack.toml"), "/games/hero/data/base/pack.toml");
     }
 
     #[test]

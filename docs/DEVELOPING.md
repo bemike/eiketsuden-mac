@@ -24,7 +24,13 @@ cargo test -p hero-game
 cargo run -p hero-game                          # the game
 cargo run -p hero-game -- --gallery             # the UI gallery (needs only the fonts)
 cargo run -p hero-game -- --data path/to/pack   # another data pack
+cargo run -p hero-game -- --original path/to/overlay  # original-data overlay (see ORIGINAL_DATA.md)
 ```
+
+`--original <dir>` (or the `EIKETSUDEN_ORIGINAL` environment variable) adds an original-data
+overlay written by `hero-tools original extract` from the player's own copy of the original game:
+media files are looked up there first, then in the pack (native builds only; a folder without
+`index.json` is ignored with a warning). See [ORIGINAL_DATA.md](ORIGINAL_DATA.md).
 
 The data pack is the first match of `--data <dir>`, the `EIKETSUDEN_DATA` environment variable,
 `<exe dir>/data/base` and `./data/base`. When no pack is found the game shows an error screen that lists
