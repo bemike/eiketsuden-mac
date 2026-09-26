@@ -46,6 +46,8 @@ should they ever be re-rendered, `fetch.py` reports the new hashes and the parts
 
 Lint and format the scripts with `uvx ruff check --no-cache tools/assets` and
 `uvx ruff format --no-cache tools/assets` (settings in `ruff.toml`).
+Unit tests of the pure logic (source table parsing, the portrait table checks, grading and filter
+helpers) run without the cache: `python -m unittest discover -s tools/assets -p "test_*.py"`.
 
 ## Layout
 
@@ -68,6 +70,7 @@ Lint and format the scripts with `uvx ruff check --no-cache tools/assets` and
 | `build_music.py` | `bgm/<key>.ogg` |
 | `tilemap.py` | reference renderer of `terrain.toml` (used by the title and the previews) |
 | `preview.py` | review sheets: sample map with every unit, tile catalogue, unit sheets |
+| `test_pipeline.py` | unit tests (see above) |
 
 ## Terrain (`gfx/tiles/terrain.toml`)
 
