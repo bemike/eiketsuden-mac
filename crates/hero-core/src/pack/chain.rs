@@ -190,9 +190,10 @@ impl PackChain {
     }
 
     /// Add the parent read from [`PackChain::next_parent`]. Fails when it is invalid, when there
-    /// is no parent to add, or when the chain would become a cycle or too deep.
+    /// is no parent to add, or when the chain would become a cycle or too deep; the chain is then
+    /// unchanged.
     pub fn push_parent(&mut self, manifest: &str) -> Result<(), PackError> {
-        let Some(dir) = self.next.take() else {
+        let Some(dir) = self.next.clone() else {
             return Err(PackError::Invalid(
                 "the pack chain is complete; no parent pack.toml was requested".into(),
             ));
@@ -310,7 +311,8 @@ impl PackChain {
         Ok(self.resolve()?.all())
     }
 
-    /// Parse and check the manifest of the pack in `dir`, add it and work out its parent.
+    /// Parse and check the manifest of the pack in `dir`, add it and work out its parent. A
+    /// rejected manifest leaves the chain as it was.
     fn add(&mut self, dir: String, text: &str) -> Result<(), PackError> {
         let file = join_path(&dir, MANIFEST_FILE);
         let manifest = PackManifest::parse_file(&file, text)?;
@@ -329,33 +331,35 @@ impl PackChain {
                 ),
             ));
         }
-        if self.presentation.is_none() && declares_presentation(text) {
-            self.presentation = Some(manifest.presentation);
-        }
         let parent = manifest.extends.as_deref().map(|e| join_path(&dir, e));
-        self.layers.push(PackLayer { dir, manifest });
-        if let Some(parent) = parent {
-            if let Some(cycle) = self.layers.iter().find(|l| l.dir == parent) {
+        if let Some(parent) = &parent {
+            let in_chain = *parent == dir || self.layers.iter().any(|l| l.dir == *parent);
+            if in_chain {
                 return Err(parse_error(
                     &file,
                     format!(
                         "extends {}, which is already part of this chain: a pack cannot extend itself, directly or through other packs",
-                        describe_dir(&cycle.dir)
+                        describe_dir(parent)
                     ),
                 ));
             }
-            if self.layers.len() >= MAX_CHAIN_DEPTH {
+            // This pack and its parent would make one more than the packs read so far.
+            if self.layers.len() + 1 >= MAX_CHAIN_DEPTH {
                 return Err(parse_error(
                     &file,
                     format!(
                         "extends {}, but a chain holds at most {MAX_CHAIN_DEPTH} packs (a pack and {} packs it extends)",
-                        describe_dir(&parent),
+                        describe_dir(parent),
                         MAX_CHAIN_DEPTH - 1
                     ),
                 ));
             }
-            self.next = Some(parent);
         }
+        if self.presentation.is_none() && declares_presentation(text) {
+            self.presentation = Some(manifest.presentation);
+        }
+        self.layers.push(PackLayer { dir, manifest });
+        self.next = parent;
         Ok(())
     }
 }

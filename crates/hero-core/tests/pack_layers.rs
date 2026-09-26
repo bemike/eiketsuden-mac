@@ -123,6 +123,16 @@ fn two_phase_loading_lists_every_file_of_the_chain() {
         chain.push_parent(&files["../mini/pack.toml"]).is_err(),
         "no parent is pending"
     );
+    // A rejected parent leaves the chain waiting for it.
+    let mut pending = PackChain::new(&files["pack.toml"]).unwrap();
+    assert!(pending.push_parent("id = ").is_err());
+    assert!(pending
+        .push_parent(&manifest("mini_ext", "extends = \"../x\""))
+        .is_err());
+    assert_eq!(pending.layers().len(), 1);
+    assert_eq!(pending.next_parent().as_deref(), Some("../mini/pack.toml"));
+    pending.push_parent(&files["../mini/pack.toml"]).unwrap();
+    assert!(pending.is_complete());
 
     let listed = chain.text_files().unwrap();
     // The child's own files and the parent's files it does not replace.
