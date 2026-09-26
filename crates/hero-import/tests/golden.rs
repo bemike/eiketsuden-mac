@@ -22,7 +22,7 @@ use hero_import::edition::{identify, EditionId};
 use hero_import::install::InstallDir;
 use hero_import::ls11::Archive;
 use hero_import::text::{build_messages, parse_messages, TextEncoding};
-use hero_import::{extract, ls11, palette, probe, sprites, table6};
+use hero_import::{extract, ls11, maps, palette, probe, sprites, table6};
 use std::path::{Path, PathBuf};
 
 const ENV: &str = "EIKETSU_ORIGINAL_DIR";
@@ -221,6 +221,71 @@ fn check_korean_map_geometry(install: &InstallDir) {
     }
 }
 
+/// Maps: the MAIN.EXE tables are found through their code, every battle map draws only chips
+/// its bank has (maps 0 and 52 use chip 254, which only the second set's bank reaches), the name
+/// list has one name per map, and every campaign, scene and town entry has its layout.
+fn check_korean_maps(install: &InstallDir) {
+    let tables = maps::find_exe_tables(&read(install, "MAIN.EXE")).expect("MAIN.EXE map tables");
+    let names = tables
+        .terrain_names
+        .as_ref()
+        .expect("terrain names in MAIN.EXE");
+    assert_eq!(names.len(), maps::TERRAIN_COUNT, "terrain names");
+    assert_eq!(tables.second_set_maps.len(), 19, "maps on HEXZCHP entry 2");
+    let chipsets = entries(install, "HEXZCHP.R3");
+    let hexzmap = entries(install, "HEXZMAP.R3");
+    let (map_entries, name_entry) = hexzmap.split_at(hexzmap.len() - 1);
+    assert_eq!(map_entries.len(), 58, "battle maps");
+    assert_eq!(
+        maps::parse_map_names(&name_entry[0]).len(),
+        58,
+        "one name per battle map"
+    );
+    let mut unknown_terrain = 0;
+    for (i, entry) in map_entries.iter().enumerate() {
+        let map = maps::BattleMap::parse(entry).unwrap_or_else(|e| panic!("map {i}: {e}"));
+        let bank = maps::battle_bank(&chipsets, tables.chip_set_for(i)).unwrap();
+        maps::render_tiles(&map.chips, map.width, map.height, &bank)
+            .unwrap_or_else(|e| panic!("map {i}: {e}"));
+        unknown_terrain += map
+            .terrain
+            .iter()
+            .filter(|&&t| usize::from(t) >= maps::TERRAIN_COUNT)
+            .count();
+    }
+    assert!(
+        unknown_terrain <= 1,
+        "{unknown_terrain} cells with terrain ≥ 20"
+    );
+    for (i, entry) in entries(install, "MMAP.R3").iter().enumerate() {
+        maps::CampaignMap::parse(entry, &tables.campaign_sizes)
+            .unwrap_or_else(|e| panic!("MMAP entry {i}: {e}"));
+    }
+    let strips: Vec<_> = entries(install, "HEXBMAP.R3")
+        .iter()
+        .map(|e| maps::SceneStrip::of(e))
+        .collect();
+    assert_eq!(
+        strips,
+        [
+            [Some(maps::SceneStrip::Backdrop); 5].as_slice(),
+            &[Some(maps::SceneStrip::Ground); 4]
+        ]
+        .concat(),
+        "HEXBMAP strips"
+    );
+    assert!(
+        tables.backdrop.iter().all(|&b| b < 5)
+            && tables.ground.iter().all(|&g| (5..9).contains(&g)),
+        "terrain → scene tables point at backdrops 0–4 and grounds 5–8"
+    );
+    for name in ["SMAP.R3", "PMAP.R3"] {
+        for (i, e) in entries(install, name).iter().enumerate() {
+            maps::TownMap::parse(e).unwrap_or_else(|e| panic!("{name} entry {i}: {e}"));
+        }
+    }
+}
+
 /// Scene counts, message tables, the prologue's offset table, sizes and block counts.
 fn check_korean_scenario_text(install: &InstallDir) {
     let mut blocks = 0;
@@ -365,6 +430,7 @@ fn check_all_korean(dir: &Path) {
     check_korean_containers(&install);
     check_korean_tables(&install);
     check_korean_map_geometry(&install);
+    check_korean_maps(&install);
     check_korean_scenario_text(&install);
     check_korean_palette(&install);
     check_korean_sprites(&install);
@@ -425,6 +491,11 @@ fn golden_korean_table_containers() {
 #[test]
 fn golden_korean_map_geometry() {
     korean_check("golden_korean_map_geometry", check_korean_map_geometry);
+}
+
+#[test]
+fn golden_korean_maps() {
+    korean_check("golden_korean_maps", check_korean_maps);
 }
 
 #[test]
@@ -490,7 +561,22 @@ fn write_known_answer_install(dir: &Path) {
     let marker = TextEncoding::EucKr.encode("DOS/V 삼국지영걸전 1").unwrap();
     std::fs::write(dir.join("DISK1.R3I"), marker).unwrap();
 
-    let mut exe = vec![0x90u8; PALETTE_OFFSET];
+    // MAIN.EXE: the map tables' code and data, then the palette bank at its offset.
+    let terrain_names: Vec<Vec<u8>> = (0..maps::TERRAIN_COUNT)
+        .map(|i| format!("t{i}").into_bytes())
+        .collect();
+    let terrain_refs: Vec<&[u8]> = terrain_names.iter().map(Vec::as_slice).collect();
+    let second_set: Vec<u16> = (0..19).map(|i| i * 3).collect();
+    let mut exe = maps::build_exe_fixture(
+        &maps::ExeFixture {
+            second_set_maps: &second_set,
+            backdrop: std::array::from_fn(|i| (i % 5) as u8),
+            ground: std::array::from_fn(|i| 5 + (i % 4) as u8),
+            terrain_names: &terrain_refs,
+            campaign_sizes: [(96, 96), (96, 96), (72, 112), (120, 88), (112, 128)],
+        },
+        PALETTE_OFFSET,
+    );
     // Every slot the 8-colour digital palette (index bit 0 = blue, 1 = red, 2 = green), twice.
     let digital: [[u8; 3]; 16] = std::array::from_fn(|c| {
         let on = |bit: usize| if c & (1 << bit) != 0 { 15 } else { 0 };
@@ -532,7 +618,9 @@ fn write_known_answer_install(dir: &Path) {
         )
         .unwrap();
     }
-    write_ls11(dir, "HEXBMAP.R3", &vec![vec![1, 2, 3]; 9]);
+    let mut strips = vec![vec![1u8; 46 * 5]; 5];
+    strips.extend(vec![vec![2u8; 66 * 8]; 4]);
+    write_ls11(dir, "HEXBMAP.R3", &strips);
 
     let battle_map = |w: u8, h: u8| {
         let mut m = vec![w, h];
@@ -541,15 +629,30 @@ fn write_known_answer_install(dir: &Path) {
     };
     let mut maps = vec![battle_map(56, 32)];
     maps.extend((0..57).map(|i| battle_map(32 + (i % 8) * 4, 22 + (i % 4) * 2)));
-    maps.push(vec![9u8; 390]);
+    maps.push(
+        (0..58)
+            .flat_map(|i| {
+                format!(
+                    "map{i}
+"
+                )
+                .into_bytes()
+            })
+            .chain(
+                *b"
+",
+            )
+            .collect(),
+    );
     write_ls11(dir, "HEXZMAP.R3", &maps);
     let mmap: Vec<Vec<u8>> = [(96, 96), (72, 112), (120, 88), (112, 128)]
         .iter()
-        .map(|(w, h)| vec![4u8; w * h + w * h / 32])
+        .map(|(w, h)| vec![0u8; w * h + w * h / 32])
         .collect();
     write_ls11(dir, "MMAP.R3", &mmap);
     let city = |objects: u8| {
-        let mut e = vec![2u8; 1260];
+        let mut e = vec![0u8; 640];
+        e.extend(vec![0xffu8; 620]);
         e.push(objects);
         e.extend(vec![1u8; 3 * objects as usize]);
         e

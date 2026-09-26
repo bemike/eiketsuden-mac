@@ -185,7 +185,8 @@ impl BattleMap {
 }
 
 /// The map-name entry of `HEXZMAP.R3`: one name per map, separated by LF (the lines end in
-/// CR LF, except that the first two names are separated by a lone LF), ended by `0x1A`.
+/// CR LF, except that the first two names are separated by a lone LF), ended by an empty line
+/// and `0x1A`.
 /// Returns the raw bytes of each line without the line end.
 pub fn parse_map_names(entry: &[u8]) -> Vec<Vec<u8>> {
     let end = entry.iter().position(|&b| b == 0x1a).unwrap_or(entry.len());
@@ -194,7 +195,7 @@ pub fn parse_map_names(entry: &[u8]) -> Vec<Vec<u8>> {
         .split(|&b| b == b'\n')
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line).to_vec())
         .collect();
-    if lines.last().is_some_and(|l| l.is_empty()) {
+    while lines.last().is_some_and(|l| l.is_empty()) {
         lines.pop();
     }
     lines
@@ -386,7 +387,7 @@ pub struct CampaignMap {
     /// `width × height` tile indices into `MMAPBGPL` entry 0, row-major.
     pub tiles: Vec<u8>,
     /// `(width/2) × (height/2)` cells, `true` where the route network runs (stored as a cleared
-    /// bit, most significant bit first).
+    /// bit, most significant bit first, rows packed without padding).
     pub routes: Vec<bool>,
 }
 
@@ -397,7 +398,9 @@ impl CampaignMap {
         let mut fits: Vec<(usize, usize)> = sizes
             .iter()
             .copied()
-            .filter(|&(w, h)| w % 16 == 0 && h % 2 == 0 && w * h + w * h / 32 == entry.len())
+            .filter(|&(w, h)| {
+                w % 2 == 0 && h % 2 == 0 && (w * h) % 32 == 0 && w * h + w * h / 32 == entry.len()
+            })
             .collect();
         fits.dedup();
         let [(width, height)] = fits[..] else {
@@ -875,7 +878,7 @@ mod tests {
     #[test]
     fn names_split_on_line_feeds() {
         let names =
-            parse_map_names(b"\xbb\xe7\xbc\xf6\n\xc8\xa3\r\n\xbd\xc5\xb5\xb5 1\r\n\x1a\r\n");
+            parse_map_names(b"\xbb\xe7\xbc\xf6\n\xc8\xa3\r\n\xbd\xc5\xb5\xb5 1\r\n\r\n\x1a\r\n");
         assert_eq!(
             names,
             vec![
@@ -949,6 +952,12 @@ mod tests {
         assert_eq!(map.routes.len(), 16);
         assert!(map.routes[0] && !map.routes[1]);
         assert!(CampaignMap::parse(&entry[1..], &[(16, 4)]).is_err());
+        // Rows of the route mask are packed without padding: 24×4 tiles = 12×2 cells = 3 bytes,
+        // the second row starts at bit 12.
+        let mut entry = vec![0u8; 24 * 4];
+        entry.extend([0xff, 0xf7, 0xff]);
+        let map = CampaignMap::parse(&entry, &[(24, 4)]).unwrap();
+        assert_eq!(map.routes.iter().position(|&r| r), Some(12));
     }
 
     #[test]

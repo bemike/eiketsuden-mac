@@ -31,7 +31,7 @@ USAGE:
         hashes, the first 16 bytes of each file and container summaries, no game content.
         The folder is only read. See docs/ORIGINAL_DATA.md.
 
-    hero-tools original extract <install_dir> --out <dir> [--text] [--sprites] [--portraits]
+    hero-tools original extract <install_dir> --out <dir> [--text] [--sprites] [--portraits] [--maps]
                                 [--edition korean-dos|chinese-dos]
         EXPERIMENTAL. Convert the original files into a media overlay folder (PNG + UTF-8
         JSON + index.json) for `eiketsuden --original <dir>`. Without a kind option every
@@ -134,6 +134,7 @@ fn parse_original(rest: &[String]) -> Result<Command, String> {
             "--text" if extract => select(|s| s.text = true),
             "--sprites" if extract => select(|s| s.sprites = true),
             "--portraits" if extract => select(|s| s.portraits = true),
+            "--maps" if extract => select(|s| s.maps = true),
             "--edition" if extract => {
                 let v = value("an edition id")?;
                 edition = match EditionId::parse(&v) {
@@ -313,7 +314,8 @@ mod tests {
                 selection: Some(Selection {
                     text: true,
                     portraits: true,
-                    sprites: false
+                    sprites: false,
+                    maps: false
                 }),
                 edition: Some(EditionId::ChineseDos)
             })
