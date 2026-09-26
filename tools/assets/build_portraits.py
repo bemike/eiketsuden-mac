@@ -1,11 +1,13 @@
 """Officer portraits (`gfx/portraits/<key>.png`) from the 繡像 pages of 增像全圖三國演義.
 
-Every portrait is a head-and-shoulders crop of one full-length figure of the book, chosen and
-framed by hand in `portraits.toml`. All of them get the same treatment so they read as one set
-next to the blue UI:
+Every portrait is a head-and-shoulders crop of one figure, chosen and framed by hand in
+`portraits.toml`: a full-length figure of that book, or (where the book's drawing does not read
+as a face at portrait size) a figure from another pinned woodblock book, whose printed panel on
+the scanned page is given so the levels ignore the rest of the scan. All of them get the same
+treatment so they read as one set next to the blue UI:
 
-1. the page scan is levelled (1st percentile -> ink, 60th percentile -> paper), which restores the
-   faded lithograph lines and clears the paper grain;
+1. the page scan (or the figure's panel) is levelled (1st percentile -> ink, 60th percentile ->
+   paper), which restores the faded lithograph lines and clears the paper grain;
 2. the crop is lightly denoised (3x3 median) and scaled to 192x240 (4:5, docs/ASSETS.md);
 3. brightness is mapped through one ramp from indigo ink to warm paper, with a soft vignette and
    an inset double rule echoing the frames printed around each figure in the book.
@@ -42,6 +44,9 @@ FRAME_INSET = 5  # px from the image edge to the outer rule; survives the UI's c
 FRAME_TONE = 0.30  # brightness of the rules (0 = ink, 1 = paper)
 
 
+Rect = tuple[int, int, int, int]
+
+
 @dataclass(frozen=True)
 class Portrait:
     key: str
@@ -52,16 +57,35 @@ class Portrait:
     width: int
     mirror: bool
     stand_in: bool
-    erase: tuple[tuple[int, int, int, int], ...] = ()
+    erase: tuple[Rect, ...] = ()
+    # Another pinned source than the 繡像 pages: its id, the part (page) and the printed panel of
+    # the figure on it. `page` and `quad` are unused then.
+    source: str = SOURCE
+    part: str = ""
+    panel: Rect | None = None
+    # Size of a minimum filter run over the levelled crop (odd, 0 = none): thickens thin lines
+    # to the weight of the set before the crop is scaled down.
+    bold: int = 0
 
     @property
-    def box(self) -> tuple[int, int, int, int]:
+    def box(self) -> Rect:
         """Crop box in page pixels: `face` sits at the horizontal centre, 40 % from the top."""
         w = self.width
         h = w * SIZE[1] // SIZE[0]
         left = self.face[0] - w // 2
         top = self.face[1] - h * 2 // 5
         return (left, top, left + w, top + h)
+
+    @property
+    def figure_id(self) -> tuple[str, str, str]:
+        """What identifies the drawn figure (for the reuse rules)."""
+        if self.source == SOURCE:
+            return (SOURCE, str(self.page), self.quad)
+        return (self.source, self.part, self.figure)
+
+
+def _rect(value: list[int]) -> Rect:
+    return (int(value[0]), int(value[1]), int(value[2]), int(value[3]))
 
 
 def load_table(path: Path = TOOLS_DIR / "portraits.toml") -> tuple[list[Portrait], dict[int, dict[str, str]], set[str]]:
@@ -72,17 +96,22 @@ def load_table(path: Path = TOOLS_DIR / "portraits.toml") -> tuple[list[Portrait
     reserved = set(doc["reserved"]["figures"])
     entries = []
     for key, e in doc["portraits"].items():
+        source = e.get("source", SOURCE)
         entries.append(
             Portrait(
                 key=key,
                 figure=e["figure"],
-                page=int(e["page"]),
-                quad=e["quad"],
+                page=int(e["page"]) if source == SOURCE else 0,
+                quad=e["quad"] if source == SOURCE else "",
                 face=(int(e["face"][0]), int(e["face"][1])),
                 width=int(e.get("width", 300)),
                 mirror=bool(e.get("mirror", False)),
                 stand_in=bool(e.get("stand_in", False)),
-                erase=tuple((int(r[0]), int(r[1]), int(r[2]), int(r[3])) for r in e.get("erase", [])),
+                erase=tuple(_rect(r) for r in e.get("erase", [])),
+                source=source,
+                part=str(e.get("part", "")),
+                panel=_rect(e["panel"]) if "panel" in e else None,
+                bold=int(e.get("bold", 0)),
             )
         )
     return entries, index, reserved
@@ -107,20 +136,27 @@ def check_table(
     by_key = {p.key: p for p in entries}
     for key in sorted(keys - set(by_key)):
         problems.append(f"officer portrait {key!r} has no entry in portraits.toml")
-    own = {(p.page, p.quad): p.key for p in entries if not p.stand_in}
-    users: dict[tuple[int, str], list[Portrait]] = {}
+    own = {p.figure_id: p.key for p in entries if not p.stand_in}
+    users: dict[tuple[str, str, str], list[Portrait]] = {}
     for p in entries:
-        users.setdefault((p.page, p.quad), []).append(p)
-        if p.stand_in and (p.page, p.quad) in own:
-            problems.append(f"{p.key}: {p.figure} is the own figure of {own[p.page, p.quad]}")
+        users.setdefault(p.figure_id, []).append(p)
+        if p.stand_in and p.figure_id in own:
+            problems.append(f"{p.key}: {p.figure} is the own figure of {own[p.figure_id]}")
+        if p.stand_in and p.figure in reserved:
+            problems.append(f"{p.key}: {p.figure} is reserved for its own person and cannot stand in")
+        if p.source != SOURCE:
+            # another book: no page index; the panel bounds the levels and the crop
+            if p.panel is None:
+                problems.append(f"{p.key}: a figure from {p.source} needs its `panel`")
+            elif not _inside(p.box, p.panel):
+                problems.append(f"{p.key}: crop box {p.box} leaves the panel {p.panel}")
+            continue
         printed = index.get(p.page, {}).get(p.quad)
         if printed is None:
             problems.append(f"{p.key}: page {p.page} {p.quad} is not in the page index")
             continue
         if printed != p.figure:
             problems.append(f"{p.key}: page {p.page} {p.quad} shows {printed}, not {p.figure}")
-        if p.stand_in and p.figure in reserved:
-            problems.append(f"{p.key}: {p.figure} is reserved for its own person and cannot stand in")
     for group in users.values():
         if len(group) > 2 or (len(group) == 2 and [p.mirror for p in group].count(True) != 1):
             keys = ", ".join(p.key for p in group)
@@ -128,6 +164,10 @@ def check_table(
     if problems:
         raise SourceError("portraits.toml:\n  " + "\n  ".join(problems))
     return sorted(set(by_key) - keys)
+
+
+def _inside(inner: Rect, outer: Rect) -> bool:
+    return outer[0] <= inner[0] and outer[1] <= inner[1] and inner[2] <= outer[2] and inner[3] <= outer[3]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -145,9 +185,11 @@ def _percentile(img: Image.Image, q: float) -> int:
     return 255
 
 
-def _levels(page: Image.Image) -> Image.Image:
-    lo = _percentile(page, INK_PERCENTILE)
-    hi = max(lo + 1, _percentile(page, PAPER_PERCENTILE))
+def _levels(page: Image.Image, region: Rect | None = None) -> Image.Image:
+    """Stretch ink to black and paper to white, measured on the whole page or on `region`."""
+    sample = page if region is None else page.crop(region)
+    lo = _percentile(sample, INK_PERCENTILE)
+    hi = max(lo + 1, _percentile(sample, PAPER_PERCENTILE))
     lut = [round(255 * min(1.0, max(0.0, (v - lo) / (hi - lo))) ** GAMMA) for v in range(256)]
     return page.point(lut)
 
@@ -191,12 +233,15 @@ def render(page: Image.Image, p: Portrait) -> Image.Image:
     left, top, right, bottom = p.box
     if left < 0 or top < 0 or right > page.width or bottom > page.height:
         raise SourceError(f"{p.key}: crop box {p.box} leaves the {page.width}x{page.height} page")
-    levelled = _levels(page)
+    levelled = _levels(page, p.panel)
     if p.erase:
         draw = ImageDraw.Draw(levelled)
         for rect in p.erase:
             draw.rectangle(rect, fill=255)
-    crop = levelled.crop(p.box).filter(ImageFilter.MedianFilter(3))
+    crop = levelled.crop(p.box)
+    if p.bold:
+        crop = crop.filter(ImageFilter.MinFilter(p.bold))
+    crop = crop.filter(ImageFilter.MedianFilter(3))
     tone = crop.resize(SIZE, Image.Resampling.LANCZOS)
     if p.mirror:
         tone = tone.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
@@ -230,12 +275,13 @@ def build_portraits(src: Sources, pack: Path) -> list[str]:
         print(f"  portraits no officer uses (drawn anyway): {', '.join(unused)}")
     out_dir = pack / "gfx" / "portraits"
     written = []
-    pages: dict[int, Image.Image] = {}
-    for p in sorted(entries, key=lambda e: (e.page, e.key)):
-        if p.page not in pages:
-            with Image.open(src.path(SOURCE, str(p.page))) as im:
-                pages[p.page] = im.convert("L")
-        save_png(render(pages[p.page], p), out_dir / f"{p.key}.png")
+    pages: dict[tuple[str, str], Image.Image] = {}
+    for p in sorted(entries, key=lambda e: (e.source, e.page, e.part, e.key)):
+        page_id = (SOURCE, str(p.page)) if p.source == SOURCE else (p.source, p.part)
+        if page_id not in pages:
+            with Image.open(src.path(*page_id)) as im:
+                pages[page_id] = im.convert("L")
+        save_png(render(pages[page_id], p), out_dir / f"{p.key}.png")
         written.append(f"gfx/portraits/{p.key}.png")
     save_png(unknown_portrait(), out_dir / "_unknown.png")
     written.append("gfx/portraits/_unknown.png")

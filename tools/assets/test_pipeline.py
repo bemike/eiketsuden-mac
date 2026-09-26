@@ -177,6 +177,26 @@ class PortraitTableTest(unittest.TestCase):
         with self.assertRaises(SourceError):
             self.check([portrait("a", "董卓", "BL", stand_in=True)], {"a"}, frozenset({"董卓"}))
 
+    def other_book(
+        self, key: str, panel: tuple[int, int, int, int] | None = (0, 0, 1000, 1000), stand_in: bool = False
+    ) -> Portrait:
+        return Portrait(
+            key, "漢昭烈帝", 0, "", (500, 500), 400, False, stand_in, source="book2", part="63", panel=panel
+        )
+
+    def test_figures_of_another_book_need_a_panel_holding_the_crop(self) -> None:
+        self.assertEqual(self.check([portrait("a", "丁原"), self.other_book("b")], {"a", "b"}), [])
+        for name, entry in {
+            "no panel": self.other_book("b", panel=None),
+            "crop leaves the panel": self.other_book("b", panel=(0, 0, 600, 1000)),
+        }.items():
+            with self.subTest(name), self.assertRaises(SourceError):
+                self.check([entry], {"b"})
+
+    def test_reuse_rules_hold_for_another_book(self) -> None:
+        with self.assertRaises(SourceError):  # the same drawing twice, neither mirrored
+            self.check([self.other_book("a"), self.other_book("b", stand_in=True)], {"a", "b"})
+
 
 class GradeTest(unittest.TestCase):
     def test_tone_curve_is_monotonic_and_caps_highlights(self) -> None:

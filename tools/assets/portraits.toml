@@ -19,6 +19,16 @@
 #   erase     page rectangles [x0, y0, x1, y1] painted over with paper first (printed name or poem
 #             text that would otherwise show inside the crop)
 #
+# An officer whose figure in the book does not read as a face at portrait size can take a figure
+# from another pinned source instead (only 劉備 and 張飛 so far):
+#   source    source id in sources.toml (default: the 繡像 pages); `page` and `quad` are then left out
+#   figure    the name printed with (or given to) that figure
+#   panel     the figure's printed panel on the source image [x0, y0, x1, y1]: the levels are
+#             measured there instead of on the whole scan, and the crop must stay inside it
+#   face, width, erase, mirror, stand_in   as above, in pixels of that source image
+#   bold      optional odd size of a minimum filter over the crop, which thickens lines much
+#             thinner than the book's to the weight of the set (the crop is scaled down a lot)
+#
 # Choosing stand-ins: the book has a figure for 52 of the officers. The others get figures of
 # people who take no part in this game's story (mostly later generations and scholars), picked by
 # type (warrior or official, age) and never from [reserved]. There are fewer usable figures than
@@ -69,9 +79,11 @@
 
 # Figures of people who have (or will have) their own part in the story, and all women of the book:
 # never used as stand-ins, so every face stays with its person. The figures used for officers'
-# own portraits are implicitly reserved as well.
+# own portraits are implicitly reserved as well; 昭烈帝 and 張桓侯 are listed because their
+# officers now take their portraits from other sources.
 [reserved]
 figures = [
+  "昭烈帝", "張桓侯",
   "漢獻帝", "王允", "董卓", "貂蟬", "董承", "馬騰", "劉表", "張繡", "劉璋", "張任", "張松", "張角",
   "司馬徽", "徐母", "蠻王孟獲", "孫堅", "于吉", "孫策", "孫權", "周瑜", "魯肅", "諸葛瑾", "呂蒙", "黃蓋",
   "周泰", "張昭", "陸遜", "左慈", "華佗", "曹丕", "曹彰", "楊修", "賈詡", "徐晃", "典韋", "龐德",
@@ -79,11 +91,16 @@ figures = [
   "董妃", "伏皇后", "蔡文姬", "糜夫人", "甘夫人", "孫夫人", "二喬", "甄后", "夏侯令女",
 ]
 
+# The book's 昭烈帝 (page 24 TL) has hardly a line in the face; 三才圖會 draws him as a bust.
 [portraits.liu_bei]  # 유비 劉備
-figure = "昭烈帝"
-page = 24
-quad = "TL"
-face = [560, 745]
+source = "sancai_liu_bei"
+figure = "漢昭烈帝"
+panel = [1930, 690, 3170, 2620]
+face = [2560, 1710]
+width = 1000
+bold = 5
+# show-through of the text on the back of the leaf, and two ink specks
+erase = [[2066, 1520, 2293, 1918], [2870, 1500, 3050, 1950], [2905, 1950, 3010, 2060], [2895, 1205, 2960, 1275]]
 
 [portraits.guan_yu]  # 관우 關羽
 figure = "關壯繆"
@@ -91,12 +108,13 @@ page = 28
 quad = "BR"
 face = [1200, 1820]
 
+# The book's 張桓侯 (page 30 TR) turns away from the viewer; a Ming scroll shows him face on.
 [portraits.zhang_fei]  # 장비 張飛
-figure = "張桓侯"
-page = 30
-quad = "TR"
-face = [1210, 738]
-width = 260
+source = "ming_zhang_fei"
+figure = "張飛"
+panel = [124, 310, 2258, 1737]
+face = [1345, 1000]
+width = 820
 
 [portraits.jian_yong]  # 간옹 簡雍
 figure = "禰衡"

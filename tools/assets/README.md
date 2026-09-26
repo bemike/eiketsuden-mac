@@ -186,7 +186,10 @@ source file of each key): `cursor`, `confirm`, `cancel`, `error`, `step`, `hit`,
 
 192x240 head-and-shoulders crops of the full-length figures in the portrait section of
 增像全圖三國演義 (a late-Qing illustrated edition of the novel, public domain), levelled, lightly
-denoised, recoloured to indigo ink on warm paper and framed. `portraits.toml` maps every officer of
+denoised, recoloured to indigo ink on warm paper and framed. Two officers whose figure in that book
+does not read as a face at this size take theirs from other pinned public-domain works with the
+same treatment: 劉備 from 三才圖會 (1609) and 張飛 from a Ming hanging scroll (entries with
+`source` and `panel` in `portraits.toml`). `portraits.toml` maps every officer of
 `data/base/officers.toml` to a figure (page, quarter, face point, crop width, optional `erase`
 rectangles for printed text); the build refuses a table that misses an officer, names the wrong
 figure, uses a reserved figure as a stand-in or uses a figure more than twice, and lists entries no

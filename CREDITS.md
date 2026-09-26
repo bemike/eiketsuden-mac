@@ -90,11 +90,22 @@ in-game credits are `data/base/credits.txt`; the web demo serves them with the p
   <https://commons.wikimedia.org/wiki/File:CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu>;
   the pipeline reads Wikimedia's 1920 px renders of djvu pages 16-35 and 37-50 (each pinned in
   `tools/assets/sources.toml`)
-* **Used in:** `gfx/portraits/*.png` except `_unknown.png`
+* **Used in:** `gfx/portraits/*.png` except `_unknown.png`, `liu_bei.png` and `zhang_fei.png`
 * **Changes:** head-and-shoulders crops, levels, light denoise, recoloured to ink on warm paper,
-  vignette and frame. 52 officers show their own figure from the book; the others, whom the book
+  vignette and frame. 50 officers show their own figure from the book; the others, whom the book
   does not draw, show the figure of another person of the book (one figure serves two people at
   most, the second mirrored). `tools/assets/portraits.toml` lists every officer's figure.
+
+### Portraits of Liu Bei and Zhang Fei
+
+The book draws Liu Bei with hardly a line in the face and Zhang Fei turned away, so these two
+portraits come from other public-domain works, with the same treatment as above (Liu Bei's thin
+woodblock lines are also thickened; show-through from the back of the leaf is painted out).
+
+| output | work | artist | holding / scan | licence | source |
+|---|---|---|---|---|---|
+| `gfx/portraits/liu_bei.png` | 三才圖會 *Sancai Tuhui* (1609), 人物 section, 漢昭烈帝像 | compiled by Wang Qi (王圻) and Wang Siyi (王思義); woodcut, artist unknown | National Diet Library, Japan (三才圖會 106卷, vol. 7) | public domain | <https://commons.wikimedia.org/wiki/File:NDL2574372_%E4%B8%89%E6%89%8D%E5%9C%96%E6%9C%83_106%E5%8D%B7.(7)_part1.pdf> (page 63, Wikimedia's 3840 px render) |
+| `gfx/portraits/zhang_fei.png` | 明人畫張飛像軸 *Portrait of Zhang Fei*, hanging scroll | anonymous, Ming dynasty | Palace Museum, Beijing | public domain | <https://commons.wikimedia.org/wiki/File:%E6%98%8E%E4%BA%BA%E7%94%BB%E5%BC%A0%E9%A3%9E%E5%83%8F%E8%BD%B4.png> |
 
 ### Paintings used for the drama backgrounds
 
