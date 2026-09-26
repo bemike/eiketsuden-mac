@@ -962,12 +962,16 @@ fn extract_text(
                     )?;
                     report.outputs += 1;
                     if let Some(index) = read_source(install, IPPAN_INDEX, &mut report)? {
+                        found += 1;
                         match townsfolk_talk(&index, &message_data, &look) {
                             Ok(file) => {
                                 out.write_json(&format!("{TEXT_DIR}/townsfolk_talk.json"), &file)?;
                                 report.outputs += 1;
                             }
-                            Err(e) => report.errors.push(e.to_string()),
+                            Err(e) => {
+                                failed += 1;
+                                report.errors.push(e.to_string());
+                            }
                         }
                     }
                 }
@@ -1019,7 +1023,7 @@ fn extract_text(
         "no message files (SNR0M.R3–SNR4M.R3, IPPAN0M.R3) in the install".into()
     } else {
         format!(
-            "{} of {found} message files converted: {} scenes, {} instructions, {} dialogues \
+            "{} of {found} text files converted: {} scenes, {} instructions, {} dialogues \
              ({} lines), {} strings, {pool_strings} pool strings; {} not cleanly decodable as {}",
             found - failed,
             counts.scenes,
@@ -1748,6 +1752,20 @@ mod tests {
         assert_eq!(sprites.status, Status::Partial);
         assert!(sprites.errors[0].contains("HEXZCHP.R3"));
         assert!(!out.path().join("gfx/original/hexzchp").exists());
+    }
+
+    #[test]
+    fn broken_townspeople_index_is_reported() {
+        let src = korean();
+        // A town record that runs past the end of the index.
+        std::fs::write(src.path().join("IPPAN0.R3"), [1u8, 0x10, 0, 0, 0]).unwrap();
+        let out = TempDir::new("ex-out-ippan");
+        let index = extract(src.path(), out.path(), &Options::default()).unwrap();
+        let text = &index.assets["text"];
+        assert_eq!(text.status, Status::Partial, "{text:#?}");
+        assert!(text.errors[0].starts_with("IPPAN0.R3 chunk 0"), "{text:#?}");
+        assert!(out.path().join("text/ippan0m.json").exists());
+        assert!(!out.path().join("text/townsfolk_talk.json").exists());
     }
 
     #[test]
