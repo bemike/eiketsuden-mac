@@ -37,7 +37,7 @@
 * **원작 데이터 가져오기 (실험적)** — OpenRCT2처럼, 정품을 가진 사용자는 자기 PC의 원작 파일을 읽어 쓸 수 있습니다.
   [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)
 * **모딩** — 규칙·무장·전투 맵·캠페인·대사가 모두 사람이 읽을 수 있는 TOML과 `.drama` 스크립트입니다.
-  [docs/MODDING.md](docs/MODDING.md)
+  레이어드 팩(`extends`)으로 기본 팩 위에 바꿀 파일만 담은 모드를 만들 수 있습니다. [docs/MODDING.md](docs/MODDING.md)
 
 
 ## 플레이하기
@@ -101,6 +101,8 @@ cargo run --release -p hero-tools -- validate data/base
 ## 로드맵
 
 * 제2장(관도 ~ 장판파) 이후 캠페인, 원작의 IF 루트(촉한의 천하통일)까지
+* 원작 모드: 정품에서 변환한 팩이 기본 팩을 확장(`extends`)해, 변환된 에셋부터 원작의 모습으로 바꾸는 방식
+  ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md) 8절)
 * 원작 데이터 임포터: 초상화(TF-DCE) 디코딩, 전투 맵, Steam판 지원 (정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
 * 캠페인 경로를 따라가는 밸런스 시뮬레이션, 영어 번역
 
@@ -134,7 +136,9 @@ Linux and in the browser via WebAssembly.
   ([CREDITS.md](CREDITS.md)).
 * Optional, experimental importer for players who own the original game
   ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)), and a fully data-driven, moddable format
-  ([docs/MODDING.md](docs/MODDING.md)).
+  ([docs/MODDING.md](docs/MODDING.md)); a layered pack (`extends`) holds only the files a mod changes.
+* Next milestone: an "original mode", a pack converted from the player's own copy that extends the base
+  pack (section 8 of [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)).
 
 **Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
 [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`

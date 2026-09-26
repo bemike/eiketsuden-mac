@@ -1,4 +1,4 @@
-"""Unit tests of the pipeline's pure logic (no cached sources needed).
+"""Unit tests of the pipeline's pure logic and of the committed fonts (no cached sources needed).
 
 Run with `python -m unittest discover -s tools/assets -p "test_*.py"`.
 """
@@ -12,10 +12,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from fontTools.ttLib import TTFont
+
 import build
-from assetlib import SourceError, load_sources
+from assetlib import PACK_DIR, SourceError, load_sources
 from build_backgrounds import HIGHLIGHT_MAX, _tone_curve
-from build_fonts import EXTRA_HANJA, outline, pack_hanja, pixel_glyph, pixels
+from build_fonts import EXTRA_HANJA, FONTS, outline, pack_hanja, pixel_glyph, pixels
 from build_music import Track, _filters
 from build_portraits import SIZE, Portrait, check_table
 
@@ -231,6 +233,16 @@ class FontTextTest(unittest.TestCase):
         self.assertTrue(set(EXTRA_HANJA) <= chars)
         self.assertFalse(set("此字型是免費的") & (chars - set(EXTRA_HANJA)))
         self.assertNotIn("유", chars)
+
+    def test_committed_fonts_cover_the_pack_hanja(self) -> None:
+        # The fonts hold only the Hanja the pack's text uses; one missing here is drawn as a blank.
+        needed = pack_hanja()
+        for job in FONTS:
+            with self.subTest(job.out):
+                cmap = TTFont(PACK_DIR / job.out).getBestCmap()
+                missing = "".join(sorted(c for c in needed if ord(c) not in cmap))
+                hint = f"{job.out} lacks these Hanja: rerun `python tools/assets/build.py fonts`"
+                self.assertEqual(missing, "", hint)
 
 
 def glyph_pixels(filled: set[tuple[int, int]]) -> set[tuple[int, int]]:

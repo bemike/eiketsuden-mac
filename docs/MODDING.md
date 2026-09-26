@@ -526,6 +526,15 @@ portrait = "jianyong"              # uses gfx/portraits/jianyong.png
 Player officers keep their level, EXP, class, stats and equipment between battles. An officer who leaves
 and joins again starts over from this definition.
 
+**Hanja and the fonts.** The base pack's fonts (`fonts/Galmuri11.ttf`, `fonts/Galmuri9.ttf`) hold only
+the Hanja that the base pack's own text uses (they are completed by the `fonts` step of
+[tools/assets](../tools/assets/README.md#fonts-fonts)). A Hanja that is not in them — in a `hanja` or
+`name` field, a scene or anywhere else in a mod — is drawn as a blank or a box, and neither
+`hero-tools validate` nor the game reports it. The `fonts` step scans `data/base` only: for new text
+there, rerun it; for a mod, ship fonts that cover your text in your pack's `fonts/` (a child pack's
+files replace its parent's), for example ones built by the `fonts` step with your characters added
+to `EXTRA_HANJA` in `build_fonts.py`.
+
 ## Battles
 
 Each file in `pack.toml` `battles` holds one battle. Top-level fields come first, then the `[map]` and
@@ -1043,10 +1052,16 @@ branch loops, battles no campaign node uses.
   a misspelt `rnage` in the archer class of `rules/classes.toml` is reported as field `class[archer].rnage`.
 * **Media** (natively, below the pack directory; for a layered pack in every pack of the chain, top pack
   first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries,
-  `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing or broken
-  `terrain.toml`/`fx.toml`, a missing terrain atlas image, terrain without a `[tiles.<key>]` entry, strategy
-  effects without an `fx.toml` entry or strip. W for missing portraits (the `_unknown` portrait is shown),
-  a missing `icons.toml` or unknown icon keys.
+  `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing
+  `terrain.toml`/`fx.toml` or one that is not valid TOML, a missing terrain atlas image, terrain without a
+  `[tiles.<key>]` entry, strategy effects without an `fx.toml` entry or strip. W for missing portraits (the
+  `_unknown` portrait is shown), a missing `icons.toml` or unknown icon keys. For the media index files
+  (`units.toml`, `terrain.toml`, `fx.toml`, `icons.toml`) this checks only the TOML syntax, the files
+  they name and that the entries the pack needs exist; it does not check the other fields' types or
+  values (`tile_size`, `frame`, `anchor`, `frames`, `fps`, …). An index with such a mistake (say
+  `tile_size = "48"`) passes validation; the game then logs a warning (stderr natively, the browser
+  console on the web) and falls back to defaults or placeholders (16×16 unit frames, for example), so
+  check a new index in the game.
 
 ## hero-tools
 

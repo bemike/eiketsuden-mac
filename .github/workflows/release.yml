@@ -45,6 +45,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      - name: Tag matches the workspace version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          PKGID=$(cargo pkgid -p hero-game)
+          CRATE="${PKGID##*[#@]}"
+          if [ "${GITHUB_REF_NAME#v}" != "$CRATE" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $CRATE in Cargo.toml (shown on the title screen)"
+            exit 1
+          fi
       - name: Build
         run: cargo build --release -p hero-game --target ${{ matrix.target }}
       - name: Package
@@ -56,6 +66,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "dist/$NAME/"
           cp -r data/base "dist/$NAME/data/base"
           cp README.md LICENSE CREDITS.md "dist/$NAME/"
+          cp -r docs "dist/$NAME/docs"
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
             7z a "$NAME.zip" "$NAME" > /dev/null
