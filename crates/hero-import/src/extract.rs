@@ -205,7 +205,8 @@ pub enum ExtractError {
     NotExtractable(Box<Edition>),
     /// `--edition` named an edition that cannot be converted.
     BadForcedEdition(EditionId),
-    OutputInsideSource {
+    /// The output folder and the install are the same, or one lies inside the other.
+    OutputOverlapsSource {
         output: PathBuf,
         source: PathBuf,
     },
@@ -233,10 +234,10 @@ impl fmt::Display for ExtractError {
                 "--edition {} is not extractable (use korean-dos or chinese-dos)",
                 id.as_str()
             ),
-            ExtractError::OutputInsideSource { output, source } => write!(
+            ExtractError::OutputOverlapsSource { output, source } => write!(
                 f,
-                "the output folder {} lies inside the install {}; choose a folder outside it \
-                 (the install is never written to)",
+                "the output folder {} and the install {} overlap (one lies inside the other); \
+                 choose a separate folder (the install is never written to)",
                 output.display(),
                 source.display()
             ),
@@ -302,8 +303,17 @@ fn safe_relative(rel: &str) -> Option<PathBuf> {
 
 /// Check the output folder and remove the files of a previous extraction.
 fn prepare_output(source: &Path, out: &Path) -> Result<(), ExtractError> {
-    if lies_inside(out, source).map_err(|e| output_error(out, e))? {
-        return Err(ExtractError::OutputInsideSource {
+    let overlap = lies_inside(out, source)
+        .and_then(|inside| {
+            if inside {
+                Ok(true)
+            } else {
+                lies_inside(source, out)
+            }
+        })
+        .map_err(|e| output_error(out, e))?;
+    if overlap {
+        return Err(ExtractError::OutputOverlapsSource {
             output: out.to_path_buf(),
             source: source.to_path_buf(),
         });
@@ -992,15 +1002,32 @@ mod tests {
         let inside = src.path().join("out");
         let err = extract(src.path(), &inside, &Options::default()).unwrap_err();
         assert!(
-            matches!(err, ExtractError::OutputInsideSource { .. }),
+            matches!(err, ExtractError::OutputOverlapsSource { .. }),
             "{err}"
         );
         assert!(!inside.exists());
         let err = extract(src.path(), &src.path().join("a/../b"), &Options::default()).unwrap_err();
         assert!(
-            matches!(err, ExtractError::OutputInsideSource { .. }),
+            matches!(err, ExtractError::OutputOverlapsSource { .. }),
             "{err}"
         );
+        // The install inside the output folder (e.g. an install folder named `text`): refused
+        // even when the output folder holds a previous extraction.
+        let parent = TempDir::new("ex-out-parent");
+        let nested = parent.path().join("text");
+        std::fs::create_dir(&nested).unwrap();
+        testutil::write_korean_install(&nested);
+        std::fs::write(
+            parent.path().join(INDEX_FILE),
+            format!(r#"{{"format":"{FORMAT}","files":[]}}"#),
+        )
+        .unwrap();
+        let err = extract(&nested, parent.path(), &Options::default()).unwrap_err();
+        assert!(
+            matches!(err, ExtractError::OutputOverlapsSource { .. }),
+            "{err}"
+        );
+        assert!(!nested.join("snr0m.json").exists());
 
         // A folder with unrelated files: refused.
         let out = TempDir::new("ex-out-busy");

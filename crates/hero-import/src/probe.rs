@@ -168,10 +168,21 @@ fn walk(
     truncated: &mut bool,
 ) -> Result<(), InstallError> {
     let mut entries: Vec<(String, PathBuf)> = Vec::new();
-    for entry in std::fs::read_dir(dir).map_err(|e| InstallError::io(dir, &e))? {
-        let entry = entry.map_err(|e| InstallError::io(dir, &e))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        entries.push((name, entry.path()));
+    let listing = std::fs::read_dir(dir).and_then(|list| {
+        list.map(|entry| entry.map(|e| (e.file_name().to_string_lossy().into_owned(), e.path())))
+            .collect::<std::io::Result<Vec<_>>>()
+    });
+    match listing {
+        Ok(list) => entries.extend(list),
+        // The probed folder itself must be readable; an unreadable sub-folder is recorded.
+        Err(e) if !rel.is_empty() => {
+            skipped.push(Skipped {
+                path: rel.to_string(),
+                reason: e.to_string(),
+            });
+            return Ok(());
+        }
+        Err(e) => return Err(InstallError::io(dir, &e)),
     }
     entries.sort();
     for (name, path) in entries {
