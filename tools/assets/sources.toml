@@ -208,3 +208,132 @@ url = "https://upload.wikimedia.org/wikipedia/commons/e/e8/A_Thousand_Li_of_Rive
 file = "paintings/thousand-li-section1.jpg"
 size = 3181669
 sha256 = "04144c41e10bad075565ea361d369a7f2eef9a22636b52e77acb0d854a5e15e9"
+
+# ---------------------------------------------------------------------------------------------
+# Music (build_music.py). Kevin MacLeod's tracks are CC BY 4.0 (incompetech.com licence page:
+# "Creative Commons — Free ... Requires that you credit the music"); the credit text is in
+# CREDITS.md. Where a track is offered under several licences, the one we use is given.
+
+[sources.macleod_shenyang]
+title = "Shenyang"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600066"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Shenyang.mp3"
+file = "music/macleod-shenyang.mp3"
+size = 4848882
+sha256 = "1cf2e0f57f820d82e9066ba4dca076735aedd512bc1909fdaa2e0065bd866786"
+
+[sources.macleod_asian_drums]
+title = "Asian Drums"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100396"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Asian%20Drums.mp3"
+file = "music/macleod-asian-drums.mp3"
+size = 5662938
+sha256 = "c715f9f9af67505447e8083f50206799ec8563157aab6fdc80e7672698cc8a7d"
+
+[sources.macleod_nu_flute]
+title = "Nu Flute"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100680"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Nu%20Flute.mp3"
+file = "music/macleod-nu-flute.mp3"
+size = 3314444
+sha256 = "5af23a3b36663b8c29ebed1b4b8384f5fe76bcd622aea9a76ba1da4ef5b79926"
+
+[sources.macleod_ishikari_lore]
+title = "Ishikari Lore"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100192"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Ishikari%20Lore.mp3"
+file = "music/macleod-ishikari-lore.mp3"
+size = 6688921
+sha256 = "2ae7e32d371f839c507f44397473942a9fbaffcea4c1ac1f94331fdf70a2b581"
+
+[sources.macleod_mountain_emperor]
+title = "Mountain Emperor"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1700012"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Mountain%20Emperor.mp3"
+file = "music/macleod-mountain-emperor.mp3"
+size = 6404535
+sha256 = "5dd109bdeb8f206ec4ca276e47aa6b6b8ca96df4b5580e5e2f078f4a95a00f7b"
+
+[sources.macleod_five_armies]
+title = "Five Armies"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100875"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Five%20Armies.mp3"
+file = "music/macleod-five-armies.mp3"
+size = 6235982
+sha256 = "f56746c90756db04675a80ebd29e22253177a6fcc16f56602da62af9eae8d733"
+
+[sources.hitctrl_jade_throne]
+title = "Views From Atop the Jade Kings Throne"
+author = "Hitctrl"
+license = "CC-BY-3.0"
+license_url = "https://creativecommons.org/licenses/by/3.0/"
+homepage = "https://opengameart.org/content/views-from-atop-the-jade-kings-throne"
+url = "https://opengameart.org/sites/default/files/Views%20From%20Atop%20the%20Jade%20Kings%20Throne.ogg"
+file = "music/hitctrl-views-from-atop-the-jade-kings-throne.ogg"
+size = 3258537
+sha256 = "21af784efac14e8a168ee1992cb002b521172a2ff39dc68ab603218c215d6335"
+
+# offered under CC BY 4.0, CC BY 3.0 and OGA-BY 3.0; we use CC BY 4.0
+[sources.majadroid_samurai_nights]
+title = "Samurai Nights"
+author = "Majadroid (Maik Hoffmann)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://opengameart.org/content/samurai-nights"
+url = "https://opengameart.org/sites/default/files/samurai-nights-by-majadroid.zip"
+file = "music/majadroid-samurai-nights.zip"
+size = 3948874
+sha256 = "42f3c72dd761102845fbfff5cf81254626b00defdac9b0717f4d9b367173cc13"
+
+# offered under CC BY 3.0, CC BY-SA 3.0, OGA-BY 3.0 and CC0; we use CC0
+[sources.springspring_fanfares]
+title = "10 fanfares"
+author = "Spring Spring"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://opengameart.org/content/10-fanfares"
+url = "https://opengameart.org/sites/default/files/10%20fanfares_0.ogg"
+file = "music/springspring-10-fanfares.ogg"
+size = 1792868
+sha256 = "473f92ceb267e92f6c567e784b0e67f840a5064c2a1d108c48a0daea519fd206"
+
+[sources.joth_death_of_a_ninja]
+title = "Death of a Ninja (Game Over)"
+author = "Joth"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://opengameart.org/content/death-of-a-ninja-game-over"
+url = "https://opengameart.org/sites/default/files/Death%20of%20a%20Ninja%20%28Game%20Over%29.mp3"
+file = "music/joth-death-of-a-ninja.mp3"
+size = 325402
+sha256 = "d12d4acc106e2d2f17169390d2e7a3ca373f73b422ad877cb45fb9427dd880f0"
+
+# offered under CC BY 3.0 and CC BY-SA 3.0; we use CC BY 3.0
+[sources.springspring_asian_arrangement]
+title = "Generic 2 minute Asian Arrangement"
+author = "Spring Spring"
+license = "CC-BY-3.0"
+license_url = "https://creativecommons.org/licenses/by/3.0/"
+homepage = "https://opengameart.org/content/generic-2-minute-asian-arrangement"
+url = "https://opengameart.org/sites/default/files/Generic%20Asian%20Arrangement_0.ogg"
+file = "music/springspring-generic-asian-arrangement.ogg"
+size = 2021257
+sha256 = "3f343590c0d591ff4be5b202d18ceeb2f516fa4703efa3dbf8d6ad392372c1ef"
