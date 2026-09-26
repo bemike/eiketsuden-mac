@@ -96,15 +96,28 @@ cargo run --release -p hero-tools -- validate data/base
 | `tools/assets` | 에셋 파이프라인 (출처 URL·SHA-256 고정, 결정적 빌드) |
 
 설계 문서: [ARCHITECTURE](docs/ARCHITECTURE.md) · [RULES](docs/RULES.md) · [MODDING](docs/MODDING.md) ·
-[ASSETS](docs/ASSETS.md) · [DECISIONS](docs/DECISIONS.md)
+[ASSETS](docs/ASSETS.md) · [DECISIONS](docs/DECISIONS.md) · [ORIGINAL_DATA](docs/ORIGINAL_DATA.md) ·
+[원작 데이터 분석 자료](docs/reverse-engineering/README.md)
 
 ## 로드맵
 
 * 제2장(관도 ~ 장판파) 이후 캠페인, 원작의 IF 루트(촉한의 천하통일)까지
 * 원작 모드: 정품에서 변환한 팩이 기본 팩을 확장(`extends`)해, 변환된 에셋부터 원작의 모습으로 바꾸는 방식
   ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md) 8절)
-* 원작 데이터 임포터: 초상화(TF-DCE) 디코딩, 전투 맵, Steam판 지원 (정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
+* 원작 데이터 임포터: 원작 모드 팩 변환기, 시나리오 변환, 규칙 표, OPL2 음악, Steam판 지원 ([남은 과제](docs/reverse-engineering/STATUS.md); 정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
 * 캠페인 경로를 따라가는 밸런스 시뮬레이션, 영어 번역
+
+## 원작 데이터 분석 자료
+
+원작 데이터 임포터를 만들며 알아낸 파일 형식과 분석 방법을 [docs/reverse-engineering/](docs/reverse-engineering/README.md)에
+정리했습니다. 보유한 한국어 DOS/V판 하나를 **읽기 전용·정적 분석**으로만 조사했고(원작 파일은 실행하지 않음),
+저장소에는 원작 바이트나 데이터 표 없이 형식 사실만 적었습니다.
+
+| 문서 | 내용 |
+|---|---|
+| [FORMATS](docs/reverse-engineering/FORMATS.md) | 판본 식별, LS11 컨테이너, TF-DCE 얼굴 압축, 팔레트, 스프라이트, 맵, 대사, 시나리오 바이트코드, `BAKDATA`의 형식 명세(항목마다 신뢰도 표기) |
+| [METHOD](docs/reverse-engineering/METHOD.md) | 작업 순서와 기법, 함정, 공명전·조조전 등 다른 KOEI 게임에 적용할 체크리스트 |
+| [STATUS](docs/reverse-engineering/STATUS.md) | 해독한 것·남은 것, 플레이 가능한 원작 모드까지 남은 단계 |
 
 ## 라이선스 · 크레딧 · 고지
 
@@ -137,6 +150,9 @@ Linux and in the browser via WebAssembly.
 * Optional, experimental importer for players who own the original game
   ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)), and a fully data-driven, moddable format
   ([docs/MODDING.md](docs/MODDING.md)); a layered pack (`extends`) holds only the files a mod changes.
+* Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
+  (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
+  [docs/reverse-engineering/](docs/reverse-engineering/README.md).
 * Next milestone: an "original mode", a pack converted from the player's own copy that extends the base
   pack (section 8 of [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)).
 

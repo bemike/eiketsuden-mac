@@ -31,7 +31,7 @@ The engine never embeds content; everything the player sees comes from a **data 
 | `hero-core` | Game rules, data schema, pack loading (including layered packs) and validation, drama scripting, campaign and save state. Deterministic (seeded [`Rng`](../crates/hero-core/src/rng.rs)); no graphics, no clock, no file I/O except the optional `DirSource`. | serde, toml, serde_json, thiserror |
 | `hero-game` | The game executable (`eiketsuden` / `eiketsuden.exe` / `eiketsuden.wasm`). | hero-core, macroquad |
 | `hero-tools` | Command line tools for pack authors and CI: `validate`, `simulate`, `info`; `original probe` / `original extract` for the importer. | hero-core, hero-import |
-| `hero-import` | Optional, experimental importer for an owned copy of the original game: edition probe and shareable manifest, LS11 / 6-byte-table containers, text, planar sprites and palettes → a media overlay folder that the game reads with `--original <dir>` (native only). See [ORIGINAL_DATA.md](ORIGINAL_DATA.md). | encoding_rs, png, sha2, serde, serde_json |
+| `hero-import` | Optional, experimental importer for an owned copy of the original game: edition probe and shareable manifest, LS11 / 6-byte-table containers, TF-DCE portraits, planar sprites and palettes, maps, message text, scenario bytecode and the `BAKDATA` tables → a media overlay folder that the game reads with `--original <dir>` (native only). See [ORIGINAL_DATA.md](ORIGINAL_DATA.md); the verified file formats and the method are in [reverse-engineering/](reverse-engineering/README.md). | encoding_rs, png, sha2, serde, serde_json |
 
 ## Data flow
 
@@ -108,4 +108,6 @@ coordinates are virtual pixels. Text uses the Galmuri pixel fonts (OFL), which c
 and the Hanja used in officer names.
 
 See also: [RULES.md](RULES.md) (combat formulas), [MODDING.md](MODDING.md) (data formats),
-[ASSETS.md](ASSETS.md) (media conventions), [DECISIONS.md](DECISIONS.md).
+[ASSETS.md](ASSETS.md) (media conventions), [DECISIONS.md](DECISIONS.md),
+[ORIGINAL_DATA.md](ORIGINAL_DATA.md) (original-data importer) and
+[reverse-engineering/](reverse-engineering/README.md) (original file formats, method and status).
