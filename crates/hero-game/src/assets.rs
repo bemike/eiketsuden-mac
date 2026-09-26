@@ -17,7 +17,8 @@
 //! | icon | `gold` | cell of `gfx/ui/icons.png` listed in `gfx/ui/icons.toml` |
 //!
 //! A request returns `None` while the file is loading and after it failed; failures are logged
-//! once and never retried or fatal. Callers draw a fallback: [`Media::portrait`] falls back to
+//! once and never retried or fatal (natively, sound files are checked before macroquad decodes
+//! them, because its decoder panics on files it cannot read — see `prepare_sound`). Callers draw a fallback: [`Media::portrait`] falls back to
 //! `portraits/_unknown`, and `crate::ui` draws procedural placeholders for anything else. Pixel
 //! art uses nearest filtering; hi-res art (`portraits/`, `bg/`, `ui/title`) uses linear filtering
 //! so it stays smooth when shown smaller than its native resolution.
@@ -450,6 +451,10 @@ impl Media {
                     let result = poll_once(fut)?;
                     match (result, &mut job.kind) {
                         (Ok(bytes), JobKind::Sound { .. }) => {
+                            let bytes = match prepare_sound(bytes) {
+                                Ok(bytes) => bytes,
+                                Err(e) => return Some(Outcome::Failed(e)),
+                            };
                             job.stage = Stage::DecodeSound {
                                 future: Box::pin(
                                     async move { load_sound_from_bytes(&bytes).await },
@@ -560,6 +565,108 @@ enum Outcome {
     Failed(String),
 }
 
+/// Make a sound file safe for macroquad's native audio backend; returns the bytes to decode.
+///
+/// quad-snd 0.2 decodes with audrey and **panics** instead of returning an error when the file
+/// is not WAV / Ogg Vorbis, has more than two channels or has a sample that fails to decode (a
+/// truncated download, an MP3 renamed to `.ogg`, 5.1 audio), which would close the game. This
+/// runs the same decoder first, so such a sound becomes missing (silent) like any other media
+/// failure.
+///
+/// A WAV file is returned unchanged (decoding it twice is cheap). Ogg Vorbis is slow to decode
+/// (about 0.4 s for a four-minute track in a release build, on the main thread), so instead of
+/// decoding it a second time the decoded samples are handed over as a 16-bit PCM WAV file, which
+/// quad-snd reads quickly; loading music then takes about a quarter longer rather than twice as
+/// long. That is lossless: the Vorbis decoder produces 16-bit samples, which quad-snd would
+/// convert exactly the same way.
+#[cfg(not(target_arch = "wasm32"))]
+fn prepare_sound(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    fn decode_error(e: impl std::fmt::Display) -> String {
+        format!("cannot decode audio: {e}")
+    }
+    let mut reader = audrey::Reader::new(std::io::Cursor::new(&bytes[..])).map_err(decode_error)?;
+    let description = reader.description();
+    let channels = description.channel_count();
+    if !(1..=2).contains(&channels) {
+        return Err(format!(
+            "{channels} audio channels (only mono and stereo are supported)"
+        ));
+    }
+    let rate = description.sample_rate();
+    if rate == 0 {
+        return Err("audio sample rate is 0".into());
+    }
+    let transcode = reader.format() == audrey::Format::OggVorbis;
+    let mut wav = Vec::new();
+    let mut samples: u64 = 0;
+    if transcode {
+        wav.resize(WAV_HEADER_LEN, 0);
+        for sample in reader.samples::<i16>() {
+            wav.extend_from_slice(&sample.map_err(decode_error)?.to_le_bytes());
+            samples += 1;
+        }
+    } else {
+        for sample in reader.samples::<f32>() {
+            sample.map_err(decode_error)?;
+            samples += 1;
+        }
+    }
+    if channels == 2 && samples % 2 != 0 {
+        return Err("stereo audio ends in the middle of a frame".into());
+    }
+    if !transcode {
+        return Ok(bytes);
+    }
+    let header = wav_header(channels as u16, rate, wav.len() - WAV_HEADER_LEN)?;
+    wav[..WAV_HEADER_LEN].copy_from_slice(&header);
+    Ok(wav)
+}
+
+/// The browser decodes audio itself and reports failures (see [`SOUND_DECODE_TIMEOUT`]).
+#[cfg(target_arch = "wasm32")]
+fn prepare_sound(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    Ok(bytes)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const WAV_HEADER_LEN: usize = 44;
+
+/// Header of a 16-bit PCM WAV file (`channels` 1 or 2) with `data_len` bytes of interleaved
+/// samples after it. Fails when a size does not fit the format's 32-bit fields.
+#[cfg(not(target_arch = "wasm32"))]
+fn wav_header(channels: u16, rate: u32, data_len: usize) -> Result<[u8; WAV_HEADER_LEN], String> {
+    let block_align = channels * 2;
+    let byte_rate = rate
+        .checked_mul(u32::from(block_align))
+        .ok_or_else(|| format!("audio sample rate {rate} is too high"))?;
+    let data_len = u32::try_from(data_len)
+        .ok()
+        .filter(|n| n.checked_add(WAV_HEADER_LEN as u32).is_some())
+        .ok_or("audio file is too long")?;
+    let fields: [&[u8]; 13] = [
+        b"RIFF",
+        &(data_len + 36).to_le_bytes(),
+        b"WAVE",
+        b"fmt ",
+        &16u32.to_le_bytes(), // fmt chunk size
+        &1u16.to_le_bytes(),  // PCM
+        &channels.to_le_bytes(),
+        &rate.to_le_bytes(),
+        &byte_rate.to_le_bytes(),
+        &block_align.to_le_bytes(),
+        &16u16.to_le_bytes(), // bits per sample
+        b"data",
+        &data_len.to_le_bytes(),
+    ];
+    let mut header = [0u8; WAV_HEADER_LEN];
+    let mut at = 0;
+    for field in fields {
+        header[at..at + field.len()].copy_from_slice(field);
+        at += field.len();
+    }
+    Ok(header)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,6 +684,139 @@ mod tests {
         let idx: IconIndex = toml::from_str("[icons]\ngold = [0, 0]\nhp = [3, 1]\n").unwrap();
         assert_eq!(idx.tile_size, 16);
         assert_eq!(idx.icons["hp"], [3, 1]);
+    }
+
+    /// 16-bit PCM WAV file with a saw wave.
+    fn wav(channels: u16, rate: u32, frames: u32) -> Vec<u8> {
+        let samples = frames * u32::from(channels);
+        let mut b = wav_header(channels, rate, samples as usize * 2)
+            .unwrap()
+            .to_vec();
+        for i in 0..samples {
+            b.extend_from_slice(&((i % 64) as i16 * 256).to_le_bytes());
+        }
+        b
+    }
+
+    fn base_pack_file(rel: &str) -> Vec<u8> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
+        std::fs::read(root.join(rel)).expect("base pack file")
+    }
+
+    /// Channel count, sample rate and samples as the native decoder reads them.
+    fn decode(bytes: &[u8]) -> (u32, u32, Vec<f32>) {
+        let mut reader = audrey::Reader::new(std::io::Cursor::new(bytes)).unwrap();
+        let d = reader.description();
+        let samples = reader.samples::<f32>().map(Result::unwrap).collect();
+        (d.channel_count(), d.sample_rate(), samples)
+    }
+
+    /// Whether quad-snd 0.2.8's native decoder (`mixer::load_samples_from_file`, called by
+    /// macroquad's `load_sound_from_bytes`) panics on `bytes`. It unwraps the audrey reader,
+    /// asserts one or two channels, unwraps every sample, duplicates mono samples and resamples
+    /// to 44.1 kHz by indexing pairs of samples.
+    fn quad_snd_panics(bytes: &[u8]) -> bool {
+        std::panic::catch_unwind(|| {
+            let mut reader = audrey::Reader::new(std::io::Cursor::new(bytes)).unwrap();
+            let description = reader.description();
+            let channels = description.channel_count();
+            assert!(channels == 1 || channels == 2);
+            let mut frames: Vec<f32> = Vec::new();
+            for sample in reader.samples::<f32>() {
+                let sample = sample.unwrap();
+                frames.push(sample);
+                if channels == 1 {
+                    frames.push(sample);
+                }
+            }
+            let rate = description.sample_rate();
+            if rate != 44_100 {
+                let mut len = ((44_100.0 / rate as f32) * frames.len() as f32) as usize;
+                len -= len % 2;
+                let mut out = vec![0.0f32; len];
+                for (n, pair) in out.chunks_exact_mut(2).enumerate() {
+                    let ix = 2 * ((n as f32 / len as f32) * frames.len() as f32) as usize;
+                    pair[0] = frames[ix];
+                    pair[1] = frames[ix + 1];
+                }
+            }
+        })
+        .is_err()
+    }
+
+    #[test]
+    fn wav_files_are_checked_and_kept() {
+        for bytes in [
+            base_pack_file("sfx/cursor.wav"),
+            wav(1, 22_050, 100),
+            wav(2, 44_100, 100),
+        ] {
+            assert_eq!(prepare_sound(bytes.clone()), Ok(bytes));
+        }
+    }
+
+    #[test]
+    fn ogg_vorbis_is_decoded_once_and_handed_over_losslessly() {
+        let ogg = base_pack_file("bgm/victory.ogg");
+        let wav = prepare_sound(ogg.clone()).unwrap();
+        assert_eq!(&wav[..4], b"RIFF");
+        assert!(!quad_snd_panics(&wav));
+        let (channels, rate, samples) = decode(&ogg);
+        assert_eq!(decode(&wav), (channels, rate, samples));
+        // The WAV is decoded as it is.
+        assert_eq!(prepare_sound(wav.clone()), Ok(wav));
+    }
+
+    #[test]
+    fn wav_header_sizes_must_fit() {
+        assert!(wav_header(2, 44_100, 8).is_ok());
+        assert!(wav_header(2, u32::MAX / 2, 8).is_err());
+        assert!(wav_header(1, 44_100, u32::MAX as usize).is_err());
+        assert!(wav_header(1, 44_100, u32::MAX as usize - WAV_HEADER_LEN).is_ok());
+    }
+
+    #[test]
+    fn sounds_the_native_decoder_would_panic_on_are_rejected() {
+        let ogg = base_pack_file("bgm/victory.ogg");
+        let wave = base_pack_file("sfx/cursor.wav");
+        let mut flipped = ogg.clone();
+        for b in &mut flipped[ogg.len() / 3..ogg.len() / 3 + 64] {
+            *b ^= 0x5a;
+        }
+        let bad: Vec<(&str, Vec<u8>)> = vec![
+            ("not audio", b"this is not an audio file".to_vec()),
+            (
+                "mp3",
+                b"ID3\x04\x00\x00\x00\x00\x00\x00\xff\xfb\x90\x00".to_vec(),
+            ),
+            ("empty", Vec::new()),
+            ("5.1 wav", wav(6, 44_100, 100)),
+            ("truncated wav", wave[..wave.len() / 2].to_vec()),
+            ("truncated ogg header", ogg[..200].to_vec()),
+            ("truncated ogg", ogg[..ogg.len() * 9 / 10].to_vec()),
+        ];
+        for (what, bytes) in &bad {
+            assert!(quad_snd_panics(bytes), "{what} would not crash quad-snd");
+            assert!(prepare_sound(bytes.clone()).is_err(), "{what} was accepted");
+        }
+        // Damaged files may or may not still decode: whatever is accepted must decode.
+        let damaged: Vec<(&str, Vec<u8>)> = vec![
+            ("ogg cut at 30%", ogg[..ogg.len() * 3 / 10].to_vec()),
+            ("ogg with flipped bytes", flipped),
+            ("wav cut mid-sample", wave[..wave.len() - 1].to_vec()),
+            ("odd stereo wav", {
+                let mut w = wav(2, 22_050, 10);
+                w.truncate(w.len() - 2);
+                w
+            }),
+        ];
+        for (what, bytes) in damaged {
+            let panics = quad_snd_panics(&bytes);
+            match prepare_sound(bytes) {
+                Ok(prepared) => assert!(!quad_snd_panics(&prepared), "{what} was accepted"),
+                Err(_) => assert!(panics, "{what} was rejected but decodes"),
+            }
+        }
     }
 
     #[test]
