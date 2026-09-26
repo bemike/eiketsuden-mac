@@ -17,7 +17,9 @@
 //!
 //! Controls: arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc/right click cancel,
 //! Tab/E and Q cycle through units that can still act, mouse at the screen edge / right-drag /
-//! touch drag / wheel scroll the map, and holding confirm speeds animations up.
+//! touch drag / wheel scroll the map, and holding confirm speeds animations up. Touch has no
+//! cancel: a tap outside a menu or window steps back, and so does a second tap on a tile that
+//! is not a target in the attack / strategy / item target modes.
 
 mod anim;
 mod camera;
@@ -220,6 +222,8 @@ pub struct BattleScreen {
     focus_player: bool,
     idle_time: f32,
     touch_seen: bool,
+    /// Seconds since the pointer last moved (edge scrolling stops for a resting pointer).
+    pointer_rest: f32,
     rdrag: Option<RightDrag>,
     /// Class id -> sprite key.
     sprite_of: BTreeMap<String, String>,
@@ -337,6 +341,7 @@ impl BattleScreen {
             focus_player: false,
             idle_time: 0.0,
             touch_seen: false,
+            pointer_rest: 0.0,
             rdrag: None,
             sprite_of,
             sheets,
@@ -494,7 +499,7 @@ impl BattleScreen {
                 self.store_session(ctx);
                 self.events
                     .push(anim::plan(&events, &self.state, &self.pack, &self.meta.fx));
-                if self.events.is_idle() {
+                if self.events.take_finished() {
                     // Nothing to animate (a plain wait): show the result right away.
                     self.events_done();
                 }
@@ -549,6 +554,15 @@ impl BattleScreen {
             }
         }
         out
+    }
+
+    /// Run [`BattleScreen::events_done`] and rebuild the menus once the queued batches have
+    /// played out, however the queue ran dry (see [`EventPlayer::take_finished`]).
+    fn settle_events(&mut self, ctx: &Ctx) {
+        if self.events.take_finished() {
+            self.events_done();
+            self.refresh_mode_menu(ctx);
+        }
     }
 
     /// The animation queue ran dry: snap the views to the state and continue the flow.
@@ -993,6 +1007,11 @@ impl BattleScreen {
                 match menu.update(ctx) {
                     MenuEvent::Selected(i) => return self.battle_menu(ctx, BattleMenuItem::ALL[i]),
                     MenuEvent::Cancelled => {}
+                    // A tap outside closes it (touch has no cancel key).
+                    _ if tapped_outside(ctx, menu.rect()) => {
+                        ctx.sfx(sfx::CANCEL);
+                        ctx.input.consume();
+                    }
                     _ => self.panel = Panel::Menu(menu),
                 }
                 return Transition::None;
@@ -1023,6 +1042,11 @@ impl BattleScreen {
                         }
                     }
                     MenuEvent::Cancelled => {}
+                    // A tap outside the window (tabs included) closes it.
+                    _ if tapped_outside(ctx, unit_list_frame(menu.rect())) => {
+                        ctx.sfx(sfx::CANCEL);
+                        ctx.input.consume();
+                    }
                     _ => self.panel = Panel::Units { side, ids, menu },
                 }
                 return Transition::None;
@@ -1193,7 +1217,7 @@ impl BattleScreen {
         }
         if !self.touch_seen && self.rdrag.is_none() && !input.down() {
             if let Some(p) = pointer {
-                let d = edge_direction(VIEWPORT, p);
+                let d = edge_direction(VIEWPORT, p, self.pointer_rest);
                 if d != Vec2::ZERO {
                     self.camera.pan(d * EDGE_PAN_SPEED * dt);
                 }
@@ -1275,8 +1299,18 @@ impl BattleScreen {
             }
         }
         if let Some(at) = confirm_at {
+            let by_tap = !ctx.input.confirm_key();
+            let target_mode = self.is_target_mode();
             let before = std::mem::discriminant(&self.ui.mode);
             let req = self.ui.confirm(&self.state, &self.pack, at);
+            if req == Request::Invalid && target_mode && by_tap && self.touch_seen {
+                // Touch has no cancel key or right click: confirming a tile that is not a
+                // target (tapping it a second time) steps back to the menu the target mode
+                // came from, and from there a tap outside the menu steps back further. Mouse
+                // play keeps the error sound (right click cancels).
+                self.step_back(ctx);
+                return;
+            }
             let changed = std::mem::discriminant(&self.ui.mode) != before;
             if changed || matches!(req, Request::Apply(_)) {
                 ctx.sfx(sfx::CONFIRM);
@@ -1285,14 +1319,19 @@ impl BattleScreen {
             return;
         }
         if key_cancel || right_click {
-            // Stepping back puts the cursor on the unit that was selected.
-            if let Some(u) = self.ui.unit() {
-                ctx.sfx(sfx::CANCEL);
-                self.cursor = self.state.units[u].pos;
-            }
-            let req = self.ui.cancel(&self.state, &self.pack);
-            self.handle_request(ctx, req);
+            self.step_back(ctx);
         }
+    }
+
+    /// Cancel one level of the command flow on the map.
+    fn step_back(&mut self, ctx: &mut Ctx) {
+        // Stepping back puts the cursor on the unit that was selected.
+        if let Some(u) = self.ui.unit() {
+            ctx.sfx(sfx::CANCEL);
+            self.cursor = self.state.units[u].pos;
+        }
+        let req = self.ui.cancel(&self.state, &self.pack);
+        self.handle_request(ctx, req);
     }
 }
 
@@ -1308,6 +1347,16 @@ fn unit_tab_rect(i: usize) -> Rect {
 /// Index of the unit list tab under a tap.
 fn unit_tab_at(p: Vec2) -> Option<usize> {
     (0..UNIT_TABS.len()).find(|&i| unit_tab_rect(i).contains(p))
+}
+
+/// Window of the unit list around its menu (the side tabs sit in its top strip).
+fn unit_list_frame(menu: Rect) -> Rect {
+    Rect::new(menu.x - 4.0, menu.y - 26.0, menu.w + 8.0, menu.h + 30.0)
+}
+
+/// A tap landed outside `area` this frame.
+fn tapped_outside(ctx: &Ctx, area: Rect) -> bool {
+    ctx.input.tap().is_some_and(|p| !area.contains(p))
 }
 
 impl Screen for BattleScreen {
@@ -1337,6 +1386,11 @@ impl Screen for BattleScreen {
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         self.poll_meta(ctx);
         let dt = ctx.dt;
+        self.pointer_rest = if ctx.input.pointer_moved() {
+            0.0
+        } else {
+            self.pointer_rest + dt
+        };
         let speed = self.speed(ctx);
         self.camera.update(dt);
         self.scene.tick(dt * speed);
@@ -1382,6 +1436,8 @@ impl Screen for BattleScreen {
             Stage::Battle => {}
         }
 
+        // A batch whose last beat was a drama ran dry when the overlay closed (`resume`).
+        self.settle_events(ctx);
         // Animations first; input waits until they are done.
         if !self.events.is_idle() {
             let skip = ctx.input.confirm();
@@ -1393,10 +1449,7 @@ impl Screen for BattleScreen {
             if skip {
                 ctx.input.consume();
             }
-            if self.events.is_idle() {
-                self.events_done();
-                self.refresh_mode_menu(ctx);
-            }
+            self.settle_events(ctx);
             return t;
         }
         if self.state.outcome.is_some() {

@@ -14,6 +14,12 @@ use macroquad::prelude::*;
 pub const EDGE_PAN_SPEED: f32 = 220.0;
 /// Width of the edge scrolling zone, in virtual pixels.
 pub const EDGE_ZONE: f32 = 6.0;
+/// Seconds a resting pointer keeps edge scrolling. macroquad reports no "pointer left the
+/// window" event, so a pointer that left the window (or the web canvas) across an edge stays
+/// at its last position inside the zone; scrolling only while the pointer moved recently makes
+/// the map stop instead of scrolling until the pointer returns. One rest still scrolls
+/// 220 pixels, more than any map of the base pack can scroll (128).
+pub const EDGE_HOLD: f32 = 1.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera {
@@ -92,9 +98,13 @@ impl Camera {
         self.target = None;
     }
 
-    /// Move by a screen delta (drag / edge scrolling), cancelling a smooth pan.
+    /// Move by a screen delta (drag / edge scrolling), cancelling a smooth pan. A pan the map
+    /// edge stops entirely changes nothing, so it does not cancel a smooth pan either (edge
+    /// scrolling against the edge must not undo keyboard tracking).
     pub fn pan(&mut self, delta: Vec2) {
-        self.set_pos(self.pos + delta);
+        if self.clamped(self.pos + delta) != self.pos {
+            self.set_pos(self.pos + delta);
+        }
     }
 
     /// Smoothly centre on a tile.
@@ -161,9 +171,10 @@ pub fn visible_pos(pos: Vec2, view: Vec2, tile: Vec2, margin: f32) -> Vec2 {
     vec2(axis(pos.x, view.x, tile.x), axis(pos.y, view.y, tile.y))
 }
 
-/// Edge-scrolling direction for a pointer at `p` inside `viewport` (each axis -1, 0 or 1).
-pub fn edge_direction(viewport: Rect, p: Vec2) -> Vec2 {
-    if !viewport.contains(p) {
+/// Edge-scrolling direction for a pointer at `p` inside `viewport` that has not moved for
+/// `rest` seconds (each axis -1, 0 or 1; none once it rested [`EDGE_HOLD`]).
+pub fn edge_direction(viewport: Rect, p: Vec2, rest: f32) -> Vec2 {
+    if rest >= EDGE_HOLD || !viewport.contains(p) {
         return Vec2::ZERO;
     }
     let axis = |v: f32, lo: f32, hi: f32| {
@@ -260,9 +271,43 @@ mod tests {
 
     #[test]
     fn edge_zones() {
-        assert_eq!(edge_direction(VIEW, vec2(2.0, 100.0)), vec2(-1.0, 0.0));
-        assert_eq!(edge_direction(VIEW, vec2(478.0, 268.0)), vec2(1.0, 1.0));
-        assert_eq!(edge_direction(VIEW, vec2(240.0, 140.0)), Vec2::ZERO);
-        assert_eq!(edge_direction(VIEW, vec2(240.0, 5.0)), Vec2::ZERO);
+        assert_eq!(edge_direction(VIEW, vec2(2.0, 100.0), 0.0), vec2(-1.0, 0.0));
+        assert_eq!(
+            edge_direction(VIEW, vec2(478.0, 268.0), 0.0),
+            vec2(1.0, 1.0)
+        );
+        assert_eq!(edge_direction(VIEW, vec2(240.0, 140.0), 0.0), Vec2::ZERO);
+        assert_eq!(edge_direction(VIEW, vec2(240.0, 5.0), 0.0), Vec2::ZERO);
+    }
+
+    /// Regression: a pointer that left the window stays at its last position in the zone; the
+    /// map must stop scrolling once the pointer has rested a while.
+    #[test]
+    fn edge_scrolling_stops_for_a_resting_pointer() {
+        let p = vec2(240.0, 268.0);
+        assert_eq!(edge_direction(VIEW, p, EDGE_HOLD - 0.05), vec2(0.0, 1.0));
+        assert_eq!(edge_direction(VIEW, p, EDGE_HOLD), Vec2::ZERO);
+        assert_eq!(edge_direction(VIEW, p, 60.0), Vec2::ZERO);
+        // One rest is enough to scroll across the tallest maps of the base pack (24 tiles).
+        let tallest = 24.0 * TILE - VIEW.h;
+        assert!(EDGE_PAN_SPEED * EDGE_HOLD > tallest);
+    }
+
+    #[test]
+    fn pans_against_the_map_edge_keep_a_smooth_pan() {
+        let mut c = Camera::new(VIEW, vec2(480.0, 384.0));
+        c.set_pos(vec2(0.0, 1000.0));
+        let bottom = c.pos();
+        assert_eq!(bottom, vec2(0.0, 384.0 - VIEW.h));
+        // A smooth pan sideways and up; edge scrolling down (clamped) leaves it running.
+        c.center_on(Pos::new(3, 3));
+        assert!(c.is_panning());
+        c.pan(vec2(0.0, 4.0));
+        assert!(c.is_panning());
+        assert_eq!(c.pos(), bottom);
+        // A pan that moves the view takes over.
+        c.pan(vec2(0.0, -4.0));
+        assert!(!c.is_panning());
+        assert_eq!(c.pos(), bottom - vec2(0.0, 4.0));
     }
 }
