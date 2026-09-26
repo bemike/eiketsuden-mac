@@ -41,7 +41,8 @@ fonts fall back to macroquad's built-in Latin font. Every miss is logged once to
 Keys available everywhere: **F3** frame rate / canvas scale and size / media queue overlay, **F11** or
 **Alt+Enter** fullscreen (native only).
 
-Saves (`save_auto.json`, `save_1.json` … `save_8.json`), `settings.json` and `crash.log` live in the
+Saves (`save_<pack id>_auto.json`, `save_<pack id>_1.json` … `_8.json`, one set per data pack; a pack id
+that cannot be used in a file name becomes `save-<hash>_…`; saves from older builds are moved over automatically), `settings.json` and `crash.log` live in the
 user data directory: `%APPDATA%\EiketsudenReloaded` (Windows),
 `~/Library/Application Support/EiketsudenReloaded` (macOS), `$XDG_DATA_HOME/eiketsuden-reloaded` or
 `~/.local/share/eiketsuden-reloaded` (Linux). Files are replaced atomically (temporary file + rename).
