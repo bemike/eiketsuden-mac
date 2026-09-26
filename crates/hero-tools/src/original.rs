@@ -61,10 +61,9 @@ fn render_edition(out: &mut String, edition: &Edition) {
 fn support_line(id: EditionId) -> &'static str {
     match id {
         EditionId::KoreanDos | EditionId::ChineseDos => {
-            "text and sprites can be extracted (`hero-tools original extract`: unit frames, \
-             map icons, chips, battle UI icons, palettes and contact sheets); portraits are \
-             recognised but not decoded (TF-DCE); opening / ending pictures and officer names \
-             are not read yet"
+            "text, sprites and portraits can be extracted (`hero-tools original extract`: unit \
+             frames, map icons, chips, battle UI icons, palettes, contact sheets and TF-DCE \
+             portraits); opening / ending pictures and officer names are not read yet"
         }
         EditionId::Steam2017 => {
             "not extractable yet: the Steam container format is unknown. Sharing this manifest \
@@ -219,7 +218,9 @@ mod tests {
         std::fs::write(dir.join("SNR0M.R3"), text).unwrap();
         std::fs::write(dir.join("SNR0D.R3"), ls11::build(&[b"\x16\0\xff\xff"])).unwrap();
         std::fs::write(dir.join("HEXBCHR.R3"), ls11::build(&[&[0x55; 128 * 9]])).unwrap();
-        std::fs::write(dir.join("FACEDAT.R3"), table6::build(&[b"x"]).unwrap()).unwrap();
+        // One 8×1 TF-DCE image: planes 0–2 filled with 0x80, 0, 0 (methods 1, 1, 1, 0).
+        let face: &[u8] = &[2, b'T', 1, 1, 0, 0x11, 0x01, 0xE4, 0, 0x80, 0, 0];
+        std::fs::write(dir.join("FACEDAT.R3"), table6::build(&[face]).unwrap()).unwrap();
     }
 
     #[test]
@@ -242,7 +243,10 @@ mod tests {
 
         let text = render_probe(&game, &probe::probe(&game).unwrap());
         assert!(text.contains("[korean-dos], confidence high"), "{text}");
-        assert!(text.contains("text and sprites can be extracted"), "{text}");
+        assert!(
+            text.contains("text, sprites and portraits can be extracted"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -258,17 +262,25 @@ mod tests {
         assert!(out.join("text/snr0m.json").is_file());
         assert!(out.join("gfx/original/hexbchr/000.png").is_file());
 
-        // Explicitly asking for portraits fails (TF-DCE is not implemented).
+        // Portraits alone.
         let portraits = Some(Selection {
             portraits: true,
             ..Selection::default()
         });
-        assert_eq!(run_extract(&game, &out, portraits, None), Ok(false));
+        assert_eq!(run_extract(&game, &out, portraits, None), Ok(true));
+        assert!(out.join("gfx/original/facedat/000.png").is_file());
 
         let index = extract::extract(&game, &out, &Options::default()).unwrap();
         let text = render_extract(&game, &out, &index);
-        assert!(text.contains("portraits  unsupported"), "{text}");
+        assert!(text.contains("portraits  extracted"), "{text}");
         assert!(text.contains("eiketsuden --original"), "{text}");
+
+        // Explicitly asking for a kind that fails is a failure.
+        std::fs::write(game.join("FACEDAT.R3"), table6::build(&[b"x"]).unwrap()).unwrap();
+        assert_eq!(run_extract(&game, &out, portraits, None), Ok(false));
+        let index = extract::extract(&game, &out, &Options::default()).unwrap();
+        let text = render_extract(&game, &out, &index);
+        assert!(text.contains("portraits  FAILED"), "{text}");
 
         // Not an install at all: a clear error.
         let err = run_extract(&tmp.0.join("nope"), &out, None, None).unwrap_err();

@@ -287,7 +287,7 @@ fn record(path: &Path, name: &str, rel: String, size: u64) -> Result<FileRecord,
                 Ok(t) => {
                     rec.table6 = Some(Table6Summary {
                         entries: t.len(),
-                        data_start: t.entries()[0].offset,
+                        data_start: t.data_start() as u32,
                         lengths: t.entries().iter().map(|e| e.len).collect(),
                     })
                 }
