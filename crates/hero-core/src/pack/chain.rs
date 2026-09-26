@@ -4,8 +4,9 @@
 //! Semantics (documented for modders in `docs/MODDING.md`, "Layered packs"):
 //!
 //! * The packs of a chain are its **layers**, the **top** pack (the one that is loaded) first.
-//!   Every path is resolved lexically relative to the top pack directory (`..` removes the
-//!   previous segment, like in URLs), so a chain works the same from a directory and over HTTP.
+//!   Every path is computed lexically relative to the top pack directory (`..` removes the
+//!   previous segment, like in URLs), so a chain works the same from a directory and over HTTP
+//!   (natively the OS opens the result, which differs only after a symbolic link on Unix).
 //! * The five rules files, `officers` and `campaign` are each taken from the nearest layer that
 //!   lists them: a child's file **replaces** its parent's.
 //! * Battles and drama scenes are the **union** of every layer's files; a battle or scene id that
@@ -199,16 +200,25 @@ impl PackChain {
         self.add(dir, manifest)
     }
 
-    /// The error for a parent `pack.toml` that could not be read (`why`, e.g. "file not found"),
-    /// naming the manifest whose `extends` points at it.
+    /// The error for the parent `pack.toml` of [`PackChain::next_parent`] that could not be read
+    /// (`why`, e.g. "file not found"), naming the manifest whose `extends` points at it.
     pub fn parent_unreadable(&self, why: &str) -> PackError {
-        let last = self.layers.last().expect("a chain has its top pack");
-        let extends = last.manifest.extends.as_deref().unwrap_or_default();
-        let parent = self.next_parent().unwrap_or_default();
-        parse_error(
-            &last.manifest_path(),
-            format!("extends `{extends}`, but {parent} cannot be read: {why}"),
-        )
+        let pending = self
+            .next_parent()
+            .zip(self.layers.last())
+            .and_then(|(parent, last)| {
+                let extends = last.manifest.extends.as_deref()?;
+                Some((parent, last, extends))
+            });
+        match pending {
+            Some((parent, last, extends)) => parse_error(
+                &last.manifest_path(),
+                format!("extends `{extends}`, but {parent} cannot be read: {why}"),
+            ),
+            None => PackError::Invalid(format!(
+                "a parent pack.toml could not be read, but none was pending: {why}"
+            )),
+        }
     }
 
     /// The packs of the chain, top pack first.

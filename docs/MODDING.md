@@ -153,9 +153,10 @@ What the chain provides:
 Rules of the chain (all errors when loading):
 
 * `extends` is a directory relative to the pack that names it, written with `/` (no `\`, no `:`, not
-  absolute). Paths are resolved **lexically**, like URLs: `..` removes the previous path segment, so
-  `extends = "../base"` in `mods/balance` means `mods/base`, and a symbolic link to a pack directory
-  counts as the directory it appears to be.
+  absolute). The chain's paths are computed **lexically**, like URLs: `..` removes the previous path
+  segment, so `extends = "../base"` in `mods/balance` means `mods/base`. Natively the operating system
+  then opens those paths, which gives the same files unless a directory on the way is a symbolic link
+  (Unix systems resolve `..` after a link from the link's target); keep links out of pack paths.
 * A chain holds at most **4 packs** (a pack and three it builds on, directly or indirectly).
 * A pack cannot extend itself, directly or through other packs, and two packs of a chain cannot share
   an `id`.
