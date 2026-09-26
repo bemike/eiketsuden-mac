@@ -101,10 +101,10 @@ name = "염표"
 hanja = "廉彪"
 class = "bandit"
 level = 5
-str = 38
-int = 63
-lead = 52
-bio = "광천 일대의 산채를 이끌던 두목. 본래 고을의 아전이었으나 탐관의 횡포를 견디지 못해 산으로 들어갔다. 도적 무리 가운데 보기 드물게 글과 셈에 밝다. (이 리메이크를 위해 새로 만든 인물)"
+str = 60
+int = 58
+lead = 55
+bio = "광천 일대의 산채를 이끌던 두목. 본래 고을의 아전이었으나 탐관의 횡포를 견디지 못해 산으로 들어갔다. 도적 무리 가운데 보기 드물게 글과 셈에 밝고, 칼솜씨도 녹록지 않다. (이 리메이크를 위해 새로 만든 인물)"
 
 # Chapter 1, Xindu route. Written for this remake; stats (design).
 [[officer]]

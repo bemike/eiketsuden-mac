@@ -11,7 +11,9 @@
 # first treasury makes Yuan Shao march out towards the south fort; Liu Bei nearing his camp sends him
 # hurrying back. Treasuries (PC): 화룡서, 장창, 보리, 연노.
 # (design) The officer Wen Chou cuts down is an unnamed general, as in the novel; the other allied
-# officer is Shan Jing.
+# officer is Shan Jing. Zhang He and Yan Liang guard the village rather than riding out at the first
+# enemy in reach, and stand a level below their PC values (9): Qinghe brings no recruits (Julu brings
+# two), and two more Lv10 cavalry officers next to Wen Chou cut down level-5 units in two blows.
 #
 # Map: the army and Gongsun Zan's camp are north of the Qing river; the Jie bridge (two tiles wide)
 # and a small western bridge cross it. A palisade with three openings splits the southern bank; the
@@ -145,16 +147,16 @@ ai = "aggressive"
 [[units]]
 side = "enemy"
 officer = "zhang_he"
-level = 10
+level = 9
 pos = [13, 15]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
 officer = "yan_liang"
-level = 10
+level = 9
 pos = [12, 14]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"

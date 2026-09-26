@@ -11,7 +11,8 @@
 # first treasury makes Yuan Shao march out towards the south fort; Liu Bei nearing his camp sends him
 # hurrying back. Treasuries (PC): 화룡서, 장창, 보리, 연노.
 # (design) The officer Wen Chou cuts down is an unnamed general, as in the novel; the other allied
-# officer is Shan Jing.
+# officer is Shan Jing. Qu Yi guards the village rather than riding out at the first enemy in reach,
+# so the army can cross the river and take the forward line before it meets him.
 #
 # Map: the army and Gongsun Zan's camp are north of the Qing river; the Jie bridge (two tiles wide)
 # and a small western bridge cross it. A palisade with three openings splits the southern bank; the
@@ -139,7 +140,7 @@ side = "enemy"
 officer = "qu_yi"
 level = 10
 pos = [13, 15]
-ai = "defensive"
+ai = "guard"
 
 [[units]]
 side = "enemy"
