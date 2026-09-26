@@ -909,6 +909,14 @@ impl<'a> Validator<'a> {
                             &uctx,
                             format!("officer `{o}` is also a required player officer"),
                         );
+                    } else if u.side == Side::Player && pack.campaign.starting_officers.contains(o)
+                    {
+                        self.warn(
+                            &uctx,
+                            format!(
+                                "officer `{o}` is in the starting army: the battle places the army's `{o}` here instead of on a deploy slot and ignores this unit's class, level and equipment"
+                            ),
+                        );
                     }
                     if u.stats.is_some() {
                         self.warn(&uctx, "stats are ignored for named officers");

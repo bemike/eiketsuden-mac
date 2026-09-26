@@ -3,6 +3,9 @@
 //! Unit order is: deployed player officers (slot order), spawns that start on the map, then
 //! reinforcements (definition order). AI units act in unit order, so reinforcements act after
 //! the units that were on the map first (RULES.md §1.5).
+//!
+//! Every army officer is at most one unit: an army officer named by a `side = "player"` spawn
+//! is placed there (with the army's progress) and takes no deploy slot.
 
 use super::stats::{max_hp, max_mp};
 use super::{BattleError, BattleState, Unit, UnitId, UnitState, Weather};
@@ -33,9 +36,17 @@ pub(super) fn build(
         .map_err(|e| setup_err(format!("map of battle `{battle}`: {e}")))?;
 
     let mut units: Vec<Unit> = Vec::new();
+    // Army officers the battle places itself fight from their spawn, not from a deploy slot.
+    let spawned = |officer: &str| {
+        def.units
+            .iter()
+            .any(|s| army_officer(campaign, s).is_some_and(|o| o.id == officer))
+    };
     // `normalize_deployment` keeps at most one officer per slot.
-    for (officer, &slot) in deployment(pack, def, campaign)
+    let deployed = deployment(pack, def, campaign);
+    for (officer, &slot) in deployed
         .iter()
+        .filter(|o| !spawned(o))
         .zip(&def.deploy.slots)
     {
         let state = campaign
@@ -46,7 +57,7 @@ pub(super) fn build(
     let on_map = def.units.iter().filter(|s| s.group.is_none());
     let reinforcements = def.units.iter().filter(|s| s.group.is_some());
     for spawn in on_map.chain(reinforcements) {
-        units.push(spawn_unit(pack, units.len(), spawn)?);
+        units.push(spawn_unit(pack, units.len(), spawn, campaign)?);
     }
 
     let mut occupied: BTreeMap<Pos, UnitId> = BTreeMap::new();
@@ -205,13 +216,61 @@ fn officer_unit(
     })
 }
 
-fn spawn_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn) -> Result<Unit, BattleError> {
+/// The army's state of the officer a `side = "player"` spawn names, when that officer is in
+/// the army. Such a spawn places the army's officer (one unit, with their progress) instead of
+/// a second copy built from `officers.toml`.
+fn army_officer<'a>(campaign: &'a CampaignState, sp: &UnitSpawn) -> Option<&'a OfficerState> {
+    if sp.side != Side::Player {
+        return None;
+    }
+    campaign.officer(sp.officer.as_deref()?)
+}
+
+fn spawn_unit(
+    pack: &Pack,
+    id: UnitId,
+    sp: &UnitSpawn,
+    campaign: &CampaignState,
+) -> Result<Unit, BattleError> {
     let who = sp
         .tag
         .clone()
         .or_else(|| sp.officer.clone())
         .or_else(|| sp.name.clone())
         .unwrap_or_else(|| format!("unit at {:?}", sp.pos));
+    if let Some(item) = sp.drop.as_deref().filter(|i| pack.item(i).is_none()) {
+        return Err(setup_err(format!(
+            "unit `{who}` drops unknown item `{item}`"
+        )));
+    }
+    // An army officer fights as they are in the army: the spawn's class, level, stats and
+    // equipment are ignored. The spawn still decides where and how the unit fights.
+    let mut unit = match army_officer(campaign, sp) {
+        Some(state) => officer_unit(pack, id, state, sp.pos)?,
+        None => defined_unit(pack, id, sp, &who)?,
+    };
+    unit.ai = sp.ai;
+    unit.ai_target = sp.ai_target.clone();
+    unit.ai_pos = match (sp.ai_pos, sp.ai) {
+        (Some(p), _) => Some(p),
+        (None, AiMode::Guard) => Some(sp.pos),
+        (None, _) => None,
+    };
+    unit.commander = sp.commander;
+    unit.tag = sp.tag.clone();
+    unit.group = sp.group.clone();
+    unit.state = if sp.group.is_some() {
+        UnitState::Hidden
+    } else {
+        UnitState::Active
+    };
+    unit.drop = sp.drop.clone();
+    Ok(unit)
+}
+
+/// A spawned unit as the battle defines it: a named officer from `officers.toml` (with the
+/// spawn's overrides) or a generic unit. [`spawn_unit`] sets the behaviour fields.
+fn defined_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn, who: &str) -> Result<Unit, BattleError> {
     let (name, class_id, level, stats, equip, portrait, lord) = match &sp.officer {
         Some(oid) => {
             let od = pack
@@ -252,21 +311,11 @@ fn spawn_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn) -> Result<Unit, BattleErr
     let class = pack
         .class(&class_id)
         .ok_or_else(|| setup_err(format!("unit `{who}` has unknown class `{class_id}`")))?;
-    check_equipment(pack, &who, &equip)?;
-    if let Some(item) = sp.drop.as_deref().filter(|i| pack.item(i).is_none()) {
-        return Err(setup_err(format!(
-            "unit `{who}` drops unknown item `{item}`"
-        )));
-    }
+    check_equipment(pack, who, &equip)?;
     let level = level.max(1);
     let [strength, int, lead] = stats;
     let hp = max_hp(class, level);
     let mp = max_mp(&pack.rules, level, int);
-    let ai_pos = match (sp.ai_pos, sp.ai) {
-        (Some(p), _) => Some(p),
-        (None, AiMode::Guard) => Some(sp.pos),
-        (None, _) => None,
-    };
     Ok(Unit {
         id,
         side: sp.side,
@@ -289,19 +338,15 @@ fn spawn_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn) -> Result<Unit, BattleErr
         acted: false,
         equip,
         statuses: Vec::new(),
-        ai: sp.ai,
-        ai_target: sp.ai_target.clone(),
-        ai_pos,
-        commander: sp.commander,
+        ai: AiMode::default(),
+        ai_target: None,
+        ai_pos: None,
+        commander: false,
         lord,
-        tag: sp.tag.clone(),
-        group: sp.group.clone(),
-        state: if sp.group.is_some() {
-            UnitState::Hidden
-        } else {
-            UnitState::Active
-        },
+        tag: None,
+        group: None,
+        state: UnitState::Active,
         portrait,
-        drop: sp.drop.clone(),
+        drop: None,
     })
 }

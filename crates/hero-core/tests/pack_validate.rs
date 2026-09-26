@@ -528,7 +528,34 @@ fn unit_checks() {
             "battle b01 unit #5",
             "tag `guan_yu` is also an officer id",
         ),
+        warning(
+            &[(
+                B01,
+                "side = \"ally\"\nname = \"의용병\"",
+                "side = \"player\"\nofficer = \"guan_yu\"",
+            )],
+            "battle b01 unit #5 (militia)",
+            "officer `guan_yu` is in the starting army: the battle places the army's `guan_yu` here",
+        ),
     ]);
+}
+
+#[test]
+fn player_guests_are_not_army_officers() {
+    // jian_yong only joins later (`@join` in a story scene): a guest, not a copy of the army's.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        B01,
+        "side = \"ally\"\nname = \"의용병\"",
+        "side = \"player\"\nofficer = \"jian_yong\"",
+    );
+    let issues = load(&files).validate();
+    assert!(
+        !issues.iter().any(|i| i.msg.contains("starting army")),
+        "{}",
+        format_issues(&issues)
+    );
 }
 
 #[test]

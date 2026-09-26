@@ -7,7 +7,7 @@ use crate::pack::Pack;
 use crate::script::Compare;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn ne() -> Compare {
     Compare::Ne
@@ -560,15 +560,23 @@ impl CampaignState {
     /// add won gold/items, record the victory and set any flags the battle set.
     ///
     /// * Player units with an officer in the roster copy level, EXP, class, str/int/lead and
-    ///   equipment back (HP, MP and morale are per battle).
+    ///   equipment back (HP, MP and morale are per battle). Only the first player unit of an
+    ///   officer counts ([`BattleState::new`] builds one per army officer).
     /// * Battle consumables (`battle_use = true`) are taken from `battle.inventory`, which the
     ///   battle used them from; all other inventory entries are kept.
     /// * Flags set by battle events are merged in.
     /// * Only a victory adds `gold_found` / `items_found` (RULES.md §10) and records the
     ///   battle in `battles_won`.
     pub fn apply_battle_result(&mut self, pack: &Pack, battle: &BattleState) {
+        let mut copied: BTreeSet<&str> = BTreeSet::new();
         for unit in battle.units.iter().filter(|u| u.side == Side::Player) {
-            let Some(state) = unit.officer.as_deref().and_then(|id| self.officer_mut(id)) else {
+            let Some(id) = unit.officer.as_deref() else {
+                continue;
+            };
+            if !copied.insert(id) {
+                continue;
+            }
+            let Some(state) = self.officer_mut(id) else {
                 continue;
             };
             state.level = unit.level;

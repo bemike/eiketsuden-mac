@@ -176,6 +176,74 @@ fn spawns_use_class_or_officer_stats_and_groups_start_hidden() {
     assert_eq!(st.unit_at(p(7, 7)), None);
 }
 
+/// A `side = "player"` spawn naming an army officer places the army's officer there: one unit
+/// with the army's progress, which is what the campaign gets back after the battle.
+#[test]
+fn player_spawns_of_army_officers_place_the_army_officer() {
+    let mut def = battle(OPEN_MAP);
+    let mut hero = spawn(Side::Player, p(5, 5));
+    hero.officer = Some("guan_yu".into());
+    hero.class = Some("bandit".into()); // ignored: the army's class counts
+    hero.level = Some(1);
+    hero.tag = Some("hero".into());
+    hero.ai = AiMode::Guard;
+    let mut guest = spawn(Side::Player, p(6, 6));
+    guest.officer = Some("zhang_bao".into());
+    guest.class = None;
+    guest.level = None;
+    def.units = vec![hero, guest];
+    let pack = pack_with(def);
+    let mut guan = officer_state(&pack, "guan_yu");
+    guan.level = 12;
+    guan.exp = 40;
+    let roster = vec![
+        officer_state(&pack, "liu_bei"),
+        guan,
+        officer_state(&pack, "zhang_fei"),
+    ];
+    let mut camp = campaign(roster, &["guan_yu", "zhang_fei"]);
+    let mut st = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
+
+    // guan_yu is placed once, at the spawn; the deploy slots go to the others.
+    assert_eq!(
+        placed(&st),
+        ["liu_bei", "zhang_fei", "guan_yu", "zhang_bao"]
+    );
+    assert_eq!((st.units[0].pos, st.units[1].pos), (p(0, 0), p(1, 0)));
+    let g = &st.units[2];
+    assert_eq!(
+        (g.pos, g.class.as_str(), g.level, g.exp),
+        (p(5, 5), "cavalry", 12, 40)
+    );
+    assert_eq!(g.tag.as_deref(), Some("hero"));
+    assert_eq!((g.ai, g.ai_pos), (AiMode::Guard, Some(p(5, 5))));
+    assert_eq!(st.find_unit("hero"), st.find_unit("guan_yu"));
+    // A player guest who is not in the army is built from `officers.toml`.
+    let z = &st.units[3];
+    assert_eq!((z.class.as_str(), z.level, z.exp), ("bandit", 8, 0));
+
+    // The army gets the spawned officer's progress back; guests do not join.
+    st.units[2].exp = 90;
+    camp.apply_battle_result(&pack, &st);
+    assert_eq!(
+        camp.officer("guan_yu").map(|o| (o.level, o.exp)),
+        Some((12, 90))
+    );
+    assert!(camp.officer("zhang_bao").is_none());
+
+    // Should a battle hold two player units of one officer, the first one counts.
+    let mut copy = st.units[2].clone();
+    copy.id = st.units.len();
+    copy.level = 1;
+    copy.exp = 0;
+    st.units.push(copy);
+    camp.apply_battle_result(&pack, &st);
+    assert_eq!(
+        camp.officer("guan_yu").map(|o| (o.level, o.exp)),
+        Some((12, 90))
+    );
+}
+
 #[test]
 fn setup_errors() {
     let pack = pack(OPEN_MAP);
