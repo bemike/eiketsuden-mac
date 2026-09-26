@@ -164,8 +164,6 @@ impl LoadingScreen {
                     manifest.version,
                     manifest.name
                 );
-                // Every following screen is laid out on the pack's canvas.
-                ctx.gfx.canvas.set_size(canvas_size(&manifest.presentation));
                 let batch = FileBatch::new(&ctx.data_root, manifest.text_files());
                 self.status = manifest.name.clone();
                 self.progress = 0.15;
@@ -240,6 +238,10 @@ impl LoadingScreen {
                     }
                     return self.fail("데이터 팩 검증 실패", errors, ctx);
                 }
+                // Every following screen is laid out on the pack's canvas.
+                ctx.gfx
+                    .canvas
+                    .set_size(canvas_size(&pack.manifest.presentation));
                 ctx.pack = Some(Rc::new(pack));
                 let sounds: Vec<String> = sfx::ALL
                     .iter()

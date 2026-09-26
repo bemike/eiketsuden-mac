@@ -37,7 +37,7 @@ laid out without engine changes:
 canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 1280×800
 ```
 
-* **Canvas.** `Pack::validate` rejects a canvas outside 320×200 ..= 1280×800 (each side on its own).
+* **Canvas.** A pack whose canvas lies outside 320×200 ..= 1280×800 (each side on its own) does not load.
   Before a pack is loaded (loading, error and gallery screens) and for packs without
   `[presentation]` the canvas is 480×270. Every screen is laid out relative to the canvas: windows
   are centred or anchored to its edges, lists and panels grow with it, fonts keep their pixel size

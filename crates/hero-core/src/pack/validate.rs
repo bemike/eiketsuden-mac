@@ -1,7 +1,7 @@
 //! Cross-reference checks behind [`Pack::validate`]. Every check is documented for modders in
 //! `docs/MODDING.md` ("Validation"); keep the two in sync.
 
-use super::{Issue, Pack, Presentation, Severity};
+use super::{Issue, Pack, Severity};
 use crate::battledef::{AiMode, BattleDef, Condition, EventAction, Side, Trigger, UnitSpawn};
 use crate::campaign::Node;
 use crate::data::{ClassDef, Effect, Equipment, ItemKind, RangeSpec, StrategyKind, TargetSide};
@@ -13,6 +13,10 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Move type that every deploy slot must be passable for (ordinary infantry). A pack that has
 /// no terrain cost for it instead needs its slots passable for at least one class move type.
 pub(super) const FOOT_MOVE_TYPE: &str = "foot";
+
+/// Smallest canvas the frontend's camp and battle screens are laid out for (`docs/ASSETS.md`,
+/// "Presentation profile"); smaller canvases are allowed but draw those screens overlapping.
+const LAYOUT_MIN_CANVAS: [u32; 2] = [480, 270];
 
 pub(super) fn validate(pack: &Pack) -> Vec<Issue> {
     let mut v = Validator::new(pack);
@@ -145,25 +149,17 @@ impl<'a> Validator<'a> {
 
     // ----- pack.toml [presentation] ---------------------------------------------------------
 
+    /// The canvas range itself is checked when the manifest loads; a canvas below
+    /// [`LAYOUT_MIN_CANVAS`] is allowed but warned about.
     fn presentation(&mut self) {
-        let p = self.pack.manifest.presentation;
-        if !p.canvas_in_range() {
-            let [min, max] = [Presentation::MIN_CANVAS, Presentation::MAX_CANVAS];
-            self.error(
-                super::MANIFEST_FILE,
-                format!(
-                    "presentation.canvas {}x{} is outside {}x{} ..= {}x{} (each side on its own)",
-                    p.canvas[0], p.canvas[1], min[0], min[1], max[0], max[1]
-                ),
-            );
-        } else if (0..2).any(|i| p.canvas[i] < Presentation::LAYOUT_MIN_CANVAS[i]) {
-            let layout = Presentation::LAYOUT_MIN_CANVAS;
+        let [w, h] = self.pack.manifest.presentation.canvas;
+        let [min_w, min_h] = LAYOUT_MIN_CANVAS;
+        if w < min_w || h < min_h {
             self.warn(
                 super::MANIFEST_FILE,
                 format!(
-                    "presentation.canvas {}x{} is smaller than {}x{}: the camp and battle screens \
-                     are laid out for at least that size and overlap on this canvas",
-                    p.canvas[0], p.canvas[1], layout[0], layout[1]
+                    "presentation.canvas [{w}, {h}] is smaller than {min_w}x{min_h}: the camp and \
+                     battle screens are laid out for at least that size and overlap on this canvas"
                 ),
             );
         }

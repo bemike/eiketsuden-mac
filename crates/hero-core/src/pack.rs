@@ -33,6 +33,34 @@ pub struct RulesFiles {
     pub items: String,
 }
 
+/// Default virtual canvas size in pixels (the base pack's 16 px tiles: 30 × 17 visible tiles).
+pub const DEFAULT_CANVAS: [u32; 2] = [480, 270];
+/// Smallest virtual canvas a pack may ask for, `[width, height]`.
+pub const MIN_CANVAS: [u32; 2] = [320, 200];
+/// Largest virtual canvas a pack may ask for, `[width, height]`.
+pub const MAX_CANVAS: [u32; 2] = [1280, 800];
+
+fn default_canvas() -> [u32; 2] {
+    DEFAULT_CANVAS
+}
+
+/// `[presentation]` of `pack.toml`: how the frontend lays the pack's media out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Presentation {
+    /// Size of the virtual canvas the game renders to, `[width, height]` in pixels, within
+    /// [`MIN_CANVAS`]..=[`MAX_CANVAS`]. Default [`DEFAULT_CANVAS`].
+    #[serde(default = "default_canvas")]
+    pub canvas: [u32; 2],
+}
+
+impl Default for Presentation {
+    fn default() -> Self {
+        Presentation {
+            canvas: DEFAULT_CANVAS,
+        }
+    }
+}
+
 /// `pack.toml`. All paths are relative to the pack directory and use `/`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PackManifest {
@@ -47,6 +75,9 @@ pub struct PackManifest {
     pub license: String,
     #[serde(default)]
     pub description: String,
+    /// Canvas size and other presentation settings (`[presentation]`).
+    #[serde(default)]
+    pub presentation: Presentation,
     pub rules: RulesFiles,
     pub officers: String,
     pub campaign: String,
@@ -54,47 +85,6 @@ pub struct PackManifest {
     pub battles: Vec<String>,
     /// Drama script files.
     pub dramas: Vec<String>,
-    /// `[presentation]`: how the pack wants to be shown (see [`Presentation`]).
-    #[serde(default)]
-    pub presentation: Presentation,
-}
-
-/// `[presentation]` of `pack.toml`: the pack's screen model. The frontend lays every screen out
-/// on a virtual canvas of this size and scales it to the window (`docs/ASSETS.md`). The tile
-/// size of battle maps comes from the pack's tileset (`gfx/tiles/terrain.toml`) and unit frame
-/// sizes from `gfx/units/units.toml`, so they are not repeated here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Presentation {
-    /// Virtual canvas `[width, height]` in pixels, within [`Presentation::MIN_CANVAS`] ..=
-    /// [`Presentation::MAX_CANVAS`] (checked by [`Pack::validate`]).
-    pub canvas: [u32; 2],
-}
-
-impl Presentation {
-    /// Canvas of packs without `[presentation]`: the base pack's 480×270.
-    pub const DEFAULT_CANVAS: [u32; 2] = [480, 270];
-    /// Smallest canvas a pack may ask for (320×200, the classic VGA mode 13h screen).
-    pub const MIN_CANVAS: [u32; 2] = [320, 200];
-    /// Largest canvas a pack may ask for.
-    pub const MAX_CANVAS: [u32; 2] = [1280, 800];
-    /// Smallest canvas the engine's camp and battle screens are laid out for; smaller (but
-    /// allowed) canvases draw them overlapping, which [`Pack::validate`] warns about.
-    pub const LAYOUT_MIN_CANVAS: [u32; 2] = [480, 270];
-
-    /// Whether both canvas sides lie within [`Presentation::MIN_CANVAS`] ..=
-    /// [`Presentation::MAX_CANVAS`].
-    pub fn canvas_in_range(&self) -> bool {
-        (0..2).all(|i| (Self::MIN_CANVAS[i]..=Self::MAX_CANVAS[i]).contains(&self.canvas[i]))
-    }
-}
-
-impl Default for Presentation {
-    fn default() -> Presentation {
-        Presentation {
-            canvas: Presentation::DEFAULT_CANVAS,
-        }
-    }
 }
 
 impl PackManifest {
@@ -281,8 +271,9 @@ fn index_by_id<T>(
 }
 
 impl PackManifest {
-    /// Every listed path must be relative, use `/` and stay inside the pack, and no file may
-    /// be listed twice (each file has exactly one role).
+    /// Every listed path must be relative, use `/` and stay inside the pack, no file may be
+    /// listed twice (each file has exactly one role), and the canvas is within
+    /// [`MIN_CANVAS`]..=[`MAX_CANVAS`].
     fn check_paths(&self) -> Result<(), PackError> {
         let mut seen = BTreeSet::new();
         for path in self.text_files() {
@@ -303,6 +294,14 @@ impl PackManifest {
                     format!("file `{path}` is listed more than once"),
                 ));
             }
+        }
+        let [w, h] = self.presentation.canvas;
+        let ([min_w, min_h], [max_w, max_h]) = (MIN_CANVAS, MAX_CANVAS);
+        if !(min_w..=max_w).contains(&w) || !(min_h..=max_h).contains(&h) {
+            return Err(parse_error(
+                MANIFEST_FILE,
+                format!("presentation.canvas [{w}, {h}] must be between [{min_w}, {min_h}] and [{max_w}, {max_h}]"),
+            ));
         }
         Ok(())
     }

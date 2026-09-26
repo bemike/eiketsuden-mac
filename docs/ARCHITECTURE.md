@@ -59,11 +59,9 @@ to catch unwinnable maps, stuck AI and panics.
 
 ## Rendering model
 
-The game renders to a **virtual canvas** whose size the pack declares (`[presentation] canvas` in
-`pack.toml`; 480×270 for the base pack, with 16×16 px tiles from its tileset — see
-[ASSETS.md](ASSETS.md#presentation-profile)) and scales it to the window with integer factors when
-possible (nearest-neighbour, letterboxed). All UI coordinates are virtual pixels, laid out relative
-to the canvas size. Text uses the Galmuri pixel fonts (OFL), which cover Hangul, Latin
+The game renders to a fixed **480×270 virtual canvas** (16×16 px tiles, 30×17 tiles visible) and scales
+it to the window with integer factors when possible (nearest-neighbour, letterboxed). All UI
+coordinates are virtual pixels. Text uses the Galmuri pixel fonts (OFL), which cover Hangul, Latin
 and the Hanja used in officer names.
 
 See also: [RULES.md](RULES.md) (combat formulas), [MODDING.md](MODDING.md) (data formats),

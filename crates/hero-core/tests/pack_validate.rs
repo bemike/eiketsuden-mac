@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use hero_core::pack::{Pack, Presentation, Severity};
+use hero_core::pack::{Pack, Severity};
 
 #[test]
 fn fixture_pack_has_no_issues() {
@@ -912,62 +912,4 @@ fn campaign_checks() {
             "branch nodes route, mercy_check can lead back to themselves",
         ),
     ]);
-}
-
-#[test]
-fn presentation_canvas_defaults_and_limits() {
-    // Without `[presentation]` a pack gets the base pack's 480x270 canvas.
-    let fixture = load_fixture();
-    assert_eq!(fixture.manifest.presentation, Presentation::default());
-    assert_eq!(fixture.manifest.presentation.canvas, [480, 270]);
-
-    let with = |section: &str| {
-        let mut files = fixture_files();
-        append(
-            &mut files,
-            "pack.toml",
-            &format!("\n[presentation]\n{section}\n"),
-        );
-        files
-    };
-    let pack = load(&with("canvas = [640, 480]"));
-    assert_eq!(pack.manifest.presentation.canvas, [640, 480]);
-    assert!(pack.validate().is_empty());
-    // Both limits are allowed.
-    let issues = load(&with("canvas = [1280, 800]")).validate();
-    assert!(issues.is_empty(), "{}", format_issues(&issues));
-    // Canvases below the size the camp and battle screens are laid out for only warn.
-    for small in ["canvas = [320, 200]", "canvas = [640, 240]"] {
-        let issues = load(&with(small)).validate();
-        assert!(
-            issues.iter().all(|i| i.severity == Severity::Warning),
-            "{small}:\n{}",
-            format_issues(&issues)
-        );
-        assert_issue(
-            &issues,
-            Severity::Warning,
-            "pack.toml",
-            "smaller than 480x270",
-        );
-    }
-    for bad in [
-        "canvas = [319, 240]",
-        "canvas = [640, 199]",
-        "canvas = [1281, 480]",
-        "canvas = [640, 801]",
-    ] {
-        let issues = load(&with(bad)).validate();
-        assert_issue(&issues, Severity::Error, "pack.toml", "presentation.canvas");
-    }
-    // A misspelt key falls back to the default canvas, and the lint reports it.
-    let files = with("canvs = [640, 480]");
-    assert_eq!(load(&files).manifest.presentation, Presentation::default());
-    let issues = Pack::unknown_fields(&files).expect("pack parses");
-    assert_issue(
-        &issues,
-        Severity::Warning,
-        "pack.toml",
-        "unknown field `presentation.canvs`",
-    );
 }

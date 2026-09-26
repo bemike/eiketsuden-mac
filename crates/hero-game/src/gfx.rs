@@ -36,24 +36,19 @@ use macroquad::color::hsl_to_rgb;
 use macroquad::prelude::*;
 
 /// Canvas size before a pack is loaded and for packs without `[presentation] canvas`: the base
-/// pack's 480×270.
+/// pack's 480×270 (`hero_core::pack::DEFAULT_CANVAS`).
 pub const DEFAULT_CANVAS: Vec2 = Vec2::new(
-    Presentation::DEFAULT_CANVAS[0] as f32,
-    Presentation::DEFAULT_CANVAS[1] as f32,
+    hero_core::pack::DEFAULT_CANVAS[0] as f32,
+    hero_core::pack::DEFAULT_CANVAS[1] as f32,
 );
 /// Largest side of the render target in real pixels (3840 for the default canvas at `S = 8`);
 /// bigger windows are letterboxed. Keeps the texture within what every GPU supports.
 pub const MAX_TARGET_PX: f32 = 4096.0;
 
-/// Virtual canvas size for a presentation profile: its `canvas`, clamped to the range a pack may
-/// ask for ([`Presentation::MIN_CANVAS`] ..= [`Presentation::MAX_CANVAS`]; `Pack::validate`
-/// rejects anything else, so clamping only matters for the error screen of such a pack).
+/// Virtual canvas size of a loaded pack's presentation profile. `Pack::load` has already
+/// checked it against `hero_core::pack::MIN_CANVAS` ..= `MAX_CANVAS`.
 pub fn canvas_size(presentation: &Presentation) -> Vec2 {
-    let side = |i: usize| {
-        presentation.canvas[i].clamp(Presentation::MIN_CANVAS[i], Presentation::MAX_CANVAS[i])
-            as f32
-    };
-    vec2(side(0), side(1))
+    vec2(presentation.canvas[0] as f32, presentation.canvas[1] as f32)
 }
 
 /// Largest integer scale `S` such that `canvas · S` fits `screen_w × screen_h` (min 1), and no
@@ -859,8 +854,7 @@ mod tests {
         assert_eq!(canvas_size(&Presentation::default()), DEFAULT_CANVAS);
         let p = |w, h| Presentation { canvas: [w, h] };
         assert_eq!(canvas_size(&p(640, 480)), vec2(640.0, 480.0));
-        // Out-of-range values (rejected by Pack::validate) are clamped for the error screen.
-        assert_eq!(canvas_size(&p(100, 5000)), vec2(320.0, 800.0));
+        assert_eq!(canvas_size(&p(320, 200)), vec2(320.0, 200.0));
     }
 
     #[test]
