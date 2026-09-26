@@ -1,0 +1,89 @@
+# Replaces mini's campaign.toml: the same story with battle b03 before the ending.
+title = "Mini campaign, extended"
+start = "prologue"
+starting_officers = ["liu_bei", "guan_yu", "zhang_fei"]
+starting_gold = 500
+starting_items = { bean = 3 }
+
+[[node]]
+type = "drama"
+id = "prologue"
+scene = "oath"
+next = "camp1"
+
+[[node]]
+type = "camp"
+id = "camp1"
+title = "탁현 — 출진 준비"
+shop = ["bean", "wine", "bronze_sword", "long_spear"]
+battle = "b01"
+next = "battle1"
+
+[[node]]
+type = "battle"
+id = "battle1"
+battle = "b01"
+next = "route"
+on_defeat = "retreat"
+
+[[node]]
+type = "branch"
+id = "route"
+flag = "pursue"
+then = "mercy_check"
+else = "camp2"
+
+[[node]]
+type = "branch"
+id = "mercy_check"
+flag = "captives"
+cmp = ">="
+value = 2
+then = "mercy"
+else = "camp2"
+
+[[node]]
+type = "drama"
+id = "mercy"
+scene = "mercy"
+next = "camp2"
+
+[[node]]
+type = "drama"
+id = "retreat"
+scene = "retreat"
+next = "camp2"
+
+[[node]]
+type = "camp"
+id = "camp2"
+title = "광종 — 출진 준비"
+shop = ["bean", "wine", "short_bow", "war_manual"]
+battle = "b02"
+next = "battle2"
+
+[[node]]
+type = "battle"
+id = "battle2"
+battle = "b02"
+next = "camp3"
+
+[[node]]
+type = "camp"
+id = "camp3"
+title = "산길 — 출진 준비"
+shop = ["bean", "wine"]
+battle = "b03"
+next = "battle3"
+
+[[node]]
+type = "battle"
+id = "battle3"
+battle = "b03"
+next = "finale"
+
+[[node]]
+type = "ending"
+id = "finale"
+scene = "epilogue"
+title = "끝"

@@ -145,7 +145,7 @@ impl<'a> Validator<'a> {
     // ----- rules/game.toml -----------------------------------------------------------------
 
     fn rules(&mut self) {
-        let ctx = self.pack.manifest.rules.game.clone();
+        let ctx = self.pack.files.game.source_path();
         let r = &self.pack.rules;
         if r.level_cap == 0 {
             self.error(&ctx, "level_cap must be at least 1");
@@ -225,7 +225,7 @@ impl<'a> Validator<'a> {
     fn terrain(&mut self) {
         let pack = self.pack;
         if pack.terrain.is_empty() {
-            self.error(&pack.manifest.rules.terrain, "no terrain is defined");
+            self.error(&pack.files.terrain.source_path(), "no terrain is defined");
         }
         let strategy_elements: BTreeSet<&str> = pack
             .strategies
@@ -791,12 +791,14 @@ impl<'a> Validator<'a> {
         self.battle_scene_items(&ctx, b);
     }
 
-    /// `@item` of a battle item in a scene the battle plays (intro, outro, `drama` actions) is
-    /// lost: the scene gives it to the army, but when the battle ends the army's battle items
-    /// are replaced by the battle's own stock (`CampaignState::apply_battle_result`).
+    /// `@item` of a battle item in a scene played while the battle runs (intro, `drama`
+    /// actions) goes to the army's inventory, not to the battle's own stock, which was copied
+    /// when the battle started: the item cannot be used in this battle, only from the next one
+    /// on (`CampaignState::apply_battle_result` keeps it). The outro plays after the battle has
+    /// ended, so it is not checked.
     fn battle_scene_items(&mut self, ctx: &str, b: &BattleDef) {
         let pack = self.pack;
-        let mut scenes: Vec<&str> = b.intro.iter().chain(&b.outro).map(|s| s.as_str()).collect();
+        let mut scenes: Vec<&str> = b.intro.iter().map(|s| s.as_str()).collect();
         for e in &b.events {
             for a in &e.actions {
                 if let EventAction::Drama { scene } = a {
@@ -816,7 +818,7 @@ impl<'a> Validator<'a> {
                     self.warn(
                         &format!("{ctx} scene {id}"),
                         format!(
-                            "@item `{item}` is lost: the battle plays this scene, and when it ends the army's battle items are replaced by the battle's own stock; use a `give_item` event action or a campaign drama instead"
+                            "@item `{item}` cannot be used in this battle: the scene plays during the battle and gives the item to the army's inventory, not to the battle's stock (it is usable from the next battle on)"
                         ),
                     );
                 }

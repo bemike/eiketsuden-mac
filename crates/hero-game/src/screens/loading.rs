@@ -1,18 +1,26 @@
-//! Startup loading screen: fonts, then `pack.toml`, every text file it lists (fetched in
+//! Startup loading screen: the pack chain (`pack.toml` of the pack and of every pack it
+//! extends, one after the other), fonts, every other text file of the chain (fetched in
 //! parallel), `Pack::load` + `Pack::validate`, and a short media preload. Any failure leads to
 //! the [`ErrorScreen`] with a retry option.
 //!
-//! In gallery mode only the fonts (and UI sounds) are loaded; the pack is not needed.
+//! The chain is read before the fonts because a layered pack may take its fonts (like any
+//! media file) from a pack it extends: once the chain is known,
+//! [`crate::platform::DataRoot::with_parent_packs`] makes the media store look in the top pack
+//! first and then in each parent. Text files are read by their exact path relative to the top
+//! pack (`../base/rules/game.toml` for a parent's), as `PackChain::text_files` lists them.
+//!
+//! In gallery mode only the chain (for the fonts), the fonts and UI sounds are loaded; a broken
+//! chain is only logged there.
 
 use super::error::ErrorScreen;
 use super::gallery::GalleryScreen;
 use crate::app::{Ctx, Screen, Transition};
-use crate::assets::FileBatch;
+use crate::assets::{FileBatch, FileRequest, Media};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
 use crate::gfx::{fill_rect, stroke_rect, Align, FontId, TextStyle, VIRTUAL_W};
 use crate::ui::theme;
-use hero_core::pack::{Pack, PackError, PackManifest, Severity};
+use hero_core::pack::{Pack, PackChain, PackError, Severity};
 use macroquad::prelude::*;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -21,6 +29,8 @@ use std::rc::Rc;
 const MEDIA_WAIT_SECONDS: f64 = 4.0;
 /// Validation errors listed on the error screen.
 const MAX_LISTED_ISSUES: usize = 12;
+/// The manifest at the root of every pack.
+const MANIFEST: &str = "pack.toml";
 
 /// What to start once loading is done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,13 +41,79 @@ pub enum Target {
     Gallery,
 }
 
+/// One file read from the first of several candidate paths that can be read (a media file
+/// looked up in the top pack, then in the packs it extends).
+struct FirstOf {
+    /// The candidate being read; `None` once every candidate failed.
+    request: Option<FileRequest>,
+    /// Candidates still to try, in lookup order.
+    rest: std::vec::IntoIter<String>,
+    /// Why the earlier candidates failed.
+    errors: Vec<String>,
+}
+
+impl FirstOf {
+    /// `paths` in lookup order.
+    fn new(paths: Vec<String>) -> FirstOf {
+        let mut rest = paths.into_iter();
+        FirstOf {
+            request: rest.next().map(FileRequest::new),
+            rest,
+            errors: Vec::new(),
+        }
+    }
+
+    /// Advance the reads; `Some` with the bytes of the first readable candidate, or with the
+    /// errors of every candidate once all failed.
+    fn poll(&mut self) -> Option<Result<Vec<u8>, String>> {
+        while let Some(request) = self.request.as_mut() {
+            match request.poll()? {
+                Ok(bytes) => return Some(Ok(bytes.clone())),
+                Err(e) => self.errors.push(e.clone()),
+            }
+            self.request = self.rest.next().map(FileRequest::new);
+        }
+        if self.errors.is_empty() {
+            self.errors.push("no location to read the file from".into());
+        }
+        Some(Err(self.errors.join("; ")))
+    }
+}
+
+/// What follows the fonts.
+enum Next {
+    /// The UI gallery.
+    Gallery,
+    /// Read the text files of the chain: `files` (paths relative to the top pack), plus the
+    /// `pack.toml` texts already read, by the same kind of path.
+    Files {
+        files: Vec<String>,
+        manifests: BTreeMap<String, String>,
+    },
+    /// The pack cannot be loaded; the error screen needs the fonts to say why.
+    Fail {
+        title: &'static str,
+        details: Vec<String>,
+    },
+}
+
 enum Stage {
     Start,
-    Fonts(FileBatch),
-    Manifest(FileBatch),
+    /// Reading the `pack.toml` at `path` (relative to the top pack): the top pack's first
+    /// (`chain` is `None` then), then each parent's.
+    Chain {
+        chain: Option<PackChain>,
+        manifests: BTreeMap<String, String>,
+        path: String,
+        request: FileRequest,
+    },
+    Fonts {
+        pending: Vec<(FontId, FirstOf)>,
+        done: Vec<(FontId, Result<Vec<u8>, String>)>,
+        next: Next,
+    },
     Files {
-        /// Original `pack.toml` text (`Pack::load` reads it again from the file map).
-        manifest_src: String,
+        manifests: BTreeMap<String, String>,
         batch: FileBatch,
     },
     Parse(BTreeMap<String, String>),
@@ -54,6 +130,21 @@ pub struct LoadingScreen {
     progress: f32,
     status: String,
     fonts_ready: bool,
+}
+
+/// Parent pack directories of a (possibly incomplete) chain, nearest first.
+fn parent_dirs(chain: Option<&PackChain>) -> Vec<String> {
+    chain.map_or_else(Vec::new, |c| {
+        c.layers().iter().skip(1).map(|l| l.dir.clone()).collect()
+    })
+}
+
+/// A pack error for the error screen.
+fn describe(e: &PackError) -> String {
+    match e {
+        PackError::Missing { file } => format!("{file}: 파일이 없습니다"),
+        other => other.to_string(),
+    }
 }
 
 impl LoadingScreen {
@@ -89,28 +180,177 @@ impl LoadingScreen {
         Transition::replace(ErrorScreen::fatal(title, lines, Some(self.target)))
     }
 
+    /// Start reading the `pack.toml` at `path` (relative to the top pack).
+    fn read_manifest(
+        &mut self,
+        ctx: &Ctx,
+        chain: Option<PackChain>,
+        manifests: BTreeMap<String, String>,
+        path: String,
+    ) {
+        self.status = path.clone();
+        let request = FileRequest::new(ctx.data_root.top_pack().path(&path));
+        self.stage = Stage::Chain {
+            chain,
+            manifests,
+            path,
+            request,
+        };
+    }
+
+    /// Load the fonts from the top pack and the given parents, then continue with `next`.
+    fn load_fonts(&mut self, ctx: &Ctx, parents: Vec<String>, next: Next) {
+        self.status = "글꼴".into();
+        self.progress = 0.05;
+        let root = ctx.data_root.top_pack().with_parent_packs(parents);
+        let pending = [FontId::Main, FontId::Small]
+            .into_iter()
+            .map(|id| (id, FirstOf::new(root.media_paths(id.file()))))
+            .collect();
+        self.stage = Stage::Fonts {
+            pending,
+            done: Vec::new(),
+            next,
+        };
+    }
+
+    /// The chain could not be read. The game shows why (after loading the fonts it can find in
+    /// the packs read so far, `parents`); the gallery does not need the pack and carries on.
+    fn chain_failed(&mut self, ctx: &Ctx, parents: Vec<String>, title: &'static str, e: String) {
+        let next = match self.target {
+            Target::Gallery => {
+                macroquad::logging::warn!("gallery: pack chain unavailable: {}", e);
+                Next::Gallery
+            }
+            Target::Game => Next::Fail {
+                title,
+                details: vec![e],
+            },
+        };
+        self.load_fonts(ctx, parents, next);
+    }
+
+    /// The whole chain has been read: look media up through it and plan the next files.
+    fn chain_complete(
+        &mut self,
+        ctx: &mut Ctx,
+        chain: PackChain,
+        manifests: BTreeMap<String, String>,
+    ) {
+        let top = &chain.layers()[0].manifest;
+        macroquad::logging::info!("pack {} {} ({})", top.id, top.version, top.name);
+        for layer in &chain.layers()[1..] {
+            let m = &layer.manifest;
+            macroquad::logging::info!(
+                "  extends {}: {} {} ({})",
+                layer.dir,
+                m.id,
+                m.version,
+                m.name
+            );
+        }
+        let parents = parent_dirs(Some(&chain));
+        let root = ctx.data_root.top_pack().with_parent_packs(parents.clone());
+        if root != ctx.data_root {
+            // Nothing has been requested from the media store yet: start it over on the chain.
+            ctx.media = Media::new(root.clone());
+            ctx.data_root = root;
+        }
+        let next = match (self.target, chain.text_files()) {
+            (Target::Gallery, _) => Next::Gallery,
+            (Target::Game, Ok(files)) => {
+                self.status = top.name.clone();
+                Next::Files {
+                    files: files.iter().map(|f| f.source_path()).collect(),
+                    manifests,
+                }
+            }
+            (Target::Game, Err(e)) => Next::Fail {
+                title: "데이터 팩 오류",
+                details: vec![describe(&e)],
+            },
+        };
+        self.load_fonts(ctx, parents, next);
+    }
+
     fn step(&mut self, ctx: &mut Ctx) -> Transition {
         match std::mem::replace(&mut self.stage, Stage::Done) {
             Stage::Start => {
-                self.status = "글꼴".into();
-                self.stage = Stage::Fonts(FileBatch::new(
-                    &ctx.data_root,
-                    [
-                        FontId::Main.file().to_string(),
-                        FontId::Small.file().to_string(),
-                    ],
-                ));
+                self.read_manifest(ctx, None, BTreeMap::new(), MANIFEST.to_string());
             }
-            Stage::Fonts(mut batch) => {
-                if !batch.poll() {
-                    self.stage = Stage::Fonts(batch);
+            Stage::Chain {
+                chain,
+                mut manifests,
+                path,
+                mut request,
+            } => {
+                let Some(result) = request.poll().cloned() else {
+                    self.stage = Stage::Chain {
+                        chain,
+                        manifests,
+                        path,
+                        request,
+                    };
+                    return Transition::None;
+                };
+                // Packs read so far, for the fonts of the error screen.
+                let known = parent_dirs(chain.as_ref());
+                // A read error already names the file (path or URL).
+                let text = match result {
+                    Ok(bytes) => String::from_utf8(bytes)
+                        .map_err(|_| format!("{path}: not valid UTF-8 text")),
+                    Err(e) => Err(e),
+                };
+                let text = match (text, &chain) {
+                    (Ok(text), _) => text,
+                    (Err(e), None) => {
+                        self.chain_failed(ctx, known, "데이터 팩을 찾을 수 없습니다", e);
+                        return Transition::None;
+                    }
+                    (Err(e), Some(c)) => {
+                        let e = describe(&c.parent_unreadable(&e));
+                        self.chain_failed(ctx, known, "데이터 팩 오류", e);
+                        return Transition::None;
+                    }
+                };
+                let pushed = match chain {
+                    None => PackChain::new(&text),
+                    Some(mut c) => c.push_parent(&text).map(|()| c),
+                };
+                let chain = match pushed {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.chain_failed(ctx, known, "데이터 팩 오류", describe(&e));
+                        return Transition::None;
+                    }
+                };
+                manifests.insert(path, text);
+                match chain.next_parent() {
+                    Some(parent) => self.read_manifest(ctx, Some(chain), manifests, parent),
+                    None => self.chain_complete(ctx, chain, manifests),
+                }
+            }
+            Stage::Fonts {
+                mut pending,
+                mut done,
+                next,
+            } => {
+                let mut i = 0;
+                while i < pending.len() {
+                    match pending[i].1.poll() {
+                        Some(result) => done.push((pending.swap_remove(i).0, result)),
+                        None => i += 1,
+                    }
+                }
+                if !pending.is_empty() {
+                    self.stage = Stage::Fonts {
+                        pending,
+                        done,
+                        next,
+                    };
                     return Transition::None;
                 }
-                let mut results = batch.into_results();
-                for id in [FontId::Main, FontId::Small] {
-                    let bytes = results
-                        .remove(id.file())
-                        .unwrap_or_else(|| Err("not requested".into()));
+                for (id, bytes) in done {
                     ctx.gfx
                         .fonts
                         .install(id, bytes.as_deref().map_err(Clone::clone));
@@ -127,53 +367,20 @@ impl LoadingScreen {
                     &[sfx::CURSOR, sfx::CONFIRM, sfx::CANCEL, sfx::ERROR]
                         .map(|k| format!("sfx/{k}")),
                 );
-                if self.target == Target::Gallery {
-                    return Transition::replace(GalleryScreen::new());
+                match next {
+                    Next::Gallery => return Transition::replace(GalleryScreen::new()),
+                    Next::Fail { title, details } => return self.fail(title, details, ctx),
+                    Next::Files { files, manifests } => {
+                        self.progress = 0.15;
+                        self.stage = Stage::Files {
+                            manifests,
+                            batch: FileBatch::new(&ctx.data_root.top_pack(), files),
+                        };
+                    }
                 }
-                self.status = "pack.toml".into();
-                self.stage =
-                    Stage::Manifest(FileBatch::new(&ctx.data_root, ["pack.toml".to_string()]));
-            }
-            Stage::Manifest(mut batch) => {
-                if !batch.poll() {
-                    self.stage = Stage::Manifest(batch);
-                    return Transition::None;
-                }
-                let result = batch
-                    .into_results()
-                    .remove("pack.toml")
-                    .unwrap_or_else(|| Err("not requested".into()));
-                // The read error already names the file (path or URL).
-                let bytes = match result {
-                    Ok(b) => b,
-                    Err(e) => return self.fail("데이터 팩을 찾을 수 없습니다", vec![e], ctx),
-                };
-                let parsed = String::from_utf8(bytes)
-                    .map_err(|_| "pack.toml: not valid UTF-8 text".to_string())
-                    .and_then(|s| match PackManifest::parse(&s) {
-                        Ok(m) => Ok((m, s)),
-                        Err(e) => Err(e.to_string()),
-                    });
-                let (manifest, manifest_src) = match parsed {
-                    Ok(m) => m,
-                    Err(e) => return self.fail("데이터 팩 오류", vec![e], ctx),
-                };
-                macroquad::logging::info!(
-                    "pack {} {} ({})",
-                    manifest.id,
-                    manifest.version,
-                    manifest.name
-                );
-                let batch = FileBatch::new(&ctx.data_root, manifest.text_files());
-                self.status = manifest.name.clone();
-                self.progress = 0.15;
-                self.stage = Stage::Files {
-                    manifest_src,
-                    batch,
-                };
             }
             Stage::Files {
-                manifest_src,
+                manifests,
                 mut batch,
             } => {
                 let done = batch.poll();
@@ -183,10 +390,7 @@ impl LoadingScreen {
                     self.status = cur.to_string();
                 }
                 if !done {
-                    self.stage = Stage::Files {
-                        manifest_src,
-                        batch,
-                    };
+                    self.stage = Stage::Files { manifests, batch };
                     return Transition::None;
                 }
                 let mut files = BTreeMap::new();
@@ -204,8 +408,8 @@ impl LoadingScreen {
                 if !errors.is_empty() {
                     return self.fail("데이터 팩 파일을 읽을 수 없습니다", errors, ctx);
                 }
-                // `Pack::load` reads `pack.toml` through the same source.
-                files.insert("pack.toml".to_string(), manifest_src);
+                // `Pack::load` reads the chain's `pack.toml` files through the same source.
+                files.extend(manifests);
                 self.status = "규칙 해석".into();
                 self.progress = 0.8;
                 self.stage = Stage::Parse(files);
@@ -213,13 +417,7 @@ impl LoadingScreen {
             Stage::Parse(files) => {
                 let pack = match Pack::load(&files) {
                     Ok(p) => p,
-                    Err(e) => {
-                        let msg = match &e {
-                            PackError::Missing { file } => format!("{file}: 파일이 없습니다"),
-                            other => other.to_string(),
-                        };
-                        return self.fail("데이터 팩 오류", vec![msg], ctx);
-                    }
+                    Err(e) => return self.fail("데이터 팩 오류", vec![describe(&e)], ctx),
                 };
                 let issues = pack.validate();
                 let mut errors = Vec::new();
@@ -319,5 +517,32 @@ impl Screen for LoadingScreen {
                 TextStyle::small(theme::TEXT_DIM),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parent_dirs_skip_the_top_pack() {
+        assert!(parent_dirs(None).is_empty());
+        let top = "id = \"ext\"\nname = \"ext\"\nversion = \"1\"\nextends = \"../base\"\n";
+        let mut chain = PackChain::new(top).unwrap();
+        assert!(parent_dirs(Some(&chain)).is_empty(), "parent not read yet");
+        let base = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base/pack.toml"),
+        )
+        .unwrap();
+        chain.push_parent(&base).unwrap();
+        assert_eq!(parent_dirs(Some(&chain)), ["../base"]);
+    }
+
+    #[test]
+    fn describes_missing_files_in_korean() {
+        let e = PackError::Missing {
+            file: "../base/rules/game.toml".into(),
+        };
+        assert_eq!(describe(&e), "../base/rules/game.toml: 파일이 없습니다");
     }
 }

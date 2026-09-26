@@ -216,6 +216,51 @@ fn missing_media_is_reported() {
 }
 
 #[test]
+fn layered_packs_find_media_in_any_layer_top_first() {
+    // `top` extends `../mini` (the `mini_ext` fixture's text files), with the media split
+    // between the two directories.
+    let dir = TempDir::new("media-layers");
+    let (top, parent) = (dir.0.join("top"), dir.0.join("mini"));
+    for (key, text) in fixture_files_at("mini_ext", "") {
+        write(&top, &key, &text);
+    }
+    for (key, text) in fixture_files() {
+        write(&parent, &key, &text);
+    }
+    let load = || {
+        hero_core::pack::Pack::load(&hero_core::pack::DirSource { root: top.clone() })
+            .expect("layered pack loads")
+    };
+    complete_media(&parent);
+    // A file only the child has counts too.
+    std::fs::remove_file(parent.join("gfx/bg/field.png")).unwrap();
+    write(&top, "gfx/bg/field.png", "");
+    let issues = load().missing_media(&top);
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+
+    // A media index file of the child replaces the parent's as a whole.
+    write(
+        &top,
+        "gfx/units/units.toml",
+        "[sprites.archer]\nframe = [16, 16]\n",
+    );
+    std::fs::remove_file(parent.join("bgm/battle.ogg")).unwrap();
+    let issues = load().missing_media(&top);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "class bandit",
+        "gfx/units/units.toml has no [sprites.bandit] entry",
+    );
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "battle b01",
+        "missing bgm/battle.ogg",
+    );
+}
+
+#[test]
 fn missing_index_files_are_errors() {
     let dir = TempDir::new("media-empty");
     let issues = load_fixture().missing_media(&dir.0);

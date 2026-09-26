@@ -605,12 +605,17 @@ impl BattleState {
         Ok(())
     }
 
+    /// Take one `item` out of the battle's stock and record the use in `items_used`, which the
+    /// campaign subtracts when the battle ends. Callers checked the stock with `battle_item`.
     fn consume(&mut self, item: &str) {
-        if let Some(n) = self.inventory.get_mut(item) {
-            *n = n.saturating_sub(1);
-            if *n == 0 {
-                self.inventory.remove(item);
-            }
+        let Some(n) = self.inventory.get_mut(item).filter(|n| **n > 0) else {
+            return;
+        };
+        *n -= 1;
+        if *n == 0 {
+            self.inventory.remove(item);
         }
+        let used = self.items_used.entry(item.to_string()).or_insert(0);
+        *used = used.saturating_add(1);
     }
 }

@@ -556,19 +556,22 @@ impl CampaignState {
         Err(CampaignError::BranchLoop(start.to_string()))
     }
 
-    /// Apply a finished battle: copy level/exp/class/stat changes of deployed officers back,
-    /// add won gold/items, record the victory and set any flags the battle set.
+    /// Apply a finished battle, won or lost: copy level/exp/class/stat changes of deployed
+    /// officers back, take out the consumables the battle used, set any flags the battle set
+    /// and, after a victory only, add won gold/items and record the victory.
     ///
     /// * Player units with an officer in the roster copy level, EXP, class, str/int/lead and
     ///   equipment back (HP, MP and morale are per battle). Only the first player unit of an
     ///   officer counts ([`BattleState::new`] builds one per army officer).
-    /// * Battle consumables (`battle_use = true`) are taken from `battle.inventory`, which the
-    ///   battle used them from; all other inventory entries are kept. Battle items the army
-    ///   received while the battle ran (`@item` in a scene the battle plays) are therefore
-    ///   replaced too; [`Pack::validate`] warns about such scenes.
+    /// * Exactly the consumables the battle recorded in `battle.items_used` are removed from
+    ///   the inventory (a count never drops below 0). Everything else in the inventory stays
+    ///   as it is now, including items a scene played during the battle gave (`@item`), which
+    ///   `battle.inventory` — the battle's own stock — never saw.
     /// * Flags set by battle events are merged in.
-    /// * Only a victory adds `gold_found` / `items_found` (RULES.md §10) and records the
-    ///   battle in `battles_won`.
+    /// * Only a victory adds `gold_found` / `items_found` (RULES.md §10: treasures, drops and
+    ///   `give_item` events) and records the battle in `battles_won`.
+    ///
+    /// Apply each finished battle once: applying it again would take its items out again.
     pub fn apply_battle_result(&mut self, pack: &Pack, battle: &BattleState) {
         let mut copied: BTreeSet<&str> = BTreeSet::new();
         for unit in battle.units.iter().filter(|u| u.side == Side::Player) {
@@ -590,11 +593,12 @@ impl CampaignState {
             state.equip = unit.equip.clone();
         }
 
-        let battle_item = |id: &str| pack.item(id).is_some_and(|d| d.is_battle_item());
-        self.inventory.retain(|id, _| !battle_item(id));
-        for (id, count) in &battle.inventory {
-            if battle_item(id) {
-                self.add_item(id, *count);
+        for (id, used) in &battle.items_used {
+            let left = self.item_count(id).saturating_sub(*used);
+            if left == 0 {
+                self.inventory.remove(id);
+            } else {
+                self.inventory.insert(id.clone(), left);
             }
         }
 

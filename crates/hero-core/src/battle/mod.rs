@@ -412,8 +412,15 @@ pub struct BattleState {
     pub treasures_taken: Vec<bool>,
     pub outcome: Option<Outcome>,
     pub bonus_done: bool,
-    /// Consumables available to the player (copied from the campaign inventory, written back after).
+    /// Consumables available to the player in this battle: a copy of the campaign inventory
+    /// taken when the battle was built, minus what has been used since.
     pub inventory: BTreeMap<Id, u32>,
+    /// Battle consumables used from `inventory` so far: item id -> count. When the battle ends,
+    /// won or lost, [`CampaignState::apply_battle_result`] takes exactly these out of the
+    /// campaign inventory. (Mid-battle saves written before this field existed load with an
+    /// empty map: items used before such a save are not taken out.)
+    #[serde(default)]
+    pub items_used: BTreeMap<Id, u32>,
     /// Gold and items picked up during the battle (added to the campaign after victory).
     pub gold_found: i64,
     pub items_found: Vec<Id>,

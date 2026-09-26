@@ -4,7 +4,7 @@
 use super::{Issue, Pack, Severity};
 use crate::script::Cmd;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Unit sheet colours; one sheet per sprite key and side.
 const SIDES: [&str; 3] = ["player", "ally", "enemy"];
@@ -15,16 +15,24 @@ const ICONS_TOML: &str = "gfx/ui/icons.toml";
 const UNKNOWN_PORTRAIT: &str = "gfx/portraits/_unknown.png";
 
 impl Pack {
-    /// Check that every media file the pack refers to exists below `root` (the pack
-    /// directory): unit sheets `gfx/units/<sprite>_<side>.png` and their `units.toml` entries,
+    /// Check that every media file the pack refers to exists below `root` (the top pack
+    /// directory) — for a layered pack in the directory of any of its [`Pack::layers`], looked
+    /// up top pack first like the game does, so a media index file (`units.toml`,
+    /// `terrain.toml`, `fx.toml`, `icons.toml`) is read from the first pack that has one.
+    ///
+    /// Checked: unit sheets `gfx/units/<sprite>_<side>.png` and their `units.toml` entries,
     /// officer and `@show` portraits `gfx/portraits/<key>.png` (warnings: `_unknown.png` is
     /// shown instead, which must exist), `bgm/<key>.ogg` of battles and dramas, `gfx/bg/<key>.png`
     /// and `sfx/<key>.(ogg|wav)` of dramas, a `gfx/tiles/terrain.toml` tile for every terrain,
     /// `gfx/fx/fx.toml` entries and strips for strategy effects, and `gfx/ui/icons.toml` keys
     /// of item icons (warnings).
     pub fn missing_media(&self, root: &Path) -> Vec<Issue> {
+        let mut dirs: Vec<PathBuf> = self.layers.iter().map(|l| root.join(&l.dir)).collect();
+        if dirs.is_empty() {
+            dirs.push(root.to_path_buf());
+        }
         let mut m = MediaCheck {
-            root,
+            dirs,
             issues: Vec::new(),
             reported: BTreeSet::new(),
         };
@@ -38,16 +46,25 @@ impl Pack {
     }
 }
 
-struct MediaCheck<'a> {
-    root: &'a Path,
+struct MediaCheck {
+    /// Media directories in lookup order: the top pack, then the packs it extends.
+    dirs: Vec<PathBuf>,
     issues: Vec<Issue>,
     /// Missing files already reported (each is reported once, at its first user).
     reported: BTreeSet<String>,
 }
 
-impl MediaCheck<'_> {
+impl MediaCheck {
+    /// The file `rel` of the first pack directory that has it.
+    fn find(&self, rel: &str) -> Option<PathBuf> {
+        self.dirs
+            .iter()
+            .map(|dir| dir.join(rel))
+            .find(|path| path.is_file())
+    }
+
     fn exists(&self, rel: &str) -> bool {
-        self.root.join(rel).is_file()
+        self.find(rel).is_some()
     }
 
     fn push(&mut self, severity: Severity, context: &str, msg: String) {
@@ -68,13 +85,14 @@ impl MediaCheck<'_> {
     /// Parse a media index file (each is read once); reports and returns `None` when it is
     /// missing or broken.
     fn index(&mut self, rel: &str, context: &str) -> Option<toml::Table> {
-        let text = match std::fs::read_to_string(self.root.join(rel)) {
+        let Some(path) = self.find(rel) else {
+            self.push(Severity::Error, context, format!("missing {rel}"));
+            return None;
+        };
+        let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) => {
-                let msg = match e.kind() {
-                    std::io::ErrorKind::NotFound => format!("missing {rel}"),
-                    _ => format!("cannot read {rel}: {e}"),
-                };
+                let msg = format!("cannot read {}: {e}", path.display());
                 self.push(Severity::Error, context, msg);
                 return None;
             }

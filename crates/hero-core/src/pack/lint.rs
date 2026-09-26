@@ -6,8 +6,8 @@
 //! of the original that did not survive the round trip.
 
 use super::{
-    parse_error, parse_toml, read, ClassesFile, FileSource, ItemsFile, OfficersFile, PackError,
-    PackManifest, StrategiesFile, TerrainFile, MANIFEST_FILE,
+    parse_error, parse_toml, read, ClassesFile, FileSource, ItemsFile, OfficersFile, PackChain,
+    PackError, PackFile, PackManifest, StrategiesFile, TerrainFile,
 };
 use super::{Issue, Pack, Severity};
 use crate::battledef::BattleDef;
@@ -19,36 +19,37 @@ use toml::Value;
 
 impl Pack {
     /// Keys in the pack's TOML files that the schema does not know (typos such as
-    /// `hp_grwth`), as warnings with the file as context. Files that fail to parse return the
-    /// same error as [`Pack::load`].
+    /// `hp_grwth`), as warnings with the file as context. For a layered pack every `pack.toml`
+    /// of the chain, the rules, officer and campaign files in use and the battle files of every
+    /// layer are checked. Files that fail to parse return the same error as [`Pack::load`].
     pub fn unknown_fields(src: &dyn FileSource) -> Result<Vec<Issue>, PackError> {
-        let manifest_text = read(src, MANIFEST_FILE)?;
-        let manifest = PackManifest::parse(&manifest_text)?;
-        manifest.check_paths()?;
+        let chain = PackChain::read(src)?;
+        let files = chain.resolve()?;
         let mut issues = Vec::new();
-        check::<PackManifest>(MANIFEST_FILE, &manifest_text, &mut issues)?;
-        let r = &manifest.rules;
-        check::<GameRules>(&r.game, &read(src, &r.game)?, &mut issues)?;
-        check::<TerrainFile>(&r.terrain, &read(src, &r.terrain)?, &mut issues)?;
-        check::<ClassesFile>(&r.classes, &read(src, &r.classes)?, &mut issues)?;
-        check::<StrategiesFile>(&r.strategies, &read(src, &r.strategies)?, &mut issues)?;
-        check::<ItemsFile>(&r.items, &read(src, &r.items)?, &mut issues)?;
-        check::<OfficersFile>(
-            &manifest.officers,
-            &read(src, &manifest.officers)?,
-            &mut issues,
-        )?;
-        check::<CampaignDef>(
-            &manifest.campaign,
-            &read(src, &manifest.campaign)?,
-            &mut issues,
-        )?;
-        for file in &manifest.battles {
-            check::<BattleDef>(file, &read(src, file)?, &mut issues)?;
+        for layer in chain.layers() {
+            let path = layer.manifest_path();
+            check::<PackManifest>(&path, &read(src, &path)?, &mut issues)?;
+        }
+        let mut run = |file: &PackFile, check: Check| -> Result<(), PackError> {
+            let path = file.source_path();
+            check(&path, &read(src, &path)?, &mut issues)
+        };
+        run(&files.game, check::<GameRules>)?;
+        run(&files.terrain, check::<TerrainFile>)?;
+        run(&files.classes, check::<ClassesFile>)?;
+        run(&files.strategies, check::<StrategiesFile>)?;
+        run(&files.items, check::<ItemsFile>)?;
+        run(&files.officers, check::<OfficersFile>)?;
+        run(&files.campaign, check::<CampaignDef>)?;
+        for file in &files.battles {
+            run(file, check::<BattleDef>)?;
         }
         Ok(issues)
     }
 }
+
+/// One file's check: `(file name, text, issues)`.
+type Check = fn(&str, &str, &mut Vec<Issue>) -> Result<(), PackError>;
 
 fn check<T: DeserializeOwned + Serialize>(
     file: &str,

@@ -738,30 +738,39 @@ fn drama_checks() {
 }
 
 #[test]
-fn battle_items_given_by_battle_scenes_are_reported() {
+fn battle_items_given_while_the_battle_runs_are_reported() {
+    // The intro and `drama` event actions play while the battle runs: the item reaches the
+    // army, not the battle's stock.
     run(&[
         warning(
             &[(
                 BATTLE_DRAMAS,
-                "@narr 적이 흩어졌다.",
-                "@narr 적이 흩어졌다.\n@item bean",
+                "liu_bei: 적이 온다. 모두 준비하라!",
+                "liu_bei: 적이 온다. 모두 준비하라!\n@item bean",
             )],
-            "battle b01 scene b01_outro",
-            "@item `bean` is lost",
+            "battle b01 scene b01_intro",
+            "@item `bean` cannot be used in this battle",
         ),
         warning(
             &[(BATTLE_DRAMAS, "@sfx confirm", "@sfx confirm\n@item wine")],
             "battle b01 scene b01_rein",
-            "@item `wine` is lost",
+            "@item `wine` cannot be used in this battle",
         ),
     ]);
-    // Equipment is kept, and story scenes (`oath` gives a bean) are not battle scenes.
+    // The outro plays after the battle, equipment is not a battle item, and story scenes
+    // (`oath` gives a bean) are not battle scenes.
     let mut files = fixture_files();
     edit(
         &mut files,
         BATTLE_DRAMAS,
         "@narr 적이 흩어졌다.",
-        "@narr 적이 흩어졌다.\n@item war_manual",
+        "@narr 적이 흩어졌다.\n@item bean\n@item war_manual",
+    );
+    edit(
+        &mut files,
+        BATTLE_DRAMAS,
+        "@bg castle",
+        "@bg castle\n@item war_manual",
     );
     let issues = load(&files).validate();
     assert!(issues.is_empty(), "{}", format_issues(&issues));

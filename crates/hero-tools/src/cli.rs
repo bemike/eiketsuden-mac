@@ -22,6 +22,9 @@ USAGE:
     hero-tools info <pack_dir>
         Print a summary of the pack's content.
 
+    A <pack_dir> whose pack.toml says `extends = \"../base\"` is loaded together with the
+    packs it builds on; validate checks media files in every pack of that chain.
+
     hero-tools original probe <install_dir> [--out <manifest.json>]
         EXPERIMENTAL. Identify which release of the original game (that you own) a folder
         holds and, with --out, write a shareable manifest: file names, sizes, SHA-256

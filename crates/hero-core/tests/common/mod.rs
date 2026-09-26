@@ -11,13 +11,36 @@ use std::path::{Path, PathBuf};
 pub type Files = BTreeMap<String, String>;
 
 pub fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
+    fixture_path("mini")
+}
+
+/// Directory of the fixture pack `name` (`mini`, or `mini_ext`, which extends `mini`).
+pub fn fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 /// Every text file of the fixture pack, keyed by its `/`-separated path inside the pack.
 pub fn fixture_files() -> Files {
     let mut files = Files::new();
     collect(&fixture_dir(), "", &mut files);
+    files
+}
+
+/// Every text file of the fixture pack `name`, keyed by `prefix` (a directory such as
+/// `../mini`, or empty) joined with its path inside the pack.
+pub fn fixture_files_at(name: &str, prefix: &str) -> Files {
+    let mut files = Files::new();
+    collect(&fixture_path(name), prefix, &mut files);
+    files
+}
+
+/// The `mini_ext` fixture and the `mini` pack it extends, keyed by their paths relative to
+/// `mini_ext` (`pack.toml`, `../mini/pack.toml`, ...) as a frontend would fetch them.
+pub fn layered_files() -> Files {
+    let mut files = fixture_files_at("mini_ext", "");
+    files.extend(fixture_files_at("mini", "../mini"));
     files
 }
 

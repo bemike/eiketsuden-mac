@@ -1,0 +1,39 @@
+# Added by the extension; uses mini's terrain, classes and officers.
+id = "b03"
+name = "산길 전투"
+location = "184년 산길"
+objective = "적을 모두 물리쳐라"
+bgm = "battle"
+turn_limit = 12
+reward_gold = 150
+intro = "b03_intro"
+victory = [{ type = "defeat_all" }]
+
+[map]
+theme = "field"
+rows = """
+^^..^^..
+^...TT..
+........
+..v.....
+........
+"""
+
+[deploy]
+max = 3
+slots = [[1, 4], [2, 4], [3, 4]]
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 6
+pos = [4, 0]
+commander = true
+
+[[units]]
+side = "enemy"
+name = "산적 궁병"
+class = "archer"
+level = 5
+pos = [6, 1]

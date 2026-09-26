@@ -1,19 +1,28 @@
 //! Data packs: a directory with `pack.toml` plus rules, officers, battles, dramas and media.
 //!
+//! A pack may extend another pack (`extends = "../base"`) and then lists only the files it
+//! provides; see [`PackChain`] for the layering rules.
+//!
 //! Loading is split in two so the web build can fetch files asynchronously:
-//! 1. [`PackManifest::parse`] reads `pack.toml`; [`PackManifest::text_files`] lists every text
-//!    file the pack needs.
-//! 2. The frontend reads those files (fetch on web, `std::fs` natively) into a [`FileSource`]
-//!    and calls [`Pack::load`], which parses everything synchronously.
+//! 1. [`PackChain::new`] parses the top pack's `pack.toml`; while [`PackChain::next_parent`] names
+//!    a parent `pack.toml`, the frontend reads it and hands it to [`PackChain::push_parent`].
+//!    [`PackChain::text_files`] then lists every other text file of the chain as
+//!    `(pack directory, path)` pairs.
+//! 2. The frontend reads those files (fetch on web, `std::fs` natively) into a [`FileSource`],
+//!    keyed by their path relative to the top pack ([`PackFile::source_path`]) together with the
+//!    `pack.toml` files, and calls [`Pack::load`], which parses everything synchronously.
 //!
 //! [`Pack::validate`] then cross-checks every reference; tools additionally run
 //! [`Pack::unknown_fields`] (typos in TOML keys) and, natively, [`Pack::missing_media`].
 //! The file format is documented for modders in `docs/MODDING.md`.
 
+mod chain;
 mod lint;
 #[cfg(not(target_arch = "wasm32"))]
 mod media;
 mod validate;
+
+pub use chain::{join_path, PackChain, PackFile, PackFiles, PackLayer, MAX_CHAIN_DEPTH};
 
 use crate::battledef::BattleDef;
 use crate::campaign::CampaignDef;
@@ -24,19 +33,54 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The `[rules]` table of `pack.toml`. A pack that extends another may leave out any of them
+/// (the parent's file is used); a pack without `extends` must list all five.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RulesFiles {
-    pub game: String,
-    pub terrain: String,
-    pub classes: String,
-    pub strategies: String,
-    pub items: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategies: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<String>,
+}
+
+/// Default virtual canvas size in pixels (the base pack's 16 px tiles: 30 × 17 visible tiles).
+pub const DEFAULT_CANVAS: [u32; 2] = [480, 270];
+/// Smallest virtual canvas a pack may ask for, `[width, height]`.
+pub const MIN_CANVAS: [u32; 2] = [320, 200];
+/// Largest virtual canvas a pack may ask for, `[width, height]`.
+pub const MAX_CANVAS: [u32; 2] = [1280, 800];
+
+fn default_canvas() -> [u32; 2] {
+    DEFAULT_CANVAS
+}
+
+/// `[presentation]` of `pack.toml`: how the frontend lays the pack's media out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Presentation {
+    /// Size of the virtual canvas the game renders to, `[width, height]` in pixels, within
+    /// [`MIN_CANVAS`]..=[`MAX_CANVAS`]. Default [`DEFAULT_CANVAS`].
+    #[serde(default = "default_canvas")]
+    pub canvas: [u32; 2],
+}
+
+impl Default for Presentation {
+    fn default() -> Self {
+        Presentation {
+            canvas: DEFAULT_CANVAS,
+        }
+    }
 }
 
 /// `pack.toml`. All paths are relative to the pack directory and use `/`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PackManifest {
-    /// Machine id, e.g. `base`.
+    /// Machine id, e.g. `base`. Save games remember the id of the pack that was loaded.
     pub id: String,
     pub name: String,
     pub version: String,
@@ -47,34 +91,61 @@ pub struct PackManifest {
     pub license: String,
     #[serde(default)]
     pub description: String,
+    /// Directory of the pack this one is built on, relative to this pack's directory
+    /// (`../base`). See [`PackChain`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+    /// Canvas size and other presentation settings. In a loaded [`Pack`] this is the
+    /// effective value: the pack's own `[presentation]`, or the one it inherits
+    /// ([`PackChain::presentation`]).
+    #[serde(default)]
+    pub presentation: Presentation,
+    #[serde(default)]
     pub rules: RulesFiles,
-    pub officers: String,
-    pub campaign: String,
-    /// Battle definition files.
+    /// Officer list; may be left out by a pack that extends another.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub officers: Option<String>,
+    /// Campaign graph; may be left out by a pack that extends another.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub campaign: Option<String>,
+    /// Battle definition files (added to the parent's battles).
+    #[serde(default)]
     pub battles: Vec<String>,
-    /// Drama script files.
+    /// Drama script files (added to the parent's scenes).
+    #[serde(default)]
     pub dramas: Vec<String>,
 }
 
 impl PackManifest {
+    /// Parse the text of a `pack.toml`. Only the TOML shape is checked here; [`PackChain`]
+    /// (used by [`Pack::load`]) also checks paths, `extends` and `[presentation]`.
     pub fn parse(src: &str) -> Result<PackManifest, PackError> {
-        toml::from_str(src).map_err(|e| PackError::Parse {
-            file: "pack.toml".into(),
-            msg: e.to_string(),
-        })
+        PackManifest::parse_file(MANIFEST_FILE, src)
     }
 
-    /// Every text file (relative path) that [`Pack::load`] will read, excluding `pack.toml`.
+    /// [`PackManifest::parse`] with `file` as the name in error messages.
+    fn parse_file(file: &str, src: &str) -> Result<PackManifest, PackError> {
+        parse_toml(file, src.strip_prefix('\u{feff}').unwrap_or(src))
+    }
+
+    /// Every text file (path inside this pack) this `pack.toml` itself lists, excluding
+    /// `pack.toml`. For a pack that extends another, [`PackChain::text_files`] lists the files
+    /// of the whole chain.
     pub fn text_files(&self) -> Vec<String> {
-        let mut v = vec![
-            self.rules.game.clone(),
-            self.rules.terrain.clone(),
-            self.rules.classes.clone(),
-            self.rules.strategies.clone(),
-            self.rules.items.clone(),
-            self.officers.clone(),
-            self.campaign.clone(),
-        ];
+        let r = &self.rules;
+        let mut v: Vec<String> = [
+            &r.game,
+            &r.terrain,
+            &r.classes,
+            &r.strategies,
+            &r.items,
+            &self.officers,
+            &self.campaign,
+        ]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
         v.extend(self.battles.iter().cloned());
         v.extend(self.dramas.iter().cloned());
         v
@@ -93,6 +164,9 @@ pub enum PackError {
 
 /// Something that can provide the text content of pack files.
 pub trait FileSource {
+    /// Text of the file at `path`, relative to the top pack directory and `/`-separated. Files
+    /// of the packs it extends have paths such as `../base/rules/game.toml`
+    /// ([`PackFile::source_path`]). A file that does not exist is [`PackError::Missing`].
     fn read_text(&self, path: &str) -> Result<String, PackError>;
 }
 
@@ -104,7 +178,8 @@ impl FileSource for BTreeMap<String, String> {
     }
 }
 
-/// Reads pack files from a directory on disk (native builds and tools).
+/// Reads pack files from a directory on disk (native builds and tools). `root` is the top pack
+/// directory; the files of packs it extends are read through `..` paths below it.
 pub struct DirSource {
     pub root: std::path::PathBuf,
 }
@@ -136,10 +211,18 @@ pub struct Issue {
     pub msg: String,
 }
 
-/// A fully parsed data pack.
+/// A fully parsed data pack (for a layered pack: the merged result of its chain).
 #[derive(Debug, Clone)]
 pub struct Pack {
+    /// The top pack's `pack.toml`, with the effective `presentation` (declared or inherited).
     pub manifest: PackManifest,
+    /// The packs this pack is built from, the top pack first; a pack without `extends` has
+    /// exactly one layer, with an empty `dir`. Media files are looked up in every layer's
+    /// directory, in this order.
+    pub layers: Vec<PackLayer>,
+    /// The text file each part was read from (paths relative to the top pack directory via
+    /// [`PackFile::source_path`]).
+    pub files: PackFiles,
     pub rules: GameRules,
     /// Terrain in file order (order matters only for display).
     pub terrain: Vec<TerrainDef>,
@@ -239,62 +322,123 @@ fn index_by_id<T>(
     Ok(map)
 }
 
+/// Whether `path` is a valid file path inside a pack: relative, `/`-separated, without `..`.
+fn is_pack_path(path: &str) -> bool {
+    !(path.trim().is_empty()
+        || path.starts_with('/')
+        || path.contains('\\')
+        || path.contains(':')
+        || path.split('/').any(|part| part == ".."))
+}
+
 impl PackManifest {
-    /// Every listed path must be relative, use `/` and stay inside the pack, and no file may
-    /// be listed twice (each file has exactly one role).
-    fn check_paths(&self) -> Result<(), PackError> {
+    /// Checks of one manifest (`file` names it in errors): every listed path is relative, uses
+    /// `/` and stays inside the pack, no file is listed twice (each file has exactly one role),
+    /// `extends` is a relative `/`-separated directory, and the canvas is within
+    /// [`MIN_CANVAS`]..=[`MAX_CANVAS`].
+    fn check(&self, file: &str) -> Result<(), PackError> {
         let mut seen = BTreeSet::new();
         for path in self.text_files() {
-            let bad = path.trim().is_empty()
-                || path.starts_with('/')
-                || path.contains('\\')
-                || path.contains(':')
-                || path.split('/').any(|part| part == "..");
-            if bad {
+            if !is_pack_path(&path) {
                 return Err(parse_error(
-                    MANIFEST_FILE,
+                    file,
                     format!("path `{path}` must be relative to the pack directory, use `/` and not contain `..`"),
                 ));
             }
             if !seen.insert(path.clone()) {
                 return Err(parse_error(
-                    MANIFEST_FILE,
+                    file,
                     format!("file `{path}` is listed more than once"),
                 ));
             }
+        }
+        if let Some(parent) = &self.extends {
+            let bad = parent.trim().is_empty()
+                || parent.starts_with('/')
+                || parent.contains('\\')
+                || parent.contains(':');
+            if bad {
+                return Err(parse_error(
+                    file,
+                    format!("extends `{parent}` must be a directory relative to this pack, using `/` (for example `../base`)"),
+                ));
+            }
+        }
+        let [w, h] = self.presentation.canvas;
+        let ([min_w, min_h], [max_w, max_h]) = (MIN_CANVAS, MAX_CANVAS);
+        if !(min_w..=max_w).contains(&w) || !(min_h..=max_h).contains(&h) {
+            return Err(parse_error(
+                file,
+                format!("presentation.canvas [{w}, {h}] must be between [{min_w}, {min_h}] and [{max_w}, {max_h}]"),
+            ));
         }
         Ok(())
     }
 }
 
+/// Parse drama and battle files of every layer, farthest parent first. Within one pack an id
+/// must be unique; an id that a later (nearer) pack defines again replaces the earlier one.
+/// `parse` turns one file into its `(id, value)` entries.
+fn merge_layers<T>(
+    files: &[PackFile],
+    what: &str,
+    mut parse: impl FnMut(&str) -> Result<Vec<(String, T)>, PackError>,
+) -> Result<BTreeMap<String, T>, PackError> {
+    let mut merged: BTreeMap<String, T> = BTreeMap::new();
+    // Id -> (pack directory, file) of its current definition.
+    let mut defined: BTreeMap<String, (&str, String)> = BTreeMap::new();
+    for file in files {
+        let path = file.source_path();
+        for (id, value) in parse(&path)? {
+            if let Some((dir, first)) = defined.get(&id) {
+                if *dir == file.dir {
+                    return Err(parse_error(
+                        &path,
+                        format!("duplicate {what} id `{id}` (first defined in {first})"),
+                    ));
+                }
+            }
+            defined.insert(id.clone(), (&file.dir, path.clone()));
+            merged.insert(id, value);
+        }
+    }
+    Ok(merged)
+}
+
 impl Pack {
-    /// Parse `pack.toml` and every file it lists. Structural errors (bad TOML, duplicate ids,
-    /// unparsable maps or dramas) fail here; cross-reference problems are reported by
-    /// [`Pack::validate`].
+    /// Parse `pack.toml`, the packs it extends and every file of the chain (see [`PackChain`]),
+    /// all read through `src` by their path relative to the top pack directory. Structural
+    /// errors (bad TOML, duplicate ids, unparsable maps or dramas, broken chains) fail here;
+    /// cross-reference problems are reported by [`Pack::validate`].
     pub fn load(src: &dyn FileSource) -> Result<Pack, PackError> {
-        let manifest = PackManifest::parse(&read(src, MANIFEST_FILE)?)?;
-        manifest.check_paths()?;
-        let files = &manifest.rules;
+        let chain = PackChain::read(src)?;
+        let files = chain.resolve()?;
+        let text = |f: &PackFile| -> Result<(String, String), PackError> {
+            let path = f.source_path();
+            let content = read(src, &path)?;
+            Ok((path, content))
+        };
 
-        let rules: GameRules = parse_toml(&files.game, &read(src, &files.game)?)?;
+        let (path, content) = text(&files.game)?;
+        let rules: GameRules = parse_toml(&path, &content)?;
 
-        let terrain =
-            parse_toml::<TerrainFile>(&files.terrain, &read(src, &files.terrain)?)?.terrain;
+        let (terrain_file, content) = text(&files.terrain)?;
+        let terrain = parse_toml::<TerrainFile>(&terrain_file, &content)?.terrain;
         let mut terrain_ids = BTreeSet::new();
         let mut glyphs = BTreeMap::new();
         for t in &terrain {
             if t.id.trim().is_empty() {
-                return Err(parse_error(&files.terrain, "terrain with an empty id"));
+                return Err(parse_error(&terrain_file, "terrain with an empty id"));
             }
             if !terrain_ids.insert(t.id.as_str()) {
                 return Err(parse_error(
-                    &files.terrain,
+                    &terrain_file,
                     format!("duplicate terrain id `{}`", t.id),
                 ));
             }
             if let Some(other) = glyphs.insert(t.glyph, t.id.as_str()) {
                 return Err(parse_error(
-                    &files.terrain,
+                    &terrain_file,
                     format!(
                         "terrain `{}` reuses glyph {:?} of terrain `{other}`",
                         t.id, t.glyph
@@ -303,87 +447,69 @@ impl Pack {
             }
         }
 
-        let classes = parse_toml::<ClassesFile>(&files.classes, &read(src, &files.classes)?)?.class;
-        let classes = index_by_id(&files.classes, "class", classes, |c| &c.id)?;
-        let strategies =
-            parse_toml::<StrategiesFile>(&files.strategies, &read(src, &files.strategies)?)?
-                .strategy;
-        let strategies = index_by_id(&files.strategies, "strategy", strategies, |s| &s.id)?;
-        let items = parse_toml::<ItemsFile>(&files.items, &read(src, &files.items)?)?.item;
-        let items = index_by_id(&files.items, "item", items, |i| &i.id)?;
-        let officers =
-            parse_toml::<OfficersFile>(&manifest.officers, &read(src, &manifest.officers)?)?
-                .officer;
-        let officers = index_by_id(&manifest.officers, "officer", officers, |o| &o.id)?;
+        let (path, content) = text(&files.classes)?;
+        let classes = parse_toml::<ClassesFile>(&path, &content)?.class;
+        let classes = index_by_id(&path, "class", classes, |c| &c.id)?;
+        let (path, content) = text(&files.strategies)?;
+        let strategies = parse_toml::<StrategiesFile>(&path, &content)?.strategy;
+        let strategies = index_by_id(&path, "strategy", strategies, |s| &s.id)?;
+        let (path, content) = text(&files.items)?;
+        let items = parse_toml::<ItemsFile>(&path, &content)?.item;
+        let items = index_by_id(&path, "item", items, |i| &i.id)?;
+        let (path, content) = text(&files.officers)?;
+        let officers = parse_toml::<OfficersFile>(&path, &content)?.officer;
+        let officers = index_by_id(&path, "officer", officers, |o| &o.id)?;
 
-        let campaign: CampaignDef =
-            parse_toml(&manifest.campaign, &read(src, &manifest.campaign)?)?;
+        let (path, content) = text(&files.campaign)?;
+        let campaign: CampaignDef = parse_toml(&path, &content)?;
         let mut node_ids = BTreeSet::new();
         for node in &campaign.nodes {
             if node.id().trim().is_empty() {
-                return Err(parse_error(
-                    &manifest.campaign,
-                    "campaign node with an empty id",
-                ));
+                return Err(parse_error(&path, "campaign node with an empty id"));
             }
             if !node_ids.insert(node.id()) {
                 return Err(parse_error(
-                    &manifest.campaign,
+                    &path,
                     format!("duplicate campaign node id `{}`", node.id()),
                 ));
             }
         }
 
-        let mut battles: BTreeMap<Id, BattleDef> = BTreeMap::new();
-        let mut battle_files: BTreeMap<Id, &str> = BTreeMap::new();
-        for file in &manifest.battles {
-            let battle: BattleDef = parse_toml(file, &read(src, file)?)?;
+        // Battles are parsed as TOML first and their maps checked only once overrides are
+        // resolved: a parent's battle that the child replaces never meets the child's terrain.
+        let mut battle_files: BTreeMap<Id, String> = BTreeMap::new();
+        let battles = merge_layers(&files.battles, "battle", |path| {
+            let battle: BattleDef = parse_toml(path, &read(src, path)?)?;
             if battle.id.trim().is_empty() {
-                return Err(parse_error(file, "battle with an empty id"));
-            }
-            if let Some(first) = battle_files.get(&battle.id) {
-                return Err(parse_error(
-                    file,
-                    format!(
-                        "duplicate battle id `{}` (first defined in {first})",
-                        battle.id
-                    ),
-                ));
+                return Err(parse_error(path, "battle with an empty id"));
             }
             if let Some(key) = battle.map.legend.keys().find(|k| k.chars().count() != 1) {
                 return Err(parse_error(
-                    file,
+                    path,
                     format!("map legend key `{key}` must be exactly one character"),
                 ));
             }
+            battle_files.insert(battle.id.clone(), path.to_string());
+            Ok(vec![(battle.id.clone(), battle)])
+        })?;
+        for (id, battle) in &battles {
+            let file = &battle_files[id];
             BattleMap::parse(&battle.map.rows, &battle.map.legend, &terrain)
-                .map_err(|e| parse_error(file, format!("battle `{}` map: {e}", battle.id)))?;
-            battle_files.insert(battle.id.clone(), file);
-            battles.insert(battle.id.clone(), battle);
+                .map_err(|e| parse_error(file, format!("battle `{id}` map: {e}")))?;
         }
 
-        let mut scenes: BTreeMap<String, Scene> = BTreeMap::new();
-        let mut scene_files: BTreeMap<String, &str> = BTreeMap::new();
-        for file in &manifest.dramas {
-            let parsed = crate::script::parse_drama(file, &read(src, file)?)
+        let scenes = merge_layers(&files.dramas, "scene", |path| {
+            let parsed = crate::script::parse_drama(path, &read(src, path)?)
                 .map_err(|e| parse_error(&e.file, format!("line {}: {}", e.line, e.msg)))?;
-            for scene in parsed {
-                if let Some(first) = scene_files.get(&scene.id) {
-                    return Err(parse_error(
-                        file,
-                        format!(
-                            "duplicate scene id `{}` (first defined in {first})",
-                            scene.id
-                        ),
-                    ));
-                }
-                scene_files.insert(scene.id.clone(), file);
-                scenes.insert(scene.id.clone(), scene);
-            }
-        }
+            Ok(parsed.into_iter().map(|s| (s.id.clone(), s)).collect())
+        })?;
 
+        let mut manifest = chain.layers()[0].manifest.clone();
+        manifest.presentation = chain.presentation();
         Ok(Pack {
             manifest,
+            layers: chain.layers().to_vec(),
+            files,
             rules,
             terrain,
             classes,

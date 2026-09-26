@@ -1,0 +1,20 @@
+# Layered test pack: builds on the `mini` fixture (docs/MODDING.md, "Layered packs").
+# It replaces rules/game.toml and campaign.toml, adds battle b03, replaces scene b01_outro and
+# takes everything else from `mini`. Like `mini`, it must stay free of validation errors AND
+# warnings: tests build broken copies of it in memory.
+id = "mini_ext"
+name = "Mini extension"
+version = "0.1.0"
+authors = ["Eiketsuden Reloaded contributors"]
+license = "CC0-1.0"
+description = "A third battle and a different ending scene on top of the mini test pack."
+extends = "../mini"
+campaign = "campaign.toml"
+battles = ["battles/b03.toml"]
+dramas = ["dramas/ext.drama"]
+
+[presentation]
+canvas = [640, 480]
+
+[rules]
+game = "rules/game.toml"

@@ -7,10 +7,14 @@
 //!   wins); on the web it is the relative URL `data/base/` next to `index.html`. All pack files are
 //!   read through [`DataRoot::path`] + `macroquad::file::load_file`, which is a file read natively
 //!   and an HTTP fetch on the web.
+//! * **Layered packs**: a pack whose `pack.toml` says `extends = "../base"` is built on the packs
+//!   of its chain (`hero_core::pack::PackChain`). Once the loading screen has read the chain it
+//!   records the parent directories ([`DataRoot::with_parent_packs`]); media files are then looked
+//!   up in the top pack first and then in each parent ([`DataRoot::media_paths`]).
 //! * The optional **original-data overlay** (native only): a folder written by
 //!   `hero-tools original extract` from the player's own copy of the original game, chosen with
 //!   `--original <dir>` or the `EIKETSUDEN_ORIGINAL` environment variable. Media files are looked
-//!   up there first ([`DataRoot::media_paths`]), then in the pack. The web build has no overlay.
+//!   up there first ([`DataRoot::media_paths`]), then in the pack(s). The web build has no overlay.
 //! * [`unix_now`] — wall clock time for save timestamps.
 //! * [`storage`] — key/value persistence for saves and settings (files natively,
 //!   `localStorage` on the web).
@@ -104,15 +108,20 @@ impl LaunchOptions {
     }
 }
 
-/// Location of the data pack. Every pack-relative path goes through [`DataRoot::path`].
+/// Location of the data pack. Every pack-relative path goes through [`DataRoot::path`] or
+/// [`DataRoot::media_paths`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataRoot {
-    /// Prefix joined with pack-relative paths; empty or ending with `/`.
+    /// Prefix of the top pack joined with pack-relative paths; empty or ending with `/`.
     prefix: String,
     /// Human readable location for error messages.
     display: String,
     /// Every location that was considered, in order (for the "pack not found" error screen).
     candidates: Vec<String>,
+    /// Directories of the packs the top pack extends, nearest first, relative to the top pack
+    /// directory and `/`-separated (`../base`, as `hero_core::pack::PackLayer::dir`). Empty for
+    /// a pack without `extends`.
+    parents: Vec<String>,
     /// Prefix of the original-data overlay (ends with a separator), native only.
     media_overlay: Option<String>,
 }
@@ -178,6 +187,7 @@ impl DataRoot {
             display: prefix.clone(),
             candidates: vec![prefix.clone()],
             prefix,
+            parents: Vec::new(),
             media_overlay: None,
         }
     }
@@ -189,6 +199,7 @@ impl DataRoot {
             prefix: dir_prefix(dir),
             display: dir.display().to_string(),
             candidates: candidates.iter().map(|p| p.display().to_string()).collect(),
+            parents: Vec::new(),
             media_overlay: None,
         }
     }
@@ -199,21 +210,77 @@ impl DataRoot {
         self
     }
 
-    /// Path or URL of a pack-relative file (`fonts/Galmuri11.ttf`), for `load_file`.
+    /// The same root for a layered pack: `dirs` are the directories of the packs the top pack
+    /// extends, nearest first, relative to the top pack directory (`../base`; the `dir` of every
+    /// `hero_core::pack::PackLayer` after the first). Replaces any earlier list.
+    pub fn with_parent_packs<I, S>(mut self, dirs: I) -> DataRoot
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.parents = dirs
+            .into_iter()
+            .map(Into::into)
+            .map(|d: String| d.trim_matches('/').to_string())
+            .filter(|d| !d.is_empty())
+            .collect();
+        self
+    }
+
+    /// The same root without the packs the top pack extends: [`DataRoot::path`] then names
+    /// exactly the file below the top pack directory. The loader reads pack text files this
+    /// way, by their path relative to the top pack (`../base/rules/game.toml` for a parent's).
+    pub fn top_pack(&self) -> DataRoot {
+        self.clone().with_parent_packs(Vec::<String>::new())
+    }
+
+    /// Directories of the packs the top pack extends (see [`DataRoot::with_parent_packs`]).
+    pub fn parent_packs(&self) -> &[String] {
+        &self.parents
+    }
+
+    /// `rel` in the pack whose directory is `dir` relative to the top pack (empty: the top pack).
+    fn in_pack(&self, dir: &str, rel: &str) -> String {
+        if dir.is_empty() {
+            format!("{}{rel}", self.prefix)
+        } else {
+            format!("{}{dir}/{rel}", self.prefix)
+        }
+    }
+
+    /// Path or URL of a pack-relative file (`fonts/Galmuri11.ttf`, `credits.txt`), for
+    /// `load_file`. For a layered pack natively the first pack of the chain that has the file
+    /// (the top pack's path when none has it); on the web the top pack's path, because the
+    /// browser cannot check for a file without fetching it — media lookups through the whole
+    /// chain go through [`DataRoot::media_paths`].
     pub fn path(&self, rel: &str) -> String {
-        format!("{}{}", self.prefix, rel.trim_start_matches('/'))
+        let rel = rel.trim_start_matches('/');
+        let top = self.in_pack("", rel);
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.parents.is_empty() && !Path::new(&top).is_file() {
+            if let Some(found) = self
+                .parents
+                .iter()
+                .map(|dir| self.in_pack(dir, rel))
+                .find(|p| Path::new(p).is_file())
+            {
+                return found;
+            }
+        }
+        top
     }
 
     /// Candidate paths of a pack-relative **media** file, in lookup order: the original-data
-    /// overlay (when one is active), then the pack. Text files of the pack (rules, dramas) are
-    /// never overlaid; use [`DataRoot::path`] for them.
+    /// overlay (when one is active), the top pack, then every pack it extends. Text files of the
+    /// pack (rules, dramas) are never overlaid; the loader reads them by their exact path.
     pub fn media_paths(&self, rel: &str) -> Vec<String> {
         let rel = rel.trim_start_matches('/');
-        let mut paths = Vec::with_capacity(2);
+        let mut paths = Vec::with_capacity(2 + self.parents.len());
         if let Some(overlay) = &self.media_overlay {
             paths.push(format!("{overlay}{rel}"));
         }
-        paths.push(self.path(rel));
+        paths.push(self.in_pack("", rel));
+        paths.extend(self.parents.iter().map(|dir| self.in_pack(dir, rel)));
         paths
     }
 
@@ -436,6 +503,69 @@ mod tests {
         assert_eq!(root.media_overlay(), Some("/home/me/overlay/"));
         // Pack text files are never overlaid.
         assert_eq!(root.path("pack.toml"), "/games/hero/data/base/pack.toml");
+    }
+
+    #[test]
+    fn media_paths_search_the_top_pack_then_its_parents() {
+        let root = DataRoot::from_dir(Path::new("/mods/ext"), &[])
+            .with_parent_packs(["../base", "../../core/"]);
+        assert_eq!(root.parent_packs(), ["../base", "../../core"]);
+        assert_eq!(
+            root.media_paths("sfx/x.wav"),
+            vec![
+                "/mods/ext/sfx/x.wav",
+                "/mods/ext/../base/sfx/x.wav",
+                "/mods/ext/../../core/sfx/x.wav"
+            ]
+        );
+        // The overlay still comes first.
+        let root = root.with_media_overlay(Path::new("/o"));
+        assert_eq!(
+            root.media_paths("gfx/a.png")[..2],
+            ["/o/gfx/a.png", "/mods/ext/gfx/a.png"]
+        );
+        // The top pack alone: exact paths, overlay kept.
+        let top = root.top_pack();
+        assert!(top.parent_packs().is_empty());
+        assert_eq!(top.media_overlay(), Some("/o/"));
+        assert_eq!(
+            top.path("../base/rules/game.toml"),
+            "/mods/ext/../base/rules/game.toml"
+        );
+
+        // The web build fetches relative URLs, which the browser resolves.
+        let web = DataRoot::from_prefix("data/ext").with_parent_packs(["../base"]);
+        assert_eq!(
+            web.media_paths("bgm/title.ogg"),
+            vec!["data/ext/bgm/title.ogg", "data/ext/../base/bgm/title.ogg"]
+        );
+    }
+
+    #[test]
+    fn layered_paths_prefer_the_first_pack_that_has_the_file() {
+        let tmp = std::env::temp_dir().join(format!("hero-game-layers-{}", std::process::id()));
+        let (top, base) = (tmp.join("ext"), tmp.join("base"));
+        for (dir, file) in [
+            (&base, "credits.txt"),
+            (&base, "gfx/units/units.toml"),
+            (&top, "gfx/units/units.toml"),
+        ] {
+            let path = dir.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+        let root = DataRoot::from_dir(&top, &[]).with_parent_packs(["../base"]);
+        let result = (
+            root.path("credits.txt"),
+            root.path("gfx/units/units.toml"),
+            root.path("gfx/fx/fx.toml"),
+        );
+        std::fs::remove_dir_all(&tmp).unwrap();
+        let top_prefix = dir_prefix(&top);
+        assert_eq!(result.0, format!("{top_prefix}../base/credits.txt"));
+        assert_eq!(result.1, format!("{top_prefix}gfx/units/units.toml"));
+        // Found nowhere: the top pack's path, so the error names it.
+        assert_eq!(result.2, format!("{top_prefix}gfx/fx/fx.toml"));
     }
 
     #[test]

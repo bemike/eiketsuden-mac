@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use hero_core::battle::BattleState;
+use hero_core::battle::{Action, BattleState, DefeatReason, Outcome};
 use hero_core::battledef::Side;
 use hero_core::campaign::{CampaignDef, CampaignError, CampaignState, Node};
 use hero_core::data::{Equipment, ItemKind};
@@ -511,7 +511,8 @@ fn finished_battle(outcome: Value) -> BattleState {
         "treasures_taken": [true],
         "outcome": outcome,
         "bonus_done": false,
-        "inventory": { "bean": 2, "wine": 1, "war_manual": 5 },
+        "inventory": { "bean": 2, "wine": 2, "war_manual": 5 },
+        "items_used": { "bean": 1, "wine": 1 },
         "gold_found": 250,
         "items_found": ["red_horse", "fire_scroll"],
         "flags": { "captives": 2, "pursue": 1 }
@@ -544,10 +545,10 @@ fn victory_copies_progress_and_rewards() {
     );
     assert!(state.officer("jian_yong").is_none(), "guests do not join");
 
-    // Battle items come from the battle; others (bronze_sword) stay; the battle's non-battle
-    // entries (war_manual) are ignored.
+    // Exactly the items the battle used are taken out (3 - 1 each); the rest of the inventory
+    // (bronze_sword) stays, and the battle's own stock (`inventory`) is not copied back.
     assert_eq!(state.item_count("bean"), 2);
-    assert_eq!(state.item_count("wine"), 1);
+    assert_eq!(state.item_count("wine"), 2);
     assert_eq!(state.item_count("bronze_sword"), 1);
     assert_eq!(state.item_count("war_manual"), 0);
     // Found items and gold.
@@ -605,8 +606,109 @@ fn defeat_keeps_progress_but_not_rewards() {
     state.apply_battle_result(&pack, &finished_battle(json!({ "defeat": "turn_limit" })));
     assert_eq!(state.officer("guan_yu").unwrap().level, 17);
     assert_eq!(state.item_count("bean"), 2, "used items stay used");
+    assert_eq!(state.item_count("wine"), 0, "never below zero");
+    assert!(!state.inventory.contains_key("wine"));
     assert_eq!(state.flag("captives"), 2);
     assert_eq!(state.gold, 500);
     assert_eq!(state.item_count("red_horse"), 0);
     assert!(state.battles_won.is_empty());
+}
+
+/// b01 started from `state`, its lord at full HP minus some damage, with one bean used on the
+/// lord through the battle engine.
+fn b01_after_using_a_bean(pack: &Pack, state: &CampaignState) -> BattleState {
+    let mut battle = BattleState::new(pack, "b01", state, 3).unwrap();
+    battle.begin(pack);
+    let lord = battle
+        .units
+        .iter()
+        .position(|u| u.side == Side::Player && u.lord)
+        .expect("the lord is deployed");
+    battle.units[lord].hp -= 100;
+    battle
+        .apply(
+            pack,
+            Action::UseItem {
+                unit: lord,
+                item: "bean".into(),
+                target: lord,
+            },
+        )
+        .expect("the lord can eat a bean");
+    assert_eq!(battle.inventory.get("bean"), Some(&2));
+    assert_eq!(battle.items_used.get("bean"), Some(&1));
+    battle
+}
+
+#[test]
+fn a_won_battle_takes_out_exactly_the_items_it_used() {
+    let (pack, mut state) = new_game();
+    let mut battle = b01_after_using_a_bean(&pack, &state);
+    // While the battle runs, a scene it plays gives the army a bean and a wine (`@item`):
+    // the campaign inventory changes, the battle's stock does not.
+    state.add_item("bean", 1);
+    state.add_item("wine", 1);
+    // A `give_item` event and a treasure: rewards that arrive with the victory.
+    battle.items_found.push("fire_scroll".into());
+    battle.items_found.push("bean".into());
+    battle.outcome = Some(Outcome::Victory);
+    state.apply_battle_result(&pack, &battle);
+    // 3 at the start + 1 from the scene - 1 used + 1 found.
+    assert_eq!(state.item_count("bean"), 4);
+    assert_eq!(state.item_count("wine"), 1, "the scene's wine is kept");
+    assert_eq!(state.item_count("fire_scroll"), 1);
+}
+
+#[test]
+fn a_lost_battle_takes_out_exactly_the_items_it_used() {
+    let (pack, mut state) = new_game();
+    let mut battle = b01_after_using_a_bean(&pack, &state);
+    state.add_item("wine", 1);
+    battle.items_found.push("fire_scroll".into());
+    battle.outcome = Some(Outcome::Defeat(DefeatReason::LordRetreated));
+    state.apply_battle_result(&pack, &battle);
+    assert_eq!(state.item_count("bean"), 2, "the used bean stays used");
+    assert_eq!(state.item_count("wine"), 1, "items from scenes are kept");
+    assert_eq!(
+        state.item_count("fire_scroll"),
+        0,
+        "event gifts need a victory"
+    );
+}
+
+#[test]
+fn items_given_by_battle_events_are_not_taken_out() {
+    // A `give_item` event, a drop or a treasure never enters the battle's stock, so it can be
+    // neither used nor lost there: a victory adds it, a defeat does not.
+    let (pack, mut state) = new_game();
+    let mut battle = BattleState::new(&pack, "b01", &state, 1).unwrap();
+    battle.begin(&pack);
+    battle.items_found.push("bean".into());
+    assert_eq!(
+        battle.inventory.get("bean"),
+        Some(&3),
+        "not usable in this battle"
+    );
+    let lost = {
+        let mut b = battle.clone();
+        b.outcome = Some(Outcome::Defeat(DefeatReason::TurnLimit));
+        b
+    };
+    let mut after_defeat = state.clone();
+    after_defeat.apply_battle_result(&pack, &lost);
+    assert_eq!(after_defeat.item_count("bean"), 3);
+
+    battle.outcome = Some(Outcome::Victory);
+    state.apply_battle_result(&pack, &battle);
+    assert_eq!(state.item_count("bean"), 4);
+    assert!(battle.items_used.is_empty());
+}
+
+#[test]
+fn battle_saves_without_used_items_still_load() {
+    // Mid-battle saves written before `items_used` existed.
+    let mut value = serde_json::to_value(finished_battle(json!(null))).unwrap();
+    value.as_object_mut().unwrap().remove("items_used");
+    let battle: BattleState = serde_json::from_value(value).expect("old battle state loads");
+    assert!(battle.items_used.is_empty());
 }

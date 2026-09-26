@@ -17,7 +17,7 @@ use crate::data::{
     RangeSpec, StatusKind, StrategyDef, StrategyKind, TargetSide, TerrainDef, WeatherChances,
 };
 use crate::geom::{Dir, Pos};
-use crate::pack::{Pack, PackManifest, RulesFiles};
+use crate::pack::{Pack, PackFiles, PackLayer, PackManifest, Presentation, RulesFiles};
 use std::collections::BTreeMap;
 
 pub const BATTLE: &str = "test";
@@ -430,26 +430,28 @@ pub const OPEN_MAP: &str = "
 pub fn pack_with(def: BattleDef) -> Pack {
     let mut battles = BTreeMap::new();
     battles.insert(def.id.clone(), def);
+    let manifest = PackManifest {
+        id: "testkit".into(),
+        name: "testkit".into(),
+        version: "0".into(),
+        authors: Vec::new(),
+        license: String::new(),
+        description: String::new(),
+        extends: None,
+        presentation: Presentation::default(),
+        rules: RulesFiles::default(),
+        officers: None,
+        campaign: None,
+        battles: Vec::new(),
+        dramas: Vec::new(),
+    };
     Pack {
-        manifest: PackManifest {
-            id: "testkit".into(),
-            name: "testkit".into(),
-            version: "0".into(),
-            authors: Vec::new(),
-            license: String::new(),
-            description: String::new(),
-            rules: RulesFiles {
-                game: String::new(),
-                terrain: String::new(),
-                classes: String::new(),
-                strategies: String::new(),
-                items: String::new(),
-            },
-            officers: String::new(),
-            campaign: String::new(),
-            battles: Vec::new(),
-            dramas: Vec::new(),
-        },
+        layers: vec![PackLayer {
+            dir: String::new(),
+            manifest: manifest.clone(),
+        }],
+        manifest,
+        files: PackFiles::default(),
         rules: rules(),
         terrain: terrains(),
         classes: classes(),
