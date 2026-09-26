@@ -3,8 +3,12 @@
 //! ```text
 //! <out>/index.json                        what was extracted, from which edition and files
 //! <out>/gfx/original/palettes.json        the palette bank of MAIN.EXE (9 slots × 16 colours)
-//! <out>/gfx/original/<archive>/<nnn>.png  cells of the sprite / chip archives (media key
-//!                                         `original/<archive>/<nnn>`)
+//! <out>/gfx/original/sprites.json         per archive: palette slot, geometry of every entry,
+//!                                         entry groups (unit classes, effects)
+//! <out>/gfx/original/<archive>/<nnn>.png  one image per sprite / chip entry (media key
+//!                                         `original/<archive>/<nnn>`), indexed, colour 0
+//!                                         transparent
+//! <out>/gfx/original/sheets/<archive>.png every entry of an archive on one contact sheet
 //! <out>/text/<file>.json                  message files as UTF-8 JSON
 //! ```
 //!
@@ -18,9 +22,10 @@
 //! or a previous extraction (whose listed files are replaced).
 
 use crate::edition::{identify, Edition, EditionId};
+use crate::image::IndexedImage;
 use crate::image::{encode_png, grey_ramp, Palette16};
 use crate::install::{lies_inside, InstallDir, InstallError};
-use crate::planar::{cells_to_image, CellLayout, CELL_BYTES};
+use crate::sprites::{self, Group, SpriteArchive};
 use crate::text::{parse_messages, TextEncoding};
 use crate::{ls11, palette, table6};
 use serde::{Deserialize, Serialize};
@@ -39,21 +44,11 @@ pub const FORMAT_VERSION: u32 = 1;
 pub const GFX_DIR: &str = "gfx/original";
 /// Folder of the extracted text.
 pub const TEXT_DIR: &str = "text";
-/// Palette slot used for the sprite PNGs.
-pub const PALETTE_SLOT: usize = 0;
 /// Portrait container.
 pub const PORTRAIT_SOURCE: &str = "FACEDAT.R3";
 
-/// Archives of 16×16 planar cells, with what they hold.
-pub const SPRITE_SOURCES: [(&str, &str); 7] = [
-    ("HEXBCHR.R3", "battle unit sprites"),
-    ("HEXICHR.R3", "battle unit sprites"),
-    ("HEXZCHR.R3", "battle characters (Z series)"),
-    ("HEXZCHP.R3", "battle map chips (Z series)"),
-    ("HEXBCHP.R3", "battle map chips (B series)"),
-    ("MMAPBGPL.R3", "campaign map background cells"),
-    ("SMAPBGPL.R3", "city map background cells"),
-];
+/// Entries per row on the contact sheets.
+pub const SHEET_COLUMNS: usize = 16;
 
 /// Message files and the scenario archive whose scene count each must match.
 pub const TEXT_SOURCES: [(&str, Option<&str>); 6] = [
@@ -616,13 +611,21 @@ struct PaletteFile {
     offset: String,
     order: &'static str,
     slots: Vec<Vec<String>>,
+    slot_notes: Vec<&'static str>,
+    note: &'static str,
 }
 
-fn sprite_palette(
+const PALETTE_NOTE: &str = "The game picks the slot at run time from scenario / map data; the \
+    sprite PNGs use the slot listed per archive in sprites.json (checked visually). The PNGs are \
+    indexed, so another slot can be applied without re-extracting.";
+
+/// The palette bank of `MAIN.EXE`, written to `palettes.json`; `None` (with an error) when it
+/// cannot be located.
+fn palette_bank(
     install: &InstallDir,
     out: &mut Output,
     report: &mut KindReport,
-) -> Result<Palette16, ExtractError> {
+) -> Result<Option<[Palette16; palette::SLOTS]>, ExtractError> {
     let exe = read_source(install, "MAIN.EXE", report)?;
     let bank = match exe.as_deref().map(palette::find_bank) {
         Some(Ok(bank)) => bank,
@@ -630,13 +633,13 @@ fn sprite_palette(
             report
                 .errors
                 .push(format!("MAIN.EXE: {e}; sprites use a grey ramp"));
-            return Ok(grey_ramp());
+            return Ok(None);
         }
         None => {
             report
                 .errors
                 .push("MAIN.EXE missing: no palette, sprites use a grey ramp".into());
-            return Ok(grey_ramp());
+            return Ok(None);
         }
     };
     let file = PaletteFile {
@@ -652,15 +655,140 @@ fn sprite_palette(
                     .collect()
             })
             .collect(),
+        slot_notes: palette::SLOT_NOTES.to_vec(),
+        note: PALETTE_NOTE,
     };
     out.write_json(&format!("{GFX_DIR}/palettes.json"), &file)?;
     report.outputs += 1;
     report.notes.push(format!(
-        "palette: MAIN.EXE bank at {:#x}, slot {PALETTE_SLOT} (which slot belongs to which screen \
-         is not documented; all slots are in {GFX_DIR}/palettes.json)",
+        "palette: MAIN.EXE bank at {:#x}; slot per archive in {GFX_DIR}/sprites.json, all slots \
+         in {GFX_DIR}/palettes.json",
         bank.offset
     ));
-    Ok(bank.slots[PALETTE_SLOT])
+    Ok(Some(bank.slots))
+}
+
+#[derive(Serialize)]
+struct SpritesFile {
+    note: &'static str,
+    archives: Vec<ArchiveInfo>,
+}
+
+#[derive(Serialize)]
+struct ArchiveInfo {
+    file: &'static str,
+    what: &'static str,
+    /// Default slot; entries that need another one list their own.
+    palette_slot: usize,
+    sheets: Vec<String>,
+    entries: Vec<EntryInfo>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    groups: &'static [Group],
+}
+
+#[derive(Serialize)]
+struct EntryInfo {
+    index: usize,
+    bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arrangement: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size: Option<[usize; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    palette_slot: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skipped: Option<String>,
+}
+
+const SPRITES_NOTE: &str = "Entries of 16×16 planar cells (plane p = colour bit p) composed in \
+    row-major cell order, or packed planar images; only the stored facing exists (the game \
+    mirrors the other one). Colour 0 is transparent. Groups were identified by looking at the \
+    images; class groups follow the game's class order.";
+
+/// Convert one archive with the palette bank (`None`: grey ramp). `Err` = the container
+/// itself is invalid.
+fn convert_archive(
+    spec: &SpriteArchive,
+    data: &[u8],
+    bank: Option<&[Palette16; palette::SLOTS]>,
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<Result<ArchiveInfo, String>, ExtractError> {
+    let palette_of = |slot: usize| bank.map_or_else(grey_ramp, |b| b[slot]);
+    let entries = match ls11::Archive::parse(data).and_then(|a| a.decode_all()) {
+        Ok(entries) => entries,
+        Err(e) => return Ok(Err(e.to_string())),
+    };
+    let stem = spec.file.trim_end_matches(".R3").to_lowercase();
+    // Images per palette slot, in entry order: one contact sheet per slot.
+    let mut images: BTreeMap<usize, Vec<IndexedImage>> = BTreeMap::new();
+    let mut infos = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let mut info = EntryInfo {
+            index: i,
+            bytes: entry.len(),
+            key: None,
+            arrangement: None,
+            size: None,
+            palette_slot: None,
+            skipped: None,
+        };
+        let Some(arrangement) = (spec.arrangement)(i, entry.len()) else {
+            info.skipped = Some("not an image of a known geometry".into());
+            infos.push(info);
+            continue;
+        };
+        let slot = spec.slot_for(i);
+        let image = sprites::decode_entry(entry, arrangement).map_err(|e| e.to_string());
+        let png = image.and_then(|image| {
+            encode_png(&image, &palette_of(slot), true)
+                .map(|png| (image, png))
+                .map_err(|e| e.to_string())
+        });
+        match png {
+            Ok((image, png)) => {
+                out.write(&format!("{GFX_DIR}/{stem}/{i:03}.png"), &png)?;
+                report.outputs += 1;
+                info.key = Some(format!("original/{stem}/{i:03}"));
+                info.arrangement = Some(arrangement.describe());
+                info.size = Some([image.width, image.height]);
+                info.palette_slot = Some(slot);
+                images.entry(slot).or_default().push(image);
+            }
+            Err(e) => {
+                report.errors.push(format!("{} entry {i}: {e}", spec.file));
+                info.skipped = Some(e);
+            }
+        }
+        infos.push(info);
+    }
+    let mut sheets = Vec::new();
+    for (&slot, images) in &images {
+        let sheet = if slot == spec.slot {
+            format!("{GFX_DIR}/sheets/{stem}.png")
+        } else {
+            format!("{GFX_DIR}/sheets/{stem}-slot{slot}.png")
+        };
+        let png = encode_png(
+            &sprites::contact_sheet(images, SHEET_COLUMNS.min(images.len()), 2),
+            &palette_of(slot),
+            true,
+        )
+        .map_err(|e| output_error(&out.root.join(&sheet), e))?;
+        out.write(&sheet, &png)?;
+        report.outputs += 1;
+        sheets.push(sheet);
+    }
+    Ok(Ok(ArchiveInfo {
+        file: spec.file,
+        what: spec.what,
+        palette_slot: spec.slot,
+        sheets,
+        entries: infos,
+        groups: spec.groups,
+    }))
 }
 
 fn extract_sprites(
@@ -669,62 +797,65 @@ fn extract_sprites(
     requested: bool,
 ) -> Result<KindReport, ExtractError> {
     let mut report = KindReport::new(Status::Extracted, requested, "");
-    let (mut found, mut failed, mut images) = (0, 0, 0);
-    let mut not_cells = Vec::new();
-    let mut palette = None;
-    for (name, what) in SPRITE_SOURCES {
-        let Some(data) = read_source(install, name, &mut report)? else {
+    let (mut found, mut failed) = (0, 0);
+    let mut bank: Option<Option<[Palette16; palette::SLOTS]>> = None;
+    let mut archives = Vec::new();
+    let mut skipped = Vec::new();
+    for spec in &sprites::ARCHIVES {
+        let Some(data) = read_source(install, spec.file, &mut report)? else {
             continue;
         };
         found += 1;
-        let pal = match palette {
-            Some(p) => p,
-            None => *palette.insert(sprite_palette(install, out, &mut report)?),
+        let slots = match bank {
+            Some(b) => b,
+            None => *bank.insert(palette_bank(install, out, &mut report)?),
         };
-        let entries = match ls11::Archive::parse(&data).and_then(|a| a.decode_all()) {
-            Ok(entries) => entries,
+        let written = report.outputs;
+        match convert_archive(spec, &data, slots.as_ref(), out, &mut report)? {
+            Ok(info) => {
+                skipped.extend(
+                    info.entries
+                        .iter()
+                        .filter(|e| e.skipped.is_some())
+                        .map(|e| format!("{} entry {} ({} bytes)", spec.file, e.index, e.bytes)),
+                );
+                archives.push(info);
+            }
             Err(e) => {
                 failed += 1;
-                report.errors.push(format!("{name} ({what}): {e}"));
-                continue;
-            }
-        };
-        let stem = name.trim_end_matches(".R3").to_lowercase();
-        for (i, entry) in entries.iter().enumerate() {
-            if entry.is_empty() || entry.len() % CELL_BYTES != 0 {
-                not_cells.push(format!("{name} entry {i} ({} bytes)", entry.len()));
-                continue;
-            }
-            let layout = CellLayout::for_cells(entry.len() / CELL_BYTES);
-            let png = cells_to_image(entry, layout)
-                .map_err(|e| e.to_string())
-                .and_then(|image| encode_png(&image, &pal, true).map_err(|e| e.to_string()));
-            match png {
-                Ok(png) => {
-                    out.write(&format!("{GFX_DIR}/{stem}/{i:03}.png"), &png)?;
-                    images += 1;
-                    report.outputs += 1;
-                }
-                Err(e) => report.errors.push(format!("{name} entry {i}: {e}")),
+                debug_assert_eq!(written, report.outputs);
+                report
+                    .errors
+                    .push(format!("{} ({}): {e}", spec.file, spec.what));
             }
         }
     }
-    if found > 0 {
-        report.notes.extend([
-            "bit-plane p is taken as bit p of the colour index (VGA convention; not stated in the notes)".to_string(),
-            "entries of 9 / 16 / 36 cells are composed as 3×3 / 4×4 / 6×6 sprites in row-major cell \
-             order (the order is not documented); other entries are 16-column cell sheets in storage order"
-                .to_string(),
-            "only the stored facing is exported (the engine mirrors the other one); colour index 0 is transparent".to_string(),
-        ]);
-    }
-    if !not_cells.is_empty() {
-        let shown: Vec<&str> = not_cells.iter().take(10).map(String::as_str).collect();
+    let images = archives
+        .iter()
+        .flat_map(|a| &a.entries)
+        .filter(|e| e.key.is_some())
+        .count();
+    if !archives.is_empty() {
+        out.write_json(
+            &format!("{GFX_DIR}/sprites.json"),
+            &SpritesFile {
+                note: SPRITES_NOTE,
+                archives,
+            },
+        )?;
+        report.outputs += 1;
         report.notes.push(format!(
-            "{} entries are not whole 128-byte cells and were skipped: {}{}",
-            not_cells.len(),
+            "geometry, palette slot and entry groups of every archive: {GFX_DIR}/sprites.json; \
+             contact sheets in {GFX_DIR}/sheets/"
+        ));
+    }
+    if !skipped.is_empty() {
+        let shown: Vec<&str> = skipped.iter().take(10).map(String::as_str).collect();
+        report.notes.push(format!(
+            "{} entries are not images of a known geometry and were skipped: {}{}",
+            skipped.len(),
             shown.join(", "),
-            if not_cells.len() > shown.len() {
+            if skipped.len() > shown.len() {
                 ", …"
             } else {
                 ""
@@ -736,7 +867,8 @@ fn extract_sprites(
         report.status = Status::Partial; // converted, but without the original palette
     }
     report.summary = if found == 0 {
-        "no sprite or chip archives (HEX?CHR.R3, HEX?CHP.R3, *BGPL.R3) in the install".into()
+        "no sprite or chip archives (HEX?CHR.R3, HEX?CHP.R3, HEXGRP.R3, *BGPL.R3) in the install"
+            .into()
     } else {
         format!(
             "{images} images from {} of {found} archives",
@@ -820,20 +952,21 @@ mod tests {
         // Sprites: 2 composed sprites (+1 skipped entry) and a 5-cell chip sheet.
         let sprites = &index.assets["sprites"];
         assert_eq!(sprites.status, Status::Extracted, "{sprites:#?}");
-        assert_eq!(sprites.outputs, 4); // 3 PNGs + palettes.json
+        // 3 PNGs + 2 contact sheets + palettes.json + sprites.json
+        assert_eq!(sprites.outputs, 7);
         let decoder = png::Decoder::new(std::io::Cursor::new(
             std::fs::read(target.join("gfx/original/hexbchr/000.png")).unwrap(),
         ));
         let info = decoder.read_info().unwrap().info().clone();
         assert_eq!((info.width, info.height), (64, 64));
-        // Slot 0 colour 1 of the fixture palette: R 1, G 14, B 0.
+        // HEXBCHR uses slot 1: colour 1 of the fixture palette is R 1, G 14, B 1.
         let pal = info.palette.unwrap();
         assert_eq!(
             &pal[3..6],
             &[
                 palette::expand_channel(1),
                 palette::expand_channel(14),
-                palette::expand_channel(0)
+                palette::expand_channel(1)
             ]
         );
         let chips = png::Decoder::new(std::io::Cursor::new(
@@ -851,6 +984,27 @@ mod tests {
         let palettes = read_json(&target.join("gfx/original/palettes.json"));
         assert_eq!(palettes["offset"], "0xbba");
         assert_eq!(palettes["slots"].as_array().unwrap().len(), 9);
+        assert_eq!(palettes["slot_notes"].as_array().unwrap().len(), 9);
+        let info = read_json(&target.join("gfx/original/sprites.json"));
+        let hexbchr = &info["archives"][0];
+        assert_eq!(hexbchr["file"], "HEXBCHR.R3");
+        assert_eq!(hexbchr["palette_slot"], 1);
+        assert_eq!(hexbchr["entries"][0]["size"], serde_json::json!([64, 64]));
+        assert_eq!(hexbchr["entries"][1]["arrangement"], "3×3 cells");
+        assert!(hexbchr["entries"][2]["skipped"].is_string());
+        assert_eq!(
+            hexbchr["groups"][0]["what"],
+            "short-weapon infantry (sword)"
+        );
+        let sheet = png::Decoder::new(std::io::Cursor::new(
+            std::fs::read(target.join("gfx/original/sheets/hexbchr.png")).unwrap(),
+        ))
+        .read_info()
+        .unwrap()
+        .info()
+        .clone();
+        // Two entries of at most 64×64 side by side, 2-pixel gaps.
+        assert_eq!((sheet.width, sheet.height), (2 * 66, 66));
 
         // Portraits: container found, codec unsupported (informational without --portraits).
         let portraits = &index.assets["portraits"];

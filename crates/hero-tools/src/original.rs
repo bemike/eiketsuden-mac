@@ -61,8 +61,10 @@ fn render_edition(out: &mut String, edition: &Edition) {
 fn support_line(id: EditionId) -> &'static str {
     match id {
         EditionId::KoreanDos | EditionId::ChineseDos => {
-            "text and sprites can be extracted (`hero-tools original extract`); portraits are \
-             recognised but not decoded (TF-DCE); officer names are not read yet"
+            "text and sprites can be extracted (`hero-tools original extract`: unit frames, \
+             map icons, chips, battle UI icons, palettes and contact sheets); portraits are \
+             recognised but not decoded (TF-DCE); opening / ending pictures and officer names \
+             are not read yet"
         }
         EditionId::Steam2017 => {
             "not extractable yet: the Steam container format is unknown. Sharing this manifest \

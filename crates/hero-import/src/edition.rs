@@ -6,11 +6,18 @@
 //! | edition | rule | confidence |
 //! |---|---|---|
 //! | Steam 2017 (シブサワ・コウ アーカイブス) | `Eiketsuden1_Launcher.exe` present | high |
-//! | Korean DOS/V (Visco) | `DISK1.R3I` contains the header text `DOS/V 삼국지영걸전` (EUC-KR) | high |
+//! | Korean DOS/V (Visco) | `DISK1.R3I` carries the Japanese DOS/V disk header (Shift-JIS `DOS/V 三國志英傑伝`), the DOS/V file family is present and the scenario text is Korean (EUC-KR, mostly Hangul) | high |
+//! | Korean DOS/V (Visco), alternative | `DISK1.R3I` contains `DOS/V 삼국지영걸전` in EUC-KR (claimed by the research notes, not seen on a real copy) | high |
 //! | Traditional-Chinese DOS (第三波) | DOS/V file family and clearly Big5 text in `SNRnM` / `IPPAN0M` / `BAKDATA` | medium |
 //! | PC-98 disk images | a D88 / FDI / HDI header on a file in the folder | high (content not read) |
 //!
 //! Only the files directly inside the folder are considered.
+//!
+//! The Korean release is a localisation of the Japanese DOS/V release: on the verified copy the
+//! disk identifier still holds the Japanese header (`DOS/V 三國志英傑伝 ﾃﾞｨｽｸ1 Ver 1.00 Rel 1.00`,
+//! Shift-JIS, `(C)(P) 1995 KOEI`), while every message file is EUC-KR Hangul. The header alone
+//! therefore does not decide the language; the text does. A folder with the Japanese header and
+//! non-Korean text (a Japanese DOS/V copy, which we have never seen) stays `unknown`.
 
 use crate::diskimage;
 use crate::install::InstallDir;
@@ -23,8 +30,14 @@ use std::io::Read;
 pub const STEAM_LAUNCHER: &str = "Eiketsuden1_Launcher.exe";
 /// Disk identifier file of the DOS/V builds.
 pub const DISK_ID_FILE: &str = "DISK1.R3I";
-/// Header text of the Korean build's disk identifier.
+/// Header text of the Korean build's disk identifier as the research notes describe it
+/// (EUC-KR). Kept as an alternative rule; the verified copy carries [`DOS_V_DISK_MARKER`].
 pub const KOREAN_DISK_MARKER: &str = "DOS/V 삼국지영걸전";
+/// Header text of the DOS/V disk identifier as found on the verified Korean copy (Shift-JIS,
+/// inherited from the Japanese DOS/V release).
+pub const DOS_V_DISK_MARKER: &str = "DOS/V 三國志英傑伝";
+/// Hangul syllables needed before the text counts as Korean.
+const MIN_HANGUL: usize = 500;
 /// Files whose text decides between EUC-KR and Big5.
 const TEXT_FILES: [&str; 7] = [
     "SNR0M.R3",
@@ -176,6 +189,33 @@ fn text_bytes(data: &[u8]) -> Vec<u8> {
     }
 }
 
+/// Double-byte pairs of `bytes` read as strict EUC-KR (KS X 1001): pairs in the Hangul block
+/// (lead 0xB0–0xC8, trail 0xA1–0xFE) and all pairs with a lead byte of 0x81 or above.
+fn hangul_counts(bytes: &[u8]) -> (usize, usize) {
+    let (mut hangul, mut pairs) = (0, 0);
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        let (lead, trail) = (bytes[i], bytes[i + 1]);
+        if lead >= 0x81 && lead != 0xff {
+            pairs += 1;
+            if (0xb0..=0xc8).contains(&lead) && (0xa1..=0xfe).contains(&trail) {
+                hangul += 1;
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    (hangul, pairs)
+}
+
+/// Whether the pair counts show Korean text: enough Hangul syllables, and at least four in five
+/// double-byte pairs in the Hangul block (the verified Korean text has about 96 %; Big5 or
+/// Shift-JIS text spreads its lead bytes over the whole high range).
+fn is_korean_text(hangul: usize, pairs: usize) -> bool {
+    hangul >= MIN_HANGUL && hangul * 5 >= pairs * 4
+}
+
 /// Top-level files that carry a PC-98 disk image header.
 fn disk_images(install: &InstallDir) -> Vec<String> {
     let mut found = Vec::new();
@@ -219,11 +259,15 @@ pub fn identify(install: &InstallDir) -> Edition {
     }
 
     let mut evidence = Vec::new();
-    let marker = TextEncoding::EucKr
+    let korean_marker = TextEncoding::EucKr
         .encode(KOREAN_DISK_MARKER)
         .expect("the marker is EUC-KR text");
+    let (dos_v_marker, _, unmappable) = encoding_rs::SHIFT_JIS.encode(DOS_V_DISK_MARKER);
+    debug_assert!(!unmappable, "the marker is Shift-JIS text");
+    let contains = |data: &[u8], m: &[u8]| data.windows(m.len()).any(|w| w == m);
+    let mut dos_v_header = false;
     if let Ok(Some(disk)) = install.read(DISK_ID_FILE) {
-        if disk.windows(marker.len()).any(|w| w == marker.as_slice()) {
+        if contains(&disk, &korean_marker) {
             return Edition::new(
                 EditionId::KoreanDos,
                 Confidence::High,
@@ -232,38 +276,65 @@ pub fn identify(install: &InstallDir) -> Edition {
                 )],
             );
         }
-        evidence.push(format!(
-            "{DISK_ID_FILE} present but without the Korean header text"
-        ));
+        if contains(&disk, &dos_v_marker) {
+            dos_v_header = true;
+            evidence.push(format!(
+                "{DISK_ID_FILE} carries the Japanese DOS/V disk header \"{DOS_V_DISK_MARKER}\" \
+                 (Shift-JIS)"
+            ));
+        } else {
+            evidence.push(format!(
+                "{DISK_ID_FILE} present but without a known DOS/V header text"
+            ));
+        }
     }
 
     let dos_v = install.has("MAIN.EXE") && install.has("SNR0M.R3");
     if dos_v {
         evidence.push("DOS/V file family present (MAIN.EXE, SNR0M.R3)".into());
         let mut ev = EncodingEvidence::default();
+        let (mut hangul, mut pairs) = (0, 0);
         let mut scanned = Vec::new();
         for name in TEXT_FILES {
             if let Ok(Some(data)) = install.read(name) {
-                ev.add(EncodingEvidence::scan(&text_bytes(&data)));
+                let bytes = text_bytes(&data);
+                ev.add(EncodingEvidence::scan(&bytes));
+                let (h, n) = hangul_counts(&bytes);
+                hangul += h;
+                pairs += n;
                 scanned.push(name);
             }
         }
         evidence.push(format!(
-            "text in {}: {} EUC-KR/Big5 pairs, {} Big5-only pairs",
+            "text in {}: {} EUC-KR/Big5 pairs, {} Big5-only pairs; {hangul} of {pairs} \
+             double-byte pairs in the EUC-KR Hangul block",
             scanned.join(", "),
             ev.high_pairs,
             ev.big5_pairs
         ));
-        match ev.verdict() {
-            Some(TextEncoding::Big5) => {
+        let verdict = ev.verdict();
+        let korean = verdict == Some(TextEncoding::EucKr) && is_korean_text(hangul, pairs);
+        match verdict {
+            Some(TextEncoding::Big5) if !dos_v_header => {
                 return Edition::new(EditionId::ChineseDos, Confidence::Medium, evidence);
             }
+            _ if korean && dos_v_header => {
+                evidence.push(
+                    "Korean text on the Japanese DOS/V disk set: the Korean localisation".into(),
+                );
+                return Edition::new(EditionId::KoreanDos, Confidence::High, evidence);
+            }
+            _ if dos_v_header => evidence.push(
+                "Japanese DOS/V disk header without enough Korean text: a build we have not \
+                 verified (not identified)"
+                    .into(),
+            ),
             Some(TextEncoding::EucKr) => evidence.push(
-                "text looks like EUC-KR, but the Korean disk header is missing: \
+                "text looks like EUC-KR, but no known disk header was found: \
                  not identified (use --edition korean-dos to try anyway)"
                     .into(),
             ),
-            None => evidence.push("text encoding inconclusive".into()),
+            _ => evidence.push("text encoding inconclusive".into()),
         }
     }
 
@@ -306,6 +377,73 @@ mod tests {
         let e = identify_dir(&dir);
         assert_eq!(e.id, EditionId::ChineseDos, "{e:?}");
         assert_eq!(e.confidence, Confidence::Medium);
+    }
+
+    /// The verified layout: Japanese Shift-JIS disk header, Korean EUC-KR text.
+    fn japanese_header() -> Vec<u8> {
+        let mut h = encoding_rs::SHIFT_JIS
+            .encode("DOS/V 三國志英傑伝 ﾃﾞｨｽｸ1 Ver 1.00 Rel 1.00\r\n")
+            .0
+            .into_owned();
+        h.extend_from_slice(b"(C) 1995 KOEI CO.,LTD\r\n\x1a");
+        h
+    }
+
+    /// Enough Korean text to pass the Hangul threshold.
+    fn long_korean_text(dir: &TempDir) {
+        let line = TextEncoding::EucKr
+            .encode("유비는 관우와 장비를 만나 도원에서 형제의 의를 맺었다.")
+            .unwrap();
+        let blocks: Vec<Vec<u8>> = vec![line; 40];
+        std::fs::write(
+            dir.path().join("IPPAN0M.R3"),
+            crate::text::build_messages(&[blocks]),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn korean_by_japanese_header_and_korean_text() {
+        let dir = TempDir::new("ed-ko-sjis");
+        testutil::write_korean_install(dir.path());
+        std::fs::write(dir.path().join("DISK1.R3I"), japanese_header()).unwrap();
+        long_korean_text(&dir);
+        let e = identify_dir(&dir);
+        assert_eq!(e.id, EditionId::KoreanDos, "{e:?}");
+        assert_eq!(e.confidence, Confidence::High);
+        assert!(e.evidence.iter().any(|l| l.contains("Shift-JIS")), "{e:?}");
+        assert!(e.evidence.iter().any(|l| l.contains("Hangul")), "{e:?}");
+    }
+
+    #[test]
+    fn japanese_header_with_other_text_is_unknown() {
+        // Big5 text under the Japanese header: neither Korean nor a known Chinese copy.
+        let dir = TempDir::new("ed-sjis-big5");
+        testutil::write_chinese_install(dir.path());
+        std::fs::write(dir.path().join("DISK1.R3I"), japanese_header()).unwrap();
+        let e = identify_dir(&dir);
+        assert_eq!(e.id, EditionId::Unknown, "{e:?}");
+        assert!(
+            e.evidence.iter().any(|l| l.contains("not verified")),
+            "{e:?}"
+        );
+        // Too little Korean text under the Japanese header: also unknown.
+        let dir = TempDir::new("ed-sjis-short");
+        testutil::write_korean_install(dir.path());
+        std::fs::write(dir.path().join("DISK1.R3I"), japanese_header()).unwrap();
+        assert_eq!(identify_dir(&dir).id, EditionId::Unknown);
+    }
+
+    #[test]
+    fn hangul_share() {
+        assert!(is_korean_text(500, 625));
+        assert!(!is_korean_text(499, 499));
+        assert!(!is_korean_text(1000, 1300));
+        let big5 = TextEncoding::Big5
+            .encode("劉備與關羽張飛於桃園結義共圖大事天下大亂百姓困苦")
+            .unwrap();
+        let (h, n) = hangul_counts(&big5.repeat(20));
+        assert!(!is_korean_text(h, n), "{h} of {n}");
     }
 
     #[test]

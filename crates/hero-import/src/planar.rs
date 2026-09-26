@@ -4,10 +4,15 @@
 //! the other, each `h` rows of `w / 8` bytes, most significant bit = leftmost pixel. The sprite
 //! and map-chip archives hold **cells** of 16×16 pixels = 4 planes × 32 bytes = 128 bytes.
 //!
-//! Plane `p` is taken as bit `p` of the 4-bit colour index (the usual VGA convention). The
-//! research notes do not state the plane order explicitly, so this is recorded as an assumption
-//! in every extraction report. Colour index 0 (all planes clear) is transparent: the engine
-//! builds its blit mask as the NOT of the OR of the planes.
+//! Plane `p` is bit `p` of the 4-bit colour index. This was checked visually on the Korean
+//! DOS/V files: with this order and the `MAIN.EXE` palettes, unit sprites show skin tones,
+//! steel and outlines where they belong (any other plane order scrambles the colours). Colour
+//! index 0 (all planes clear) is transparent: the engine builds its blit mask as the NOT of
+//! the OR of the planes.
+//!
+//! A second arrangement, **packed** planar, stores every group of 8 pixels as 4 consecutive
+//! bytes (plane 0, 1, 2, 3), groups left to right, rows top to bottom. `HEXGRP.R3` entry 0 and
+//! the raw pictures inside `OPGRP.R3` / `END*GRP.R3` use it.
 
 use crate::image::IndexedImage;
 use std::fmt;
@@ -115,13 +120,74 @@ pub fn encode(image: &IndexedImage) -> Result<Vec<u8>, PlanarError> {
     Ok(out)
 }
 
-/// How the cells of an archive entry are arranged on the output sheet.
+fn check_geometry(width: usize, height: usize, len: usize) -> Result<(), PlanarError> {
+    if width == 0 || width % 8 != 0 || height == 0 {
+        return Err(PlanarError::BadGeometry { width, height });
+    }
+    let expected = planar_len(width, height);
+    if len != expected {
+        return Err(PlanarError::LengthMismatch { len, expected });
+    }
+    Ok(())
+}
+
+/// Decode a **packed** planar image (8 pixels = 4 consecutive plane bytes) into colour indices.
+pub fn decode_packed(
+    data: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<IndexedImage, PlanarError> {
+    check_geometry(width, height, data.len())?;
+    let mut pixels = vec![0u8; width * height];
+    for (i, px) in pixels.iter_mut().enumerate() {
+        let (y, x) = (i / width, i % width);
+        let group = (y * (width / 8) + x / 8) * 4;
+        let mask = 0x80 >> (x % 8);
+        for plane in 0..4 {
+            if data[group + plane] & mask != 0 {
+                *px |= 1 << plane;
+            }
+        }
+    }
+    Ok(IndexedImage {
+        width,
+        height,
+        pixels,
+    })
+}
+
+/// Encode colour indices as packed planar data; the inverse of [`decode_packed`].
+pub fn encode_packed(image: &IndexedImage) -> Result<Vec<u8>, PlanarError> {
+    let (width, height) = (image.width, image.height);
+    check_geometry(width, height, planar_len(width, height))?;
+    if image.pixels.len() != width * height {
+        return Err(PlanarError::LengthMismatch {
+            len: image.pixels.len(),
+            expected: width * height,
+        });
+    }
+    let mut out = vec![0u8; planar_len(width, height)];
+    for (i, &px) in image.pixels.iter().enumerate() {
+        let (y, x) = (i / width, i % width);
+        let group = (y * (width / 8) + x / 8) * 4;
+        for plane in 0..4 {
+            if px & (1 << plane) != 0 {
+                out[group + plane] |= 0x80 >> (x % 8);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// How the cells of an archive entry are arranged on the output image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellLayout {
-    /// A square sprite of `n × n` cells in row-major order. Used for the entry sizes the notes
-    /// document (1152 B = 3×3, 2048 B = 4×4, 4608 B = 6×6); the row-major cell order itself is
-    /// not documented and is reported as an assumption.
+    /// A square sprite of `n × n` cells in row-major cell order (1152 B = 3×3, 2048 B = 4×4,
+    /// 4608 B = 6×6; the order was verified visually on the unit sprites).
     Square(usize),
+    /// `columns × rows` cells in row-major order (e.g. `HEXZCHR.R3`: 2 × 4 cells = two 32×32
+    /// animation frames, one above the other).
+    Grid { columns: usize, rows: usize },
     /// Cells in storage order, `columns` per row (chip sheets and undocumented sizes).
     Sheet { columns: usize },
 }
@@ -145,7 +211,7 @@ impl CellLayout {
     fn columns(self) -> usize {
         match self {
             CellLayout::Square(n) => n,
-            CellLayout::Sheet { columns } => columns,
+            CellLayout::Grid { columns, .. } | CellLayout::Sheet { columns } => columns,
         }
     }
 }
@@ -218,6 +284,27 @@ mod tests {
     }
 
     #[test]
+    fn packed_bit_layout_and_round_trip() {
+        // 16×1: group 0 = bytes 0..4 (planes 0..3), group 1 = bytes 4..8.
+        let data = [0x80, 0x00, 0x00, 0x80, 0x00, 0x01, 0x01, 0x00];
+        let img = decode_packed(&data, 16, 1).unwrap();
+        assert_eq!(img.pixels[0], 0b1001);
+        assert_eq!(img.pixels[15], 0b0110);
+        assert_eq!(img.pixels.iter().filter(|&&p| p != 0).count(), 2);
+        for (w, h) in [(8, 1), (32, 24), (64, 3)] {
+            let img = gradient(w, h);
+            let packed = encode_packed(&img).unwrap();
+            assert_eq!(decode_packed(&packed, w, h).unwrap(), img);
+            // Packed and plane-sequential storage differ once there is more than one group.
+            if w * h > 8 {
+                assert_ne!(packed, encode(&img).unwrap());
+            }
+        }
+        assert!(decode_packed(&[0; 5], 8, 1).is_err());
+        assert!(decode_packed(&[0; 4], 4, 1).is_err());
+    }
+
+    #[test]
     fn geometry_errors() {
         assert_eq!(
             decode(&[0; 4], 12, 1).unwrap_err(),
@@ -278,5 +365,16 @@ mod tests {
         let square = cells_to_image(&data, CellLayout::Square(2)).unwrap();
         assert_eq!((square.width, square.height), (32, 32));
         assert_eq!(square.pixels[31 * 32 + 31], 4);
+
+        let tall = cells_to_image(
+            &data,
+            CellLayout::Grid {
+                columns: 1,
+                rows: 4,
+            },
+        )
+        .unwrap();
+        assert_eq!((tall.width, tall.height), (16, 64));
+        assert_eq!(tall.pixels[63 * 16], 4);
     }
 }

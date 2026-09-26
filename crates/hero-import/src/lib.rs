@@ -19,7 +19,8 @@
 //! | [`ls11`] | P1 | `LS11` archives (`.R3`): directory, dictionary + bit-stream codec, and an encoder |
 //! | [`table6`] | P1 | 6-byte-table containers (`FACEDAT.R3`, `PACKGRP.R3`) |
 //! | [`text`] | P2 | message files (`SNRnM.R3`, `IPPAN0M.R3`) and EUC-KR / Big5 decoding |
-//! | [`planar`], [`palette`], [`image`] | P3 | 4 bpp planar cells, palettes inside `MAIN.EXE`, indexed PNG output |
+//! | [`planar`], [`palette`], [`image`] | P3 | 4 bpp planar cells and packed images, palettes inside `MAIN.EXE`, indexed PNG output |
+//! | [`sprites`] | P3 | per-archive geometry, palette slot and entry groups of the sprite / chip archives |
 //! | [`extract`] | P1–P3 | conversion into a media overlay folder with an `index.json` |
 //!
 //! Every structural invariant (directory chains, exact decoded lengths, full input consumption,
@@ -35,6 +36,7 @@ pub mod ls11;
 pub mod palette;
 pub mod planar;
 pub mod probe;
+pub mod sprites;
 pub mod table6;
 #[cfg(test)]
 mod testutil;
