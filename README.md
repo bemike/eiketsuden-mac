@@ -46,7 +46,7 @@
 |---|---|
 | 웹 | <https://jeiel85.github.io/eiketsuden-reloaded/> — 설치 없이 최신 Chrome · Edge · Firefox · Safari에서 실행. 기록은 브라우저 저장소(localStorage)에 남습니다. |
 | Windows | [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases)에서 `…-windows-x64.zip`을 받아 압축을 풀고 `eiketsuden.exe` 실행 (`data` 폴더를 실행 파일 옆에 그대로 두세요) |
-| macOS | `…-macos-arm64.tar.gz`(Apple Silicon) 또는 `…-macos-x64.tar.gz`(Intel). 서명되지 않은 앱이라 처음 실행 시 Finder에서 우클릭 → 열기 |
+| macOS | `…-macos-arm64.tar.gz`(Apple Silicon) 또는 `…-macos-x64.tar.gz`(Intel)를 풀고 터미널에서 `./eiketsuden` 실행. Apple 공증을 받지 않은 실행 파일이라 처음 실행이 막히면 **시스템 설정 → 개인정보 보호 및 보안**에서 '그래도 열기'를 누르거나, 터미널에서 `xattr -dr com.apple.quarantine <압축을 푼 폴더>` 후 다시 실행하세요. (Finder에서 우클릭 → 열기로 넘기는 방법은 macOS 14 이하에서만 됩니다.) |
 | Linux | `…-linux-x64.tar.gz`를 풀고 `./eiketsuden` 실행 |
 
 ### 조작
@@ -138,6 +138,10 @@ Linux and in the browser via WebAssembly.
 
 **Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
 [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`
+
+On macOS the release executable is not notarized: if the first start is blocked, click **Open Anyway**
+in System Settings → Privacy & Security, or run `xattr -dr com.apple.quarantine <unpacked folder>` in
+Terminal and start `./eiketsuden` again (right-click → Open only bypasses Gatekeeper up to macOS 14).
 
 The game text is currently Korean only.
 

@@ -165,8 +165,24 @@ Rules of the chain (all errors when loading):
   `../base/rules/classes.toml` is the parent's classes file.
 
 The game reads `pack.toml` of the top pack, then of each parent, then every other text file of the
-chain; natively and in the browser alike. For the web build, publish the parent pack at its relative
-URL next to the child. One limit of the web build: the battle screen's media index files
+chain; natively and in the browser alike.
+
+**Layered packs in the web build.** The browser always loads the top pack from the fixed URL
+`data/base/` next to `index.html`, and resolves `extends` from there like any relative URL. So on the
+web:
+
+* The child pack sits in `<site>/data/base/`, whatever its directory is called natively.
+* Its parent must sit in a **sibling** directory with another name, for example `<site>/data/vanilla/`
+  with `extends = "../vanilla"` in the child. `extends = "../base"` (or the `"../../data/base"` of the
+  example above) points back at `data/base/`, the child itself, and the pack fails to load.
+* `tools/web/build.sh --data <pack>` and `build.ps1 -Data <pack>` copy **only** that one directory,
+  to `<out>/data/base/`; they do not copy the packs it extends. Copy each parent into the output
+  folder yourself (after the script, before serving or uploading), at the path its child's `extends`
+  names.
+
+Natively the same child works from any directory whose `extends` path reaches the parent, so a mod
+meant for both keeps its parent at a name other than `base` in both layouts (for example
+`data/vanilla/` next to `data/balance/`). One further limit of the web build: the battle screen's media index files
 (`units.toml`, `terrain.toml`, `fx.toml`) and `credits.txt` are read from the top pack only, because the
 browser cannot check whether a file exists without fetching it; natively they come from the first
 pack that has them. A child pack meant for the web ships its own copies of those files.

@@ -58,7 +58,10 @@ Both scripts build `eiketsuden.wasm` (release; `-Dev` / `--dev` for the debug pr
 `target/web-dist/` with `index.html`, `mq_js_bundle.js`, `hero_web.js`, the wasm and `data/base/` (the
 same layout the GitHub Pages workflow publishes) and, with a port, serve it through
 `tools/web/serve.py` — `python -m http.server` with caching disabled, so a reload always picks up a
-rebuilt wasm. `-Data` / `--data` copies another pack. Open `http://localhost:8080/`, or
+rebuilt wasm. `-Data` / `--data` copies another pack to `<out>/data/base/`: the web build always
+loads the top pack from `data/base/`, and the scripts copy only that one directory, never the packs it
+`extends` — for a layered pack, copy each parent next to it by hand (see
+[MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). Open `http://localhost:8080/`, or
 `http://localhost:8080/#gallery` for the UI gallery. Browsers refuse to load WebAssembly from
 `file://` URLs, so the folder has to be served.
 
