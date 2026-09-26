@@ -1032,14 +1032,15 @@ impl<'a> Planner<'a> {
                 }
             }
 
-            for s in st
-                .usable_strategies(pack, h.id)
+            // Known and affordable (a confusion that ends before its phase does not matter).
+            for s in pack
+                .known_strategies(&h.class, h.level)
                 .iter()
                 .filter_map(|s| pack.strategy(s))
             {
                 let harmful = s.target == TargetSide::Enemy
                     && s.effects.iter().any(|e| matches!(e, Effect::Damage { .. }));
-                if !harmful {
+                if !harmful || h.mp < s.mp {
                     continue;
                 }
                 cover.clear();
