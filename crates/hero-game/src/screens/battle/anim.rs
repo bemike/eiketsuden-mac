@@ -331,11 +331,11 @@ impl Scene {
 
     fn float(&mut self, unit: UnitId, text: impl Into<String>, kind: FloatKind) {
         let at = self.views[unit].pos;
-        // Stack on texts that are still rising from the same tile.
+        // Stack above the texts still shown on the same tile.
         let row = self
             .floats
             .iter()
-            .filter(|f| f.at == at && f.age < 0.5)
+            .filter(|f| f.at == at && f.age < f.life)
             .count()
             .min(3) as u8;
         self.floats.push(FloatText {

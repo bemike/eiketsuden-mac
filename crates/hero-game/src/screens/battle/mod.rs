@@ -223,6 +223,8 @@ pub struct BattleScreen {
     sprite_of: BTreeMap<String, String>,
     sheets: BTreeMap<(String, Side), String>,
     cues: Vec<Cue>,
+    /// Unit levels when the screen opened (for the level-ups in the result window).
+    start_levels: Vec<u32>,
 }
 
 impl BattleScreen {
@@ -301,7 +303,6 @@ impl BattleScreen {
         }
         BattleScreen {
             pack,
-            state,
             fresh,
             stage: Stage::Title { age: 0.0 },
             meta: Meta::default(),
@@ -326,6 +327,8 @@ impl BattleScreen {
             sprite_of,
             sheets,
             cues: Vec::new(),
+            start_levels: state.units.iter().map(|u| u.level).collect(),
+            state,
         }
     }
 
@@ -583,6 +586,10 @@ impl BattleScreen {
                         .join(", ");
                     sections[0].1.push((items, theme::TEXT));
                 }
+                let grown = self.level_ups();
+                if !grown.is_empty() {
+                    sections.push(("성장".to_string(), grown));
+                }
                 if let Some(b) = &def.bonus {
                     let line = if self.state.bonus_done {
                         (
@@ -617,6 +624,25 @@ impl BattleScreen {
             lines: sections,
             title,
         };
+    }
+
+    /// `이름 Lv a → b` for every player unit that gained levels in this battle.
+    fn level_ups(&self) -> Vec<(String, Color)> {
+        let mut lines: Vec<String> = self
+            .state
+            .units
+            .iter()
+            .zip(&self.start_levels)
+            .filter(|(u, &from)| u.side == Side::Player && u.level > from)
+            .map(|(u, from)| format!("{} Lv {from} → {}", u.name, u.level))
+            .collect();
+        // Keep the window small: two per line.
+        let mut out = Vec::new();
+        while !lines.is_empty() {
+            let take: Vec<String> = lines.drain(..lines.len().min(2)).collect();
+            out.push((take.join("   "), theme::TEXT_GOOD));
+        }
+        out
     }
 
     // ----- AI ----------------------------------------------------------------------------
@@ -2102,7 +2128,8 @@ impl Screen for BattleScreen {
             Stage::Battle => {}
         }
 
-        let modal = !matches!(self.panel, Panel::None) || self.dialog.is_some();
+        let modal =
+            !matches!(self.panel, Panel::None) || self.dialog.is_some() || self.waiting.is_some();
         let list_open = matches!(
             self.mode_menu,
             Some((MenuKind::Strategies | MenuKind::Items, _))
@@ -2131,7 +2158,11 @@ impl Screen for BattleScreen {
             hud::draw_banner(ctx, b, VIEWPORT);
         }
         if let Some(p) = &self.scene.popup {
-            hud::draw_popup(ctx, p, &self.state, VIEWPORT);
+            let below = p.unit.is_some_and(|u| {
+                let y = self.camera.to_screen(self.scene.views[u].pos).y;
+                y < VIEWPORT.y + VIEWPORT.h * 0.5
+            });
+            hud::draw_popup(ctx, p, &self.state, VIEWPORT, below);
         }
         if let Some(v) = self.scene.outcome {
             hud::draw_outcome(ctx, v, self.scene.outcome_age);

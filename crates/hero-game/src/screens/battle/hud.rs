@@ -269,8 +269,8 @@ pub fn draw_tile_highlight(screen: Vec2, color: Color, time: f64) {
     );
 }
 
-pub const MOVE_COLOR: Color = Color::new(0.25, 0.52, 1.0, 0.40);
-pub const REACH_COLOR: Color = Color::new(1.0, 0.12, 0.1, 0.40);
+pub const MOVE_COLOR: Color = Color::new(0.18, 0.45, 1.0, 0.46);
+pub const REACH_COLOR: Color = Color::new(0.95, 0.06, 0.08, 0.50);
 pub const TARGET_COLOR: Color = Color::new(1.0, 0.22, 0.18, 0.55);
 pub const AIM_COLOR: Color = Color::new(0.72, 0.35, 1.0, 0.42);
 pub const AREA_COLOR: Color = Color::new(0.9, 0.55, 1.0, 0.6);
@@ -464,15 +464,22 @@ pub fn draw_banner(ctx: &Ctx, b: &BannerView, viewport: Rect) {
 }
 
 /// Level up / promotion / new strategy window.
-pub fn draw_popup(ctx: &Ctx, p: &Popup, state: &BattleState, viewport: Rect) {
+/// `below` puts the window in the lower part of the viewport (the unit it is about stands in
+/// the upper part).
+pub fn draw_popup(ctx: &Ctx, p: &Popup, state: &BattleState, viewport: Rect, below: bool) {
     let gfx = &ctx.gfx;
     let w = 200.0;
     let h = 26.0 + p.lines.len() as f32 * 14.0 + 6.0;
     let h = h.max(58.0);
     let pop = (p.age / 0.15).min(1.0);
+    let y = if below {
+        viewport.bottom() - h - 24.0
+    } else {
+        viewport.y + 24.0
+    };
     let r = Rect::new(
         ((VIRTUAL_W - w) / 2.0).round(),
-        (viewport.y + 24.0 + (1.0 - pop) * 6.0).round(),
+        (y + (1.0 - pop) * 6.0).round(),
         w,
         h,
     );
