@@ -729,6 +729,36 @@ fn drama_checks() {
 }
 
 #[test]
+fn battle_items_given_by_battle_scenes_are_reported() {
+    run(&[
+        warning(
+            &[(
+                BATTLE_DRAMAS,
+                "@narr 적이 흩어졌다.",
+                "@narr 적이 흩어졌다.\n@item bean",
+            )],
+            "battle b01 scene b01_outro",
+            "@item `bean` is lost",
+        ),
+        warning(
+            &[(BATTLE_DRAMAS, "@sfx confirm", "@sfx confirm\n@item wine")],
+            "battle b01 scene b01_rein",
+            "@item `wine` is lost",
+        ),
+    ]);
+    // Equipment is kept, and story scenes (`oath` gives a bean) are not battle scenes.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        BATTLE_DRAMAS,
+        "@narr 적이 흩어졌다.",
+        "@narr 적이 흩어졌다.\n@item war_manual",
+    );
+    let issues = load(&files).validate();
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+}
+
+#[test]
 fn free_speaker_names_are_allowed() {
     let mut files = fixture_files();
     edit(

@@ -788,6 +788,40 @@ impl<'a> Validator<'a> {
                 }
             }
         }
+        self.battle_scene_items(&ctx, b);
+    }
+
+    /// `@item` of a battle item in a scene the battle plays (intro, outro, `drama` actions) is
+    /// lost: the scene gives it to the army, but when the battle ends the army's battle items
+    /// are replaced by the battle's own stock (`CampaignState::apply_battle_result`).
+    fn battle_scene_items(&mut self, ctx: &str, b: &BattleDef) {
+        let pack = self.pack;
+        let mut scenes: Vec<&str> = b.intro.iter().chain(&b.outro).map(|s| s.as_str()).collect();
+        for e in &b.events {
+            for a in &e.actions {
+                if let EventAction::Drama { scene } = a {
+                    scenes.push(scene);
+                }
+            }
+        }
+        scenes.sort_unstable();
+        scenes.dedup();
+        for id in scenes {
+            let Some(scene) = pack.scene(id) else {
+                continue; // reported above
+            };
+            for cmd in &scene.cmds {
+                let Cmd::Item(item) = cmd else { continue };
+                if pack.item(item).is_some_and(|d| d.is_battle_item()) {
+                    self.warn(
+                        &format!("{ctx} scene {id}"),
+                        format!(
+                            "@item `{item}` is lost: the battle plays this scene, and when it ends the army's battle items are replaced by the battle's own stock; use a `give_item` event action or a campaign drama instead"
+                        ),
+                    );
+                }
+            }
+        }
     }
 
     fn deploy(

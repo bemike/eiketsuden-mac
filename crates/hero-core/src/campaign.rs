@@ -563,7 +563,9 @@ impl CampaignState {
     ///   equipment back (HP, MP and morale are per battle). Only the first player unit of an
     ///   officer counts ([`BattleState::new`] builds one per army officer).
     /// * Battle consumables (`battle_use = true`) are taken from `battle.inventory`, which the
-    ///   battle used them from; all other inventory entries are kept.
+    ///   battle used them from; all other inventory entries are kept. Battle items the army
+    ///   received while the battle ran (`@item` in a scene the battle plays) are therefore
+    ///   replaced too; [`Pack::validate`] warns about such scenes.
     /// * Flags set by battle events are merged in.
     /// * Only a victory adds `gold_found` / `items_found` (RULES.md §10) and records the
     ///   battle in `battles_won`.
