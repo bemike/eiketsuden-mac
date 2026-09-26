@@ -277,14 +277,13 @@ fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn S
 
 /// **Plug-in point**: the screen for a campaign node (see the module docs).
 pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Screen> {
-    let _ = (ctx, pack);
+    let _ = pack;
     match node {
         // Integration: DramaScreen for `scene`, returning `Flow::Advance` when it ends.
         Node::Drama { .. } => Box::new(PlaceholderScreen::for_node(node)),
         // Integration: CampScreen (shop / equipment / deploy / save), returning `Flow::Advance`.
         Node::Camp { .. } => Box::new(PlaceholderScreen::for_node(node)),
-        // Integration: BattleScreen, returning `Flow::BattleEnded(state)`.
-        Node::Battle { .. } => Box::new(PlaceholderScreen::for_node(node)),
+        Node::Battle { battle, .. } => crate::screens::battle::BattleScreen::start(ctx, battle),
         Node::Ending {
             scene: None, title, ..
         } => Box::new(CreditsScreen::ending(title.clone())),
@@ -300,9 +299,8 @@ pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Scree
 /// **Plug-in point**: resume the battle stored in the session (mid-battle save).
 pub fn battle_screen(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
     let _ = pack;
-    // Integration: BattleScreen::resume(session.battle), returning `Flow::BattleEnded(state)`.
     match ctx.session.as_ref().and_then(|s| s.battle.as_ref()) {
-        Some(battle) => Box::new(PlaceholderScreen::for_battle_resume(&battle.battle_id)),
+        Some(_) => crate::screens::battle::BattleScreen::resume(ctx),
         None => no_session(),
     }
 }
