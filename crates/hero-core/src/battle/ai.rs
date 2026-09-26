@@ -8,12 +8,33 @@
 //! then staying on the current tile, then the tile's position order, so a plan is
 //! deterministic for a given state.
 //!
+//! The threat on a tile is the sum over hostile units of the damage each could deal there
+//! next phase (forecast numbers: physical damage, or expected damage of its damage
+//! strategies), from the tiles it can move to — only its own tile for an AI `hold` unit, its
+//! post's surroundings for a `guard` at its post.
+//!
+//! Refinements *(design)* beyond RULES.md §12:
+//!
+//! * **Lords** are careful, because losing the lord loses the battle: a lord never ends its
+//!   move where the hostile units could defeat it within their next two phases (the least
+//!   dangerous tiles are used when no tile is safe), attacks only when that still holds after
+//!   the counter, weighs the full threat instead of half of it, likes tiles next to friends,
+//!   and when it has nothing to do it stays with its army instead of leading the charge.
+//!   Other units of its side value hitting the hostile units that threaten their lord.
+//! * **Player units** — the AI only commands them in simulations — are played like a careful
+//!   human plays them: being defeated on a tile costs twice the unit's max HP, idle moves
+//!   keep off such tiles, a unit acts only when that beats just moving on, and friends that
+//!   may still move this phase are not counted on to block hostile units.
+//! * **Scripted endings**: the player's side knows the battle's `adjacent` / `reach` events
+//!   that end it and its `reach` conditions. A unit that can win the battle by moving does so,
+//!   never moves where it would lose it, and heads for its objective when idle.
+//!
 //! Scores are expressed in "HP-equivalents": one point is one HP of damage dealt or healed.
 
 use super::board::Board;
 use super::combat::{counter_chance, hit_damage, morale_loss};
 use super::{Action, BattleEvent, BattleState, Unit, UnitId};
-use crate::battledef::{AiMode, Side};
+use crate::battledef::{AiMode, Condition, EventAction, Side, Trigger};
 use crate::data::{Area, Effect, ItemDef, StatusKind, StrategyDef, TargetSide, TerrainDef};
 use crate::geom::Pos;
 use crate::pack::Pack;
@@ -22,6 +43,12 @@ use std::collections::{BinaryHeap, HashMap};
 
 /// `guard` units stay within this manhattan distance of their `ai_pos`.
 const GUARD_RADIUS: i32 = 3;
+/// A lord values each orthogonally adjacent friendly unit (friends take the attack slots
+/// around it) at this percentage of its max HP.
+const LORD_ESCORT_PCT: i64 = 5;
+/// A lord keeps to tiles where the hostile units could not defeat it within this many of
+/// their phases.
+const LORD_SAFETY_PHASES: i64 = 2;
 
 impl BattleState {
     /// First unit of `side` (in unit order) that can still act and is not confused.
@@ -135,6 +162,43 @@ struct Choice {
     action: Action,
 }
 
+/// A set of tile indices that is cleared in O(1), reused for every hostile unit.
+struct TileSet {
+    stamp: Vec<u32>,
+    generation: u32,
+    /// Members in insertion order.
+    tiles: Vec<usize>,
+}
+
+impl TileSet {
+    fn new(len: usize) -> TileSet {
+        TileSet {
+            stamp: vec![0; len],
+            generation: 1,
+            tiles: Vec::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.generation += 1;
+        self.tiles.clear();
+    }
+
+    /// Adds `i`; returns whether it was not in the set yet.
+    fn insert(&mut self, i: usize) -> bool {
+        if self.stamp[i] == self.generation {
+            return false;
+        }
+        self.stamp[i] = self.generation;
+        self.tiles.push(i);
+        true
+    }
+
+    fn contains(&self, i: usize) -> bool {
+        self.stamp[i] == self.generation
+    }
+}
+
 /// Value of dealing `damage` to `target` (§12): the damage, ×3 when it defeats the target,
 /// +50% against the lord or a commander.
 fn damage_value(damage: i32, target: &Unit) -> i64 {
@@ -146,6 +210,106 @@ fn damage_value(damage: i32, target: &Unit) -> i64 {
         value = value * 3 / 2;
     }
     value
+}
+
+/// Where a unit has to stand for a scripted victory or defeat.
+enum Place {
+    /// Orthogonally next to one of these tiles (the units an `adjacent` trigger pairs it with).
+    NextTo(Vec<Pos>),
+    /// Within manhattan `radius` of `pos` (`reach` triggers and conditions).
+    Near { pos: Pos, radius: i32 },
+}
+
+impl Place {
+    fn holds(&self, tile: Pos) -> bool {
+        match self {
+            Place::NextTo(partners) => partners.iter().any(|p| p.manhattan(tile) == 1),
+            Place::Near { pos, radius } => pos.manhattan(tile) <= *radius,
+        }
+    }
+
+    fn goals(&self) -> Vec<Pos> {
+        match self {
+            Place::NextTo(partners) => partners.clone(),
+            Place::Near { pos, .. } => vec![*pos],
+        }
+    }
+}
+
+/// A battle ending this unit brings about by standing somewhere: an `adjacent` or `reach`
+/// event trigger naming it whose actions include `victory` (`wins`) or `defeat`, or a `reach`
+/// victory/defeat condition.
+struct Scripted {
+    wins: bool,
+    place: Place,
+}
+
+/// Scripted endings unit `me` can bring about. Only the player's side plays the script
+/// *(design)*: the AI stands in for a player who knows the objective, while enemy units
+/// behave like the original's, which ignore it. `hold` units never move for it.
+fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
+    let mut out = Vec::new();
+    if Side::Player.is_hostile(me.side) || me.ai == AiMode::Hold {
+        return out;
+    }
+    let def = st.def(pack);
+    let named = |who: Option<&str>| who.map_or(me.side == Side::Player, |w| me.matches(w));
+    let partners = |reference: &str| -> Vec<Pos> {
+        st.units
+            .iter()
+            .filter(|u| u.is_active() && u.id != me.id && u.matches(reference))
+            .map(|u| u.pos)
+            .collect()
+    };
+    for (i, e) in def.events.iter().enumerate() {
+        if e.once && st.fired.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        let wins = if e.actions.iter().any(|a| matches!(a, EventAction::Defeat)) {
+            false
+        } else if e.actions.iter().any(|a| matches!(a, EventAction::Victory)) {
+            true
+        } else {
+            continue;
+        };
+        let place = match &e.trigger {
+            Trigger::Adjacent { a, b } => {
+                let mut next_to = Vec::new();
+                if me.matches(a) {
+                    next_to.extend(partners(b));
+                }
+                if me.matches(b) {
+                    next_to.extend(partners(a));
+                }
+                if next_to.is_empty() {
+                    continue;
+                }
+                Place::NextTo(next_to)
+            }
+            Trigger::Reach { who, pos, radius } if named(who.as_deref()) => Place::Near {
+                pos: *pos,
+                radius: *radius,
+            },
+            _ => continue,
+        };
+        out.push(Scripted { wins, place });
+    }
+    for (conditions, wins) in [(&def.victory, true), (&def.defeat, false)] {
+        for c in conditions {
+            if let Condition::Reach { who, pos, radius } = c {
+                if named(who.as_deref()) {
+                    out.push(Scripted {
+                        wins,
+                        place: Place::Near {
+                            pos: *pos,
+                            radius: *radius,
+                        },
+                    });
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Keep `c` when it beats `best`: higher score, then lower affected unit id, then acting from
@@ -169,9 +333,12 @@ struct Planner<'a> {
     board: Board<'a>,
     /// Tiles the unit may end its move on, in position order.
     reach: Vec<Pos>,
-    /// Raw damage (before the tile's terrain defence) hostile units could deal to this unit
-    /// on each tile during their next phase.
+    /// Expected damage hostile units could deal to this unit on each tile during their next
+    /// phase (physical attacks and damage strategies, terrain included, not capped at HP).
     threat: Vec<i64>,
+    /// Per unit id: the damage that hostile unit could deal next phase to this unit's lord
+    /// (0 when it cannot reach the lord, or this unit is the lord or has none).
+    lord_threat: Vec<i64>,
     atk: i32,
     def: i32,
     attack_offsets: Vec<Pos>,
@@ -180,6 +347,8 @@ struct Planner<'a> {
     strategy_offsets: Vec<Vec<Pos>>,
     /// `ai = "target"`: the unit to go for.
     focus: Option<UnitId>,
+    /// Scripted victories and defeats this unit can bring about by moving.
+    script: Vec<Scripted>,
     attack_cache: HashMap<UnitId, AttackInfo>,
     /// Enemy-targeted single/cross strategies do not depend on the caster's tile.
     aim_cache: HashMap<(usize, Pos), Option<AimValue>>,
@@ -233,22 +402,49 @@ impl<'a> Planner<'a> {
             board,
             reach,
             threat: Vec::new(),
+            lord_threat: Vec::new(),
             atk: st.attack_power(pack, id),
             def: st.defense_power(pack, id),
             attack_offsets,
             strategies,
             strategy_offsets,
             focus,
+            script: scripted_endings(st, pack, me),
             attack_cache: HashMap::new(),
             aim_cache: HashMap::new(),
         };
-        planner.threat = planner.compute_threat();
+        (planner.threat, planner.lord_threat) = planner.compute_threats();
         planner
     }
 
     fn plan(mut self) -> Vec<Action> {
         let origin = self.me.pos;
-        let reach = std::mem::take(&mut self.reach);
+        let mut reach = std::mem::take(&mut self.reach);
+        if !self.script.is_empty() {
+            let winning = reach
+                .iter()
+                .copied()
+                .filter(|&p| self.scripted_at(p) == Some(true))
+                .min_by_key(|&p| (p != origin, self.danger(p), p));
+            if let Some(tile) = winning {
+                // The move ends the battle (events fire after it); the wait is never played.
+                let mut out = Vec::with_capacity(2);
+                if tile != origin {
+                    out.push(Action::Move {
+                        unit: self.id,
+                        to: tile,
+                    });
+                }
+                out.push(Action::Wait { unit: self.id });
+                return out;
+            }
+            if reach.iter().any(|&p| self.scripted_at(p) != Some(false)) {
+                reach.retain(|&p| self.scripted_at(p) != Some(false));
+            }
+        }
+        if self.me.lord {
+            reach = self.lord_tiles(reach);
+        }
         let (tile, action) = match self.me.ai {
             AiMode::Hold => self.act_at(origin),
             AiMode::Aggressive => self.aggressive(&reach),
@@ -300,14 +496,73 @@ impl<'a> Planner<'a> {
     // ----- modes ---------------------------------------------------------------------------
 
     fn aggressive(&mut self, reach: &[Pos]) -> (Pos, Option<Action>) {
-        if let Some(c) = self.best_from(reach, None).0 {
-            return (c.tile, Some(c.action));
+        let best = self.best_from(reach, None).0;
+        if !self.careful() {
+            if let Some(c) = best {
+                return (c.tile, Some(c.action));
+            }
         }
-        let goals = self.hostile_positions();
-        if goals.is_empty() {
-            return (self.me.pos, None);
+        let idle = self.idle_tile(reach);
+        match best {
+            Some(c) if c.score >= self.position_value(idle) => (c.tile, Some(c.action)),
+            _ => (idle, None),
         }
-        (self.approach(&goals, reach), None)
+    }
+
+    /// Where an aggressive unit goes when it does not act: towards a scripted victory it can
+    /// bring about, otherwise towards the nearest hostile unit. A lord stays with its army
+    /// rather than leading the charge, and without an army it keeps to the best position it
+    /// can reach.
+    fn idle_tile(&self, reach: &[Pos]) -> Pos {
+        let objective: Vec<Pos> = self
+            .script
+            .iter()
+            .filter(|s| s.wins)
+            .flat_map(|s| s.place.goals())
+            .collect();
+        if !objective.is_empty() {
+            return self.approach(&objective, reach);
+        }
+        let goals = if self.me.lord {
+            self.friend_positions()
+        } else {
+            self.hostile_positions()
+        };
+        match (goals.is_empty(), self.me.lord) {
+            (false, _) => self.approach(&goals, reach),
+            (true, true) => self.best_position(reach),
+            (true, false) => self.me.pos,
+        }
+    }
+
+    /// The scripted ending standing on `tile` brings about: `Some(false)` for a defeat (which
+    /// takes precedence), `Some(true)` for a victory.
+    fn scripted_at(&self, tile: Pos) -> Option<bool> {
+        let mut outcome = None;
+        for s in self.script.iter().filter(|s| s.place.holds(tile)) {
+            if !s.wins {
+                return Some(false);
+            }
+            outcome = Some(true);
+        }
+        outcome
+    }
+
+    /// Tile of `tiles` with the best position value, preferring to stay, then position order.
+    fn best_position(&self, tiles: &[Pos]) -> Pos {
+        let origin = self.me.pos;
+        tiles
+            .iter()
+            .copied()
+            .max_by_key(|&p| (self.position_value(p), p == origin, Reverse(p)))
+            .unwrap_or(origin)
+    }
+
+    /// Player units, which the AI only commands in simulations, and lords are played the way
+    /// a careful human plays them *(design)*: they avoid tiles where they would be defeated
+    /// and act only when that beats just moving on.
+    fn careful(&self) -> bool {
+        self.me.side == Side::Player || self.me.lord
     }
 
     /// Fight only when a hostile unit can be reached this phase; otherwise stay (supporting
@@ -347,7 +602,8 @@ impl<'a> Planner<'a> {
                     continue;
                 }
                 hostile_in_reach = true;
-                if focus.is_some_and(|f| f != t) {
+                if focus.is_some_and(|f| f != t) || (self.me.lord && !self.lord_may_attack(tile, t))
+                {
                     continue;
                 }
                 let score = self.attack_value(tile, t) + position;
@@ -406,19 +662,34 @@ impl<'a> Planner<'a> {
     }
 
     fn attack_value(&mut self, tile: Pos, target: UnitId) -> i64 {
-        let info = self.attack_info(target);
-        let mut value = info.value;
-        if let Some(c) = &info.counter {
-            let t_pos = self.st.units[target].pos;
-            let delta = Pos::new(tile.x - t_pos.x, tile.y - t_pos.y);
-            if tile.chebyshev(t_pos) == 1 && c.offsets.contains(&delta) {
-                let terrain = self.board.terrain(tile).map_or(0, |t| t.defense);
-                let dmg = hit_damage(c.atk, self.def, c.affinity, terrain) as i64;
-                let dmg = (dmg * self.pack.rules.counter_damage_pct as i64 / 100).max(1);
-                value -= dmg.min(self.me.hp as i64) * c.chance as i64 / 100;
-            }
+        let value = self.attack_info(target).value;
+        match self.counter_at(tile, target) {
+            Some((dmg, chance)) => value - dmg.min(self.me.hp as i64) * chance / 100,
+            None => value,
         }
-        value
+    }
+
+    /// Damage and chance (percent) of the counter-attack provoked by attacking `target` from
+    /// `tile`, when there can be one.
+    fn counter_at(&mut self, tile: Pos, target: UnitId) -> Option<(i64, i64)> {
+        let c = self.attack_info(target).counter?;
+        let t_pos = self.st.units[target].pos;
+        let delta = Pos::new(tile.x - t_pos.x, tile.y - t_pos.y);
+        if tile.chebyshev(t_pos) != 1 || !c.offsets.contains(&delta) || c.chance <= 0 {
+            return None;
+        }
+        let terrain = self.board.terrain(tile).map_or(0, |t| t.defense);
+        let dmg = hit_damage(c.atk, self.def, c.affinity, terrain) as i64;
+        Some((
+            (dmg * self.pack.rules.counter_damage_pct as i64 / 100).max(1),
+            c.chance as i64,
+        ))
+    }
+
+    /// A lord attacks only from a tile that stays safe after a counter-attack.
+    fn lord_may_attack(&mut self, tile: Pos, target: UnitId) -> bool {
+        let counter = self.counter_at(tile, target).map_or(0, |(dmg, _)| dmg);
+        self.lord_safe(tile, counter)
     }
 
     fn attack_info(&mut self, target: UnitId) -> AttackInfo {
@@ -435,7 +706,7 @@ impl<'a> Planner<'a> {
             terrain,
         );
         let kill = dmg >= t.hp;
-        let value = damage_value(dmg, t);
+        let value = damage_value(dmg, t) + self.protect_value(target, dmg, t.hp);
         let mut counter = None;
         let t_class = st.class_of(pack, target);
         if !kill && t_class.can_counter && st.class_of(pack, self.id).provokes_counter {
@@ -545,6 +816,9 @@ impl<'a> Planner<'a> {
                     }
                     if t.lord || t.commander {
                         value = value * 3 / 2;
+                    }
+                    if sign > 0 {
+                        value += self.protect_value(u, dmg, hp);
                     }
                     v += sign * value;
                     hp -= dmg.min(hp);
@@ -671,59 +945,248 @@ impl<'a> Planner<'a> {
             .collect()
     }
 
-    fn compute_threat(&self) -> Vec<i64> {
+    /// Tiles of the other active units of this unit's side and its friends.
+    fn friend_positions(&self) -> Vec<Pos> {
+        self.st
+            .units
+            .iter()
+            .filter(|u| u.is_active() && u.id != self.id && !self.is_hostile(u.id))
+            .map(|u| u.pos)
+            .collect()
+    }
+
+    /// Expected damage every hostile unit could deal next phase: to this unit on each tile,
+    /// and (per hostile unit) to this unit's lord where the lord stands.
+    ///
+    /// A hostile unit threatens the tiles its attack range covers from every tile it can move
+    /// to, and the tiles its damage strategies can hit (element gate included, weighted by the
+    /// hit chance); on a tile both could reach, the stronger one counts. Hostile movement is
+    /// blocked by the units that stay where they are, but not by this unit or the units of its
+    /// side that can still act this phase, since they may move away. Units still confused
+    /// next phase are ignored.
+    fn compute_threats(&self) -> (Vec<i64>, Vec<i64>) {
         let (st, pack) = (self.st, self.pack);
+        let side = self.me.side;
+        let may_leave = |u: UnitId| st.units[u].side == side && st.can_act(u) && !st.units[u].moved;
+        let others = Board::without(st, pack, |u| {
+            u == self.id || (self.careful() && may_leave(u))
+        });
         let n = self.board.len();
+        let lord = st.units.iter().find(|u| {
+            u.is_active()
+                && u.lord
+                && u.id != self.id
+                && !self.is_hostile(u.id)
+                && self.board.in_bounds(u.pos)
+        });
         let mut threat = vec![0i64; n];
-        let mut stamp = vec![usize::MAX; n];
+        let mut lord_threat = vec![0i64; st.units.len()];
+        let mut cover = TileSet::new(n);
+        // The current hostile unit's strongest damage per tile it threatens.
+        let mut touched = TileSet::new(n);
+        let mut strongest = vec![0i64; n];
+        let keep = |touched: &mut TileSet, strongest: &mut [i64], i: usize, dmg: i64| {
+            strongest[i] = if touched.insert(i) {
+                dmg
+            } else {
+                strongest[i].max(dmg)
+            };
+        };
         for h in st
             .units
             .iter()
             .filter(|h| h.is_active() && self.is_hostile(h.id))
         {
-            // Still confused during its next phase: no threat.
             if h.statuses
                 .iter()
                 .any(|s| s.status == StatusKind::Confused && s.turns >= 2)
             {
                 continue;
             }
-            let Some(offsets) = st.class_of(pack, h.id).range.offsets() else {
-                continue;
-            };
-            let range = st.reach(
-                pack,
-                &self.board,
-                h.id,
-                h.pos,
-                st.base_move_points(pack, h.id),
-            );
-            let def = self.def as i64 * st.affinity(pack, h.id, self.id) as i64 / 100;
-            let raw = (st.attack_power(pack, h.id) as i64 - def / 2).max(1);
-            for e in range.tiles.keys() {
-                for o in &offsets {
-                    if let Some(i) = self.board.index(e.offset(o.x, o.y)) {
-                        if stamp[i] != h.id {
-                            stamp[i] = h.id;
-                            threat[i] += raw;
+            let ends = self.threat_origins(&others, h);
+            touched.clear();
+            let mut to_lord = 0i64;
+
+            if let Some(offsets) = st.class_of(pack, h.id).range.offsets() {
+                cover.clear();
+                for e in &ends {
+                    for o in offsets.iter().filter(|o| **o != Pos::new(0, 0)) {
+                        if let Some(i) = self.board.index(e.offset(o.x, o.y)) {
+                            cover.insert(i);
                         }
                     }
                 }
+                let atk = st.attack_power(pack, h.id);
+                let hit = |target: UnitId, def: i32, i: usize| {
+                    let terrain = self.board.terrain_at_index(i).map_or(0, |t| t.defense);
+                    hit_damage(atk, def, st.affinity(pack, h.id, target), terrain) as i64
+                };
+                for &i in &cover.tiles {
+                    keep(&mut touched, &mut strongest, i, hit(self.id, self.def, i));
+                }
+                if let Some(l) = lord {
+                    let li = self.board.index(l.pos).expect("lord is on the map");
+                    if cover.contains(li) {
+                        to_lord = to_lord.max(hit(l.id, st.defense_power(pack, l.id), li));
+                    }
+                }
             }
+
+            for s in st
+                .usable_strategies(pack, h.id)
+                .iter()
+                .filter_map(|s| pack.strategy(s))
+            {
+                let harmful = s.target == TargetSide::Enemy
+                    && s.effects.iter().any(|e| matches!(e, Effect::Damage { .. }));
+                if !harmful {
+                    continue;
+                }
+                cover.clear();
+                let offsets = super::strategy::reach_tiles(s, Pos::new(0, 0));
+                for e in &ends {
+                    for o in &offsets {
+                        let aim = e.offset(o.x, o.y);
+                        if let Some(i) = self.board.index(aim) {
+                            cover.insert(i);
+                        }
+                        if s.area == Area::Cross {
+                            for i in aim
+                                .neighbors4()
+                                .into_iter()
+                                .filter_map(|p| self.board.index(p))
+                            {
+                                cover.insert(i);
+                            }
+                        }
+                    }
+                }
+                for &i in &cover.tiles {
+                    let terrain = self.board.terrain_at_index(i);
+                    if st.element_allows(s, terrain) {
+                        let dmg = self.strategy_threat(h.id, s, self.id, terrain);
+                        keep(&mut touched, &mut strongest, i, dmg);
+                    }
+                }
+                if let Some(l) = lord {
+                    let li = self.board.index(l.pos).expect("lord is on the map");
+                    let terrain = self.board.terrain_at_index(li);
+                    if cover.contains(li) && st.element_allows(s, terrain) {
+                        to_lord = to_lord.max(self.strategy_threat(h.id, s, l.id, terrain));
+                    }
+                }
+            }
+
+            for &i in &touched.tiles {
+                threat[i] += strongest[i];
+            }
+            lord_threat[h.id] = to_lord;
         }
-        threat
+        (threat, lord_threat)
+    }
+
+    /// Tiles hostile unit `h` may act from during its next phase: its movement range, except
+    /// that an AI-controlled `hold` unit stays on its tile and a `guard` at its post stays
+    /// within [`GUARD_RADIUS`] of it. Player units are commanded by a human, whatever their
+    /// `ai` field says.
+    fn threat_origins(&self, board: &Board, h: &Unit) -> Vec<Pos> {
+        let ai = if h.side == Side::Player {
+            AiMode::Aggressive
+        } else {
+            h.ai
+        };
+        if ai == AiMode::Hold {
+            return vec![h.pos];
+        }
+        let range = self.st.reach(
+            self.pack,
+            board,
+            h.id,
+            h.pos,
+            self.st.base_move_points(self.pack, h.id),
+        );
+        let post = match (ai, h.ai_pos) {
+            (AiMode::Guard, Some(c)) if h.pos.manhattan(c) <= GUARD_RADIUS => Some(c),
+            _ => None,
+        };
+        range
+            .tiles
+            .into_keys()
+            .filter(|p| post.is_none_or(|c| p.manhattan(c) <= GUARD_RADIUS))
+            .collect()
+    }
+
+    /// Expected damage of `caster`'s strategy `s` on `target` standing on `terrain`.
+    fn strategy_threat(
+        &self,
+        caster: UnitId,
+        s: &StrategyDef,
+        target: UnitId,
+        terrain: Option<&TerrainDef>,
+    ) -> i64 {
+        let (st, pack) = (self.st, self.pack);
+        let damage: i64 = s
+            .effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Damage { power } => {
+                    Some(st.strategy_damage_base(pack, caster, s, *power, target, terrain) as i64)
+                }
+                _ => None,
+            })
+            .sum();
+        damage * st.hit_chance(pack, caster, target) as i64 / 100
+    }
+
+    /// Expected damage taken on `tile` next phase (not capped at the unit's HP).
+    fn danger(&self, tile: Pos) -> i64 {
+        self.board.index(tile).map_or(0, |i| self.threat[i])
     }
 
     /// Expected damage taken on `tile` next phase, at most the unit's HP.
     fn threat_at(&self, tile: Pos) -> i64 {
-        let Some(i) = self.board.index(tile) else {
-            return 0;
-        };
-        let defense = self.board.terrain(tile).map_or(0, |t| t.defense) as i64;
-        (self.threat[i] * (100 - defense) / 100).clamp(0, self.me.hp as i64)
+        self.danger(tile).clamp(0, self.me.hp as i64)
+    }
+
+    /// Whether the lord can stand on `tile` after taking `extra` damage now: the hostile units
+    /// must not be expected to defeat it there within their next two phases, which leaves it
+    /// room to get away after one of them.
+    fn lord_safe(&self, tile: Pos, extra: i64) -> bool {
+        extra + LORD_SAFETY_PHASES * self.danger(tile) < self.me.hp as i64
+    }
+
+    /// Lord safety: the safe tiles of `reach`, or the least dangerous ones when none is safe.
+    fn lord_tiles(&self, reach: Vec<Pos>) -> Vec<Pos> {
+        if reach.iter().any(|&p| self.lord_safe(p, 0)) {
+            return reach
+                .into_iter()
+                .filter(|&p| self.lord_safe(p, 0))
+                .collect();
+        }
+        let least = reach.iter().map(|&p| self.danger(p)).min();
+        reach
+            .into_iter()
+            .filter(|&p| Some(self.danger(p)) == least)
+            .collect()
+    }
+
+    /// Value of damaging `target` (which has `hp` left) for protecting this unit's lord: the
+    /// damage the target could deal to the lord next phase when it is defeated, a share of it
+    /// otherwise.
+    fn protect_value(&self, target: UnitId, damage: i32, hp: i32) -> i64 {
+        let to_lord = self.lord_threat.get(target).copied().unwrap_or(0);
+        if to_lord == 0 || hp <= 0 {
+            0
+        } else if damage >= hp {
+            to_lord
+        } else {
+            to_lord * damage as i64 / (2 * hp as i64)
+        }
     }
 
     /// Terrain defence, expected regeneration if hurt, minus half the expected damage taken.
+    /// For careful units being defeated there costs twice their max HP; a lord (which avoids
+    /// such tiles altogether) weighs the full expected damage and values friends next to it.
     fn position_value(&self, tile: Pos) -> i64 {
         let terrain = self.board.terrain(tile);
         let mut v = terrain.map_or(0, |t| t.defense) as i64;
@@ -731,13 +1194,41 @@ impl<'a> Planner<'a> {
         if let (true, Some(t)) = (missing > 0, terrain) {
             v += (self.me.max_hp as i64 * t.heal_hp.max(0) as i64 / 100).min(missing) / 2;
         }
-        v - self.threat_at(tile) / 2
+        if self.me.lord {
+            let escort = tile
+                .neighbors4()
+                .into_iter()
+                .filter_map(|p| self.occupant(p, tile))
+                .filter(|&u| !self.is_hostile(u))
+                .count() as i64;
+            return v - self.threat_at(tile)
+                + escort * self.me.max_hp as i64 * LORD_ESCORT_PCT / 100;
+        }
+        v -= self.threat_at(tile) / 2;
+        if self.careful() && self.danger(tile) >= self.me.hp as i64 {
+            // A defeated unit is missing for the rest of the battle.
+            v -= 2 * self.me.max_hp as i64;
+        }
+        v
     }
 
     /// Tile of `allowed` closest to any goal along the cheapest path for this unit's move
     /// type (ignoring units); manhattan distance when no goal is reachable at all. Ties prefer
-    /// less threat, staying put, then position order.
+    /// less threat, staying put, then position order. Careful units keep off tiles where they
+    /// would be defeated when they can.
     fn approach(&self, goals: &[Pos], allowed: &[Pos]) -> Pos {
+        let hp = self.me.hp as i64;
+        let survivable: Vec<Pos>;
+        let allowed = if self.careful() && allowed.iter().any(|&p| self.danger(p) < hp) {
+            survivable = allowed
+                .iter()
+                .copied()
+                .filter(|&p| self.danger(p) < hp)
+                .collect();
+            &survivable
+        } else {
+            allowed
+        };
         let origin = self.me.pos;
         let dist = self.goal_distance(goals);
         let path_dist = |p: Pos| self.board.index(p).map_or(i32::MAX, |i| dist[i]);

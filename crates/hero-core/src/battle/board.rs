@@ -20,6 +20,22 @@ impl<'a> Board<'a> {
         Board::with_moved(state, pack, None)
     }
 
+    /// Like [`Board::new`] but without the units for which `absent` holds (they neither block
+    /// nor exert zone of control), e.g. to ask what others could do once they have moved away.
+    pub fn without(
+        state: &BattleState,
+        pack: &'a Pack,
+        absent: impl Fn(UnitId) -> bool,
+    ) -> Board<'a> {
+        let mut board = Board::new(state, pack);
+        for o in board.occupant.iter_mut() {
+            if o.is_some_and(&absent) {
+                *o = None;
+            }
+        }
+        board
+    }
+
     /// Like [`Board::new`] but pretending unit `moved.0` stands on `moved.1`.
     pub fn with_moved(
         state: &BattleState,
@@ -80,5 +96,13 @@ impl<'a> Board<'a> {
 
     pub fn unit_at(&self, p: Pos) -> Option<UnitId> {
         self.index(p).and_then(|i| self.occupant[i])
+    }
+
+    /// Every unit on the board with its tile, in position order.
+    pub fn occupants(&self) -> impl Iterator<Item = (Pos, UnitId)> + '_ {
+        self.occupant
+            .iter()
+            .enumerate()
+            .filter_map(|(i, o)| o.map(|u| (self.pos_of(i), u)))
     }
 }

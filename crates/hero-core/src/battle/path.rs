@@ -13,9 +13,10 @@ impl BattleState {
     ///
     /// * Tile cost is `terrain.cost[class.move_type]`; a missing entry is impassable.
     /// * Hostile units block; friendly units can be crossed but not stopped on (`through`).
-    /// * Entering a zone-of-control tile (orthogonal neighbour of an active hostile unit) or,
-    ///   for player units, an untaken treasure tile ends the move there. The start tile never
+    /// * Entering a zone-of-control tile (orthogonal neighbour of a hostile unit) or, for
+    ///   player units, an untaken treasure tile ends the move there. The start tile never
     ///   restricts leaving it.
+    /// * Units are where `board` puts them (blocking and zones of control alike).
     /// * Equal-cost ties keep the path found first; neighbours are expanded up, down, left,
     ///   right and the queue is ordered by (cost, insertion order), so the result is
     ///   deterministic.
@@ -40,12 +41,11 @@ impl BattleState {
         let n = board.len();
 
         let mut stop = vec![false; n];
-        for other in self
-            .units
-            .iter()
-            .filter(|o| o.is_active() && o.side.is_hostile(unit.side))
+        for (pos, _) in board
+            .occupants()
+            .filter(|&(_, o)| self.units[o].side.is_hostile(unit.side))
         {
-            for p in other.pos.neighbors4() {
+            for p in pos.neighbors4() {
                 if let Some(i) = board.index(p) {
                     stop[i] = true;
                 }
