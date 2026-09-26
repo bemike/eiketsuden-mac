@@ -142,14 +142,6 @@ def swap(img: Image.Image, table: dict[str, str]) -> Image.Image:
     return recolor(img, {rgba(k): rgba(v) for k, v in table.items()}, strict=False)
 
 
-def over(*imgs: Image.Image) -> Image.Image:
-    """Alpha-composite 16x16 images bottom to top."""
-    out = new(T, T)
-    for im in imgs:
-        out.alpha_composite(im)
-    return out
-
-
 def place(*parts: tuple[Image.Image, int, int]) -> Image.Image:
     """A 16x16 cell with each (image, x, y) pasted in order (clipped)."""
     out = new(T, T)

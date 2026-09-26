@@ -1,8 +1,9 @@
 """Pixel art drawn for this project as text (one character per pixel), in the Ninja Adventure palette.
 
-These sprites fill gaps the third-party packs do not cover at 16x16 (weather, stat symbols,
-Chinese-themed items, small buildings, trees, ...). They are original work of the Eiketsuden
-Reloaded project; see CREDITS.md.
+These sprites fill gaps the third-party packs do not cover at 16x16: weather, stat and item icons,
+the buildings of the terrain tiles, and unit accessories (crossbow, drum, rice bale, chariot parts,
+saddle cloths, pennants). Digits in unit parts stand for the team ramp of a side. They are original
+work of the Eiketsuden Reloaded project; see CREDITS.md.
 """
 
 from __future__ import annotations

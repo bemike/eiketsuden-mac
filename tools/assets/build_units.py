@@ -27,8 +27,7 @@ from assetlib import Sources, cell, flip_h, new, paste, recolor, rgba, save_png,
 
 DIRS = ("down", "up", "left", "right")
 WALK_ROWS = 4
-ATTACK_ROW = 4
-HURT_ROW = 5
+ATTACK_ROW = 4  # row 5 is the hurt pose
 ROWS = 6
 BODY = 16  # NA character frame size
 FRAME = 24  # unit frame size (chariot: 32 wide)
