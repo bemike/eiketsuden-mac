@@ -581,6 +581,11 @@ impl PlayerUi {
                     self.select(&snapshot, pack, unit);
                     Request::Restore(snapshot)
                 }
+                // A move that cannot be taken back (treasure, triggered event): stay.
+                None if state.units[unit].moved => {
+                    self.mode = Mode::Command { unit, undo: None };
+                    Request::Invalid
+                }
                 None => {
                     self.select(state, pack, unit);
                     Request::None
@@ -711,6 +716,28 @@ mod tests {
         ui.confirm(&state, &pack, at);
         assert_eq!(ui.cancel(&state, &pack), Request::None);
         assert!(matches!(ui.mode, Mode::Move { .. }));
+    }
+
+    #[test]
+    fn moves_that_cannot_be_undone_keep_the_command_menu() {
+        let (pack, mut state) = begun();
+        let gy = state.find_unit("guan_yu").unwrap();
+        let start = state.units[gy].pos;
+        let mut ui = PlayerUi::default();
+        ui.select(&state, &pack, gy);
+        let Mode::Move { range, .. } = &ui.mode else {
+            panic!("expected Move");
+        };
+        let dest = *range.tiles.keys().find(|p| **p != start).unwrap();
+        ui.confirm(&state, &pack, dest);
+        state
+            .apply(&pack, Action::Move { unit: gy, to: dest })
+            .unwrap();
+        // As if the move had found a treasure: not undoable.
+        ui.walked(&state, false);
+        assert!(matches!(ui.mode, Mode::Command { undo: None, .. }));
+        assert_eq!(ui.cancel(&state, &pack), Request::Invalid);
+        assert!(matches!(ui.mode, Mode::Command { .. }));
     }
 
     #[test]

@@ -653,7 +653,7 @@ pub fn plan(
                 BeatKind::Treasure {
                     banner: banner(
                         text::treasure_text(iname.as_deref(), *gold),
-                        Some(format!("{} 보물을 찾았다", name(*unit))),
+                        Some(format!("{} 보물을 찾았다", text::subject(&name(*unit)))),
                         Tone::Good,
                         1.6,
                     ),
@@ -1008,6 +1008,16 @@ fn step(
                     }
                     if h.morale != 0 {
                         scene.float(u, text::morale_text(h.morale), FloatKind::Morale);
+                        // Morale arrow (unless the strategy's own effect already is one).
+                        let arrow = if h.morale > 0 {
+                            "morale_up"
+                        } else {
+                            "morale_down"
+                        };
+                        if key.as_deref() != Some(arrow) {
+                            let at = scene.views[u].pos;
+                            scene.spawn_fx(arrow, at, fx);
+                        }
                         let v = &mut scene.views[u];
                         v.morale = (v.morale + h.morale).clamp(0, 100);
                     }
@@ -1509,6 +1519,72 @@ mod tests {
         assert!(texts.iter().any(|t| t == "실패"));
         assert!(texts.iter().any(|t| t == "+60"));
         assert_eq!(scene.views[1].hp, hp - 40.0);
+    }
+
+    #[test]
+    fn reinforcements_fade_in_with_a_banner() {
+        let (pack, mut state) = testutil::sishui();
+        // Pretend unit 5 has just been spawned: hidden in the scene, active in the state.
+        let mut scene = Scene::new(&state);
+        scene.views[5].visible = false;
+        state.units[5].pos = Pos::new(4, 4);
+        scene.views[5].pos = vec2(64.0, 64.0);
+        let ev = vec![BattleEvent::Spawned { units: vec![5] }];
+        let mut player = EventPlayer::default();
+        player.push(plan(&ev, &state, &pack, &BTreeMap::new()));
+        let mut cues = Vec::new();
+        let fx = BTreeMap::new();
+        player.update(0.1, false, &mut scene, &fx, &mut cues);
+        assert!(scene.views[5].visible);
+        assert_eq!(scene.views[5].alpha, 0.0);
+        assert_eq!(
+            scene.banner.as_ref().map(|b| b.title.as_str()),
+            Some("원군 출현!")
+        );
+        assert!(cues.contains(&Cue::Center(Pos::new(4, 4))));
+        let mut guard = 0;
+        while !player.is_idle() && guard < 1000 {
+            player.update(1.0 / 60.0, false, &mut scene, &fx, &mut cues);
+            guard += 1;
+        }
+        assert_eq!(scene.views[5].alpha, 1.0);
+        assert!(scene.banner.is_none());
+    }
+
+    #[test]
+    fn level_up_popup_updates_the_view() {
+        let (pack, state) = testutil::sishui();
+        let mut scene = Scene::new(&state);
+        let (hp, max_hp) = (scene.views[0].hp, scene.views[0].max_hp);
+        let ev = vec![
+            BattleEvent::LevelUp {
+                unit: 0,
+                level: 2,
+                hp_gain: 50,
+                mp_gain: 1,
+            },
+            BattleEvent::Learned {
+                unit: 0,
+                strategy: "scorch".into(),
+            },
+        ];
+        let mut player = EventPlayer::default();
+        player.push(plan(&ev, &state, &pack, &BTreeMap::new()));
+        let mut cues = Vec::new();
+        let fx = BTreeMap::new();
+        player.update(0.05, false, &mut scene, &fx, &mut cues);
+        assert_eq!(scene.views[0].level, 2);
+        assert_eq!(scene.views[0].max_hp, max_hp + 50);
+        assert_eq!(scene.views[0].hp, hp + 50.0);
+        assert!(cues.contains(&Cue::Sfx(sfx::LEVELUP)));
+        let title = scene.popup.as_ref().map(|p| p.title.clone()).unwrap();
+        assert!(title.contains("레벨 업"), "{title}");
+        // Confirm dismisses it after a moment; then the strategy popup follows.
+        player.update(0.5, true, &mut scene, &fx, &mut cues);
+        player.update(0.05, false, &mut scene, &fx, &mut cues);
+        let p = scene.popup.as_ref().unwrap();
+        assert_eq!(p.title, "새 책략");
+        assert!(p.lines[0].contains("초열을 익혔다"), "{:?}", p.lines);
     }
 
     #[test]

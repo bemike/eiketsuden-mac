@@ -191,6 +191,7 @@ struct RightDrag {
     moved: bool,
 }
 
+/// The battle screen. See the module docs.
 pub struct BattleScreen {
     pack: Rc<Pack>,
     state: BattleState,
@@ -219,9 +220,11 @@ pub struct BattleScreen {
     idle_time: f32,
     touch_seen: bool,
     rdrag: Option<RightDrag>,
-    /// Class id -> sprite key; (sprite key, side) -> sheet texture key.
+    /// Class id -> sprite key.
     sprite_of: BTreeMap<String, String>,
-    sheets: BTreeMap<(String, Side), String>,
+    /// Sprite key -> sheet texture keys per side (player, ally, enemy), built once so drawing
+    /// does not format strings.
+    sheets: BTreeMap<String, [String; 3]>,
     cues: Vec<Cue>,
     /// Unit levels when the screen opened (for the level-ups in the result window).
     start_levels: Vec<u32>,
@@ -294,12 +297,11 @@ impl BattleScreen {
         let mut sheets = BTreeMap::new();
         for c in pack.classes.values() {
             sprite_of.insert(c.id.clone(), c.sprite.clone());
-            for side in [Side::Player, Side::Ally, Side::Enemy] {
-                sheets.insert(
-                    (c.sprite.clone(), side),
-                    sprites::sheet_key(&c.sprite, side),
-                );
-            }
+            sheets.insert(
+                c.sprite.clone(),
+                [Side::Player, Side::Ally, Side::Enemy]
+                    .map(|side| sprites::sheet_key(&c.sprite, side)),
+            );
         }
         BattleScreen {
             pack,
@@ -341,11 +343,13 @@ impl BattleScreen {
         self.meta.fx_req = Some(FileRequest::new(root.path(sprites::FX_FILE)));
         let mut textures: Vec<String> = vec!["ui/flags".into(), "ui/icons".into()];
         for u in &self.state.units {
-            if let Some(sprite) = self.sprite_of.get(&u.class) {
-                if let Some(key) = self.sheets.get(&(sprite.clone(), u.side)) {
-                    if !textures.contains(key) {
-                        textures.push(key.clone());
-                    }
+            let sprite = self
+                .sprite_of
+                .get(&u.class)
+                .map_or(u.class.as_str(), |s| s.as_str());
+            if let Some(key) = self.sheet(sprite, u.side) {
+                if !textures.iter().any(|t| t == key) {
+                    textures.push(key.to_string());
                 }
             }
         }
@@ -419,6 +423,16 @@ impl BattleScreen {
     }
 
     // ----- helpers -----------------------------------------------------------------------
+
+    /// Texture key of a unit sheet.
+    fn sheet(&self, sprite: &str, side: Side) -> Option<&str> {
+        let i = match side {
+            Side::Player => 0,
+            Side::Ally => 1,
+            Side::Enemy => 2,
+        };
+        self.sheets.get(sprite).map(|keys| keys[i].as_str())
+    }
 
     fn def(&self) -> &hero_core::battledef::BattleDef {
         self.state.def(&self.pack)
@@ -735,7 +749,7 @@ impl BattleScreen {
         self.panel = Panel::Menu(menu);
     }
 
-    fn open_unit_list(&mut self, ctx: &Ctx, side: Side) {
+    fn open_unit_list(&mut self, side: Side) {
         let ids: Vec<UnitId> = self
             .state
             .units
@@ -772,7 +786,6 @@ impl BattleScreen {
         let w = 300.0;
         menu.set_width(w);
         menu.set_position(((VIRTUAL_W - w) / 2.0).round(), VIEWPORT.y + 30.0);
-        let _ = ctx;
         self.panel = Panel::Units { side, ids, menu };
     }
 
@@ -977,25 +990,17 @@ impl BattleScreen {
                 ids,
                 mut menu,
             } => {
-                let switch = if ctx.input.nav() == Some(crate::input::Dir::Left) {
-                    Some(-1)
-                } else if ctx.input.nav() == Some(crate::input::Dir::Right) {
-                    Some(1)
-                } else {
-                    ctx.input.tap().and_then(unit_tab_at)
+                let current = UNIT_TABS.iter().position(|s| *s == side).unwrap_or(0);
+                let switch = match ctx.input.nav() {
+                    Some(crate::input::Dir::Left) => Some((current + 2) % 3),
+                    Some(crate::input::Dir::Right) => Some((current + 1) % 3),
+                    _ => ctx.input.tap().and_then(unit_tab_at),
                 };
-                if let Some(d) = switch {
-                    let sides = [Side::Player, Side::Ally, Side::Enemy];
-                    let next = match d {
-                        -1 | 1 => {
-                            let i = sides.iter().position(|s| *s == side).unwrap_or(0) as i32;
-                            sides[(i + d).rem_euclid(3) as usize]
-                        }
-                        i => sides[(i - 10) as usize],
-                    };
+                if let Some(tab) = switch {
+                    let next = UNIT_TABS[tab];
                     ctx.sfx(sfx::CURSOR);
                     ctx.input.consume();
-                    self.open_unit_list(ctx, next);
+                    self.open_unit_list(next);
                     return Transition::None;
                 }
                 match menu.update(ctx) {
@@ -1022,8 +1027,7 @@ impl BattleScreen {
         }
 
         // Command / strategy / item menus.
-        if let Some((kind, menu)) = self.mode_menu.as_mut() {
-            let kind = *kind;
+        if let Some((_, menu)) = self.mode_menu.as_mut() {
             let ev = menu.update(ctx);
             let over = ctx.input.pointer().is_some_and(|p| menu.rect().contains(p));
             match ev {
@@ -1047,7 +1051,6 @@ impl BattleScreen {
                     }
                 }
             }
-            let _ = kind;
             return Transition::None;
         }
 
@@ -1087,7 +1090,7 @@ impl BattleScreen {
                 Transition::None
             }
             BattleMenuItem::Units => {
-                self.open_unit_list(ctx, Side::Player);
+                self.open_unit_list(Side::Player);
                 Transition::None
             }
             BattleMenuItem::Objective => {
@@ -1422,7 +1425,7 @@ impl BattleScreen {
                 Color::new(0.0, 0.0, 0.0, 0.28 * v.alpha),
             );
             if !flicker {
-                let key = self.sheets.get(&(sprite.to_string(), v.side));
+                let key = self.sheet(sprite, v.side);
                 match key.map(|k| (k, ctx.media.texture_state(k))) {
                     Some((k, AssetState::Ready)) => {
                         if let Some(tex) = ctx.media.texture(k) {
@@ -1804,7 +1807,7 @@ impl BattleScreen {
                 let m = menu.rect();
                 let frame = Rect::new(m.x - 4.0, m.y - 26.0, m.w + 8.0, m.h + 30.0);
                 draw_window(frame);
-                for (i, s) in [Side::Player, Side::Ally, Side::Enemy].iter().enumerate() {
+                for (i, s) in UNIT_TABS.iter().enumerate() {
                     let tab = unit_tab_rect(i);
                     let active = s == side;
                     draw_window_ex(
@@ -1895,27 +1898,27 @@ impl BattleScreen {
     }
 
     fn draw_objective(&self, ctx: &Ctx, footer: &str) {
-        let r = hud::draw_text_window(
+        hud::draw_text_window(
             ctx,
             &self.def().objective,
             &self.objective_sections(),
             footer,
         );
-        let _ = r;
     }
 }
 
-/// Rectangle of a side tab of the unit list (0 = 아군, 1 = 우군, 2 = 적군).
+/// Sides in the order of the unit list tabs.
+const UNIT_TABS: [Side; 3] = [Side::Player, Side::Ally, Side::Enemy];
+
+/// Rectangle of a side tab of the unit list (index into [`UNIT_TABS`]).
 fn unit_tab_rect(i: usize) -> Rect {
     let x0 = (VIRTUAL_W - 300.0) / 2.0;
     Rect::new(x0 + 4.0 + i as f32 * 62.0, VIEWPORT.y + 6.0, 58.0, 19.0)
 }
 
-/// Tab under a tap in the unit list: `Some(10 + index)`.
-fn unit_tab_at(p: Vec2) -> Option<i32> {
-    (0..3)
-        .find(|&i| unit_tab_rect(i).contains(p))
-        .map(|i| 10 + i as i32)
+/// Index of the unit list tab under a tap.
+fn unit_tab_at(p: Vec2) -> Option<usize> {
+    (0..UNIT_TABS.len()).find(|&i| unit_tab_rect(i).contains(p))
 }
 
 /// Icon of a strategy: its element, or its effect for element-less strategies.

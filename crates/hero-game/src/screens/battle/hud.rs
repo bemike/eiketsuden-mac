@@ -328,15 +328,18 @@ pub fn draw_crown(at: Vec2, alpha: f32) {
     );
 }
 
-/// Orbiting dots above a confused unit.
+/// Stars circling above a confused unit.
 pub fn draw_confusion(center: Vec2, time: f64, alpha: f32) {
+    let dark = Color::new(0.1, 0.05, 0.0, 0.8 * alpha);
+    let star = Color::from_hex(0xffe066).with_alpha(alpha);
     for i in 0..3 {
         let a = time as f32 * 4.0 + i as f32 * std::f32::consts::TAU / 3.0;
-        let p = center + vec2(a.cos() * 5.0, a.sin() * 2.0);
-        fill_rect(
-            Rect::new(p.x.round(), p.y.round(), 2.0, 2.0),
-            Color::from_hex(0xffe066).with_alpha(alpha),
-        );
+        let p = (center + vec2(a.cos() * 6.0, a.sin() * 2.5)).round();
+        // A small plus sign with a dark rim, readable on any terrain.
+        fill_rect(Rect::new(p.x - 2.0, p.y - 1.0, 5.0, 3.0), dark);
+        fill_rect(Rect::new(p.x - 1.0, p.y - 2.0, 3.0, 5.0), dark);
+        fill_rect(Rect::new(p.x - 1.0, p.y, 3.0, 1.0), star);
+        fill_rect(Rect::new(p.x, p.y - 1.0, 1.0, 3.0), star);
     }
 }
 
