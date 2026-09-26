@@ -6,6 +6,7 @@
 //! that are not units of the battle), at their `officers.toml` levels. Later battles are
 //! therefore played with an under-levelled army, so their win rates are pessimistic.
 
+use crate::Failure;
 use hero_core::battle::{BattleState, DefeatReason, Outcome};
 use hero_core::battledef::{BattleDef, Condition, EventAction, Trigger};
 use hero_core::campaign::{CampaignState, Node};
@@ -20,19 +21,20 @@ use std::path::Path;
 /// counts as stuck.
 pub const MAX_PHASES: u32 = 200;
 
-pub fn run(dir: &Path, seeds: u32, only: Option<&str>) -> Result<bool, String> {
-    let pack = crate::load_pack(dir)?;
+/// `Ok(true)` when no battle failed. An unknown `only` battle is a [`Failure::Usage`].
+pub fn run(dir: &Path, seeds: u32, only: Option<&str>) -> Result<bool, Failure> {
+    let pack = crate::load_pack(dir).map_err(Failure::Failed)?;
     let errors = pack
         .validate()
         .iter()
         .filter(|i| i.severity == Severity::Error)
         .count();
     if errors > 0 {
-        return Err(format!(
+        return Err(Failure::Failed(format!(
             "the pack has {errors} validation error(s); run `hero-tools validate` first"
-        ));
+        )));
     }
-    let battles = battle_order(&pack, only)?;
+    let battles = battle_order(&pack, only).map_err(Failure::Usage)?;
     println!(
         "Simulating {} battle(s) x {seeds} seed(s), at most {MAX_PHASES} phases per run\n",
         battles.len()
@@ -61,13 +63,18 @@ pub fn run(dir: &Path, seeds: u32, only: Option<&str>) -> Result<bool, String> {
     Ok(failed == 0)
 }
 
-/// Battles in campaign order, then battles the campaign does not use (by id).
+/// Battles in campaign order, then battles the campaign does not use (by id); only `only`
+/// when it is given. An unknown `only` is an error that lists the pack's battles.
 pub fn battle_order(pack: &Pack, only: Option<&str>) -> Result<Vec<String>, String> {
     if let Some(id) = only {
         return if pack.battles.contains_key(id) {
             Ok(vec![id.to_string()])
         } else {
-            Err(format!("unknown battle `{id}`"))
+            let known: Vec<&str> = pack.battles.keys().map(|k| k.as_str()).collect();
+            Err(format!(
+                "unknown battle `{id}` (the pack's battles: {})",
+                known.join(", ")
+            ))
         };
     }
     let mut order: Vec<String> = Vec::new();
@@ -406,9 +413,10 @@ mod tests {
         let pack = fixture_pack();
         assert_eq!(battle_order(&pack, None).unwrap(), ["b01", "b02"]);
         assert_eq!(battle_order(&pack, Some("b02")).unwrap(), ["b02"]);
-        assert!(battle_order(&pack, Some("b99"))
-            .unwrap_err()
-            .contains("unknown battle `b99`"));
+        assert_eq!(
+            battle_order(&pack, Some("b99")).unwrap_err(),
+            "unknown battle `b99` (the pack's battles: b01, b02)"
+        );
 
         // A battle the campaign does not use still runs, after the campaign's.
         let mut pack = pack;
@@ -416,6 +424,21 @@ mod tests {
         extra.id = "a00".into();
         pack.battles.insert("a00".into(), extra);
         assert_eq!(battle_order(&pack, None).unwrap(), ["b01", "b02", "a00"]);
+    }
+
+    #[test]
+    fn unknown_battles_are_usage_errors() {
+        // A typo in `--battle` is a bad command line (exit 2), not a broken pack (exit 1).
+        let dir = crate::tests::fixture_dir();
+        match run(&dir, 1, Some("b99")) {
+            Err(Failure::Usage(msg)) => assert!(msg.contains("unknown battle `b99`"), "{msg}"),
+            other => panic!("expected a usage error, got {other:?}"),
+        }
+        let missing = dir.join("does-not-exist");
+        assert!(matches!(
+            run(&missing, 1, Some("b01")),
+            Err(Failure::Failed(_))
+        ));
     }
 
     #[test]
