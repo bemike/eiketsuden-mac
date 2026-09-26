@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    # GitHub Pages needs a public repository on the free plan; skip while the repository is private.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       # Fails at once, with a clear message, when the repository's Pages source is not set to
