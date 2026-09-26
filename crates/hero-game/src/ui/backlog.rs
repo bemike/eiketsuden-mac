@@ -1,7 +1,7 @@
 //! Backlog (최근 대사): the recent dialogue of a drama scene and a scrollable window showing it.
 //!
 //! [`Backlog`] records what was said; [`BacklogView`] is the modal window (arrows / PageUp /
-//! PageDown / wheel / drag scroll, confirm, cancel or a tap outside closes it). It opens scrolled to
+//! PageDown / wheel / drag scroll, confirm, cancel or a tap closes it). It opens scrolled to
 //! the newest line, at the bottom.
 
 use super::theme;
@@ -167,11 +167,10 @@ impl BacklogView {
             ctx.sfx(sfx::CANCEL);
             return true;
         }
-        if let Some(p) = input.tap() {
-            if !WINDOW.contains(p) {
-                ctx.sfx(sfx::CANCEL);
-                return true;
-            }
+        // A tap closes it too (dragging scrolls, so taps are free for this on touch screens).
+        if input.tap().is_some() {
+            ctx.sfx(sfx::CANCEL);
+            return true;
         }
         let page = Self::viewport().h - 16.0;
         let mut dy = 0.0;
@@ -206,7 +205,7 @@ impl BacklogView {
             TextStyle::main(theme::TEXT_ACCENT).shadow(theme::TEXT_SHADOW),
         );
         gfx.text_aligned(
-            "방향키·휠 스크롤 · X 닫기",
+            "방향키·휠·끌기 스크롤 · X·터치 닫기",
             inner.x,
             inner.y + 2.0,
             inner.w - 2.0,

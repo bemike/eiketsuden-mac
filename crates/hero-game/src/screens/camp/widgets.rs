@@ -72,7 +72,7 @@ pub fn draw_help_colored(ctx: &Ctx, text: &str, color: Color) {
         Color::new(0.0, 0.0, 0.05, 0.75),
     );
     let gfx = &ctx.gfx;
-    let fitted = truncate_to(text, VIRTUAL_W - 20.0, |c| {
+    let fitted = truncate_to(text, BACK_BUTTON.x - 16.0, |c| {
         gfx.char_width(c, FontId::Small, 1)
     });
     gfx.text(
@@ -80,6 +80,47 @@ pub fn draw_help_colored(ctx: &Ctx, text: &str, color: Color) {
         10.0,
         HELP_Y + 1.0,
         TextStyle::small(color).shadow(theme::TEXT_SHADOW),
+    );
+}
+
+/// The 돌아가기 button at the right end of the help bar: mouse and touch have no cancel key, so
+/// every camp sub-screen offers this button for it.
+pub const BACK_BUTTON: Rect = Rect {
+    x: VIRTUAL_W - 70.0,
+    y: HELP_Y - 2.0,
+    w: 62.0,
+    h: 16.0,
+};
+
+/// Whether the 돌아가기 button was tapped this frame (the tap is consumed and the cancel sound
+/// played).
+pub fn back_tapped(ctx: &mut Ctx) -> bool {
+    if ctx.input.tapped(BACK_BUTTON) {
+        ctx.input.consume();
+        ctx.sfx(sfx::CANCEL);
+        true
+    } else {
+        false
+    }
+}
+
+/// Draw the 돌아가기 button.
+pub fn draw_back_button(ctx: &Ctx) {
+    let r = BACK_BUTTON;
+    let hover = ctx.input.hovering(r);
+    draw_window_ex(r, WindowStyle::Panel, if hover { 1.0 } else { 0.85 });
+    if hover {
+        draw_highlight(inset(r, 2.0), true, ctx.time);
+    }
+    let color = if hover { theme::TEXT } else { theme::TEXT_DIM };
+    draw_side_arrow(r.x + 9.0, r.center().y, false, color);
+    ctx.gfx.text_aligned(
+        "돌아가기",
+        r.x + 12.0,
+        r.y + 2.0,
+        r.w - 14.0,
+        Align::Center,
+        TextStyle::small(color),
     );
 }
 

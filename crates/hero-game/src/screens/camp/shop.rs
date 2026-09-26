@@ -2,7 +2,7 @@
 //! price. Every purchase and sale goes through `CampaignState::buy` / `sell`, whose errors are
 //! shown as toasts.
 
-use super::widgets::LIST_TOP;
+use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
 use super::widgets::{
     draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame, item_effect,
     item_icon, slot_name, visible_rows, QuantityDialog, TOP,
@@ -331,6 +331,9 @@ impl Screen for ShopScreen {
             }
             return Transition::None;
         }
+        if back_tapped(ctx) {
+            return Transition::Pop;
+        }
         if let Some(p) = ctx.input.tap() {
             for tab in [Tab::Buy, Tab::Sell] {
                 if Self::tab_rect(tab).contains(p) {
@@ -512,6 +515,7 @@ impl Screen for ShopScreen {
             }
         }
         draw_help(ctx, "←→ 구입/매각 · Z 선택 · X 돌아가기");
+        draw_back_button(ctx);
         if let Some((_, dialog)) = &self.dialog {
             dialog.draw(ctx);
         }

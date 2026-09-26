@@ -2,7 +2,7 @@
 //! `CampaignState::use_item`. Every officer is listed with whether the chosen item works on them
 //! (a dry run of the same call decides) and, if not, why.
 
-use super::widgets::LIST_TOP;
+use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_header, draw_help, draw_list_frame, draw_officer_sprite,
     item_effect, item_icon, officer_name, visible_rows, TOP,
@@ -362,6 +362,14 @@ impl Screen for ToolsScreen {
                 return Transition::None;
             }
         }
+        if back_tapped(ctx) {
+            if !self.choosing_officer {
+                return Transition::Pop;
+            }
+            self.choosing_officer = false;
+            self.rebuild(ctx);
+            return Transition::None;
+        }
         if self.choosing_officer {
             match self.officer_menu.update(ctx) {
                 MenuEvent::Selected(i) => self.confirm(ctx, i),
@@ -374,7 +382,7 @@ impl Screen for ToolsScreen {
             return Transition::None;
         }
         if self.items.is_empty() {
-            if ctx.input.cancel() || ctx.input.confirm() {
+            if ctx.input.cancel() {
                 ctx.sfx(sfx::CANCEL);
                 return Transition::Pop;
             }
@@ -470,6 +478,7 @@ impl Screen for ToolsScreen {
             _ => "X 돌아가기".to_string(),
         };
         draw_help(ctx, &help);
+        draw_back_button(ctx);
 
         match &self.popup {
             Popup::None => {}

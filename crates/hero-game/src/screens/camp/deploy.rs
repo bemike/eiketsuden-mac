@@ -16,7 +16,7 @@
 //! new battle's rules.
 
 use super::stats::officer_stats;
-use super::widgets::LIST_TOP;
+use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_header, draw_help, draw_list_frame, draw_officer_sprite,
     draw_stats_block, officer_name, portrait_key, visible_rows, TOP,
@@ -216,6 +216,14 @@ impl DeployScreen {
         }
     }
 
+    /// Store the selection in the campaign and close the screen.
+    fn leave(&mut self, ctx: &mut Ctx) -> Transition {
+        if let Some(session) = ctx.session.as_mut() {
+            session.campaign.deployed = self.selection.clone();
+        }
+        Transition::Pop
+    }
+
     fn rebuild(&mut self, ctx: &Ctx) {
         let (Some(pack), Some(session)) = (ctx.pack.as_deref(), ctx.session.as_ref()) else {
             return;
@@ -273,6 +281,9 @@ impl Screen for DeployScreen {
         let Some(def) = pack.battles.get(&self.battle) else {
             return Transition::Pop;
         };
+        if back_tapped(ctx) {
+            return self.leave(ctx);
+        }
         match self.menu.update(ctx) {
             MenuEvent::Selected(i) => {
                 let Some(id) = self.officers.get(i).cloned() else {
@@ -290,12 +301,7 @@ impl Screen for DeployScreen {
                 }
                 Transition::None
             }
-            MenuEvent::Cancelled => {
-                if let Some(session) = ctx.session.as_mut() {
-                    session.campaign.deployed = self.selection.clone();
-                }
-                Transition::Pop
-            }
+            MenuEvent::Cancelled => self.leave(ctx),
             _ => Transition::None,
         }
     }
@@ -435,6 +441,7 @@ impl Screen for DeployScreen {
             TextStyle::small(theme::TEXT),
         );
         draw_help(ctx, "Z 출진/대기 전환 · X 편성 완료");
+        draw_back_button(ctx);
     }
 }
 

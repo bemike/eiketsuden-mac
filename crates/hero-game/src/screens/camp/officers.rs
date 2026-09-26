@@ -3,6 +3,7 @@
 //! equipment and biography.
 
 use super::stats::officer_stats;
+use super::widgets::{back_tapped, draw_back_button, BACK_BUTTON};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_list_frame,
     draw_officer_sprite, draw_stats_block, item_icon, officer_name, portrait_key, slot_icon,
@@ -326,23 +327,33 @@ impl Screen for OfficersScreen {
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         let count = ctx.session.as_ref().map_or(0, |s| s.campaign.roster.len());
+        let back = back_tapped(ctx);
         if let Some(i) = self.detail {
-            let step = match ctx.input.nav() {
+            // Keys page through the army; a tap on the left or right half does the same.
+            let mut step = match ctx.input.nav() {
                 Some(Dir::Left | Dir::Up) => -1,
                 Some(Dir::Right | Dir::Down) => 1,
                 _ => 0,
             };
-            if step != 0 && count > 1 {
+            if let Some(p) = ctx.input.tap() {
+                step = if p.x < VIRTUAL_W / 2.0 { -1 } else { 1 };
+            }
+            if back || ctx.input.cancel() || ctx.input.confirm_key() {
+                ctx.input.consume();
+                if !back {
+                    ctx.sfx(sfx::CANCEL);
+                }
+                self.detail = None;
+            } else if step != 0 && count > 1 {
                 let next = (i as i32 + step).rem_euclid(count as i32) as usize;
                 self.detail = Some(next);
                 self.menu.set_cursor(next);
                 ctx.sfx(sfx::CURSOR);
-            } else if ctx.input.cancel() || ctx.input.confirm() {
-                ctx.input.consume();
-                ctx.sfx(sfx::CANCEL);
-                self.detail = None;
             }
             return Transition::None;
+        }
+        if back {
+            return Transition::Pop;
         }
         match self.menu.update(ctx) {
             MenuEvent::Selected(i) if i < count => self.detail = Some(i),
@@ -374,7 +385,7 @@ impl Screen for OfficersScreen {
                     &format!("{} / {}", i + 1, campaign.roster.len()),
                     0.0,
                     HELP_Y + 1.0,
-                    VIRTUAL_W - 10.0,
+                    BACK_BUTTON.x - 8.0,
                     Align::Right,
                     TextStyle::small(theme::TEXT_DIM),
                 );
@@ -385,6 +396,7 @@ impl Screen for OfficersScreen {
                 draw_help(ctx, "Z 자세히 · X 돌아가기");
             }
         }
+        draw_back_button(ctx);
     }
 }
 

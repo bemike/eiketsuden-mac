@@ -3,7 +3,7 @@
 //! previews ATK / DEF / movement before → after with the battle engine's formulas.
 
 use super::stats::{officer_stats, preview_change, EquipChange};
-use super::widgets::LIST_TOP;
+use super::widgets::{back_tapped, draw_back_button, LIST_TOP};
 use super::widgets::{
     class_name, draw_camp_backdrop, draw_caption, draw_header, draw_help, draw_help_colored,
     draw_list_frame, draw_officer_sprite, draw_stats_block, item_effect, item_icon, officer_name,
@@ -320,6 +320,16 @@ impl Screen for EquipScreen {
     }
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
+        // The 돌아가기 button steps back one level, like cancel.
+        if back_tapped(ctx) {
+            self.focus = match self.focus {
+                Focus::Officers => return Transition::Pop,
+                Focus::Slots => Focus::Officers,
+                Focus::Items { .. } => Focus::Slots,
+            };
+            self.rebuild(ctx);
+            return Transition::None;
+        }
         match std::mem::replace(&mut self.focus, Focus::Officers) {
             Focus::Officers => match self.officers.update(ctx) {
                 MenuEvent::Selected(_) => {
@@ -394,6 +404,7 @@ impl Screen for EquipScreen {
         draw_window_ex(PANEL, WindowStyle::Panel, 1.0);
         let Some(officer) = campaign.roster.get(self.officers.cursor()) else {
             draw_help(ctx, "X 돌아가기");
+            draw_back_button(ctx);
             return;
         };
         let x = PANEL.x + 8.0;
@@ -518,6 +529,7 @@ impl Screen for EquipScreen {
                 ),
             };
             draw_help_colored(ctx, &text, color);
+            draw_back_button(ctx);
             return;
         }
         draw_help(
@@ -527,6 +539,7 @@ impl Screen for EquipScreen {
                 _ => "Z 장비 바꾸기 · X 무장 목록",
             },
         );
+        draw_back_button(ctx);
     }
 }
 
