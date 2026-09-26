@@ -144,22 +144,6 @@ impl DialogueBox {
         top
     }
 
-    pub fn speaker(&self) -> Option<&str> {
-        self.speaker.as_deref()
-    }
-
-    pub fn portrait(&self) -> Option<&str> {
-        self.portrait.as_deref()
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.finished
-    }
-
-    pub fn is_typing(&self) -> bool {
-        self.writer.is_typing()
-    }
-
     /// Reveal the rest of the current page.
     pub fn complete_page(&mut self) {
         self.writer.complete_page();
