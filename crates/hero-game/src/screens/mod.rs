@@ -2,6 +2,7 @@
 //! [`crate::flow::node_screen`].
 
 pub mod backdrop;
+pub mod camp;
 pub mod credits;
 pub mod drama;
 pub mod error;

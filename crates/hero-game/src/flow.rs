@@ -29,7 +29,9 @@
 use crate::app::{Ctx, Screen};
 use crate::platform::unix_now;
 use crate::saves::{self, SaveSlot};
+use crate::screens::camp::CampScreen;
 use crate::screens::credits::CreditsScreen;
+use crate::screens::drama::DramaScreen;
 use crate::screens::error::ErrorScreen;
 use crate::screens::gameover::GameOverScreen;
 use crate::screens::placeholder::PlaceholderScreen;
@@ -277,19 +279,25 @@ fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn S
 
 /// **Plug-in point**: the screen for a campaign node (see the module docs).
 pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Screen> {
-    let _ = (ctx, pack);
+    let _ = pack;
     match node {
-        // Integration: DramaScreen for `scene`, returning `Flow::Advance` when it ends.
-        Node::Drama { .. } => Box::new(PlaceholderScreen::for_node(node)),
-        // Integration: CampScreen (shop / equipment / deploy / save), returning `Flow::Advance`.
-        Node::Camp { .. } => Box::new(PlaceholderScreen::for_node(node)),
+        Node::Drama { scene, .. } => Box::new(DramaScreen::node(ctx, scene)),
+        Node::Camp {
+            title,
+            shop,
+            battle,
+            ..
+        } => Box::new(CampScreen::new(title, shop, battle.as_deref())),
         // Integration: BattleScreen, returning `Flow::BattleEnded(state)`.
         Node::Battle { .. } => Box::new(PlaceholderScreen::for_node(node)),
         Node::Ending {
             scene: None, title, ..
         } => Box::new(CreditsScreen::ending(title.clone())),
-        // Integration: DramaScreen for `scene`, then `Flow::Ending { title }`.
-        Node::Ending { .. } => Box::new(PlaceholderScreen::for_node(node)),
+        Node::Ending {
+            scene: Some(scene),
+            title,
+            ..
+        } => Box::new(DramaScreen::ending(ctx, scene, title.clone())),
         Node::Branch { id, .. } => Box::new(ErrorScreen::recoverable(
             "캠페인 오류",
             vec![format!("분기 노드 `{id}`는 화면을 가질 수 없습니다.")],
