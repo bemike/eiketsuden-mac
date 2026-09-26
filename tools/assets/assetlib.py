@@ -28,6 +28,21 @@ TRANSPARENT: RGBA = (0, 0, 0, 0)
 
 
 @dataclass(frozen=True)
+class Part:
+    """One downloaded file of a source (a single-file source has exactly one, named "")."""
+
+    name: str
+    file: str
+    url: str
+    size: int
+    sha256: str
+
+    @property
+    def path(self) -> Path:
+        return CACHE_DIR / self.file
+
+
+@dataclass(frozen=True)
 class Source:
     id: str
     title: str
@@ -35,24 +50,57 @@ class Source:
     license: str
     license_url: str
     homepage: str
-    file: str
-    size: int
-    sha256: str
-    url: str = ""
+    parts: tuple[Part, ...]
     itch_page: str = ""
     itch_upload: int = 0
 
     @property
-    def path(self) -> Path:
-        return CACHE_DIR / self.file
+    def multipart(self) -> bool:
+        return len(self.parts) != 1 or self.parts[0].name != ""
+
+    def part(self, name: str = "") -> Part:
+        for p in self.parts:
+            if p.name == name:
+                return p
+        raise SourceError(f"{self.id}: sources.toml pins no part {name!r}")
 
 
 def load_sources(path: Path = TOOLS_DIR / "sources.toml") -> dict[str, Source]:
+    """Parse sources.toml.
+
+    A plain source pins one file (`file`, `url`, `size`, `sha256`). A source made of several files
+    of the same work (e.g. the scanned pages of a book) gives `file` and `url` as templates with a
+    `{part}` placeholder and pins each file in a `[sources.<id>.parts]` table of
+    `<part> = { size = ..., sha256 = "..." }`.
+    """
     with path.open("rb") as f:
         doc = tomllib.load(f)
     out: dict[str, Source] = {}
     for sid, entry in doc["sources"].items():
         itch = entry.get("itch", {})
+        if "parts" in entry:
+            if "{part}" not in entry["file"] or "{part}" not in entry.get("url", ""):
+                raise SourceError(f"{sid}: a source with parts needs `file` and `url` templates containing {{part}}")
+            parts = tuple(
+                Part(
+                    name=name,
+                    file=entry["file"].format(part=name),
+                    url=entry["url"].format(part=name),
+                    size=int(p["size"]),
+                    sha256=p["sha256"].lower(),
+                )
+                for name, p in entry["parts"].items()
+            )
+        else:
+            parts = (
+                Part(
+                    name="",
+                    file=entry["file"],
+                    url=entry.get("url", ""),
+                    size=int(entry["size"]),
+                    sha256=entry["sha256"].lower(),
+                ),
+            )
         out[sid] = Source(
             id=sid,
             title=entry["title"],
@@ -60,10 +108,7 @@ def load_sources(path: Path = TOOLS_DIR / "sources.toml") -> dict[str, Source]:
             license=entry["license"],
             license_url=entry["license_url"],
             homepage=entry["homepage"],
-            file=entry["file"],
-            size=int(entry["size"]),
-            sha256=entry["sha256"].lower(),
-            url=entry.get("url", ""),
+            parts=parts,
             itch_page=itch.get("page", ""),
             itch_upload=int(itch.get("upload", 0)),
         )
@@ -91,33 +136,51 @@ class Sources:
         self.meta = load_sources()
         self._zips: dict[str, zipfile.ZipFile] = {}
         self.used: set[str] = set()
+        # (source id, part name) of every file read, to find pinned parts nothing uses
+        self.used_parts: set[tuple[str, str]] = set()
 
     def verify(self) -> None:
         """Check every cached file against sources.toml before anything is built from it."""
         problems = []
         for src in self.meta.values():
-            if not src.path.exists():
-                problems.append(f"{src.id}: {src.path} missing (run tools/assets/fetch.py)")
-            elif src.path.stat().st_size != src.size or sha256_file(src.path) != src.sha256:
-                problems.append(f"{src.id}: {src.path} does not match the pinned size/sha256")
+            for part in src.parts:
+                label = f"{src.id}[{part.name}]" if part.name else src.id
+                if not part.path.exists():
+                    problems.append(f"{label}: {part.path} missing (run tools/assets/fetch.py)")
+                elif part.path.stat().st_size != part.size or sha256_file(part.path) != part.sha256:
+                    problems.append(f"{label}: {part.path} does not match the pinned size/sha256")
         if problems:
             raise SourceError("\n".join(problems))
 
+    def unused(self) -> list[str]:
+        """Pinned sources (or parts of sources) that no step has read."""
+        out = []
+        for src in self.meta.values():
+            for part in src.parts:
+                if (src.id, part.name) not in self.used_parts:
+                    out.append(f"{src.id}[{part.name}]" if part.name else src.id)
+        return sorted(out)
+
+    def path(self, sid: str, part: str = "") -> Path:
+        """Cached path of a source file, recorded as used (for tools that read files themselves)."""
+        self.used.add(sid)
+        self.used_parts.add((sid, part))
+        return self.meta[sid].part(part).path
+
     def _zip(self, sid: str) -> zipfile.ZipFile:
         if sid not in self._zips:
-            self._zips[sid] = zipfile.ZipFile(self.meta[sid].path)
+            self._zips[sid] = zipfile.ZipFile(self.path(sid))
         return self._zips[sid]
 
     def member(self, sid: str, name: str) -> bytes:
-        self.used.add(sid)
+        self.path(sid)
         try:
             return self._zip(sid).read(name)
         except KeyError as e:
             raise SourceError(f"{sid}: archive has no member {name!r}") from e
 
-    def file(self, sid: str) -> bytes:
-        self.used.add(sid)
-        return self.meta[sid].path.read_bytes()
+    def file(self, sid: str, part: str = "") -> bytes:
+        return self.path(sid, part).read_bytes()
 
     def image(self, sid: str, name: str | None = None) -> Image.Image:
         data = self.file(sid) if name is None else self.member(sid, name)

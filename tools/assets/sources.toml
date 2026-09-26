@@ -7,6 +7,8 @@
 #
 # Download methods:
 #   url  = "..."                 plain HTTP(S) GET
+#   [sources.<id>.parts]         several files of one work: `file` and `url` are templates with a
+#                                `{part}` placeholder, each part pins its own size and sha256
 #   [sources.<id>.itch]          itch.io "name your own price" flow: GET the page, POST its
 #                                csrf_token to <page>/file/<upload>, then GET the short-lived
 #                                signed URL returned in the JSON answer.
@@ -68,3 +70,55 @@ url = "https://github.com/quiple/galmuri/releases/download/v2.40.4/Galmuri-v2.40
 file = "Galmuri-v2.40.4.zip"
 size = 19938873
 sha256 = "c8b3d9861a62ae73c8b1178091401cd79994812437ef386413f6dd54856e60e7"
+
+# Portrait pages (繡像) of 增像全圖三國演義, a late-Qing lithographed edition of the novel, as
+# rendered by Wikimedia Commons from the CADAL scan (djvu pages 15-50, four figures per page). The
+# page renders are Wikimedia thumbnails of the {{PD-old}} djvu file; should Wikimedia ever re-render
+# them, fetch.py reports a hash mismatch and the parts must be re-pinned (the crop boxes in
+# portraits.toml stay valid for any 1920 px wide render).
+[sources.xiuxiang]
+title = "增像全圖三國演義 (Illustrated Romance of the Three Kingdoms), portrait pages, CADAL scan 07015122"
+author = "anonymous late-Qing illustrators; scan: China Academic Digital Associative Library / Fudan University Library"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/Template:PD-old"
+homepage = "https://commons.wikimedia.org/wiki/File:CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu"
+url = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu/page{part}-1920px-CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu.jpg"
+file = "xiuxiang/page{part}.jpg"
+
+[sources.xiuxiang.parts]
+15 = { size = 508123, sha256 = "0683b3eb1fde40535ac941c5f5d21f0acc4a4036efdbf7eeec6344ef40065ae7" }
+16 = { size = 396198, sha256 = "bbcd42326e8bf0498bafbb18c571e2d44d9a05046c65c5acc32a8020175abb9f" }
+17 = { size = 368631, sha256 = "889d6536879df7c7ecbe3292f890953e14eddca4cf66f79f51a768af2dbe9351" }
+18 = { size = 331006, sha256 = "402afa10d5e79c70a1d4d64f9f63152a6e8c05b71c172d1cb4b359762982e729" }
+19 = { size = 417794, sha256 = "cdc8bd07c8a0cd338aab3a96cce2665e783ce2879ebd808a0242d35c14a4b9b0" }
+20 = { size = 383991, sha256 = "4e152b2fa635536ba8e3c03c84b6173a2f1faf608d9fe4634c1c9af654ec02f1" }
+21 = { size = 373374, sha256 = "3606b7811c9df1af692f0390d0ca72452054fa94f8363fb276c42355fbc4bf21" }
+22 = { size = 333251, sha256 = "d7282fe494c3d028d233c34652ae0edb82410385a0e7f33ca9ddf62a2e54de20" }
+23 = { size = 400314, sha256 = "0c050a4b1af50908b8fdf49441edd79f7363a469f0f7e962da34ab4f43e5c471" }
+24 = { size = 316218, sha256 = "968c70f50d0527a719ce2862eb716c97b09daf8ceaadfa5c136501e993b2a0ea" }
+25 = { size = 370996, sha256 = "2e9cdf710ff6474592502aa861ccc7d31e5851d6d5beb0dec3d3a18448d1fc4c" }
+26 = { size = 367171, sha256 = "c9623cf6ec6c03847d486157de45797a43c76a27cdad5f36e033b748eee9389d" }
+27 = { size = 397751, sha256 = "02f3a5f3331f21b9e5144b5a318d087f058d0a0bfc37e960d769f090900b3bf8" }
+28 = { size = 303590, sha256 = "bc4ff88e700833e394447e0ab4e6e23feede2db08fe0e63d3a68b45b41b4dc05" }
+29 = { size = 399756, sha256 = "8cdc28d7cfd5dffe9bcb07e06672a5451e39a30f15eac0e6e9a090a8b9393de3" }
+30 = { size = 350036, sha256 = "d3dcc4436a378e5c084a5c3b3225d4a04499ba13080f36bee1c054359ed9a2eb" }
+31 = { size = 395712, sha256 = "310644b70cc31dc3f186c7a00823c74528c25ea01a6d9926e7621f15a1908c34" }
+32 = { size = 358214, sha256 = "45a09c035e3457c7f40e2537f584941cfade5aa2aa8833f020491be22231454e" }
+33 = { size = 357362, sha256 = "2f4b002a812a4ef1811742f349ef3f2f36b704b6f9b0894503671ecbaa6f5312" }
+34 = { size = 348601, sha256 = "123356a935aca6126035ea1a6dc43cc02d664138869795342ec246639bbfa7fd" }
+35 = { size = 400290, sha256 = "2127d3b620b5556689144475bacd11784c96c6ac590025e6e24f23cf96a91d51" }
+36 = { size = 378816, sha256 = "34086072199a5e7789197a4909da63b56e2ee5ea9e692970f0aedfa1eba13095" }
+37 = { size = 394928, sha256 = "bcf7fc369e6ea0d0df4e17bef8af247bab5ddcae4127daefd55639a9348994d9" }
+38 = { size = 385947, sha256 = "cdace82a1f7d8fc1529d43e8b5331c6973565cc2667cdb8c546f7f2e77cdfc79" }
+39 = { size = 372983, sha256 = "868fde9e2e277cf5ee18c8b971151544bc7f9d4d7cde170e053a3ddf59e4025e" }
+40 = { size = 331199, sha256 = "641c539061506e66e84dc503ff7580c9ed7f8e0d8cd97bed77c10d748691e986" }
+41 = { size = 380309, sha256 = "2717558792394dd4b5f6ec47fc90055e6dd676db93f730a15bedfb598251936f" }
+42 = { size = 383762, sha256 = "c1cc7501cea34fc1ede8575456c700366202495aa41ca05e5d9fb2b0fd34ee65" }
+43 = { size = 400856, sha256 = "e957f79685d314cc4531a6a382e0389c5e6447002270d5caf9fc8fd52bccec56" }
+44 = { size = 341823, sha256 = "b68e07eae8cb59284576b6e634ec77e9a7a4dd9243cbad24c894668561988fd2" }
+45 = { size = 414534, sha256 = "8026cae23ab862fd0db85106a635ef4bda75a7a356e2c1c437eecb5422a8bc4e" }
+46 = { size = 358066, sha256 = "ce203a3fbf18f99acba649d2ca24523718abd7bb4a59f27920e8c00b7c3703a5" }
+47 = { size = 372527, sha256 = "6f8e8677c0dc2a41cd19c5ddca09b80b782b22cf05001f618a19e61a3dfe6375" }
+48 = { size = 313645, sha256 = "81d204470c25dedf30a355438f303547c7cde7380fcda060d31e3652b59689d2" }
+49 = { size = 368687, sha256 = "0f87b5c86301f68ee85c1ec00486a73cc7d3f77fd9e25cd0efd0df0413da3833" }
+50 = { size = 401729, sha256 = "a574e9a013b60a1e7e660ee1e85b51d9b01680b410b57adaba3ea05c054d496a" }

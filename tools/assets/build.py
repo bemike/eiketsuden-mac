@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the base pack's media (tiles, units, FX, UI, title, SFX, fonts) from the cached sources.
+"""Build the base pack's media (tiles, units, FX, UI, title, portraits, SFX, fonts) from the cached sources.
 
 Run tools/assets/fetch.py first. The build is deterministic: the same sources always give
 byte-identical files, so `--check` can verify that the committed outputs are up to date.
@@ -21,6 +21,7 @@ from pathlib import Path
 from assetlib import PACK_DIR, SourceError, Sources
 from build_audio import build_fonts, build_sfx
 from build_fx import build_fx
+from build_portraits import build_portraits
 from build_terrain import build_terrain
 from build_title import build_title
 from build_ui import build_flags, build_icons
@@ -37,6 +38,7 @@ STEPS: dict[str, Step] = {
     "icons": build_icons,
     "flags": build_flags,
     "title": build_title,
+    "portraits": build_portraits,
 }
 
 # Steps that read other steps' outputs from the pack directory.
@@ -64,7 +66,7 @@ def run(steps: list[str], out: Path) -> list[str]:
         src.close()
     if set(steps) == set(STEPS):
         # sources.toml, fetch.py and CREDITS.md must only list what the pack really uses
-        unused = sorted(set(src.meta) - src.used)
+        unused = src.unused()
         if unused:
             raise SourceError(f"sources pinned in sources.toml but not used by any step: {', '.join(unused)}")
     return written
