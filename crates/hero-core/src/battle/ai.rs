@@ -123,7 +123,6 @@ impl BattleState {
 }
 
 /// Counter-attack data of a potential target (the attacker's tile decides whether it applies).
-#[derive(Clone)]
 struct CounterInfo {
     /// The target's attack offsets (the attacker must stand on one of them).
     offsets: Vec<Pos>,
@@ -135,7 +134,6 @@ struct CounterInfo {
 }
 
 /// Facts about physically attacking one unit that do not depend on the attacker's tile.
-#[derive(Clone)]
 struct AttackInfo {
     value: i64,
     counter: Option<CounterInfo>,
@@ -672,7 +670,8 @@ impl<'a> Planner<'a> {
     /// Damage and chance (percent) of the counter-attack provoked by attacking `target` from
     /// `tile`, when there can be one.
     fn counter_at(&mut self, tile: Pos, target: UnitId) -> Option<(i64, i64)> {
-        let c = self.attack_info(target).counter?;
+        self.attack_info(target);
+        let c = self.attack_cache[&target].counter.as_ref()?;
         let t_pos = self.st.units[target].pos;
         let delta = Pos::new(tile.x - t_pos.x, tile.y - t_pos.y);
         if tile.chebyshev(t_pos) != 1 || !c.offsets.contains(&delta) || c.chance <= 0 {
@@ -692,10 +691,16 @@ impl<'a> Planner<'a> {
         self.lord_safe(tile, counter)
     }
 
-    fn attack_info(&mut self, target: UnitId) -> AttackInfo {
-        if let Some(info) = self.attack_cache.get(&target) {
-            return info.clone();
+    /// Tile-independent facts about attacking `target` (computed once per plan).
+    fn attack_info(&mut self, target: UnitId) -> &AttackInfo {
+        if !self.attack_cache.contains_key(&target) {
+            let info = self.compute_attack_info(target);
+            self.attack_cache.insert(target, info);
         }
+        &self.attack_cache[&target]
+    }
+
+    fn compute_attack_info(&self, target: UnitId) -> AttackInfo {
         let (st, pack) = (self.st, self.pack);
         let t = &st.units[target];
         let terrain = self.board.terrain(t.pos).map_or(0, |tt| tt.defense);
@@ -720,9 +725,7 @@ impl<'a> Planner<'a> {
                 });
             }
         }
-        let info = AttackInfo { value, counter };
-        self.attack_cache.insert(target, info.clone());
-        info
+        AttackInfo { value, counter }
     }
 
     fn aim_value(&mut self, si: usize, tile: Pos, aim: Pos) -> Option<AimValue> {
@@ -972,13 +975,12 @@ impl<'a> Planner<'a> {
             u == self.id || (self.careful() && may_leave(u))
         });
         let n = self.board.len();
-        let lord = st.units.iter().find(|u| {
-            u.is_active()
-                && u.lord
-                && u.id != self.id
-                && !self.is_hostile(u.id)
-                && self.board.in_bounds(u.pos)
-        });
+        // This unit's lord and the index of its tile.
+        let lord = st
+            .units
+            .iter()
+            .filter(|u| u.is_active() && u.lord && u.id != self.id && !self.is_hostile(u.id))
+            .find_map(|u| self.board.index(u.pos).map(|i| (u, i)));
         let mut threat = vec![0i64; n];
         let mut lord_threat = vec![0i64; st.units.len()];
         let mut cover = TileSet::new(n);
@@ -1024,11 +1026,8 @@ impl<'a> Planner<'a> {
                 for &i in &cover.tiles {
                     keep(&mut touched, &mut strongest, i, hit(self.id, self.def, i));
                 }
-                if let Some(l) = lord {
-                    let li = self.board.index(l.pos).expect("lord is on the map");
-                    if cover.contains(li) {
-                        to_lord = to_lord.max(hit(l.id, st.defense_power(pack, l.id), li));
-                    }
+                if let Some((l, li)) = lord.filter(|&(_, li)| cover.contains(li)) {
+                    to_lord = to_lord.max(hit(l.id, st.defense_power(pack, l.id), li));
                 }
             }
 
@@ -1069,10 +1068,9 @@ impl<'a> Planner<'a> {
                         keep(&mut touched, &mut strongest, i, dmg);
                     }
                 }
-                if let Some(l) = lord {
-                    let li = self.board.index(l.pos).expect("lord is on the map");
+                if let Some((l, li)) = lord.filter(|&(_, li)| cover.contains(li)) {
                     let terrain = self.board.terrain_at_index(li);
-                    if cover.contains(li) && st.element_allows(s, terrain) {
+                    if st.element_allows(s, terrain) {
                         to_lord = to_lord.max(self.strategy_threat(h.id, s, l.id, terrain));
                     }
                 }
