@@ -95,14 +95,18 @@ def officers(pack: Path = PACK_DIR) -> dict[str, str]:
     return {o["id"]: o.get("portrait", o["id"]) for o in doc["officer"]}
 
 
-def check_table(entries: list[Portrait], index: dict[int, dict[str, str]], reserved: set[str], keys: set[str]) -> None:
-    """Refuse inconsistent mappings before anything is drawn."""
+def check_table(
+    entries: list[Portrait], index: dict[int, dict[str, str]], reserved: set[str], keys: set[str]
+) -> list[str]:
+    """Refuse inconsistent mappings before anything is drawn; returns the keys no officer uses.
+
+    Such entries are legitimate (a drama can `@show` any portrait key, and a chapter in progress
+    may add its officers later) but are listed so a misspelt key does not go unnoticed.
+    """
     problems = []
     by_key = {p.key: p for p in entries}
     for key in sorted(keys - set(by_key)):
         problems.append(f"officer portrait {key!r} has no entry in portraits.toml")
-    for key in sorted(set(by_key) - keys):
-        problems.append(f"portraits.toml entry {key!r} is not an officer's portrait key")
     own = {(p.page, p.quad): p.key for p in entries if not p.stand_in}
     users: dict[tuple[int, str], list[Portrait]] = {}
     for p in entries:
@@ -123,6 +127,7 @@ def check_table(entries: list[Portrait], index: dict[int, dict[str, str]], reser
             problems.append(f"{keys}: a figure may serve at most twice, the second use mirrored")
     if problems:
         raise SourceError("portraits.toml:\n  " + "\n  ".join(problems))
+    return sorted(set(by_key) - keys)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -220,7 +225,9 @@ def unknown_portrait() -> Image.Image:
 
 def build_portraits(src: Sources, pack: Path) -> list[str]:
     entries, index, reserved = load_table()
-    check_table(entries, index, reserved, set(officers().values()))
+    unused = check_table(entries, index, reserved, set(officers().values()))
+    if unused:
+        print(f"  portraits no officer uses (drawn anyway): {', '.join(unused)}")
     out_dir = pack / "gfx" / "portraits"
     written = []
     pages: dict[int, Image.Image] = {}

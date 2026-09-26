@@ -74,8 +74,8 @@ INDEX = {16: {"TR": "丁原", "TL": "丁管", "BR": "伍孚", "BL": "董卓"}}
 
 
 class PortraitTableTest(unittest.TestCase):
-    def check(self, entries: list[Portrait], keys: set[str], reserved: frozenset[str] = frozenset()) -> None:
-        check_table(entries, INDEX, set(reserved), keys)
+    def check(self, entries: list[Portrait], keys: set[str], reserved: frozenset[str] = frozenset()) -> list[str]:
+        return check_table(entries, INDEX, set(reserved), keys)
 
     def test_box_is_4_by_5_with_the_face_40_percent_down(self) -> None:
         box = portrait("a", "丁原").box
@@ -85,7 +85,7 @@ class PortraitTableTest(unittest.TestCase):
         self.assertEqual(box[1] + h * 2 // 5, 100)
 
     def test_valid_table_passes(self) -> None:
-        self.check(
+        unused = self.check(
             [
                 portrait("a", "丁原"),
                 portrait("b", "伍孚", "BR", stand_in=True),
@@ -93,11 +93,15 @@ class PortraitTableTest(unittest.TestCase):
             ],
             {"a", "b", "c"},
         )
+        self.assertEqual(unused, [])
+
+    def test_entries_no_officer_uses_are_listed(self) -> None:
+        # a key for `@show` or for an officer a later chapter adds: accepted, but reported
+        self.assertEqual(self.check([portrait("a", "丁原"), portrait("x", "丁管", "TL")], {"a"}), ["x"])
 
     def test_rejections(self) -> None:
         cases = {
             "missing officer": ([portrait("a", "丁原")], {"a", "b"}),
-            "unknown key": ([portrait("a", "丁原"), portrait("x", "丁管", "TL")], {"a"}),
             "wrong figure": ([portrait("a", "董卓")], {"a"}),
             "second use not mirrored": (
                 [portrait("a", "伍孚", "BR", True), portrait("b", "伍孚", "BR", True)],

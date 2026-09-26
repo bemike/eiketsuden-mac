@@ -5,7 +5,10 @@
 # djvu pages 15-50 of the CADAL scan, four full-length figures per page, each in a printed frame
 # with the person's name and a short poem. Coordinates are pixels of the 1920x2992 page renders.
 #
-# [portraits.<key>]   one entry per portrait key of data/base/officers.toml (the officer id)
+# [portraits.<key>]   one entry per portrait key of data/base/officers.toml (the officer id); an
+#                     entry no officer uses is drawn as well (dramas can `@show` any portrait key,
+#                     and officers of chapters in progress may not be in officers.toml yet) and
+#                     listed by the build
 #   figure    the name printed beside the figure (checked against [pages])
 #   page      djvu page number
 #   quad      TR / TL / BR / BL: the figure's quarter of the page
@@ -22,9 +25,9 @@
 # officers, so some figures serve twice, always for two people who should never share a battle
 # (typically an enemy who dies in the prologue or chapter 1 and an officer who joins in chapter 3),
 # one of them mirrored. Officers who stay in the story for long (e.g. 于禁, 樂進, 李典) get a figure
-# of their own. Figures without a usable face (back views and bows: 丁管, 北地王, 鍾會, 王經, 譙周,
-# 蔡邕) and the monk 普淨 are not used; 文醜, 沮授 and 魏延 keep their own figures although the book
-# draws them turned away.
+# of their own, or share one only with someone who is gone before they join. Figures without a
+# usable face (back views and bows: 丁管, 北地王, 鍾會, 王經, 譙周, 蔡邕) and the monk 普淨 are not
+# used; 文醜, 沮授 and 魏延 keep their own figures although the book draws them turned away.
 
 [pages]  # djvu page -> printed names in the order TR, TL, BR, BL
 15 = ["漢獻帝", "董妃", "伏皇后", "王允"]
@@ -159,11 +162,11 @@ stand_in = true
 mirror = true
 
 [portraits.liu_pi]  # 유벽 劉辟
-figure = "夏侯霸"
-page = 35
+figure = "諸葛恪"
+page = 38
 quad = "BR"
-face = [1270, 2010]
-width = 270
+face = [1360, 2040]
+width = 260
 stand_in = true
 mirror = true
 
@@ -269,10 +272,10 @@ stand_in = true
 mirror = true
 
 [portraits.lei_tong]  # 뇌동 雷銅
-figure = "王雙"
-page = 48
-quad = "TR"
-face = [1340, 770]
+figure = "張悌"
+page = 41
+quad = "BR"
+face = [1380, 1860]
 stand_in = true
 mirror = true
 
@@ -285,18 +288,18 @@ stand_in = true
 mirror = true
 
 [portraits.li_yan]  # 이엄 李嚴
-figure = "陳泰"
-page = 48
-quad = "TL"
-face = [530, 790]
+figure = "顧雍"
+page = 40
+quad = "BR"
+face = [1180, 1850]
 stand_in = true
 mirror = true
 
 [portraits.fei_guan]  # 비관 費觀
-figure = "呂伯奢"
-page = 18
-quad = "BR"
-face = [1170, 1880]
+figure = "龐德公"
+page = 26
+quad = "TL"
+face = [470, 810]
 stand_in = true
 mirror = true
 
@@ -647,11 +650,11 @@ face = [640, 980]
 stand_in = true
 
 [portraits.zhang_nan]  # 장남 張南
-figure = "丁原"
-page = 16
-quad = "TR"
-face = [1385, 815]
-width = 300
+figure = "鄭康成"
+page = 23
+quad = "BL"
+face = [775, 1880]
+width = 260
 stand_in = true
 mirror = true
 
@@ -818,10 +821,95 @@ face = [1290, 770]
 stand_in = true
 
 [portraits.li_feng]  # 이풍 李豐
+figure = "吉平"
+page = 19
+quad = "TR"
+face = [1400, 760]
+stand_in = true
+mirror = true
+
+# ---------------------------------------------------------------------------------------------
+# Chapter 1 officers. The book is used up, so each shares a figure (mirrored) with someone they
+# never meet: the recruits and bandit chiefs who stay with Liu Bei take figures of people gone
+# before they join, the others figures of people who appear in other acts only.
+
+[portraits.tian_yu]  # 전예 田豫 — joins in chapter 1 (Guangchuan route); 李肅 dies in the prologue
 figure = "管輅"
 page = 24
 quad = "TR"
 face = [1200, 760]
-width = 300
+stand_in = true
+mirror = true
+
+[portraits.lian_biao]  # 염표 廉彪 — joins in chapter 1 (Guangchuan route); 趙岑 leaves after the prologue
+figure = "呂伯奢"
+page = 18
+quad = "BR"
+face = [1170, 1880]
+stand_in = true
+mirror = true
+
+[portraits.yue_lin]  # 악린 岳麟 — joins in chapter 1 (Xindu route); 胡軫 leaves after the prologue
+figure = "丁原"
+page = 16
+quad = "TR"
+face = [1385, 815]
+stand_in = true
+mirror = true
+
+[portraits.chang_xi]  # 창희 昌豨 — joins in chapter 1 act 3; 麴義 appears only in act 1
+figure = "夏侯霸"
+page = 35
+quad = "BR"
+face = [1270, 2010]
+width = 270
+stand_in = true
+mirror = true
+
+[portraits.shi_meng]  # 석맹 石猛 — joins in chapter 1 act 3; 華雄 falls in the prologue
+figure = "王雙"
+page = 48
+quad = "TR"
+face = [1340, 770]
+stand_in = true
+mirror = true
+
+[portraits.xia_kun]  # 하곤 夏昆 — joins in chapter 1 act 3; 嚴綱 falls in act 1
+figure = "陳泰"
+page = 48
+quad = "TL"
+face = [530, 790]
+stand_in = true
+mirror = true
+
+[portraits.zong_bao]  # 종보 宗寶 — falls at Beihai in act 2, before 糜芳 joins
+figure = "韓遂"
+page = 19
+quad = "TL"
+face = [570, 810]
+stand_in = true
+mirror = true
+
+[portraits.tian_kai]  # 전해 田楷 — act 1 only, before 孫乾 joins
+figure = "鄧芝"
+page = 33
+quad = "BR"
+face = [1250, 1930]
+stand_in = true
+mirror = true
+
+[portraits.shan_jing]  # 단경 單經 — act 1 only, before 糜竺 joins
+figure = "伏完"
+page = 18
+quad = "TL"
+face = [570, 850]
+stand_in = true
+mirror = true
+
+[portraits.xu_dan]  # 허탐 許耽 — act 3 only; 陳震 appears only at Jieqiao in act 1
+figure = "王粲"
+page = 21
+quad = "BL"
+face = [570, 1930]
 stand_in = true
 mirror = true

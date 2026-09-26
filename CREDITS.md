@@ -75,7 +75,7 @@ in-game credits are `data/base/credits.txt`.
   `tools/assets/sources.toml`)
 * **Used in:** `gfx/portraits/*.png` except `_unknown.png`
 * **Changes:** head-and-shoulders crops, levels, light denoise, recoloured to ink on warm paper,
-  vignette and frame. 52 officers show their own figure from the book; the other 57, whom the book
+  vignette and frame. 52 officers show their own figure from the book; the others, whom the book
   does not draw, show the figure of another person of the book (one figure serves two people at
   most, the second mirrored). `tools/assets/portraits.toml` lists every officer's figure.
 

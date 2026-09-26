@@ -186,9 +186,11 @@ source file of each key): `cursor`, `confirm`, `cancel`, `error`, `step`, `hit`,
 denoised, recoloured to indigo ink on warm paper and framed. `portraits.toml` maps every officer of
 `data/base/officers.toml` to a figure (page, quarter, face point, crop width, optional `erase`
 rectangles for printed text); the build refuses a table that misses an officer, names the wrong
-figure, uses a reserved figure as a stand-in or uses a figure more than twice. To add an officer:
-look for their figure in `[pages]`, else pick an unused figure of the same type, then check the crop
-on a review sheet (the portraits are small; judge them at 1x and 2x).
+figure, uses a reserved figure as a stand-in or uses a figure more than twice, and lists entries no
+officer uses (they are drawn too: for `@show` keys and for officers a chapter in progress adds). To
+add an officer: look for their figure in `[pages]`, else share a stand-in figure (mirrored) with
+someone they never meet — every usable figure is taken — then check the crop on a review sheet
+(the portraits are small; judge them at 1x and 2x).
 
 ## Drama backgrounds (`gfx/bg`)
 
