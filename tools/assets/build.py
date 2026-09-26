@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build the base pack's media (tiles, units, FX, UI, SFX, fonts) from the cached sources.
+"""Build the base pack's media (tiles, units, FX, UI, title, SFX, fonts) from the cached sources.
 
 Run tools/assets/fetch.py first. The build is deterministic: the same sources always give
 byte-identical files, so `--check` can verify that the committed outputs are up to date.
 
 Usage:
     python tools/assets/build.py                 # everything into data/base
-    python tools/assets/build.py terrain units   # selected steps
+    python tools/assets/build.py terrain units   # selected steps (plus the steps they depend on)
     python tools/assets/build.py --check         # rebuild into a temp dir and compare
 """
 
@@ -22,6 +22,7 @@ from assetlib import PACK_DIR, Sources, SourceError
 from build_audio import build_fonts, build_sfx
 from build_fx import build_fx
 from build_terrain import build_terrain
+from build_title import build_title
 from build_ui import build_flags, build_icons
 from build_units import build_units
 
@@ -35,7 +36,19 @@ STEPS: dict[str, Step] = {
     "fx": build_fx,
     "icons": build_icons,
     "flags": build_flags,
+    "title": build_title,
 }
+
+# Steps that read other steps' outputs from the pack directory.
+DEPENDS: dict[str, list[str]] = {"title": ["terrain", "units", "flags"]}
+
+
+def resolve(steps: list[str]) -> list[str]:
+    """The requested steps and their dependencies, in the canonical STEPS order."""
+    wanted = set(steps)
+    for name in steps:
+        wanted.update(DEPENDS.get(name, []))
+    return [name for name in STEPS if name in wanted]
 
 
 def run(steps: list[str], out: Path) -> list[str]:
@@ -77,7 +90,7 @@ def main(argv: list[str]) -> int:
     unknown = [s for s in args.steps if s not in STEPS]
     if unknown:
         parser.error(f"unknown step(s) {', '.join(unknown)}; choose from {', '.join(STEPS)}")
-    steps = args.steps or list(STEPS)
+    steps = resolve(args.steps) if args.steps else list(STEPS)
     try:
         if args.check:
             return check(steps)
