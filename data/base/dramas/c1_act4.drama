@@ -1,4 +1,4 @@
-# 제1장 4막 — 여포 토벌전. Scenes of the base pack's chapter 1, act 4.
+# 제1장 4막 — 하비의 물길. Scenes of the base pack's chapter 1, act 4.
 #
 # Original text written for Eiketsuden Reloaded after the public-domain novel (chapters 18-19: Cao
 # Cao marches against Lü Bu, Xiapi is flooded, Hou Cheng, Song Xian and Wei Xu turn on Lü Bu, the
@@ -16,7 +16,7 @@
 @bg palace
 @bgm tension
 @title 제1장
-    여포 토벌전
+    하비의 물길
 @narr 건안 3년(198년). 여포는 원술과 손을 잡고 다시 소패를 쳤다.
     조조는 마침내 몸소 대군을 이끌고 여포를 치기로 했다.
 @show cao_cao right

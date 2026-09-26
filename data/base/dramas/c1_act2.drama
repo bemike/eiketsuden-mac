@@ -1,4 +1,4 @@
-# 제1장 2막 — 북해, 서주 원군. Scenes of the base pack's chapter 1, act 2.
+# 제1장 2막 — 구원의 길. Scenes of the base pack's chapter 1, act 2.
 #
 # Original text written for Eiketsuden Reloaded after the public-domain novel (chapters 10-11: Guan
 # Hai besieges Beihai, Taishi Ci's ride, Cao Cao's revenge on Xuzhou, Liu Bei's letter and Cao Cao's
@@ -14,7 +14,7 @@
 @bg town
 @bgm tension
 @title 제1장
-    북해, 서주 원군
+    구원의 길
 @narr 초평 4년(193년). 평원으로 돌아온 유비에게 낯선 장수 하나가 말을 달려왔다.
     갑옷은 화살 자국투성이였고, 등에는 커다란 활을 메고 있었다.
 @show taishi_ci right

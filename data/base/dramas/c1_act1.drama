@@ -1,4 +1,4 @@
-# 제1장 1막 — 북방의 전란 (계교 전투). Scenes of the base pack's chapter 1, act 1.
+# 제1장 1막 — 원소와 공손찬 (계교 전투). Scenes of the base pack's chapter 1, act 1.
 #
 # Original text written for Eiketsuden Reloaded after the public-domain novel (chapter 7: Yuan Shao
 # takes Ji province, the war between Yuan Shao and Gongsun Zan, the battle at the Jie bridge, Zhao
@@ -16,7 +16,7 @@
 @bg black
 @bgm tension
 @title 제1장
-    북방의 전란
+    원소와 공손찬
 @narr 초평 2년(191년). 연합군이 흩어진 뒤, 천하의 제후들은
     저마다 땅을 넓히려고 칼끝을 서로에게 돌렸다.
 @bg town
