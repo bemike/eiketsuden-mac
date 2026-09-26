@@ -4,6 +4,7 @@ mod common;
 
 use common::*;
 use hero_core::battle::BattleState;
+use hero_core::battledef::Side;
 use hero_core::campaign::{CampaignDef, CampaignError, CampaignState, Node};
 use hero_core::data::{Equipment, ItemKind};
 use hero_core::pack::Pack;
@@ -566,6 +567,36 @@ fn victory_copies_progress_and_rewards() {
     // Applying the same victory twice records the battle once.
     state.apply_battle_result(&pack, &finished_battle(json!("victory")));
     assert_eq!(state.battles_won, ["b01"]);
+}
+
+/// Player officers placed by a battle, in unit order.
+fn placed(battle: &BattleState) -> Vec<&str> {
+    battle
+        .units
+        .iter()
+        .filter(|u| u.side == Side::Player)
+        .filter_map(|u| u.officer.as_deref())
+        .collect()
+}
+
+#[test]
+fn the_next_battle_fits_the_last_deployment_to_its_rules() {
+    let (pack, mut state) = new_game();
+    state.join(&pack, "jian_yong").unwrap();
+    state.deployed = vec!["liu_bei".into(), "guan_yu".into(), "zhang_fei".into()];
+    let b01 = BattleState::new(&pack, "b01", &state, 1).unwrap();
+    assert_eq!(placed(&b01), ["liu_bei", "guan_yu", "zhang_fei"]);
+    state.apply_battle_result(&pack, &b01);
+
+    // b02 requires jian_yong and forbids zhang_fei. Without a deploy screen in between the
+    // b01 choice is still stored; the battle fits it to its own rules instead of failing.
+    let b02 = BattleState::new(&pack, "b02", &state, 1).unwrap();
+    assert_eq!(placed(&b02), ["jian_yong", "liu_bei", "guan_yu"]);
+    assert_eq!(
+        state.deployed,
+        ["liu_bei", "guan_yu", "zhang_fei"],
+        "the player's choice is kept for later battles"
+    );
 }
 
 #[test]

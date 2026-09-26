@@ -16,7 +16,8 @@ USAGE:
         Play battles AI against AI (the player side is run by the AI too) with N seeds each
         (default 4), at most 200 phases per run. Reports win rates and average turns, warns
         about battles that are never or always won, and exits with 1 when a battle panics,
-        does not finish or cannot be set up.
+        does not finish or cannot be set up. A --battle ID the pack does not have is a
+        command line error (exit 2).
 
     hero-tools info <pack_dir>
         Print a summary of the pack's content.

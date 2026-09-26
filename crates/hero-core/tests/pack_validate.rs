@@ -528,7 +528,34 @@ fn unit_checks() {
             "battle b01 unit #5",
             "tag `guan_yu` is also an officer id",
         ),
+        warning(
+            &[(
+                B01,
+                "side = \"ally\"\nname = \"의용병\"",
+                "side = \"player\"\nofficer = \"guan_yu\"",
+            )],
+            "battle b01 unit #5 (militia)",
+            "officer `guan_yu` is in the starting army: the battle places the army's `guan_yu` here",
+        ),
     ]);
+}
+
+#[test]
+fn player_guests_are_not_army_officers() {
+    // jian_yong only joins later (`@join` in a story scene): a guest, not a copy of the army's.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        B01,
+        "side = \"ally\"\nname = \"의용병\"",
+        "side = \"player\"\nofficer = \"jian_yong\"",
+    );
+    let issues = load(&files).validate();
+    assert!(
+        !issues.iter().any(|i| i.msg.contains("starting army")),
+        "{}",
+        format_issues(&issues)
+    );
 }
 
 #[test]
@@ -633,6 +660,15 @@ fn battle_logic_checks() {
             "battle b01 event #1",
             "turn 30 is after turn_limit 20",
         ),
+        warning(
+            &[(
+                B01,
+                "target = \"militia\", ai = \"flee\"",
+                "target = \"militia\", ai = \"advance\"",
+            )],
+            "battle b01 event #4",
+            "without an ai_pos clears the destination; the unit then behaves as `aggressive`",
+        ),
         error(
             &[(
                 B02,
@@ -699,6 +735,36 @@ fn drama_checks() {
             "is never played",
         ),
     ]);
+}
+
+#[test]
+fn battle_items_given_by_battle_scenes_are_reported() {
+    run(&[
+        warning(
+            &[(
+                BATTLE_DRAMAS,
+                "@narr 적이 흩어졌다.",
+                "@narr 적이 흩어졌다.\n@item bean",
+            )],
+            "battle b01 scene b01_outro",
+            "@item `bean` is lost",
+        ),
+        warning(
+            &[(BATTLE_DRAMAS, "@sfx confirm", "@sfx confirm\n@item wine")],
+            "battle b01 scene b01_rein",
+            "@item `wine` is lost",
+        ),
+    ]);
+    // Equipment is kept, and story scenes (`oath` gives a bean) are not battle scenes.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        BATTLE_DRAMAS,
+        "@narr 적이 흩어졌다.",
+        "@narr 적이 흩어졌다.\n@item war_manual",
+    );
+    let issues = load(&files).validate();
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
 }
 
 #[test]

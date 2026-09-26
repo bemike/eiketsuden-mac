@@ -6,7 +6,7 @@ use crate::battle::{
     Weather,
 };
 use crate::battledef::Side;
-use crate::data::StatusKind;
+use crate::data::{Effect, StatusKind};
 use crate::geom::Pos;
 
 fn cast(unit: UnitId, strategy: &str, target: Pos) -> Action {
@@ -634,6 +634,84 @@ fn healing_items_and_their_targets() {
         st.apply(&pack, use_item(foe, "bean", foe)),
         Err(ActionError::BadItem("bean".into()))
     );
+}
+
+/// `battle_use` on equipment is ignored (the validator warns about it): the campaign only
+/// takes battle consumables back from the battle, so using equipment would never use it up.
+#[test]
+fn equipment_is_never_a_battle_item() {
+    let mut pack = pack(OPEN_MAP);
+    let jade = pack.items.get_mut("jade").unwrap();
+    jade.battle_use = true;
+    jade.effects = vec![Effect::Heal { power: 300 }];
+    let mut st = state(&pack);
+    st.inventory.insert("jade".into(), 1);
+    let me = add(&mut st, &pack, Side::Player, "cavalry", 1, p(3, 3));
+    let hurt = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(0, 7));
+    st.units[me].mp = 0;
+    st.units[hurt].hp = 100;
+
+    assert!(st.item_targets(&pack, me, "jade").is_empty());
+    assert_eq!(
+        st.apply(&pack, use_item(me, "jade", hurt)),
+        Err(ActionError::BadItem("jade".into()))
+    );
+    // The AI (the player side in simulations) does not plan to use it either.
+    let plan = st.ai_actions(&pack, me);
+    assert!(
+        !plan.iter().any(|a| matches!(a, Action::UseItem { .. })),
+        "{plan:?}"
+    );
+    assert_eq!(st.inventory.get("jade"), Some(&1));
+}
+
+/// Morale amounts are data; extreme ones clamp to 0..=100 instead of overflowing.
+#[test]
+fn extreme_morale_amounts_saturate() {
+    let mut pack = pack(OPEN_MAP);
+    let morale = |amount: i32| vec![Effect::Morale { amount }];
+    pack.strategies.get_mut("cheer").unwrap().effects = morale(i32::MAX);
+    pack.strategies.get_mut("provoke").unwrap().effects = morale(i32::MIN);
+    pack.items.get_mut("wine").unwrap().effects = morale(i32::MAX);
+    let mut sour = pack.items["wine"].clone();
+    sour.id = "sour_wine".into();
+    sour.effects = morale(i32::MIN);
+    pack.items.insert(sour.id.clone(), sour);
+    let mut st = state(&pack);
+    st.inventory.insert("wine".into(), 1);
+    st.inventory.insert("sour_wine".into(), 1);
+    let band = add(&mut st, &pack, Side::Player, "band", 10, p(3, 3));
+    let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+    let rider = add(&mut st, &pack, Side::Player, "cavalry", 20, p(5, 5));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(5, 6));
+    set_stats(&mut st, &pack, foe, [50, 0, 50]);
+    st.units[friend].morale = 20;
+
+    // The AI weighs the effects too (the player side in simulations).
+    assert!(!st.ai_actions(&pack, band).is_empty());
+    assert!(!st.ai_actions(&pack, rider).is_empty());
+
+    let ev = st.apply(&pack, cast(band, "cheer", p(3, 4))).unwrap();
+    assert_eq!(hits(&ev)[0].morale, 80);
+    assert_eq!(st.units[friend].morale, 100);
+    // The level difference shifts morale-down further (§5).
+    let ev = st.apply(&pack, cast(rider, "provoke", p(5, 6))).unwrap();
+    assert_eq!(hits(&ev)[0].morale, -100);
+    assert_eq!(st.units[foe].morale, 0);
+
+    st.units[friend].morale = 50;
+    st.apply(&pack, use_item(friend, "wine", friend)).unwrap();
+    assert_eq!(st.units[friend].morale, 100);
+    st.units[friend].acted = false;
+    let ev = st
+        .apply(&pack, use_item(friend, "sour_wine", friend))
+        .unwrap();
+    assert!(
+        matches!(ev[0], BattleEvent::ItemUsed { morale: -100, .. }),
+        "{ev:?}"
+    );
+    assert_eq!(st.units[friend].morale, 0);
 }
 
 #[test]

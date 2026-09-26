@@ -185,7 +185,7 @@ impl BattleState {
             if let Some(item) = &t.item {
                 self.items_found.push(item.clone());
             }
-            self.gold_found += t.gold;
+            self.gold_found = self.gold_found.saturating_add(t.gold);
             ev.push(BattleEvent::TreasureFound {
                 unit,
                 item: t.item.clone(),

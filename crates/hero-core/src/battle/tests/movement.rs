@@ -206,6 +206,31 @@ fn treasure_ends_the_move_and_goes_to_player_units_only() {
 }
 
 #[test]
+fn treasure_gold_saturates() {
+    // The validator only asks for gold >= 0; a huge value must not wrap the battle's total.
+    let mut def = battle(OPEN_MAP);
+    def.treasures = vec![TreasureDef {
+        pos: p(1, 0),
+        item: None,
+        gold: i64::MAX,
+    }];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.gold_found = 100; // from a `give_gold` event, say
+    st.apply(
+        &pack,
+        Action::Move {
+            unit: me,
+            to: p(1, 0),
+        },
+    )
+    .unwrap();
+    assert_eq!(st.gold_found, i64::MAX);
+}
+
+#[test]
 fn named_attack_shapes() {
     let mut pack = pack(OPEN_MAP);
     for (shape, n) in [

@@ -6,7 +6,7 @@ name = "영걸전 Reloaded 기본 팩"
 version = "0.2.0"
 authors = ["Eiketsuden Reloaded contributors"]
 license = "CC-BY-SA-4.0 (text) / see CREDITS.md (media)"
-description = "원작의 PC판 규칙을 따르는 기본 규칙과 서장(반동탁 연합), 제1장(계교에서 서주 공방전까지). 이야기와 대사는 『삼국지연의』를 바탕으로 새로 썼다."
+description = "원작의 PC판 규칙을 따르는 기본 규칙과 서장(반동탁 연합), 제1장(계교 전투부터 조조의 서주 정벌까지). 이야기와 대사는 『삼국지연의』를 바탕으로 새로 썼다."
 
 officers = "officers.toml"
 campaign = "campaign.toml"

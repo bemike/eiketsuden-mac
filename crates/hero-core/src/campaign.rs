@@ -7,7 +7,7 @@ use crate::pack::Pack;
 use crate::script::Compare;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn ne() -> Compare {
     Compare::Ne
@@ -208,7 +208,9 @@ pub struct CampaignState {
     pub inventory: BTreeMap<Id, u32>,
     pub gold: i64,
     pub flags: BTreeMap<String, i64>,
-    /// Officers chosen on the deploy screen for the upcoming battle.
+    /// Officers chosen on the deploy screen. The list is kept between battles as the player's
+    /// last choice; each battle normalises it to its own rules
+    /// ([`crate::battle::normalize_deployment`]).
     #[serde(default)]
     pub deployed: Vec<Id>,
     /// Battle ids won so far.
@@ -558,15 +560,25 @@ impl CampaignState {
     /// add won gold/items, record the victory and set any flags the battle set.
     ///
     /// * Player units with an officer in the roster copy level, EXP, class, str/int/lead and
-    ///   equipment back (HP, MP and morale are per battle).
+    ///   equipment back (HP, MP and morale are per battle). Only the first player unit of an
+    ///   officer counts ([`BattleState::new`] builds one per army officer).
     /// * Battle consumables (`battle_use = true`) are taken from `battle.inventory`, which the
-    ///   battle used them from; all other inventory entries are kept.
+    ///   battle used them from; all other inventory entries are kept. Battle items the army
+    ///   received while the battle ran (`@item` in a scene the battle plays) are therefore
+    ///   replaced too; [`Pack::validate`] warns about such scenes.
     /// * Flags set by battle events are merged in.
     /// * Only a victory adds `gold_found` / `items_found` (RULES.md §10) and records the
     ///   battle in `battles_won`.
     pub fn apply_battle_result(&mut self, pack: &Pack, battle: &BattleState) {
+        let mut copied: BTreeSet<&str> = BTreeSet::new();
         for unit in battle.units.iter().filter(|u| u.side == Side::Player) {
-            let Some(state) = unit.officer.as_deref().and_then(|id| self.officer_mut(id)) else {
+            let Some(id) = unit.officer.as_deref() else {
+                continue;
+            };
+            if !copied.insert(id) {
+                continue;
+            }
+            let Some(state) = self.officer_mut(id) else {
                 continue;
             };
             state.level = unit.level;
@@ -578,10 +590,7 @@ impl CampaignState {
             state.equip = unit.equip.clone();
         }
 
-        let battle_item = |id: &str| {
-            pack.item(id)
-                .is_some_and(|d| d.kind == ItemKind::Consumable && d.battle_use)
-        };
+        let battle_item = |id: &str| pack.item(id).is_some_and(|d| d.is_battle_item());
         self.inventory.retain(|id, _| !battle_item(id));
         for (id, count) in &battle.inventory {
             if battle_item(id) {
