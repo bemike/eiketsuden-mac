@@ -1273,20 +1273,12 @@ impl BattleScreen {
             return;
         }
         if key_cancel || right_click {
-            let had_selection = self.ui.mode != Mode::Browse;
-            let req = self.ui.cancel(&self.state, &self.pack);
-            if had_selection {
+            // Stepping back puts the cursor on the unit that was selected.
+            if let Some(u) = self.ui.unit() {
                 ctx.sfx(sfx::CANCEL);
-                if let Some(u) = self.ui.unit() {
-                    self.cursor = self.state.units[u].pos;
-                }
+                self.cursor = self.state.units[u].pos;
             }
-            if matches!(self.ui.mode, Mode::Command { .. }) {
-                // Stepped back from a target mode: the cursor goes back to the unit.
-                if let Some(u) = self.ui.unit() {
-                    self.cursor = self.state.units[u].pos;
-                }
-            }
+            let req = self.ui.cancel(&self.state, &self.pack);
             self.handle_request(ctx, req);
         }
     }
@@ -2095,7 +2087,12 @@ impl Screen for BattleScreen {
             } else {
                 theme::CURSOR_ARROW
             };
-            hud::draw_cursor(self.camera.tile_screen(self.cursor), ctx.time, color);
+            // During AI phases the cursor rides on the acting unit.
+            let at = match self.ai {
+                Some(a) => self.camera.to_screen(self.scene.views[a.unit].pos),
+                None => self.camera.tile_screen(self.cursor),
+            };
+            hud::draw_cursor(at, ctx.time, color);
         }
         for f in &self.scene.floats {
             hud::draw_float(&ctx.gfx, self.camera.to_screen(f.at), f);

@@ -417,6 +417,11 @@ pub enum BeatKind {
         fx: Option<String>,
         fx_len: f32,
         hits: Vec<StrategyHit>,
+        /// MP the caster pays (0 when cast from a scroll).
+        mp: i32,
+        /// The strategy changes morale on purpose (morale-up/down); otherwise the morale lost
+        /// to its damage is not shown, as for physical hits.
+        morale_effect: bool,
     },
     Item {
         user: UnitId,
@@ -509,6 +514,8 @@ pub fn plan(
     let name = |u: UnitId| state.units[u].name.clone();
     let item_name = |id: &str| pack.item(id).map_or(id.to_string(), |i| i.name.clone());
     let mut beats: Vec<Beat> = Vec::new();
+    // A strategy cast from a scroll follows its `ItemUsed` and costs no MP.
+    let mut scroll_user: Option<UnitId> = None;
     for ev in events {
         let kind = match ev {
             BattleEvent::PhaseStart { side, turn } => BeatKind::Phase {
@@ -552,12 +559,23 @@ pub fn plan(
                     .as_deref()
                     .and_then(|k| fx.get(k))
                     .map_or(DEFAULT_FX_SECONDS, |d| d.duration());
+                let from_scroll = scroll_user.take() == Some(*caster);
                 BeatKind::Strategy {
                     caster: *caster,
                     caption: format!("{} · {sname}", name(*caster)),
                     fx: key,
                     fx_len,
                     hits: hits.clone(),
+                    mp: if from_scroll {
+                        0
+                    } else {
+                        def.map_or(0, |s| s.mp)
+                    },
+                    morale_effect: def.is_some_and(|s| {
+                        s.effects
+                            .iter()
+                            .any(|e| matches!(e, hero_core::data::Effect::Morale { .. }))
+                    }),
                 }
             }
             BattleEvent::ItemUsed {
@@ -566,14 +584,20 @@ pub fn plan(
                 item,
                 healed,
                 morale,
-            } => BeatKind::Item {
-                user: *user,
-                target: *target,
-                caption: format!("{} · {}", name(*user), item_name(item)),
-                healed: *healed,
-                morale: *morale,
-                scroll: pack.item(item).is_some_and(|d| d.strategy.is_some()),
-            },
+            } => {
+                let scroll = pack.item(item).is_some_and(|d| d.strategy.is_some());
+                if scroll {
+                    scroll_user = Some(*user);
+                }
+                BeatKind::Item {
+                    user: *user,
+                    target: *target,
+                    caption: format!("{} · {}", name(*user), item_name(item)),
+                    healed: *healed,
+                    morale: *morale,
+                    scroll,
+                }
+            }
             BattleEvent::Regenerated {
                 unit,
                 hp,
@@ -959,6 +983,8 @@ fn step(
             fx: key,
             fx_len,
             hits,
+            mp,
+            morale_effect,
         } => {
             const CAST: f32 = 0.3;
             let c = *caster;
@@ -966,6 +992,7 @@ fn step(
             let end = (impact + 0.6).max(CAST + *fx_len);
             if first {
                 scene.views[c].pose = Pose::Attack;
+                scene.views[c].mp = (scene.views[c].mp - *mp).max(0);
                 scene.caption = Some(Caption {
                     text: caption.clone(),
                     age: 0.0,
@@ -1007,16 +1034,18 @@ fn step(
                         scene.float(u, format!("+{}", h.healed), FloatKind::Heal);
                     }
                     if h.morale != 0 {
-                        scene.float(u, text::morale_text(h.morale), FloatKind::Morale);
-                        // Morale arrow (unless the strategy's own effect already is one).
-                        let arrow = if h.morale > 0 {
-                            "morale_up"
-                        } else {
-                            "morale_down"
-                        };
-                        if key.as_deref() != Some(arrow) {
-                            let at = scene.views[u].pos;
-                            scene.spawn_fx(arrow, at, fx);
+                        if *morale_effect {
+                            scene.float(u, text::morale_text(h.morale), FloatKind::Morale);
+                            // Morale arrow (unless the strategy's own effect already is one).
+                            let arrow = if h.morale > 0 {
+                                "morale_up"
+                            } else {
+                                "morale_down"
+                            };
+                            if key.as_deref() != Some(arrow) {
+                                let at = scene.views[u].pos;
+                                scene.spawn_fx(arrow, at, fx);
+                            }
                         }
                         let v = &mut scene.views[u];
                         v.morale = (v.morale + h.morale).clamp(0, 100);
