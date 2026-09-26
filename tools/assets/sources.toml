@@ -7,6 +7,8 @@
 #
 # Download methods:
 #   url  = "..."                 plain HTTP(S) GET
+#   [sources.<id>.parts]         several files of one work: `file` and `url` are templates with a
+#                                `{part}` placeholder, each part pins its own size and sha256
 #   [sources.<id>.itch]          itch.io "name your own price" flow: GET the page, POST its
 #                                csrf_token to <page>/file/<upload>, then GET the short-lived
 #                                signed URL returned in the JSON answer.
@@ -68,3 +70,296 @@ url = "https://github.com/quiple/galmuri/releases/download/v2.40.4/Galmuri-v2.40
 file = "Galmuri-v2.40.4.zip"
 size = 19938873
 sha256 = "c8b3d9861a62ae73c8b1178091401cd79994812437ef386413f6dd54856e60e7"
+
+# Portrait pages (繡像) of 增像全圖三國演義, a late-Qing lithographed edition of the novel, as
+# rendered by Wikimedia Commons from the CADAL scan (djvu pages 15-50, four figures per page; the
+# pages whose figures no portrait uses, 15 and 36, are not pinned). The
+# page renders are Wikimedia thumbnails of the {{PD-old}} djvu file; should Wikimedia ever re-render
+# them, fetch.py reports a hash mismatch and the parts must be re-pinned (the crop boxes in
+# portraits.toml stay valid for any 1920 px wide render).
+[sources.xiuxiang]
+title = "增像全圖三國演義 (Illustrated Romance of the Three Kingdoms), portrait pages, CADAL scan 07015122"
+author = "anonymous late-Qing illustrators; scan: China Academic Digital Associative Library / Fudan University Library"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/Template:PD-old"
+homepage = "https://commons.wikimedia.org/wiki/File:CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu"
+url = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu/page{part}-1920px-CADAL07015122_%E7%B6%89%E5%83%8F%E4%B8%89%E5%9C%8B%E5%BF%97%E6%BC%94%E7%BE%A9.djvu.jpg"
+file = "xiuxiang/page{part}.jpg"
+
+[sources.xiuxiang.parts]
+16 = { size = 396198, sha256 = "bbcd42326e8bf0498bafbb18c571e2d44d9a05046c65c5acc32a8020175abb9f" }
+17 = { size = 368631, sha256 = "889d6536879df7c7ecbe3292f890953e14eddca4cf66f79f51a768af2dbe9351" }
+18 = { size = 331006, sha256 = "402afa10d5e79c70a1d4d64f9f63152a6e8c05b71c172d1cb4b359762982e729" }
+19 = { size = 417794, sha256 = "cdc8bd07c8a0cd338aab3a96cce2665e783ce2879ebd808a0242d35c14a4b9b0" }
+20 = { size = 383991, sha256 = "4e152b2fa635536ba8e3c03c84b6173a2f1faf608d9fe4634c1c9af654ec02f1" }
+21 = { size = 373374, sha256 = "3606b7811c9df1af692f0390d0ca72452054fa94f8363fb276c42355fbc4bf21" }
+22 = { size = 333251, sha256 = "d7282fe494c3d028d233c34652ae0edb82410385a0e7f33ca9ddf62a2e54de20" }
+23 = { size = 400314, sha256 = "0c050a4b1af50908b8fdf49441edd79f7363a469f0f7e962da34ab4f43e5c471" }
+24 = { size = 316218, sha256 = "968c70f50d0527a719ce2862eb716c97b09daf8ceaadfa5c136501e993b2a0ea" }
+25 = { size = 370996, sha256 = "2e9cdf710ff6474592502aa861ccc7d31e5851d6d5beb0dec3d3a18448d1fc4c" }
+26 = { size = 367171, sha256 = "c9623cf6ec6c03847d486157de45797a43c76a27cdad5f36e033b748eee9389d" }
+27 = { size = 397751, sha256 = "02f3a5f3331f21b9e5144b5a318d087f058d0a0bfc37e960d769f090900b3bf8" }
+28 = { size = 303590, sha256 = "bc4ff88e700833e394447e0ab4e6e23feede2db08fe0e63d3a68b45b41b4dc05" }
+29 = { size = 399756, sha256 = "8cdc28d7cfd5dffe9bcb07e06672a5451e39a30f15eac0e6e9a090a8b9393de3" }
+30 = { size = 350036, sha256 = "d3dcc4436a378e5c084a5c3b3225d4a04499ba13080f36bee1c054359ed9a2eb" }
+31 = { size = 395712, sha256 = "310644b70cc31dc3f186c7a00823c74528c25ea01a6d9926e7621f15a1908c34" }
+32 = { size = 358214, sha256 = "45a09c035e3457c7f40e2537f584941cfade5aa2aa8833f020491be22231454e" }
+33 = { size = 357362, sha256 = "2f4b002a812a4ef1811742f349ef3f2f36b704b6f9b0894503671ecbaa6f5312" }
+34 = { size = 348601, sha256 = "123356a935aca6126035ea1a6dc43cc02d664138869795342ec246639bbfa7fd" }
+35 = { size = 400290, sha256 = "2127d3b620b5556689144475bacd11784c96c6ac590025e6e24f23cf96a91d51" }
+37 = { size = 394928, sha256 = "bcf7fc369e6ea0d0df4e17bef8af247bab5ddcae4127daefd55639a9348994d9" }
+38 = { size = 385947, sha256 = "cdace82a1f7d8fc1529d43e8b5331c6973565cc2667cdb8c546f7f2e77cdfc79" }
+39 = { size = 372983, sha256 = "868fde9e2e277cf5ee18c8b971151544bc7f9d4d7cde170e053a3ddf59e4025e" }
+40 = { size = 331199, sha256 = "641c539061506e66e84dc503ff7580c9ed7f8e0d8cd97bed77c10d748691e986" }
+41 = { size = 380309, sha256 = "2717558792394dd4b5f6ec47fc90055e6dd676db93f730a15bedfb598251936f" }
+42 = { size = 383762, sha256 = "c1cc7501cea34fc1ede8575456c700366202495aa41ca05e5d9fb2b0fd34ee65" }
+43 = { size = 400856, sha256 = "e957f79685d314cc4531a6a382e0389c5e6447002270d5caf9fc8fd52bccec56" }
+44 = { size = 341823, sha256 = "b68e07eae8cb59284576b6e634ec77e9a7a4dd9243cbad24c894668561988fd2" }
+45 = { size = 414534, sha256 = "8026cae23ab862fd0db85106a635ef4bda75a7a356e2c1c437eecb5422a8bc4e" }
+46 = { size = 358066, sha256 = "ce203a3fbf18f99acba649d2ca24523718abd7bb4a59f27920e8c00b7c3703a5" }
+47 = { size = 372527, sha256 = "6f8e8677c0dc2a41cd19c5ddca09b80b782b22cf05001f618a19e61a3dfe6375" }
+48 = { size = 313645, sha256 = "81d204470c25dedf30a355438f303547c7cde7380fcda060d31e3652b59689d2" }
+49 = { size = 368687, sha256 = "0f87b5c86301f68ee85c1ec00486a73cc7d3f77fd9e25cd0efd0df0413da3833" }
+50 = { size = 401729, sha256 = "a574e9a013b60a1e7e660ee1e85b51d9b01680b410b57adaba3ea05c054d496a" }
+
+# ---------------------------------------------------------------------------------------------
+# Drama backgrounds (build_backgrounds.py): photographs of public-domain Chinese paintings on
+# Wikimedia Commons (original files, not thumbnails).
+
+[sources.han_palace]
+title = "漢宮春曉圖 (Spring Morning in the Han Palace), detail — National Palace Museum, Taipei"
+author = "Qiu Ying (仇英), Ming dynasty"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:Spring_Morning_in_the_Han_Palace_(%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE).jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:Spring_Morning_in_the_Han_Palace_(%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE).jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/b/bf/Spring_Morning_in_the_Han_Palace_%28%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE%29.jpg"
+file = "paintings/han-palace-spring-morning.jpg"
+size = 7366487
+sha256 = "688ee3fae272a47851597363f8983b0266db41b7fa42251260a396d5c5be4d6e"
+
+[sources.qingming_qing]
+title = "清院本清明上河圖 (Along the River During the Qingming Festival, Qing Court Version), sections — National Palace Museum, Taipei"
+author = "Chen Mei (陳枚), Sun Hu (孫祜), Jin Kun (金昆), Dai Hong (戴洪) and Cheng Zhidao (程志道), 1736"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version)_03.jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version).jpg"
+file = "paintings/qingming-qing-court-{part}.jpg"
+
+[sources.qingming_qing.parts]
+03 = { size = 7010782, sha256 = "2eb0df95690d9db4b9af1d02e5e8ded447f7ec25e9a4e2b9faa2a4129f78282d", url = "https://upload.wikimedia.org/wikipedia/commons/9/99/Along_the_River_During_the_Qingming_Festival_%28Qing_Court_Version%29_03.jpg" }
+11 = { size = 6701533, sha256 = "0f35b422b05b269e7b42b084524015df7246617b1d07b0cb9d593b9ef496855e", url = "https://upload.wikimedia.org/wikipedia/commons/f/f8/Along_the_River_During_the_Qingming_Festival_%28Qing_Court_Version%29_11.jpg" }
+14 = { size = 7378851, sha256 = "e886c8ed383415bf9bf50a9f8b651d20017435a0d1ffb7b5fd6aec98325a4dcf", url = "https://upload.wikimedia.org/wikipedia/commons/6/6d/Along_the_River_During_the_Qingming_Festival_%28Qing_Court_Version%29_14.jpg" }
+
+[sources.wanshuyuan]
+title = "萬樹園賜宴圖 (Imperial Banquet in the Garden of Ten Thousand Trees), 1755 — Palace Museum, Beijing"
+author = "Jean-Denis Attiret (王致誠) with Giuseppe Castiglione (郎世寧) and other Qing court painters"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/a/ac/%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg"
+file = "paintings/wanshuyuan-banquet.jpg"
+size = 3081856
+sha256 = "dc5de94c46d7a56f8cc1dd11628210915d23991b48f2f43cf06f897b75d37d66"
+
+[sources.kangxi_tour]
+title = "康熙南巡圖 卷三: 濟南至泰山 (The Kangxi Emperor's Southern Inspection Tour, Scroll Three: Jinan to Mount Tai), detail DP105294 — The Metropolitan Museum of Art"
+author = "Wang Hui (王翬) and assistants, datable to 1698"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://commons.wikimedia.org/wiki/File:%E6%B8%85_%E7%8E%8B%E7%BF%AC_%E7%AD%89_%E5%BA%B7%E7%86%99%E5%8D%97%E5%B7%A1%E5%9C%96_%EF%BC%88%E5%8D%B7%E4%B8%89-_%E6%BF%9F%E5%8D%97%E8%87%B3%E6%B3%B0%E5%B1%B1%EF%BC%89_%E5%8D%B7-The_Kangxi_Emperor%27s_Southern_Inspection_Tour,_Scroll_Three-_Jinan_to_Mount_Tai_MET_DP105294.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/c/cc/%E6%B8%85_%E7%8E%8B%E7%BF%AC_%E7%AD%89_%E5%BA%B7%E7%86%99%E5%8D%97%E5%B7%A1%E5%9C%96_%EF%BC%88%E5%8D%B7%E4%B8%89-_%E6%BF%9F%E5%8D%97%E8%87%B3%E6%B3%B0%E5%B1%B1%EF%BC%89_%E5%8D%B7-The_Kangxi_Emperor%27s_Southern_Inspection_Tour%2C_Scroll_Three-_Jinan_to_Mount_Tai_MET_DP105294.jpg"
+file = "paintings/kangxi-tour-scroll3-DP105294.jpg"
+size = 1492573
+sha256 = "b0d02f25dc2714291e9100130db445e53f51ec51ddbe317d58831e630d3a4810"
+
+# The National Palace Museum publishes its open-data images under CC BY 4.0 (the credit line
+# of this Commons file says so); Commons marks the painting itself public domain. We attribute
+# as CC BY 4.0 asks.
+[sources.red_cliff]
+title = "赤壁圖 (Red Cliff), detail 5 — National Palace Museum, Taipei"
+author = "Wu Yuanzhi (武元直), Jin dynasty; photograph: National Palace Museum, Taipei (www.npm.gov.tw)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://commons.wikimedia.org/wiki/File:%E9%87%91%E6%AD%A6%E5%85%83%E7%9B%B4%E8%B5%A4%E5%A3%81%E5%9C%96_%E5%8D%B7%EF%BC%88%E5%B1%80%E9%83%A85%EF%BC%89.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/a/ad/%E9%87%91%E6%AD%A6%E5%85%83%E7%9B%B4%E8%B5%A4%E5%A3%81%E5%9C%96_%E5%8D%B7%EF%BC%88%E5%B1%80%E9%83%A85%EF%BC%89.jpg"
+file = "paintings/wu-yuanzhi-red-cliff-5.jpg"
+size = 204871
+sha256 = "ce824ce1cb360cd5539b8ea731fd1ffae9276556ce0d0788b99bc531621d9d95"
+
+[sources.minghuang]
+title = "明皇幸蜀圖 (Emperor Minghuang's Journey to Shu) — Freer Gallery of Art, Smithsonian"
+author = "attributed to Qiu Ying (仇英), Ming dynasty"
+license = "public-domain"
+license_url = "https://commons.wikimedia.org/wiki/File:Emperor_Minghuang%27s_Journey_to_Sichuan,_Freer_Gallery_of_Art.jpg"
+homepage = "https://commons.wikimedia.org/wiki/File:Emperor_Minghuang%27s_Journey_to_Sichuan,_Freer_Gallery_of_Art.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/2/26/Emperor_Minghuang%27s_Journey_to_Sichuan%2C_Freer_Gallery_of_Art.jpg"
+file = "paintings/minghuang-journey-to-shu.jpg"
+size = 3129274
+sha256 = "1805e7d9a60895952277f6b70394538868f003b6d11804318b2a1f358685ed76"
+
+[sources.thousand_li]
+title = "千里江山圖 (A Thousand Li of Rivers and Mountains), section 1, 1113 — Palace Museum, Beijing"
+author = "Wang Ximeng (王希孟), Northern Song"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://commons.wikimedia.org/wiki/File:A_Thousand_Li_of_Rivers_and_Mountains_Section_1.jpg"
+url = "https://upload.wikimedia.org/wikipedia/commons/e/e8/A_Thousand_Li_of_Rivers_and_Mountains_Section_1.jpg"
+file = "paintings/thousand-li-section1.jpg"
+size = 3181669
+sha256 = "04144c41e10bad075565ea361d369a7f2eef9a22636b52e77acb0d854a5e15e9"
+
+# ---------------------------------------------------------------------------------------------
+# Music (build_music.py). Kevin MacLeod's tracks are CC BY 4.0 (incompetech.com licence page:
+# "Creative Commons — Free ... Requires that you credit the music"); the credit text is in
+# CREDITS.md. Where a track is offered under several licences, the one we use is given.
+
+[sources.macleod_shenyang]
+title = "Shenyang"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600066"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Shenyang.mp3"
+file = "music/macleod-shenyang.mp3"
+size = 4848882
+sha256 = "1cf2e0f57f820d82e9066ba4dca076735aedd512bc1909fdaa2e0065bd866786"
+
+[sources.macleod_asian_drums]
+title = "Asian Drums"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100396"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Asian%20Drums.mp3"
+file = "music/macleod-asian-drums.mp3"
+size = 5662938
+sha256 = "c715f9f9af67505447e8083f50206799ec8563157aab6fdc80e7672698cc8a7d"
+
+[sources.macleod_nu_flute]
+title = "Nu Flute"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100680"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Nu%20Flute.mp3"
+file = "music/macleod-nu-flute.mp3"
+size = 3314444
+sha256 = "5af23a3b36663b8c29ebed1b4b8384f5fe76bcd622aea9a76ba1da4ef5b79926"
+
+[sources.macleod_ishikari_lore]
+title = "Ishikari Lore"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100192"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Ishikari%20Lore.mp3"
+file = "music/macleod-ishikari-lore.mp3"
+size = 6688921
+sha256 = "2ae7e32d371f839c507f44397473942a9fbaffcea4c1ac1f94331fdf70a2b581"
+
+[sources.macleod_mountain_emperor]
+title = "Mountain Emperor"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1700012"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Mountain%20Emperor.mp3"
+file = "music/macleod-mountain-emperor.mp3"
+size = 6404535
+sha256 = "5dd109bdeb8f206ec4ca276e47aa6b6b8ca96df4b5580e5e2f078f4a95a00f7b"
+
+[sources.macleod_five_armies]
+title = "Five Armies"
+author = "Kevin MacLeod (incompetech.com)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100875"
+url = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Five%20Armies.mp3"
+file = "music/macleod-five-armies.mp3"
+size = 6235982
+sha256 = "f56746c90756db04675a80ebd29e22253177a6fcc16f56602da62af9eae8d733"
+
+[sources.hitctrl_jade_throne]
+title = "Views From Atop the Jade Kings Throne"
+author = "Hitctrl"
+license = "CC-BY-3.0"
+license_url = "https://creativecommons.org/licenses/by/3.0/"
+homepage = "https://opengameart.org/content/views-from-atop-the-jade-kings-throne"
+url = "https://opengameart.org/sites/default/files/Views%20From%20Atop%20the%20Jade%20Kings%20Throne.ogg"
+file = "music/hitctrl-views-from-atop-the-jade-kings-throne.ogg"
+size = 3258537
+sha256 = "21af784efac14e8a168ee1992cb002b521172a2ff39dc68ab603218c215d6335"
+
+# offered under CC BY 4.0, CC BY 3.0 and OGA-BY 3.0; we use CC BY 4.0
+[sources.majadroid_samurai_nights]
+title = "Samurai Nights"
+author = "Majadroid (Maik Hoffmann)"
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+homepage = "https://opengameart.org/content/samurai-nights"
+url = "https://opengameart.org/sites/default/files/samurai-nights-by-majadroid.zip"
+file = "music/majadroid-samurai-nights.zip"
+size = 3948874
+sha256 = "42f3c72dd761102845fbfff5cf81254626b00defdac9b0717f4d9b367173cc13"
+
+# offered under CC BY 3.0, CC BY-SA 3.0, OGA-BY 3.0 and CC0; we use CC0
+[sources.springspring_fanfares]
+title = "10 fanfares"
+author = "Spring Spring"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://opengameart.org/content/10-fanfares"
+url = "https://opengameart.org/sites/default/files/10%20fanfares_0.ogg"
+file = "music/springspring-10-fanfares.ogg"
+size = 1792868
+sha256 = "473f92ceb267e92f6c567e784b0e67f840a5064c2a1d108c48a0daea519fd206"
+
+[sources.joth_death_of_a_ninja]
+title = "Death of a Ninja (Game Over)"
+author = "Joth"
+license = "CC0-1.0"
+license_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+homepage = "https://opengameart.org/content/death-of-a-ninja-game-over"
+url = "https://opengameart.org/sites/default/files/Death%20of%20a%20Ninja%20%28Game%20Over%29.mp3"
+file = "music/joth-death-of-a-ninja.mp3"
+size = 325402
+sha256 = "d12d4acc106e2d2f17169390d2e7a3ca373f73b422ad877cb45fb9427dd880f0"
+
+# offered under CC BY 3.0 and CC BY-SA 3.0; we use CC BY 3.0
+[sources.springspring_asian_arrangement]
+title = "Generic 2 minute Asian Arrangement"
+author = "Spring Spring"
+license = "CC-BY-3.0"
+license_url = "https://creativecommons.org/licenses/by/3.0/"
+homepage = "https://opengameart.org/content/generic-2-minute-asian-arrangement"
+url = "https://opengameart.org/sites/default/files/Generic%20Asian%20Arrangement_0.ogg"
+file = "music/springspring-generic-asian-arrangement.ogg"
+size = 2021257
+sha256 = "3f343590c0d591ff4be5b202d18ceeb2f516fa4703efa3dbf8d6ad392372c1ef"
+
+# ---------------------------------------------------------------------------------------------
+# Fonts (build_fonts.py): Hanja missing from Galmuri are taken from Fusion Pixel Font (OFL; no
+# Reserved Font Name in its OFL.txt). The archives also carry the licences of the fonts Fusion
+# Pixel is built from (Ark Pixel, Cubic 11, Boutique Bitmap 9x9, Galmuri).
+
+[sources.fusion_pixel_12]
+title = "Fusion Pixel Font 2026.09.01, 12px proportional (woff2)"
+author = "TakWolf"
+license = "OFL-1.1"
+license_url = "https://openfontlicense.org/"
+homepage = "https://github.com/TakWolf/fusion-pixel-font"
+url = "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.09.01/fusion-pixel-font-12px-proportional-ttf.woff2-v2026.09.01.zip"
+file = "fonts/fusion-pixel-font-12px-proportional-ttf.woff2-v2026.09.01.zip"
+size = 4630240
+sha256 = "c3e2c4cadac184a5b8e3e2e48e428c5740397db76f80b5879ae8720ad6db6b0a"
+
+[sources.fusion_pixel_10]
+title = "Fusion Pixel Font 2026.09.01, 10px proportional (woff2)"
+author = "TakWolf"
+license = "OFL-1.1"
+license_url = "https://openfontlicense.org/"
+homepage = "https://github.com/TakWolf/fusion-pixel-font"
+url = "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.09.01/fusion-pixel-font-10px-proportional-ttf.woff2-v2026.09.01.zip"
+file = "fonts/fusion-pixel-font-10px-proportional-ttf.woff2-v2026.09.01.zip"
+size = 2649656
+sha256 = "8cc700b05fcf9a8639a60e6287db973e4d1d48864f2cc3cbc77d0542419ee269"

@@ -1,15 +1,16 @@
 # Asset pipeline
 
-This directory rebuilds every graphic, sound effect and font of the base pack (`data/base`) from
-pinned, openly licensed sources. The generated files are committed (they are the game's runtime
+This directory rebuilds every graphic, portrait, background, piece of music, sound effect and font
+of the base pack (`data/base`) from pinned, openly licensed sources. The generated files are committed (they are the game's runtime
 data); the downloaded archives are not. Conventions for all outputs are in
 [docs/ASSETS.md](../../docs/ASSETS.md); authors and licences are in [CREDITS.md](../../CREDITS.md).
 
-Portraits (`gfx/portraits`), drama backgrounds (`gfx/bg`) and music (`bgm`) are not produced here.
-
 ## Rebuilding
 
-Requirements: Python 3.12+ and [Pillow](https://pypi.org/project/pillow/) (`pip install pillow`).
+Requirements: Python 3.12+, [Pillow](https://pypi.org/project/pillow/) and
+[fontTools](https://pypi.org/project/fonttools/) with WOFF2 support
+(`pip install pillow "fonttools[woff]"`), and [ffmpeg](https://ffmpeg.org) with libvorbis on `PATH`
+(or in the `FFMPEG` environment variable) for the music.
 
 ```sh
 python tools/assets/fetch.py            # download sources into tools/assets/.cache/ and verify SHA-256
@@ -20,7 +21,10 @@ python tools/assets/preview.py          # review sheets in tools/assets/.cache/p
 ```
 
 The build is deterministic: the same sources give byte-identical outputs, so `--check` proves the
-committed pack matches the pipeline. A full build fails if a source pinned in `sources.toml` is not
+committed pack matches the pipeline. Two steps also depend on tool versions: `music` on the ffmpeg /
+libvorbis build (the committed files were made with ffmpeg 8.1.2, gyan.dev full build) and
+`portraits` / `backgrounds` / every image step on Pillow's resampling and quantisation; a different
+version may give slightly different bytes, so compare with `--check` on the same tools. A full build fails if a source pinned in `sources.toml` is not
 used by any step, which keeps `sources.toml` and `CREDITS.md` honest.
 
 ### Sources and the Ninja Adventure download
@@ -34,10 +38,16 @@ as `.cache/NinjaAdventure-AssetPack.zip`; `fetch.py` then only verifies it. The 
 holds an older (2021) version that lacks files we use, so it cannot replace the pinned zip.
 
 To add or update a source: pin it in `sources.toml` (size and SHA-256), use it from a build step,
-credit it in `CREDITS.md` with the outputs that use it, and rebuild.
+credit it in `CREDITS.md` with the outputs that use it, and rebuild. Several files of one work (the
+pages of a scanned book, the sections of a scroll) are one source with `[sources.<id>.parts]`; a
+full build also fails on a pinned part that no step reads. Wikimedia serves bursts of downloads with
+HTTP 429; `fetch.py` waits and retries. The portrait pages are Wikimedia's renders of a djvu file:
+should they ever be re-rendered, `fetch.py` reports the new hashes and the parts must be re-pinned.
 
 Lint and format the scripts with `uvx ruff check --no-cache tools/assets` and
 `uvx ruff format --no-cache tools/assets` (settings in `ruff.toml`).
+Unit tests of the pure logic (source table parsing, the portrait table checks, grading and filter
+helpers) run without the cache: `python -m unittest discover -s tools/assets -p "test_*.py"`.
 
 ## Layout
 
@@ -45,7 +55,7 @@ Lint and format the scripts with `uvx ruff check --no-cache tools/assets` and
 |---|---|
 | `sources.toml` | pinned third-party archives |
 | `fetch.py` | download + verification |
-| `build.py` | step runner (`terrain`, `units`, `fonts`, `sfx`, `fx`, `icons`, `flags`, `title`) and `--check` |
+| `build.py` | step runner (`terrain`, `units`, `fonts`, `sfx`, `fx`, `icons`, `flags`, `title`, `portraits`, `backgrounds`, `music`) and `--check` |
 | `assetlib.py` | source access (zip members), recolouring, atlas and deterministic PNG/TOML writers |
 | `art.py` | pixel art drawn for this project, as text (one character per pixel) in the NA palette; team ramps |
 | `build_terrain.py` | `gfx/tiles/terrain.png` + `terrain.toml` |
@@ -53,9 +63,14 @@ Lint and format the scripts with `uvx ruff check --no-cache tools/assets` and
 | `build_fx.py` | `gfx/fx/<key>.png` + `fx.toml` |
 | `build_ui.py` | `gfx/ui/icons.png` + `icons.toml`, `gfx/ui/flags.png` |
 | `build_title.py` | `gfx/ui/title.png` (composed from the generated tiles, units and flags) |
-| `build_audio.py` | `sfx/<key>.wav`, `fonts/` |
+| `build_audio.py` | `sfx/<key>.wav` |
+| `build_fonts.py` | `fonts/`: Galmuri completed with the Hanja of the pack's text |
+| `build_portraits.py` + `portraits.toml` | `gfx/portraits/<officer>.png`, `_unknown.png` |
+| `build_backgrounds.py` | `gfx/bg/<key>.png` |
+| `build_music.py` | `bgm/<key>.ogg` |
 | `tilemap.py` | reference renderer of `terrain.toml` (used by the title and the previews) |
 | `preview.py` | review sheets: sample map with every unit, tile catalogue, unit sheets |
+| `test_pipeline.py` | unit tests (see above) |
 
 ## Terrain (`gfx/tiles/terrain.toml`)
 
@@ -163,3 +178,62 @@ All from Ninja Adventure, converted to 16-bit mono WAV and trimmed (`build_audio
 source file of each key): `cursor`, `confirm`, `cancel`, `error`, `step`, `hit`, `hit_heavy`,
 `arrow`, `fire`, `water`, `rock`, `heal`, `morale_up`, `morale_down`, `confuse`, `levelup`,
 `retreat`, `treasure`, `phase`, `victory`, `defeat`.
+
+## Portraits (`gfx/portraits`)
+
+192x240 head-and-shoulders crops of the full-length figures in the portrait section of
+增像全圖三國演義 (a late-Qing illustrated edition of the novel, public domain), levelled, lightly
+denoised, recoloured to indigo ink on warm paper and framed. `portraits.toml` maps every officer of
+`data/base/officers.toml` to a figure (page, quarter, face point, crop width, optional `erase`
+rectangles for printed text); the build refuses a table that misses an officer, names the wrong
+figure, uses a reserved figure as a stand-in or uses a figure more than twice, and lists entries no
+officer uses (they are drawn too: for `@show` keys and for officers a chapter in progress adds). To
+add an officer: look for their figure in `[pages]`, else share a stand-in figure (mirrored) with
+someone they never meet — every usable figure is taken — then check the crop on a review sheet
+(the portraits are small; judge them at 1x and 2x).
+
+## Drama backgrounds (`gfx/bg`)
+
+| key | painting (region) |
+|---|---|
+| `palace` | 漢宮春曉圖, Qiu Ying — halls and balustrades |
+| `town` | 清院本清明上河圖, section 14 — streets and shops |
+| `village` | 清院本清明上河圖, section 03 — willows, a farmstead, travellers |
+| `camp` | 萬樹園賜宴圖 — the yurt camp at Chengde |
+| `field` | 康熙南巡圖 卷三 (Met) — open country, a road and riders |
+| `river` | 武元直 赤壁圖, detail 5 — the river below the Red Cliff |
+| `mountain` | 明皇幸蜀圖 — blue-green peaks and a mountain road |
+| `castle` | 清院本清明上河圖, section 11 — city gate tower on the wall |
+| `night` | 千里江山圖, section 1 — lake and mountains, graded to moonlight |
+| `black` | plain black |
+
+All are graded alike (see `build_backgrounds.py`) so white text stays readable on them.
+
+## Music (`bgm`)
+
+| key | track | use |
+|---|---|---|
+| `title` | Hitctrl — Views From Atop the Jade Kings Throne | title screen |
+| `peace` | Kevin MacLeod — Shenyang | calm drama, towns |
+| `tension` | Kevin MacLeod — Asian Drums | tense drama |
+| `sad` | Kevin MacLeod — Nu Flute | sad scenes |
+| `camp` | Kevin MacLeod — Ishikari Lore | camp / preparation |
+| `battle` | Kevin MacLeod — Mountain Emperor | player phase |
+| `enemy` | Majadroid — Samurai Nights (loop section) | enemy phase |
+| `boss` | Kevin MacLeod — Five Armies | decisive battles |
+| `victory` | Spring Spring — 10 fanfares (no. 2) | jingle |
+| `defeat` | Joth — Death of a Ninja (Game Over) | jingle |
+| `ending` | Spring Spring — Generic 2 minute Asian Arrangement | ending, "to be continued" |
+
+The picks were made from the tracks' descriptions, instrumentation and a loudness/structure analysis,
+not by listening; the cuts are listed in `build_music.py`.
+
+## Fonts (`fonts`)
+
+`Galmuri11.ttf` and `Galmuri9.ttf` are Galmuri with the CJK ideographs of the pack's text that Galmuri
+lacks copied from Fusion Pixel Font (12 px and 10 px Korean builds, same pixel grid). The step scans
+the pack's `*.toml`, `*.drama` and `credits.txt`, so rerun it when new Hanja appear in the text. A
+character the donor lacks too stops the build unless its `FontJob` composes it from the pixel columns
+of two glyphs Galmuri has (so far only 豨 in Galmuri9: 豕 of 豬 beside 希 of 稀). The
+fonts are renamed "Galmuri11 ER" / "Galmuri9 ER" inside (OFL Modified Versions); the file names
+stay because the game loads them by name.

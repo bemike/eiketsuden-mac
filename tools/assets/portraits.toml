@@ -1,0 +1,915 @@
+# Officer portraits: which figure of 增像全圖三國演義 each officer gets, and how it is framed.
+# Read by tools/assets/build_portraits.py (see its module doc for the image treatment).
+#
+# The book's portrait section (繡像) is on the pages pinned as source `xiuxiang` in sources.toml:
+# djvu pages 15-50 of the CADAL scan, four full-length figures per page, each in a printed frame
+# with the person's name and a short poem. Coordinates are pixels of the 1920x2992 page renders.
+#
+# [portraits.<key>]   one entry per portrait key of data/base/officers.toml (the officer id); an
+#                     entry no officer uses is drawn as well (dramas can `@show` any portrait key,
+#                     and officers of chapters in progress may not be in officers.toml yet) and
+#                     listed by the build
+#   figure    the name printed beside the figure (checked against [pages])
+#   page      djvu page number
+#   quad      TR / TL / BR / BL: the figure's quarter of the page
+#   face      page point placed at the portrait's horizontal centre, 40 % from its top
+#   width     crop width in page pixels (default 300); the height is width * 5 / 4
+#   stand_in  true when the book has no figure of this officer and another person's figure is used
+#   mirror    flip horizontally; required for the second use of a figure
+#   erase     page rectangles [x0, y0, x1, y1] painted over with paper first (printed name or poem
+#             text that would otherwise show inside the crop)
+#
+# Choosing stand-ins: the book has a figure for 52 of the officers. The others get figures of
+# people who take no part in this game's story (mostly later generations and scholars), picked by
+# type (warrior or official, age) and never from [reserved]. There are fewer usable figures than
+# officers, so some figures serve twice, always for two people who should never share a battle
+# (typically an enemy who dies in the prologue or chapter 1 and an officer who joins in chapter 3),
+# one of them mirrored. Officers who stay in the story for long (e.g. 于禁, 樂進, 李典) get a figure
+# of their own, or share one only with someone who is gone before they join. Figures without a
+# usable face (back views and bows: 丁管, 北地王, 鍾會, 王經, 譙周, 蔡邕) and the monk 普淨 are not
+# used; 文醜, 沮授 and 魏延 keep their own figures although the book draws them turned away.
+
+[pages]  # djvu page -> printed names in the order TR, TL, BR, BL
+15 = ["漢獻帝", "董妃", "伏皇后", "王允"]
+16 = ["丁原", "丁管", "伍孚", "董卓"]
+17 = ["蔡邕", "呂布", "蔡文姬", "貂蟬"]
+18 = ["陳宮", "伏完", "呂伯奢", "董承"]
+19 = ["吉平", "韓遂", "馬騰", "袁紹"]
+20 = ["田豐", "顏良", "沮授", "文醜"]
+21 = ["袁術", "劉表", "公孫瓚", "王粲"]
+22 = ["張繡", "孔融", "陶謙", "禰衡"]
+23 = ["劉璋", "管寧", "張任", "鄭康成"]
+24 = ["管輅", "昭烈帝", "張角", "糜夫人"]
+25 = ["甘夫人", "後主", "孫夫人", "北地王"]
+26 = ["諸葛武侯", "龐德公", "黃承彥", "司馬徽"]
+27 = ["諸葛瞻", "龐統", "諸葛尚", "徐庶"]
+28 = ["徐母", "關平", "關壯繆", "趙累"]
+29 = ["王甫", "關興", "普淨", "廖化"]
+30 = ["張桓侯", "程畿", "張苞", "傅彤"]
+31 = ["蠻王沙摩柯", "黃忠", "趙雲", "馬超"]
+32 = ["嚴顏", "馬岱", "魏延", "法正"]
+33 = ["張松", "秦宓", "鄧芝", "馬謖"]
+34 = ["蠻王孟獲", "費禕", "蔣琬", "董允"]
+35 = ["姜維", "傅僉", "夏侯霸", "譙周"]
+36 = ["孫堅", "于吉", "孫策", "孫權"]
+37 = ["孫皓", "二喬", "周瑜", "魯肅"]
+38 = ["諸葛瑾", "呂蒙", "諸葛恪", "黃蓋"]
+39 = ["甘寧", "周泰", "太史慈", "徐盛"]
+40 = ["丁奉", "張昭", "顧雍", "闞澤"]
+41 = ["陸遜", "曹操", "張悌", "左慈"]
+42 = ["華佗", "甄后", "曹丕", "曹植"]
+43 = ["曹彰", "荀彧", "郭嘉", "荀攸"]
+44 = ["楊修", "陳琳", "賈詡", "曹仁"]
+45 = ["曹洪", "夏侯淵", "夏侯惇", "張遼"]
+46 = ["徐晃", "許褚", "典韋", "龐德"]
+47 = ["張郃", "夏侯令女", "曹真", "郝昭"]
+48 = ["王雙", "陳泰", "王經", "諸葛誕"]
+49 = ["鍾會", "羊祜", "鄧艾", "杜預"]
+50 = ["王濬", "司馬師", "司馬懿", "司馬昭"]
+
+# Figures of people who have (or will have) their own part in the story, and all women of the book:
+# never used as stand-ins, so every face stays with its person. The figures used for officers'
+# own portraits are implicitly reserved as well.
+[reserved]
+figures = [
+  "漢獻帝", "王允", "董卓", "貂蟬", "董承", "馬騰", "劉表", "張繡", "劉璋", "張任", "張松", "張角",
+  "司馬徽", "徐母", "蠻王孟獲", "孫堅", "于吉", "孫策", "孫權", "周瑜", "魯肅", "諸葛瑾", "呂蒙", "黃蓋",
+  "周泰", "張昭", "陸遜", "左慈", "華佗", "曹丕", "曹彰", "楊修", "賈詡", "徐晃", "典韋", "龐德",
+  "曹真", "郝昭", "司馬懿",
+  "董妃", "伏皇后", "蔡文姬", "糜夫人", "甘夫人", "孫夫人", "二喬", "甄后", "夏侯令女",
+]
+
+[portraits.liu_bei]  # 유비 劉備
+figure = "昭烈帝"
+page = 24
+quad = "TL"
+face = [560, 745]
+
+[portraits.guan_yu]  # 관우 關羽
+figure = "關壯繆"
+page = 28
+quad = "BR"
+face = [1200, 1820]
+
+[portraits.zhang_fei]  # 장비 張飛
+figure = "張桓侯"
+page = 30
+quad = "TR"
+face = [1210, 738]
+width = 260
+
+[portraits.jian_yong]  # 간옹 簡雍
+figure = "禰衡"
+page = 22
+quad = "BL"
+face = [540, 1930]
+stand_in = true
+
+[portraits.geng_wu]  # 경무 耿武
+figure = "程畿"
+page = 30
+quad = "TL"
+face = [570, 800]
+erase = [[420, 560, 625, 712]]
+stand_in = true
+
+[portraits.guan_chun]  # 관순 關純
+figure = "杜預"
+page = 49
+quad = "BL"
+face = [790, 1890]
+stand_in = true
+
+[portraits.zhao_yun]  # 조운 趙雲
+figure = "趙雲"
+page = 31
+quad = "BR"
+face = [1340, 1860]
+
+[portraits.sun_qian]  # 손건 孫乾
+figure = "鄧芝"
+page = 33
+quad = "BR"
+face = [1250, 1930]
+stand_in = true
+
+[portraits.mi_fang]  # 미방 糜芳
+figure = "韓遂"
+page = 19
+quad = "TL"
+face = [570, 810]
+stand_in = true
+
+[portraits.mi_zhu]  # 미축 糜竺
+figure = "伏完"
+page = 18
+quad = "TL"
+face = [570, 850]
+stand_in = true
+
+[portraits.guan_ping]  # 관평 關平
+figure = "關平"
+page = 28
+quad = "TL"
+face = [530, 760]
+
+[portraits.zhou_cang]  # 주창 周倉
+figure = "伍孚"
+page = 16
+quad = "BR"
+face = [1220, 1800]
+stand_in = true
+mirror = true
+
+[portraits.liu_pi]  # 유벽 劉辟
+figure = "諸葛恪"
+page = 38
+quad = "BR"
+face = [1360, 2040]
+width = 260
+stand_in = true
+mirror = true
+
+[portraits.yi_ji]  # 이적 伊籍
+figure = "秦宓"
+page = 33
+quad = "TL"
+face = [750, 840]
+stand_in = true
+mirror = true
+
+[portraits.liu_feng]  # 유봉 劉封
+figure = "諸葛尚"
+page = 27
+quad = "BR"
+face = [1270, 1830]
+stand_in = true
+mirror = true
+
+[portraits.xu_shu]  # 서서 徐庶
+figure = "徐庶"
+page = 27
+quad = "BL"
+face = [570, 1870]
+
+[portraits.zhuge_liang]  # 제갈량 諸葛亮
+figure = "諸葛武侯"
+page = 26
+quad = "TR"
+face = [1120, 960]
+
+[portraits.ma_liang]  # 마량 馬良
+figure = "曹植"
+page = 42
+quad = "BL"
+face = [560, 1890]
+stand_in = true
+mirror = true
+
+[portraits.ma_su]  # 마속 馬謖
+figure = "馬謖"
+page = 33
+quad = "BL"
+face = [750, 1910]
+
+[portraits.gong_zhi]  # 공지 鞏志
+figure = "管寧"
+page = 23
+quad = "TL"
+face = [640, 980]
+stand_in = true
+mirror = true
+
+[portraits.wei_yan]  # 위연 魏延
+figure = "魏延"
+page = 32
+quad = "BR"
+face = [1230, 1880]
+width = 340
+
+[portraits.huang_zhong]  # 황충 黃忠
+figure = "黃忠"
+page = 31
+quad = "TL"
+face = [630, 790]
+
+[portraits.jiang_wan]  # 장완 蔣琬
+figure = "蔣琬"
+page = 34
+quad = "BR"
+face = [1345, 1850]
+
+[portraits.fei_yi]  # 비위 費禕
+figure = "費禕"
+page = 34
+quad = "TL"
+face = [530, 920]
+
+[portraits.pang_tong]  # 방통 龐統
+figure = "龐統"
+page = 27
+quad = "TL"
+face = [610, 740]
+
+[portraits.fa_zheng]  # 법정 法正
+figure = "法正"
+page = 32
+quad = "BL"
+face = [550, 1900]
+
+[portraits.yan_yan]  # 엄안 嚴顏
+figure = "嚴顏"
+page = 32
+quad = "TR"
+face = [1310, 830]
+
+[portraits.wu_lan]  # 오란 吳蘭
+figure = "傅僉"
+page = 35
+quad = "TL"
+face = [550, 750]
+stand_in = true
+mirror = true
+
+[portraits.lei_tong]  # 뇌동 雷銅
+figure = "張悌"
+page = 41
+quad = "BR"
+face = [1380, 1860]
+stand_in = true
+mirror = true
+
+[portraits.wu_yi]  # 오의 吳懿
+figure = "司馬師"
+page = 50
+quad = "TL"
+face = [550, 840]
+stand_in = true
+mirror = true
+
+[portraits.li_yan]  # 이엄 李嚴
+figure = "顧雍"
+page = 40
+quad = "BR"
+face = [1180, 1850]
+stand_in = true
+mirror = true
+
+[portraits.fei_guan]  # 비관 費觀
+figure = "龐德公"
+page = 26
+quad = "TL"
+face = [470, 810]
+stand_in = true
+mirror = true
+
+[portraits.ma_chao]  # 마초 馬超
+figure = "馬超"
+page = 31
+quad = "BL"
+face = [575, 1895]
+
+[portraits.ma_dai]  # 마대 馬岱
+figure = "馬岱"
+page = 32
+quad = "TL"
+face = [370, 770]
+
+[portraits.huang_quan]  # 황권 黃權
+figure = "董允"
+page = 34
+quad = "BL"
+face = [480, 1940]
+stand_in = true
+mirror = true
+
+[portraits.meng_da]  # 맹달 孟達
+figure = "闞澤"
+page = 40
+quad = "BL"
+face = [580, 1950]
+width = 300
+stand_in = true
+mirror = true
+
+[portraits.wu_ban]  # 오반 吳班
+figure = "諸葛瞻"
+page = 27
+quad = "TR"
+face = [1410, 712]
+width = 260
+stand_in = true
+mirror = true
+
+[portraits.huo_jun]  # 곽준 霍峻
+figure = "孫皓"
+page = 37
+quad = "TR"
+face = [1290, 770]
+width = 300
+stand_in = true
+mirror = true
+
+[portraits.chen_shi]  # 진식 陳式
+figure = "王濬"
+page = 50
+quad = "TR"
+face = [1345, 870]
+stand_in = true
+mirror = true
+
+[portraits.shamoke]  # 사마가 沙摩柯
+figure = "蠻王沙摩柯"
+page = 31
+quad = "TR"
+face = [1300, 770]
+
+[portraits.wang_ping]  # 왕평 王平
+figure = "傅彤"
+page = 30
+quad = "BL"
+face = [460, 1840]
+stand_in = true
+mirror = true
+
+[portraits.liao_hua]  # 요화 廖化
+figure = "廖化"
+page = 29
+quad = "BL"
+face = [690, 1870]
+
+[portraits.wang_fu]  # 왕보 王甫
+figure = "王甫"
+page = 29
+quad = "TR"
+face = [1280, 700]
+
+[portraits.zhao_lei]  # 조루 趙累
+figure = "趙累"
+page = 28
+quad = "BL"
+face = [660, 1900]
+
+[portraits.liu_shan]  # 유선 劉禪
+figure = "後主"
+page = 25
+quad = "TL"
+face = [570, 770]
+
+[portraits.guan_xing]  # 관흥 關興
+figure = "關興"
+page = 29
+quad = "TL"
+face = [640, 760]
+
+[portraits.zhang_bao]  # 장포 張苞
+figure = "張苞"
+page = 30
+quad = "BR"
+face = [1150, 1840]
+
+[portraits.xu_sheng]  # 서성 徐盛
+figure = "徐盛"
+page = 39
+quad = "BL"
+face = [550, 1860]
+
+[portraits.ding_feng]  # 정봉 丁奉
+figure = "丁奉"
+page = 40
+quad = "TR"
+face = [1228, 722]
+width = 270
+
+[portraits.ling_tong]  # 능통 淩統
+figure = "司馬昭"
+page = 50
+quad = "BL"
+face = [670, 1960]
+stand_in = true
+mirror = true
+
+[portraits.gan_ning]  # 감녕 甘寧
+figure = "甘寧"
+page = 39
+quad = "TR"
+face = [1340, 660]
+
+[portraits.jiang_wei]  # 강유 姜維
+figure = "姜維"
+page = 35
+quad = "TR"
+face = [1415, 735]
+
+[portraits.zhang_liao]  # 장료 張遼
+figure = "張遼"
+page = 45
+quad = "BL"
+face = [615, 1950]
+
+[portraits.tao_qian]  # 도겸 陶謙
+figure = "陶謙"
+page = 22
+quad = "BR"
+face = [1290, 1950]
+
+[portraits.gongsun_zan]  # 공손찬 公孫瓚
+figure = "公孫瓚"
+page = 21
+quad = "BR"
+face = [1420, 1920]
+
+[portraits.cao_cao]  # 조조 曹操
+figure = "曹操"
+page = 41
+quad = "TL"
+face = [710, 770]
+
+[portraits.yuan_shao]  # 원소 袁紹
+figure = "袁紹"
+page = 19
+quad = "BL"
+face = [715, 1840]
+
+[portraits.yuan_shu]  # 원술 袁術
+figure = "袁術"
+page = 21
+quad = "TR"
+face = [1400, 850]
+
+[portraits.gongsun_yue]  # 공손월 公孫越
+figure = "傅彤"
+page = 30
+quad = "BL"
+face = [460, 1840]
+stand_in = true
+
+[portraits.yan_gang]  # 엄강 嚴綱
+figure = "陳泰"
+page = 48
+quad = "TL"
+face = [530, 790]
+stand_in = true
+
+[portraits.kong_rong]  # 공융 孔融
+figure = "孔融"
+page = 22
+quad = "TL"
+face = [350, 880]
+
+[portraits.taishi_ci]  # 태사자 太史慈
+figure = "太史慈"
+page = 39
+quad = "BR"
+face = [1430, 1830]
+
+[portraits.hua_xiong]  # 화웅 華雄
+figure = "王雙"
+page = 48
+quad = "TR"
+face = [1340, 770]
+stand_in = true
+
+[portraits.hu_zhen]  # 호진 胡軫
+figure = "丁原"
+page = 16
+quad = "TR"
+face = [1385, 815]
+stand_in = true
+
+[portraits.zhao_cen]  # 조잠 趙岑
+figure = "呂伯奢"
+page = 18
+quad = "BR"
+face = [1170, 1880]
+stand_in = true
+
+[portraits.li_su]  # 이숙 李肅
+figure = "管輅"
+page = 24
+quad = "TR"
+face = [1200, 760]
+stand_in = true
+
+[portraits.lu_bu]  # 여포 呂布
+figure = "呂布"
+page = 17
+quad = "TL"
+face = [750, 790]
+
+[portraits.hou_cheng]  # 후성 侯成
+figure = "諸葛尚"
+page = 27
+quad = "BR"
+face = [1270, 1830]
+stand_in = true
+
+[portraits.song_xian]  # 송헌 宋憲
+figure = "諸葛瞻"
+page = 27
+quad = "TR"
+face = [1410, 712]
+width = 260
+stand_in = true
+
+[portraits.wei_xu]  # 위속 魏續
+figure = "司馬昭"
+page = 50
+quad = "BL"
+face = [670, 1960]
+stand_in = true
+
+[portraits.chunyu_qiong]  # 순우경 淳于瓊
+figure = "司馬師"
+page = 50
+quad = "TL"
+face = [550, 840]
+stand_in = true
+
+[portraits.feng_ji]  # 봉기 逢紀
+figure = "吉平"
+page = 19
+quad = "TR"
+face = [1400, 760]
+stand_in = true
+
+[portraits.zhang_he]  # 장합 張郃
+figure = "張郃"
+page = 47
+quad = "TR"
+face = [1440, 840]
+
+[portraits.yan_liang]  # 안량 顏良
+figure = "顏良"
+page = 20
+quad = "TL"
+face = [570, 770]
+
+[portraits.gao_lan]  # 고람 高覽
+figure = "秦宓"
+page = 33
+quad = "TL"
+face = [750, 840]
+stand_in = true
+
+[portraits.shen_pei]  # 심배 審配
+figure = "顧雍"
+page = 40
+quad = "BR"
+face = [1180, 1850]
+stand_in = true
+
+[portraits.qu_yi]  # 국의 麴義
+figure = "夏侯霸"
+page = 35
+quad = "BR"
+face = [1270, 2010]
+width = 270
+stand_in = true
+
+[portraits.wen_chou]  # 문추 文醜
+figure = "文醜"
+page = 20
+quad = "BL"
+face = [590, 1800]
+
+[portraits.guo_tu]  # 곽도 郭圖
+figure = "闞澤"
+page = 40
+quad = "BL"
+face = [580, 1950]
+stand_in = true
+
+[portraits.chen_zhen]  # 진진 陳震
+figure = "王粲"
+page = 21
+quad = "BL"
+face = [570, 1930]
+stand_in = true
+
+[portraits.tian_feng]  # 전풍 田豐
+figure = "田豐"
+page = 20
+quad = "TR"
+face = [1105, 795]
+erase = [[920, 540, 990, 680]]
+
+[portraits.ju_shou]  # 저수 沮授
+figure = "沮授"
+page = 20
+quad = "BR"
+face = [1215, 1920]
+width = 260
+erase = [[1240, 1690, 1360, 1912]]
+
+[portraits.jiao_chu]  # 초촉 焦觸
+figure = "管寧"
+page = 23
+quad = "TL"
+face = [640, 980]
+stand_in = true
+
+[portraits.zhang_nan]  # 장남 張南
+figure = "鄭康成"
+page = 23
+quad = "BL"
+face = [775, 1880]
+width = 260
+stand_in = true
+mirror = true
+
+[portraits.chen_lin]  # 진림 陳琳
+figure = "陳琳"
+page = 44
+quad = "TL"
+face = [400, 800]
+
+[portraits.xu_you]  # 허유 許攸
+figure = "張悌"
+page = 41
+quad = "BR"
+face = [1380, 1860]
+stand_in = true
+
+[portraits.guan_hai]  # 관해 管亥
+figure = "伍孚"
+page = 16
+quad = "BR"
+face = [1220, 1800]
+stand_in = true
+
+[portraits.yu_jin]  # 우금 于禁
+figure = "鄧艾"
+page = 49
+quad = "BR"
+face = [1425, 1790]
+stand_in = true
+
+[portraits.li_dian]  # 이전 李典
+figure = "羊祜"
+page = 49
+quad = "TL"
+face = [780, 790]
+stand_in = true
+
+[portraits.cao_hong]  # 조홍 曹洪
+figure = "曹洪"
+page = 45
+quad = "TR"
+face = [1320, 800]
+
+[portraits.yue_jin]  # 악진 樂進
+figure = "諸葛誕"
+page = 48
+quad = "BL"
+face = [530, 1830]
+stand_in = true
+
+[portraits.xiahou_yuan]  # 하후연 夏侯淵
+figure = "夏侯淵"
+page = 45
+quad = "TL"
+face = [600, 790]
+
+[portraits.guo_jia]  # 곽가 郭嘉
+figure = "郭嘉"
+page = 43
+quad = "BR"
+face = [1440, 1880]
+
+[portraits.xiahou_dun]  # 하후돈 夏侯惇
+figure = "夏侯惇"
+page = 45
+quad = "BR"
+face = [1300, 1880]
+
+[portraits.xun_yu]  # 순욱 荀彧
+figure = "荀彧"
+page = 43
+quad = "TL"
+face = [640, 790]
+
+[portraits.cao_ren]  # 조인 曹仁
+figure = "曹仁"
+page = 44
+quad = "BL"
+face = [455, 1885]
+erase = [[440, 1680, 560, 1785], [580, 1600, 740, 1850]]
+
+[portraits.xu_chu]  # 허저 許褚
+figure = "許褚"
+page = 46
+quad = "TL"
+face = [490, 850]
+
+[portraits.cheng_yu]  # 정욱 程昱
+figure = "黃承彥"
+page = 26
+quad = "BR"
+face = [1310, 1950]
+stand_in = true
+
+[portraits.xun_you]  # 순유 荀攸
+figure = "荀攸"
+page = 43
+quad = "BL"
+face = [710, 1890]
+
+[portraits.che_zhou]  # 차주 車冑
+figure = "董允"
+page = 34
+quad = "BL"
+face = [480, 1940]
+stand_in = true
+
+[portraits.ji_ling]  # 기령 紀靈
+figure = "王濬"
+page = 50
+quad = "TR"
+face = [1345, 870]
+stand_in = true
+
+[portraits.yue_jiu]  # 악취 樂就
+figure = "曹植"
+page = 42
+quad = "BL"
+face = [560, 1890]
+width = 300
+stand_in = true
+
+[portraits.chen_ji]  # 진기 陳紀
+figure = "鄭康成"
+page = 23
+quad = "BL"
+face = [775, 1880]
+width = 260
+stand_in = true
+
+[portraits.chen_gong]  # 진궁 陳宮
+figure = "陳宮"
+page = 18
+quad = "TR"
+face = [1160, 790]
+
+[portraits.gao_shun]  # 고순 高順
+figure = "傅僉"
+page = 35
+quad = "TL"
+face = [550, 750]
+stand_in = true
+
+[portraits.xu_si]  # 허사 許汜
+figure = "諸葛恪"
+page = 38
+quad = "BR"
+face = [1360, 2040]
+width = 260
+stand_in = true
+
+[portraits.wang_kai]  # 왕해 王楷
+figure = "龐德公"
+page = 26
+quad = "TL"
+face = [470, 810]
+stand_in = true
+
+[portraits.yuan_yin]  # 원윤 袁胤
+figure = "孫皓"
+page = 37
+quad = "TR"
+face = [1290, 770]
+stand_in = true
+
+[portraits.li_feng]  # 이풍 李豐
+figure = "吉平"
+page = 19
+quad = "TR"
+face = [1400, 760]
+stand_in = true
+mirror = true
+
+# ---------------------------------------------------------------------------------------------
+# Chapter 1 officers. The book is used up, so each shares a figure (mirrored) with someone they
+# never meet: the recruits and bandit chiefs who stay with Liu Bei take figures of people gone
+# before they join, the others figures of people who appear in other acts only.
+
+[portraits.tian_yu]  # 전예 田豫 — joins in chapter 1 (Guangchuan route); 李肅 dies in the prologue
+figure = "管輅"
+page = 24
+quad = "TR"
+face = [1200, 760]
+stand_in = true
+mirror = true
+
+[portraits.lian_biao]  # 염표 廉彪 — joins in chapter 1 (Guangchuan route); 趙岑 leaves after the prologue
+figure = "呂伯奢"
+page = 18
+quad = "BR"
+face = [1170, 1880]
+stand_in = true
+mirror = true
+
+[portraits.yue_lin]  # 악린 岳麟 — joins in chapter 1 (Xindu route); 胡軫 leaves after the prologue
+figure = "丁原"
+page = 16
+quad = "TR"
+face = [1385, 815]
+stand_in = true
+mirror = true
+
+[portraits.chang_xi]  # 창희 昌豨 — joins in chapter 1 act 3; 麴義 appears only in act 1
+figure = "夏侯霸"
+page = 35
+quad = "BR"
+face = [1270, 2010]
+width = 270
+stand_in = true
+mirror = true
+
+[portraits.shi_meng]  # 석맹 石猛 — joins in chapter 1 act 3; 華雄 falls in the prologue
+figure = "王雙"
+page = 48
+quad = "TR"
+face = [1340, 770]
+stand_in = true
+mirror = true
+
+[portraits.xia_kun]  # 하곤 夏昆 — joins in chapter 1 act 3; 嚴綱 falls in act 1
+figure = "陳泰"
+page = 48
+quad = "TL"
+face = [530, 790]
+stand_in = true
+mirror = true
+
+[portraits.zong_bao]  # 종보 宗寶 — falls at Beihai in act 2, before 糜芳 joins
+figure = "韓遂"
+page = 19
+quad = "TL"
+face = [570, 810]
+stand_in = true
+mirror = true
+
+[portraits.tian_kai]  # 전해 田楷 — act 1 only, before 孫乾 joins
+figure = "鄧芝"
+page = 33
+quad = "BR"
+face = [1250, 1930]
+stand_in = true
+mirror = true
+
+[portraits.shan_jing]  # 단경 單經 — act 1 only, before 糜竺 joins
+figure = "伏完"
+page = 18
+quad = "TL"
+face = [570, 850]
+stand_in = true
+mirror = true
+
+[portraits.xu_dan]  # 허탐 許耽 — act 3 only; 陳震 appears only at Jieqiao in act 1
+figure = "王粲"
+page = 21
+quad = "BL"
+face = [570, 1930]
+stand_in = true
+mirror = true
