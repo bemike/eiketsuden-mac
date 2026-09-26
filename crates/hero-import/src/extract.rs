@@ -438,8 +438,7 @@ pub const POOL_SOURCE: &str = "IPPAN0M.R3";
 const SCENARIO_NOTE: &str = "Scripts decoded from the scenario bytecode; message offsets are \
     relative to the scene's section of the message file, persons are officer indices of \
     BAKDATA.R3. `resolved` repeats the referenced names and text for reading. Names marked \
-    op_xx / kind_x and summaries marked unverified are not pinned down yet \
-    (docs/ORIGINAL_DATA.md §10).";
+    op_xx and summaries marked unverified are not pinned down yet (docs/ORIGINAL_DATA.md §10).";
 
 const POOL_NOTE: &str = "NUL-terminated strings addressed by absolute offset from IPPAN0.R3 \
     (whose layout is not decoded yet).";
@@ -630,6 +629,15 @@ fn resolve(
         };
         if let Some(t) = text {
             out.insert(arg.name, t);
+        }
+    }
+    if instr.opcode == 0x0e {
+        // The key's first character selects one of the titles built into MAIN.EXE.
+        if let Some(k) = out.get("key").and_then(|k| k.bytes().next()) {
+            out.insert(
+                "title_index",
+                u32::from(k).wrapping_sub(u32::from(b'0')).to_string(),
+            );
         }
     }
     let roster = match &instr.operands {
@@ -826,15 +834,11 @@ fn scenario_listing(file: &ScenarioFile) -> String {
                     .unwrap_or_default();
                 let _ = writeln!(
                     s,
-                    "\nrecord {} {}{}{} group {}{} args {}{} -> code {:#06x}",
+                    "\nrecord {} {}{}({}) group {}{} args {}{} -> code {:#06x}",
                     r.index,
                     if t.inverted { "!" } else { "" },
                     t.kind_name,
-                    if t.kind_name.starts_with("kind") || t.kind_name == "unknown" {
-                        String::new()
-                    } else {
-                        format!("({})", t.kind)
-                    },
+                    t.kind,
                     t.group,
                     if t.group_flag { "*" } else { "" },
                     crate::hex(&t.args),
