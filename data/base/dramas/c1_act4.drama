@@ -1,0 +1,296 @@
+# 제1장 4막 — 여포 토벌전. Scenes of the base pack's chapter 1, act 4.
+#
+# Original text written for Eiketsuden Reloaded after the public-domain novel (chapters 18-19: Cao
+# Cao marches against Lü Bu, Xiapi is flooded, Hou Cheng, Song Xian and Wei Xu turn on Lü Bu, the
+# deaths of Lü Bu and Chen Gong, Zhang Liao spared). The battles of Xiaqiu and Pengcheng on the way
+# are the game's; their story is ours.
+# Flags: c1_route_lubu = 1 Xiaqiu (with Xun Yu, Cao Ren, Cao Hong) / 2 Pengcheng (with Guo Jia and
+# the Xiahou cousins); c1_gao_shun_duel = 1 when Zhang Fei beat Gao Shun at Pengcheng (set by the
+# battle).
+
+# ---------------------------------------------------------------------------------------------------
+# Xuchang: Cao Cao marches on Lü Bu; which road?
+# ---------------------------------------------------------------------------------------------------
+
+== c1_lubu_campaign
+@bg palace
+@bgm tension
+@title 제1장
+    여포 토벌전
+@narr 건안 3년(198년). 여포는 원술과 손을 잡고 다시 소패를 쳤다.
+    조조는 마침내 몸소 대군을 이끌고 여포를 치기로 했다.
+@show cao_cao right
+@show liu_bei left
+cao_cao: 현덕, 여포는 이리와 같은 자요. 배가 부르면 잠시 얌전하다가도 굶주리면 주인을 문다.
+    이번에야말로 뿌리를 뽑아야 하오.
+liu_bei: 서주 백성들을 위해서라도 저도 앞장서겠습니다.
+cao_cao: 하비로 가는 길은 둘이오. 하구 쪽은 장료가 산골짜기를 틀어막고 있고,
+    팽성 쪽은 고순의 정예병이 들판에 진을 쳤소. 공은 어느 쪽을 맡겠소?
+@hide right
+@show guan_yu right
+guan_yu: 장료는 의리를 아는 장수입니다. 여포 같은 주인 밑에 두기엔 아까운 인물이지요.
+@hide right
+@show zhang_fei right
+zhang_fei: 고순이 이끄는 군사는 치는 곳마다 적진을 무너뜨린다지요? 이 장비가 그놈의 콧대를 꺾어 주겠소!
+@hide all
+@narr 【하구로 가면 순욱, 조인, 조홍이 함께 싸웁니다. 관우가 장료를 꾸짖으면
+    살아남은 전원이 경험치 50을 더 얻습니다.
+    팽성으로 가면 곽가, 하후돈, 하후연이 함께 싸웁니다. 장비가 고순을 꺾으면
+    하비 전투에 고순이 나오지 않습니다.】
+@choice
+  - 하구로 가서 장료와 싸운다 -> xiaqiu
+  - 팽성으로 가서 고순과 싸운다 -> pengcheng
+@label xiaqiu
+@set c1_route_lubu = 1
+@show liu_bei left
+@show cao_cao right
+liu_bei: 하구로 가겠습니다.
+cao_cao: 좋소. 문약과 자효, 자렴을 딸려 보내겠소.
+@goto done
+@label pengcheng
+@set c1_route_lubu = 2
+@show liu_bei left
+@show cao_cao right
+liu_bei: 팽성으로 가겠습니다.
+cao_cao: 좋소. 봉효와 원양, 묘재가 동쪽에서 함께 칠 것이오.
+@label done
+@hide all
+@narr 【허창의 도구상에서 장창, 연노, 마개, 무술교본, 술, 특급주, 콩, 상약을 살 수 있습니다.】
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Xiaqiu II (battles/c1_xiaqiu2.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== xiaqiu2_intro
+@narr 하구. 양쪽으로 산이 솟은 골짜기 끝에 장료의 목책이 서 있었다.
+@show zhang_liao right
+zhang_liao: 이 골짜기만 지키면 하비로 가는 길은 막힌다. 한 발짝도 물러서지 마라.
+@hide right
+@show xun_yu right
+xun_yu: 현덕 공, 장료는 무리하게 싸우지 않는 장수입니다. 골짜기 뒤를 조심하십시오.
+@show liu_bei left
+liu_bei: 명심하겠습니다. 모두 앞으로!
+@hide all
+@narr 【장료를 물리치면 승리합니다. 관우를 장료의 옆 칸으로 보내면 무슨 일인가 일어날지도 모릅니다.
+    서쪽 산 위의 보물고는 산을 탈 수 있는 부대만 닿을 수 있습니다.】
+
+== xiaqiu2_rear
+@narr 골짜기 입구 쪽에서 함성이 울렸다. 여포군의 복병이 뒤를 막아섰다!
+@show liu_bei left
+liu_bei: 퇴로를 끊으려는 것이다! 뒤쪽도 방비하게!
+@hide all
+
+== xiaqiu2_rebuke
+@show guan_yu left
+@show zhang_liao right
+zhang_liao: 관운장……. 결국 그대와 창을 맞대게 되는구려.
+guan_yu: 장문원, 그대는 의리를 아는 사내라 들었다. 헌데 어찌하여 주인을 세 번이나 바꾸고
+    은인의 등에 칼을 꽂은 자를 섬기는가!
+zhang_liao: ……!
+guan_yu: 그대의 창은 그런 자를 위해 쓰기엔 아깝다. 물러가 스스로 생각해 보라.
+zhang_liao: …… 부끄럽구려. 오늘은 창을 거두겠소. 모두 물러나라!
+@hide right
+@sfx retreat
+@narr 장료는 깃발을 내리고 조용히 군사를 물렸다.
+@hide all
+
+== xiaqiu2_outro
+@narr 하구의 골짜기가 열리고, 조조군은 하비를 향해 진군했다.
+@show liu_bei left
+@show guan_yu right
+liu_bei: 운장, 장료는 어떤 사람이던가?
+guan_yu: 난세가 아니었다면 벗으로 삼고 싶은 사내였습니다.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Pengcheng II (battles/c1_pengcheng2.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== pengcheng2_intro
+@narr 팽성 동쪽 들판. 고순의 군사가 목책을 두르고 기병을 사방에 풀어 놓았다.
+@show gao_shun right
+gao_shun: …… 적이 온다. 기병은 개울을 건너는 놈들부터 쳐라. 진은 흐트러뜨리지 마라.
+@hide right
+@show liu_bei left
+liu_bei: 고순의 군사는 소리 없이 움직이는구나. 조심하게.
+@hide left
+@show zhang_fei left
+zhang_fei: 말 없는 놈들이 제일 무섭다지만, 이 장비의 고함 앞에선 입이 절로 열릴 거요!
+@hide all
+@narr 【고순을 물리치면 승리합니다. 장비를 고순의 옆 칸으로 보내면 일기토가 벌어져
+    전투가 끝나고, 하비 전투에 고순이 나오지 않게 됩니다.】
+
+== pengcheng2_cao_arrives
+@narr 동쪽 지평선에 조조군의 깃발이 나타났다.
+@show xiahou_dun right
+xiahou_dun: 유비군이 먼저 붙었군. 고순의 목은 우리가 먼저 가져가자!
+@hide all
+
+== pengcheng2_duel
+@show zhang_fei left
+@show gao_shun right
+zhang_fei: 고순! 말 한마디 없이 싸우는 게 네놈 방식이냐! 장익덕이 상대해 주마!
+gao_shun: ……. 덤벼라.
+@sfx hit_heavy
+@wait 300
+@sfx hit_heavy
+@wait 300
+@sfx hit_heavy
+@narr 백 합 가까이 겨루었지만 고순은 한 걸음도 물러서지 않았다. 마침내 장비의 창이
+    고순의 창대를 부러뜨렸다.
+gao_shun: …… 오늘은 졌다. 물러난다.
+@hide right
+@sfx retreat
+@narr 고순은 흐트러짐 없이 군사를 물려 하비로 돌아가지 않고 어디론가 사라졌다.
+@hide all
+
+== pengcheng2_outro
+@narr 팽성의 들판에서 여포군이 물러가고, 조조군은 하비를 향해 진군했다.
+@show liu_bei left
+@show zhang_fei right
+zhang_fei: 형님, 고순 그놈 정말 한마디도 안 하더구려. 싸움은 제법이었지만!
+liu_bei: 말없이 제 할 일을 다하는 장수로구나. 여포에게는 과분한 사람일세.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Before Xiapi
+# ---------------------------------------------------------------------------------------------------
+
+== c1_before_xiapi
+@bg camp
+@bgm camp
+@narr 하비. 여포는 성문을 굳게 닫고 나오지 않았다.
+    조조는 기수와 사수의 물줄기를 터 성을 물에 잠기게 했다.
+@show cao_cao right
+@show liu_bei left
+cao_cao: 성안의 쌀이 떨어지면 저절로 무너지겠지. 헌데 기다리기만 하다가는 원소가 움직일 것이오.
+liu_bei: 성 밖의 진지를 지키는 장수 가운데 후성, 송헌, 위속은 여포에게 불만이 많다 합니다.
+    그들을 설득해 보겠습니다.
+cao_cao: 과연 인덕의 현덕이오. 성문이 열리면 내가 곧바로 군사를 몰아 들어가겠소.
+@hide all
+@narr 【하비의 도구상에서 콩, 보리, 평기서, 원대서, 폭탄을 살 수 있습니다.】
+
+# ---------------------------------------------------------------------------------------------------
+# Battle: Xiapi (battles/c1_xiapi.toml, c1_xiapi_b.toml)
+# ---------------------------------------------------------------------------------------------------
+
+== xiapi_intro
+@narr 물에 잠긴 하비성. 해자 너머 성문은 굳게 닫혀 있고, 성 밖의 진지마다 여포군이 버티고 있었다.
+@show lu_bu right
+lu_bu: 조조 따위가 물을 끌어들인다고 이 여봉선이 겁을 먹을 줄 아느냐!
+    성은 튼튼하고 적토마는 살아 있다. 때가 되면 내가 나가 모조리 쓸어 주마!
+@hide right
+@show chen_gong right
+chen_gong: 장군, 성 밖의 진지만 지키면 조조군은 지쳐서 물러갈 것입니다. 부디 술을 삼가십시오.
+@hide right
+@show liu_bei left
+liu_bei: 후성, 송헌, 위속……. 세 사람을 설득하면 성문이 열릴 것이다.
+@hide all
+@narr 【후성, 송헌, 위속의 옆 칸으로 유비를 보내면 그 장수를 설득할 수 있습니다.
+    세 사람을 모두 설득하면 성문이 열리고 여포가 나옵니다. 그러지 못해도 30턴이 되면
+    성안의 병사들이 들고일어나 성문을 엽니다. 여포를 물리치면 승리합니다.】
+@narr 【관우를 장료의 옆 칸으로 보내면 일기토가 벌어집니다.】
+
+== xiapi_hou_cheng
+@show liu_bei left
+@show hou_cheng right
+hou_cheng: 유 사군……. 나는 적토마를 돌보던 몸이오. 헌데 장군은 술에 취해
+    말 몇 마리를 잃었다고 나를 매질했소. 이런 주인을 위해 목숨을 버려야 하오?
+liu_bei: 그대의 억울함을 알겠소. 함께 이 싸움을 끝냅시다.
+hou_cheng: 좋소. 여포의 적토마를 끌고 나오겠소. 성안의 내 부하들도 움직일 것이오.
+@hide all
+@narr 【후성이 설득되었다! 적토마를 얻었다.】
+
+== xiapi_song_xian
+@show liu_bei left
+@show song_xian right
+song_xian: …… 사군께서 직접 오실 줄은 몰랐소. 우리도 굶주린 채 이 성과 함께 가라앉고 싶지는 않소.
+liu_bei: 백성과 병사들을 살리는 길을 택해 주시오.
+song_xian: 알겠소. 성안의 내 부하들에게 기별을 넣겠소.
+@hide all
+@narr 【송헌이 설득되었다!】
+
+== xiapi_wei_xu
+@show liu_bei left
+@show wei_xu right
+wei_xu: 나는 장군의 인척이오. 그런 나까지 의심하며 멀리하는 사람이 되어 버렸소…….
+liu_bei: 그대의 충정을 알아주지 않는 주인이라면, 그대가 먼저 그 칼을 거두는 수밖에 없소.
+wei_xu: …… 그렇구려. 성안의 사람들에게 때가 되었다고 전하겠소.
+@hide all
+@narr 【위속이 설득되었다!】
+
+== xiapi_gate_opens
+@narr 성안에서 함성이 일었다. 투항한 병사들이 성문으로 몰려가 도개교를 내렸다.
+@show lu_bu right
+lu_bu: 뭐냐! 누가 성문을 열었느냐! …… 좋다, 이 여봉선이 직접 나가 주마!
+    배신자들은 하나도 살려 두지 않겠다!
+@hide right
+@narr 여포가 친위대를 이끌고 성문 밖으로 뛰쳐나왔다. 동시에 남쪽에서 조조의 대군이 몰려왔다.
+@show cao_cao right
+cao_cao: 성문이 열렸다! 여포를 놓치지 마라!
+@hide all
+@narr 【여포가 나타났다! 조조군이 원군으로 합류했다.】
+
+== xiapi_duel
+@show guan_yu left
+@show zhang_liao right
+zhang_liao: 운장, 또 만났구려.
+guan_yu: 문원, 성은 곧 떨어진다. 그대의 창을 헛되이 꺾지 마라.
+zhang_liao: 떨어지는 성이라도 지키는 것이 무인의 도리요!
+@sfx hit_heavy
+@wait 300
+@sfx hit_heavy
+@narr 두 사람은 수십 합을 겨루었다. 관우의 칼등이 장료의 창을 쳐서 떨어뜨렸다.
+zhang_liao: …… 졌소. 목을 거두시오.
+guan_yu: 그 목은 훗날 쓸 데가 있을 것이다. 물러가라.
+@hide right
+@sfx retreat
+@hide all
+
+== xiapi_outro
+@narr 여포는 백문루 아래에서 사로잡혔다. 천하무쌍이라 불리던 장수의 마지막 싸움이었다.
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# The end of Lü Bu
+# ---------------------------------------------------------------------------------------------------
+
+== c1_lubu_end
+@bg castle
+@bgm sad
+@narr 하비성 백문루. 꽁꽁 묶인 여포가 조조 앞에 끌려 나왔다.
+@show lu_bu center
+lu_bu: 조 공, 공이 걱정하던 것은 이 여포 하나뿐이었을 것이오. 이제 내가 항복했으니
+    공이 보병을 이끌고 내가 기병을 이끌면 천하를 평정하는 것은 일도 아니오!
+@hide center
+@show cao_cao right
+cao_cao: …… 현덕, 공의 생각은 어떻소?
+@show liu_bei left
+@choice
+  - 여포를 살려 쓰자고 말한다 -> spare
+  - 정원과 동탁의 일을 떠올리게 한다 -> remind
+@label spare
+liu_bei: 천하무쌍의 무용을 쓸 곳이 있다면…….
+@hide left
+@show zhang_fei left
+zhang_fei: 형님! 저놈은 양아비를 둘이나 죽인 놈이오! 이번만은 조조의 말이 옳소!
+@hide left
+@show liu_bei left
+liu_bei: …… 익덕의 말이 옳구려. 승상께서 뜻대로 하십시오.
+@goto after
+@label remind
+liu_bei: 승상께서는 정건양과 동태사의 일을 보지 못하셨습니까?
+@label after
+@hide all
+@show lu_bu center
+lu_bu: 유비, 이 귀 큰 놈아! 원문에서 화극을 쏘아 너를 살려 준 일을 벌써 잊었느냐!
+@hide center
+@narr 여포는 목이 졸려 숨을 거두었다. 진궁은 노모와 처자를 조조에게 부탁하고
+    스스로 형장으로 걸어 나갔다.
+@narr 장료는 관우의 간청으로 목숨을 건져 조조를 섬기게 되었다. 떠나기 전, 장료는 관우에게
+    깊이 고개를 숙였다.
+@show liu_bei left
+@show guan_yu right
+guan_yu: 형님, 여포는 끝났습니다. 허나 서주는 이제 조조의 것이 되겠지요.
+liu_bei: …… 우리는 다시 허도로 가야 하네. 이리를 잡았으니, 이제는 범의 곁에 머물러야 하는구려.
+@hide all

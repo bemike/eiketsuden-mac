@@ -1,0 +1,238 @@
+# Chapter 1, act 2 (북해, 서주 원군): 북해 전투 (Beihai). Novel chapter 11: the Yellow Turban remnant
+# Guan Hai besieges Kong Rong in Beihai; Taishi Ci breaks out to fetch Liu Bei, and Guan Yu cuts
+# Guan Hai down.
+#
+# PC original: 30 turns, 6 deployable officers with Zhao Yun (borrowed from Gongsun Zan) required;
+# allied Kong Rong, Taishi Ci and a low-level officer who sortie from the city when Liu Bei's army
+# reaches the hills; enemy Guan Hai Lv10 (bandit), eight bandit squads Lv5-6, two beast tamer squads
+# Lv4 and two archer squads Lv6. The only bridge is narrow. Victory: rout Guan Hai (300 gold); Zhao
+# Yun next to Guan Hai starts a duel that ends the battle (+1 level). Treasuries (PC): 평기서 and
+# 특급주. Kong Rong adds 500 gold after the battle (c1_after_beihai).
+# (design) The low-level allied officer is Zong Bao, who in the novel rides out against Guan Hai
+# and is cut down; the novel's Guan Yu duel ends the battle too.
+#
+# Map: the river closes the western approach with a single narrow bridge. Beyond it the road runs
+# through a gap in the hills to the besieged city in the east. Two hill valleys hold villages and
+# treasuries: the northern valley is closed by mountains (only bandits, martial artists and beast
+# tamers can climb in), the southern one opens to the south-west.
+
+id = "c1_beihai"
+name = "북해 전투"
+location = "193년, 청주 북해국"
+objective = "적장 관해를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 30
+reward_gold = 300
+intro = "beihai_intro"
+outro = "beihai_outro"
+victory = [{ type = "defeat_unit", target = "guan_hai" }]
+
+[map]
+theme = "field"
+rows = '''
+^^^,,,..~,.,,^^^^^^,,,..,^^^
+^,,..,..~.,,^^^$^^^,,..,,,^^
+,,.TT..,~..,^^T,T^^,...,..,^
+,..TT.,.~.,,^T,,,T^,.,..,,,,
+..,...,.~..,^^,v,^^,.#######
+,.,..,..~.,,^^,,,^^,,#cHcccH
+..,..,.,~.,.,^^T^^,.,#cccccc
+.,..v..,~..,..^^^,...#Hccccc
+..,..,..~..,.,,^,.,..#cccHcc
+,..,..,.~.,...,,..,..#cccccc
+________=____________Gcccccc
+,..,..,.~.,...,,..,..#cccccc
+..,..,..~..,.,,^,.,..#cccHcc
+.,..,..,~..,..^^^,...#cHcccc
+..,..,.,~.,.,^^T^^,.,#cccccH
+,.,..,..~.,,^^,,,^^,,#######
+..,...,.~..,^^,v,^^,.,,,..,,
+,..TT.,.~.,,.T,,,T^,.,..,,,,
+,,.TT..,~..,^^T$T^^,...,..,^
+^^^,,,..~,.,,^^^^^^,,,..,^^^
+'''
+
+[deploy]
+max = 6
+required = ["zhao_yun"]
+slots = [[2, 10], [3, 10], [2, 9], [2, 11], [3, 9], [3, 11], [1, 10]]
+
+# --- Guan Hai's Yellow Turbans --------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "guan_hai"
+level = 10
+pos = [19, 10]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 6
+pos = [20, 8]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 6
+pos = [20, 12]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "맹수사"
+class = "beast"
+level = 4
+pos = [18, 7]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "맹수사"
+class = "beast"
+level = 4
+pos = [18, 13]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 6
+pos = [17, 9]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 6
+pos = [17, 11]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 6
+pos = [13, 8]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 6
+pos = [13, 12]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 5
+pos = [11, 6]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 5
+pos = [11, 14]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 5
+pos = [15, 4]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "황건적"
+class = "bandit"
+level = 5
+pos = [15, 16]
+ai = "defensive"
+
+# --- Beihai garrison (allied) ---------------------------------------------------------------------
+
+# They wait inside the walls until Liu Bei's army reaches the hills.
+[[units]]
+side = "ally"
+officer = "kong_rong"
+level = 8
+pos = [23, 10]
+ai = "hold"
+
+[[units]]
+side = "ally"
+officer = "taishi_ci"
+level = 9
+pos = [24, 9]
+ai = "hold"
+
+[[units]]
+side = "ally"
+officer = "zong_bao"
+pos = [24, 11]
+ai = "hold"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel (PC): Zhao Yun next to Guan Hai ends the battle.
+[[events]]
+trigger = { type = "adjacent", a = "zhao_yun", b = "guan_hai" }
+actions = [
+  { type = "drama", scene = "beihai_duel_zhao_yun" },
+  { type = "level_up", target = "zhao_yun", amount = 1 },
+  { type = "retreat", target = "guan_hai" },
+  { type = "victory" },
+]
+
+# Duel (novel): Guan Yu next to Guan Hai ends the battle.
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "guan_hai" }
+actions = [
+  { type = "drama", scene = "beihai_duel_guan_yu" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "retreat", target = "guan_hai" },
+  { type = "victory" },
+]
+
+# The garrison sorties once Liu Bei's army reaches the hills.
+[[events]]
+trigger = { type = "reach", pos = [14, 10], radius = 4 }
+actions = [
+  { type = "drama", scene = "beihai_sortie" },
+  { type = "set_ai", target = "kong_rong", ai = "aggressive" },
+  { type = "set_ai", target = "taishi_ci", ai = "aggressive" },
+  { type = "set_ai", target = "zong_bao", ai = "target", ai_target = "guan_hai" },
+]
+
+# Novel: Zong Bao rides out against Guan Hai and falls.
+[[events]]
+trigger = { type = "adjacent", a = "zong_bao", b = "guan_hai" }
+actions = [
+  { type = "drama", scene = "beihai_zong_bao_falls" },
+  { type = "retreat", target = "zong_bao" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [15, 1]
+item = "scroll_great_encourage"
+
+[[treasures]]
+pos = [15, 18]
+item = "fine_wine"

@@ -1,0 +1,302 @@
+# Chapter 1, act 3 (성난 이리, 여포의 방문) finale: 회남 전투 (Huainan). Novel chapters 14-15: Liu
+# Bei, now governor of Xuzhou, marches south against Yuan Shu's general Ji Ling; behind him the
+# Danyang troops in Xiapi open the gates to Lü Bu, whom Liu Bei had sheltered at Xiaopei, and Lü
+# Bu's army falls on Liu Bei's rear.
+#
+# PC original: 30 turns, 9 deployable officers; enemy Ji Ling Lv18 (heavy cavalry) with Yue Jiu,
+# Chen Ji and nine generic squads south of the river; on turn 6 Lü Bu's army (Zhang Liao, Chen Gong,
+# Song Xian, Wei Xu and six squads) appears north of the river. A long bridge must be crossed under
+# archer fire. Victory: annihilate the enemy (400 gold) or, once Lü Bu has turned, bring Liu Bei to
+# the north-western fort (+50 EXP for every survivor); near the fort every enemy goes for him. Guan
+# Yu next to Zhang Liao starts a duel (+1 level). Treasury (PC): 업화서.
+# (design) The betrayal comes on turn 7 and is shown on the field: two Danyang squads guard the
+# camp as allies and change sides under Xu Dan, the officer who historically let Lü Bu into
+# Xiapi. A ridge on the northern bank keeps the fort out of reach until after the betrayal: the
+# only way there is south over the long bridge, west along the southern bank and north over the
+# western bridge. Ji Ling is PC level 18 in the original; here 14, because only one bandit camp
+# may have been cleared before, and everybody else keeps the original's distance below him: Yue Jiu
+# and Chen Ji 13 and 12, Lü Bu's officers 11-13, the squads 8-9. Lü Bu's army and the two turned
+# Danyang squads (one of them led by Xu Dan) make 8 units instead of the original's 10, so 20 enemy
+# units instead of 22.
+#
+# Map: the Huai river runs east-west; the long bridge (two tiles wide) in the centre, a short one
+# in the west. Lü Bu's army appears in the north-west, between the army and the fort, and must
+# cross the western bridge to reach the army; the Danyang rear guard turns at the eastern camp.
+
+id = "c1_huainan"
+name = "회남 전투"
+location = "196년, 서주 하비국 우이"
+objective = "적을 전멸시켜라 (여포의 배신 뒤에는 유비가 북서쪽 성채로 달아나도 된다)"
+bgm = "battle"
+bgm_enemy = "boss"
+turn_limit = 30
+reward_gold = 400
+intro = "huainan_intro"
+outro = "huainan_outro"
+victory = [
+  { type = "defeat_all" },
+  { type = "reach", who = "liu_bei", pos = [3, 3], radius = 1 },
+]
+bonus = { condition = { type = "reach", who = "liu_bei", pos = [3, 3], radius = 1 }, exp = 50, desc = "유비가 북서쪽 성채로 달아나면 살아남은 전원 경험치 +50" }
+
+[map]
+theme = "field"
+rows = '''
+^^,.,.,.^^^.,.,.,.,.,.,.,.,^^^
+.,...,..^X^.v,...,...,...,...,
+.|||||,.^^^...,...,...,...,...
+,|bfb|.,^X^,,..,,..,,..,,..,,.
+,|...|,.^^^.,.,_________,.,.,.
+.,.._,..^X^.TT.__,...,...,...,
+..,._.v.^^^.T.,__.,...,...TT..
+,..,_..,^X^,,..__..,,..v,..,,.
+,.,._.,.^^^.,.,__.,.,.,.,.,.,.
+~~~~=~~~~~~~~~~==~~~~~~~~~~~~~
+~~~~=~~~~~~~~~~==~~~~~~~~~~~~~
+~~~~=~~~~~~~~~~==~~~~~~~~~~~~~
+,.,._.,.,.,.,.,__.,.,.,.,.,.,.
+.,.._,...,...,.__,..TT...,...,
+..,._____________.,..T,...,...
+,..,,..,,..,,..,,..,,..,,..,,.
+,.TT,.,v,.,.,.,.,.,.,.,.v.,.,.
+.,T..,...,.TT,...,...,...,...,
+..,...,...,.T.,...,...,TT.,...
+,..,,..,,..,,..f,..,,..,T..,,.
+,.,.,.,.,.,.,.b.b.,.,.,.,.,$,.
+^^...,...,...,...,...,...,.^^^
+'''
+
+[deploy]
+max = 9
+slots = [[19, 6], [18, 6], [20, 6], [19, 5], [18, 5], [20, 5], [19, 7], [18, 7], [20, 7], [21, 6]]
+
+# --- Yuan Shu's army south of the river -----------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "ji_ling"
+level = 14
+pos = [15, 19]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+officer = "yue_jiu"
+level = 13
+pos = [14, 18]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "chen_ji"
+level = 12
+pos = [16, 18]
+ai = "defensive"
+
+# The archers cover the long bridge.
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 9
+pos = [14, 13]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 9
+pos = [16, 13]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 8
+pos = [15, 16]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 8
+pos = [11, 15]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 8
+pos = [19, 15]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 8
+pos = [9, 17]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 8
+pos = [21, 17]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "무도가"
+class = "martial"
+level = 8
+pos = [13, 16]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 8
+pos = [16, 20]
+ai = "defensive"
+
+# --- Turn 7: Lü Bu's army in the north-west, across the road home ----------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "zhang_liao"
+class = "long_infantry"
+level = 13
+pos = [4, 6]
+ai = "aggressive"
+group = "lu_bu"
+
+[[units]]
+side = "enemy"
+officer = "chen_gong"
+level = 12
+pos = [3, 5]
+ai = "aggressive"
+group = "lu_bu"
+
+[[units]]
+side = "enemy"
+officer = "song_xian"
+level = 11
+pos = [5, 5]
+ai = "aggressive"
+group = "lu_bu"
+
+[[units]]
+side = "enemy"
+officer = "wei_xu"
+level = 11
+pos = [4, 7]
+ai = "aggressive"
+group = "lu_bu"
+
+[[units]]
+side = "enemy"
+name = "여포군 기병"
+class = "light_cavalry"
+level = 9
+pos = [2, 6]
+ai = "aggressive"
+group = "lu_bu"
+
+[[units]]
+side = "enemy"
+name = "여포군 기병"
+class = "light_cavalry"
+level = 9
+pos = [6, 7]
+ai = "aggressive"
+group = "lu_bu"
+
+# Turn 7: the Danyang rear guard changes sides where it stands, Xu Dan at the head of one squad.
+[[units]]
+side = "enemy"
+officer = "xu_dan"
+level = 10
+pos = [22, 2]
+ai = "aggressive"
+group = "danyang"
+
+[[units]]
+side = "enemy"
+name = "단양병"
+class = "short_infantry"
+level = 10
+pos = [22, 3]
+ai = "aggressive"
+group = "danyang"
+
+# --- The Danyang rear guard at the camp (allied until turn 7) --------------------------------------
+
+[[units]]
+side = "ally"
+name = "단양병"
+class = "short_infantry"
+level = 10
+pos = [22, 2]
+ai = "hold"
+tag = "danyang_1"
+
+[[units]]
+side = "ally"
+name = "단양병"
+class = "short_infantry"
+level = 10
+pos = [22, 3]
+ai = "hold"
+tag = "danyang_2"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Turn 7: Lü Bu's betrayal. The allied Danyang squads leave and come back as enemies.
+[[events]]
+trigger = { type = "turn_start", turn = 7 }
+actions = [
+  { type = "drama", scene = "huainan_betrayal" },
+  { type = "retreat", target = "danyang_1" },
+  { type = "retreat", target = "danyang_2" },
+  { type = "spawn", group = "danyang" },
+  { type = "spawn", group = "lu_bu" },
+]
+
+# Duel: Guan Yu next to Zhang Liao (+1 level); Zhang Liao withdraws.
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "zhang_liao" }
+actions = [
+  { type = "drama", scene = "huainan_duel" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "retreat", target = "zhang_liao" },
+]
+
+# SS: once Liu Bei nears the fort, every enemy goes for him.
+[[events]]
+trigger = { type = "reach", who = "liu_bei", pos = [4, 12], radius = 3 }
+actions = [
+  { type = "drama", scene = "huainan_hunt" },
+  { type = "set_ai", target = "ji_ling", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "yue_jiu", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "chen_ji", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "zhang_liao", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "chen_gong", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "song_xian", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "wei_xu", ai = "target", ai_target = "liu_bei" },
+  { type = "set_ai", target = "xu_dan", ai = "target", ai_target = "liu_bei" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [27, 20]
+item = "scroll_hellfire"

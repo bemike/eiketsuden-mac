@@ -1,0 +1,230 @@
+# Chapter 1, act 4 (여포 토벌전), route A: 하구 전투 2 (Second battle of Xiaqiu). Novel chapters
+# 18-19 (the joint campaign of Cao Cao and Liu Bei against Lü Bu); the battle itself is one of the
+# game's. Zhang Liao holds a mountain valley on the road to Xiapi.
+#
+# PC original: 30 turns, 7 deployable officers; allied Cao Ren, Cao Hong and Xun Yu; enemy Zhang
+# Liao Lv17 (long-weapon infantry) with generic squads (infantry, cavalry, archers, a band) and
+# three more squads falling on the rear on turn 5 (13 units); here on turn 6, from the corners of
+# the valley mouth. Victory: rout Zhang Liao (500 gold).
+# Hidden: Guan Yu next to Zhang Liao rebukes him for serving Lü Bu; he withdraws, Guan Yu gains a
+# level and every survivor +50 EXP, with another 500 gold. The treasury (PC: 400 gold) can only be
+# reached by units that climb mountains.
+# (design) The rebuke's bonus is tied to Zhang Liao's standard-bearer (tag zl_banner), who appears
+# beside him and withdraws with him only in the rebuke event; routing him in battle gives no bonus.
+#
+# Map: mountains on both sides of a valley that runs north to Zhang Liao's palisaded camp; ledges
+# of wasteland on the western and eastern slopes, the treasury high on the western one.
+
+id = "c1_xiaqiu2"
+name = "하구 전투"
+location = "198년, 서주 팽성국 하구"
+objective = "적장 장료를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 30
+reward_gold = 500
+intro = "xiaqiu2_intro"
+outro = "xiaqiu2_outro"
+victory = [{ type = "defeat_unit", target = "zhang_liao" }]
+bonus = { condition = { type = "unit_retreated", target = "zl_banner" }, exp = 50, desc = "관우가 장료를 꾸짖어 물러나게 하면 살아남은 전원 경험치 +50" }
+
+[map]
+theme = "mountain"
+rows = '''
+^^^^^^^^^^,..,.,..^^^^^^^^^^
+^^^^^^^^^^.,.,..,.^^^^^^^^^^
+^^^^^^^^^^..,ff..,^^^^^^^^^^
+^^^$^^^^^^,.b..b.,^^^^^^^^^^
+^^^::^^^^.,..,.,..,^^^^^^^^^
+^^^^::^^^.|||__|||,^^::^^^^^
+^^^^^::^^...,__..,.^^^::^^^^
+^^^^^^^^^.,.,__,.,.^^^^:^^^^
+^^^^^^^^,TT..__,..,.^^^^^^^^
+^^^^^^^^,T.,.__.,.TT^^^^^^^^
+^^^^^^^^....,__..,T.^^^^X^^^
+^^^^^^^^v.,.,__,.,..^^^^X^^^
+^^^^^^^.,.,T.__,T.,.v^^^^X^^
+^^^^^^^.,..,.__.,.,..^^^^X^^
+^^^^^^^,TT..,__..,...^^^^^^^
+^^^^^^^,..,.,__,.,..TT^^^^^^
+^^^^^^..,.,..__,..,.,.^^^^^^
+^^^^^^,v,..,.__.,.,..,^^^^^^
+^^^^^^.,....,__..,....^^^^^^
+^^^^^^.,..,.,__,.,..,.^^^^^^
+'''
+
+[deploy]
+max = 7
+slots = [[13, 16], [14, 16], [12, 16], [15, 16], [12, 17], [15, 17], [13, 18], [14, 18]]
+
+# --- Zhang Liao's camp ----------------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "zhang_liao"
+class = "long_infantry"
+level = 17
+pos = [13, 2]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 13
+pos = [14, 3]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 13
+pos = [12, 3]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 13
+pos = [15, 3]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 13
+pos = [9, 5]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [13, 4]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [11, 6]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [16, 6]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 13
+pos = [10, 9]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 13
+pos = [17, 10]
+ai = "aggressive"
+
+# Turn 6: three squads come round the foot of the slopes behind the army.
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [7, 19]
+ai = "aggressive"
+group = "rear"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 11
+pos = [6, 18]
+ai = "aggressive"
+group = "rear"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 11
+pos = [21, 19]
+ai = "aggressive"
+group = "rear"
+
+# The standard-bearer who withdraws with Zhang Liao after the rebuke (see the header).
+[[units]]
+side = "enemy"
+name = "장료군 기수"
+class = "short_infantry"
+level = 10
+pos = [13, 1]
+ai = "hold"
+tag = "zl_banner"
+group = "banner"
+
+# --- Cao Cao's officers (allied) ------------------------------------------------------------------
+
+[[units]]
+side = "ally"
+officer = "cao_ren"
+level = 14
+pos = [11, 15]
+ai = "aggressive"
+
+[[units]]
+side = "ally"
+officer = "cao_hong"
+level = 13
+pos = [16, 15]
+ai = "aggressive"
+
+[[units]]
+side = "ally"
+officer = "xun_yu"
+level = 13
+pos = [14, 17]
+ai = "defensive"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Hidden (PC): Guan Yu rebukes Zhang Liao, who withdraws.
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "zhang_liao" }
+actions = [
+  { type = "drama", scene = "xiaqiu2_rebuke" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "give_gold", amount = 500 },
+  { type = "spawn", group = "banner" },
+  { type = "retreat", target = "zl_banner" },
+  { type = "retreat", target = "zhang_liao" },
+]
+
+[[events]]
+trigger = { type = "turn_start", turn = 6, side = "enemy" }
+actions = [
+  { type = "spawn", group = "rear" },
+  { type = "drama", scene = "xiaqiu2_rear" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [3, 3]
+gold = 400

@@ -1,0 +1,263 @@
+# Chapter 1, act 2 (북해, 서주 원군): 서주 전투 1 (First battle of Xuzhou). Novel chapters 10-11:
+# Cao Cao invades Xuzhou to avenge his father; Liu Bei comes to Tao Qian's aid with Kong Rong's and
+# Tian Kai's men.
+#
+# PC original: 30 turns, 7 deployable officers with Zhao Yun required; allied Tao Qian, Mi Fang and
+# Sun Qian in the castle and Taishi Ci arriving from the south on turn 5; enemy Yu Jin Lv14, Li
+# Dian, Cao Hong, Yue Jin, Xiahou Yuan and Guo Jia about Lv11 and eleven generic squads; the enemy
+# cavalry comes from the north. Victory: annihilate the enemy (400 gold) or bring Liu Bei into the
+# castle (+50 EXP for every survivor); routing Yu Jin alone does not win. Guan Yu next to Yu Jin
+# starts a duel (+1 level, Yu Jin withdraws). No treasures.
+#
+# Map: the Si river runs north-south with two bridges; beyond it Cao Cao's army besieges Xuzhou,
+# whose gate faces west. Xiahou Yuan's cavalry rides in from the northern edge on turn 4 and makes for the upper bridge.
+
+id = "c1_xuzhou1"
+name = "서주 전투"
+location = "193년, 서주 동해군 담현"
+objective = "적을 전멸시키거나 유비가 서주성에 들어가라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 30
+reward_gold = 400
+intro = "xuzhou1_intro"
+outro = "xuzhou1_outro"
+victory = [
+  { type = "defeat_all" },
+  { type = "reach", who = "liu_bei", pos = [24, 11], radius = 1 },
+]
+bonus = { condition = { type = "reach", who = "liu_bei", pos = [24, 11], radius = 1 }, exp = 50, desc = "유비가 서주성에 들어가면 살아남은 전원 경험치 +50" }
+
+[map]
+theme = "field"
+rows = '''
+^^^,,...,,,~,,..,,..,,,,^^^^^^
+^,,..,.,,..~..,.,,..,.,,,..,^^
+,,.TT..,.,.~,.TT..,.....,.,.,^
+,.,TT.,..,.~..TT.,.,.,,..,..,,
+..,..v..,..~.,..,..,.,########
+,..,....,.,~,.,..,...,#cHcccHc
+,.,.,___,__=__.,.,..,.#ccccccc
+..,._,..,..~..,.._.,..#Hcccccc
+.,._..,.,..~.,.,..,_..#ccccHcc
+..,_.,...,.~..,..,..,.#ccccccc
+___..,..,..~.,..,..___Gccccccc
+..,_.,...,.~..,..,..,.#ccccccc
+.,._..,.,..~.,.,..,_..#ccHcccc
+..,._,..,..~..,.._.,..#cccccHc
+,.,.,___,__=__.,.,..,.#ccccccc
+,..,....,.,~,.,..,...,#HcccccH
+..,..v..,..~.,..,..,.,########
+,.,TT.,..,.~..TT.,.,.,,..,..,,
+,,.TT..,.,.~,.TT..,.....,.,.,^
+^,,..,.,,..~..,.,,..,.,,,..,^^
+^^^,,...,,,~,,..,,..,,,,^^^^^^
+'''
+
+[deploy]
+max = 7
+required = ["zhao_yun"]
+slots = [[2, 10], [1, 10], [2, 9], [2, 11], [3, 9], [3, 11], [1, 9], [1, 11]]
+
+# --- Cao Cao's army before the gate ---------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "yu_jin"
+level = 14
+pos = [19, 10]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+officer = "li_dian"
+level = 11
+pos = [20, 8]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "cao_hong"
+level = 11
+pos = [20, 12]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "guo_jia"
+level = 11
+pos = [18, 5]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 7
+pos = [18, 10]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "수송대"
+class = "supply"
+level = 7
+pos = [20, 15]
+ai = "defensive"
+
+# --- Bridgeheads ----------------------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 7
+pos = [13, 7]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 7
+pos = [13, 13]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "무도가"
+class = "martial"
+level = 7
+pos = [15, 10]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 7
+pos = [15, 15]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 7
+pos = [16, 12]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 7
+pos = [16, 8]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 7
+pos = [17, 14]
+ai = "aggressive"
+
+# --- Turn 4: Xiahou Yuan's cavalry from the north, heading for the upper bridge -------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "xiahou_yuan"
+level = 10
+pos = [16, 0]
+ai = "advance"
+ai_pos = [13, 5]
+group = "cavalry"
+
+[[units]]
+side = "enemy"
+officer = "yue_jin"
+level = 10
+pos = [15, 0]
+ai = "advance"
+ai_pos = [14, 4]
+group = "cavalry"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 7
+pos = [17, 0]
+ai = "advance"
+ai_pos = [14, 6]
+group = "cavalry"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 7
+pos = [18, 1]
+ai = "advance"
+ai_pos = [13, 3]
+group = "cavalry"
+
+# --- Xuzhou (allied) ------------------------------------------------------------------------------
+
+# The garrison holds the gate from inside the walls.
+[[units]]
+side = "ally"
+officer = "tao_qian"
+level = 11
+pos = [23, 10]
+ai = "hold"
+
+[[units]]
+side = "ally"
+officer = "mi_fang"
+level = 10
+pos = [24, 9]
+ai = "hold"
+
+[[units]]
+side = "ally"
+officer = "sun_qian"
+level = 10
+pos = [24, 11]
+ai = "hold"
+
+# Turn 5: Taishi Ci brings Kong Rong's men from the south.
+[[units]]
+side = "ally"
+officer = "taishi_ci"
+level = 10
+pos = [8, 20]
+ai = "aggressive"
+group = "taishi_ci"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel: Guan Yu next to Yu Jin (+1 level); Yu Jin withdraws, the battle goes on.
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "yu_jin" }
+actions = [
+  { type = "drama", scene = "xuzhou1_duel" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "retreat", target = "yu_jin" },
+]
+
+[[events]]
+trigger = { type = "turn_start", turn = 4, side = "enemy" }
+actions = [
+  { type = "spawn", group = "cavalry" },
+  { type = "drama", scene = "xuzhou1_cavalry" },
+]
+
+[[events]]
+trigger = { type = "turn_start", turn = 5, side = "ally" }
+actions = [
+  { type = "spawn", group = "taishi_ci" },
+  { type = "drama", scene = "xuzhou1_taishi_ci" },
+]

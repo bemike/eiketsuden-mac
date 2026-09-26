@@ -1,0 +1,271 @@
+# Chapter 1, act 2 (북해, 서주 원군), optional: 소패 전투 (Xiaopei). Novel chapter 11: Cao Cao
+# presses on against Xuzhou until Lü Bu's attack on Yanzhou forces him home. In the original the
+# player may meet Cao Cao in the field here or send an envoy for a truce (and receive a pair of
+# swords from Tao Qian).
+#
+# PC original: nominally 30 turns, 7 deployable officers with Zhao Yun required; allied Tao Qian, Mi
+# Fang and Sun Qian among the player's units; enemy Cao Cao Lv23 (heavy cavalry) with eight officers
+# about Lv14 and thirteen generic squads about Lv10 (22 units). Victory: rout Cao Cao (300 gold). At
+# the start of turn 10 Cao Cao withdraws because Lü Bu strikes at his rear: the battle ends without
+# reward. Zhang Fei next to Xiahou Yuan, who waits at the far end of Cao Cao's host, starts a duel
+# (+1 level). No treasures.
+# (design) Cao Cao's officers keep the same levels whatever was chosen here; the original raises
+# their later levels when the player fights.
+#
+# Map: Xiaopei's fortified line and villages in the west; the Si river with an upper and a lower
+# bridge; Cao Cao's host fills the eastern bank, Cao Cao in its centre and Xiahou Yuan far behind.
+
+id = "c1_xiaopei"
+name = "소패 전투"
+location = "194년, 예주 패국 소패"
+objective = "조조를 물리쳐라 (10턴이 되면 조조군이 물러간다)"
+bgm = "battle"
+bgm_enemy = "boss"
+turn_limit = 30
+reward_gold = 0
+intro = "xiaopei_intro"
+outro = "xiaopei_outro"
+victory = [{ type = "defeat_unit", target = "cao_cao" }]
+
+[map]
+theme = "field"
+rows = '''
+^^^^,,..,,,~,,..,,^^^^,,..,^
+^^,,..,.,,.~..,.TT.^^,,..,,^
+^,,.TT.,.,,~.,..TT..,..,.,,^
+,,.v.T..,.,~..,.....,..,..,,
+,.,...,.,.,~.,,..,...,,...,,
+,.,..,.,___=__.,..,..,..,.,,
+.,..,.,.,.,~.,..,...,.TT..,.
+,.,.v.,..,.~..,.,..,...TT.,.
+..,....,.,.~.,..,..,.,..,..,
+,.,.f..,.,,~..,.,..,..,..,.,
+.v..f.,..,.~.,..,..,.,..,...
+,.,.f..,.,,~..,.,..,..,..,.,
+..,....,.,.~.,..,..,.,..,..,
+,.,.v.,..,.~..,.,..,...TT.,.
+,.,..,.,___=__.,..,..,..,.,,
+.,..,.,.,.,~.,..,...,.TT..,.
+,.,...,.,.,~.,,..,...,,...,,
+,,.v.T..,.,~..,.....,..,..,,
+^,,.TT.,.,,~.,..TT..,..,.,,^
+^^^^,,..,,,~,,..,,^^^^,,..,^
+'''
+
+[deploy]
+max = 7
+required = ["zhao_yun"]
+slots = [[7, 10], [8, 10], [7, 9], [7, 11], [8, 9], [8, 11], [6, 10], [9, 10]]
+
+# --- Cao Cao's host -------------------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "cao_cao"
+level = 23
+pos = [21, 10]
+ai = "guard"
+commander = true
+
+[[units]]
+side = "enemy"
+officer = "xiahou_dun"
+level = 15
+pos = [19, 10]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+officer = "xun_yu"
+level = 14
+pos = [21, 9]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "guo_jia"
+level = 14
+pos = [21, 11]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "li_dian"
+level = 14
+pos = [15, 8]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "yu_jin"
+level = 14
+pos = [15, 11]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "cao_hong"
+level = 14
+pos = [17, 10]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "yue_jin"
+level = 14
+pos = [13, 5]
+ai = "aggressive"
+
+# Far at the back of the host (PC).
+[[units]]
+side = "enemy"
+officer = "xiahou_yuan"
+level = 14
+pos = [26, 3]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 10
+pos = [13, 4]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 10
+pos = [13, 14]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 10
+pos = [19, 7]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 10
+pos = [13, 15]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 10
+pos = [18, 4]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 10
+pos = [19, 13]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 10
+pos = [16, 6]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 10
+pos = [16, 13]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 10
+pos = [18, 9]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 10
+pos = [22, 12]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "수송대"
+class = "supply"
+level = 10
+pos = [23, 9]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "수송대"
+class = "supply"
+level = 10
+pos = [23, 11]
+ai = "defensive"
+
+# --- Xuzhou (allied) ------------------------------------------------------------------------------
+
+[[units]]
+side = "ally"
+officer = "tao_qian"
+level = 12
+pos = [5, 10]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "mi_fang"
+level = 11
+pos = [6, 9]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "sun_qian"
+level = 11
+pos = [6, 11]
+ai = "defensive"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel: Zhang Fei next to Xiahou Yuan (+1 level); Xiahou Yuan withdraws.
+[[events]]
+trigger = { type = "adjacent", a = "zhang_fei", b = "xiahou_yuan" }
+actions = [
+  { type = "drama", scene = "xiaopei_duel" },
+  { type = "level_up", target = "zhang_fei", amount = 1 },
+  { type = "retreat", target = "xiahou_yuan" },
+]
+
+# Routing Cao Cao is worth 300 gold (PC); the turn-10 withdrawal gives nothing.
+[[events]]
+trigger = { type = "unit_defeated", target = "cao_cao" }
+actions = [
+  { type = "drama", scene = "xiaopei_cao_routed" },
+  { type = "give_gold", amount = 300 },
+]
+
+# PC: Lü Bu falls on Yanzhou and Cao Cao withdraws at the start of turn 10.
+[[events]]
+trigger = { type = "turn_start", turn = 10 }
+actions = [
+  { type = "drama", scene = "xiaopei_withdraw" },
+  { type = "victory" },
+]

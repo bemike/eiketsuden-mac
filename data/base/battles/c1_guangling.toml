@@ -1,0 +1,176 @@
+# Chapter 1, act 5 (서주 공방전): 광릉 전투 (Guangling). Novel chapter 21: Yuan Shu, his would-be
+# empire in ruins, marches north to hand his imperial title to Yuan Shao; Liu Bei, sent by Cao Cao,
+# bars the road, and Yuan Shu dies soon after.
+#
+# PC original: 30 turns, 7 deployable officers; enemy Yuan Shu Lv20 (long-weapon infantry), who
+# carries the Imperial Seal and recovers every turn, Ji Ling Lv17 (heavy cavalry), Yue Jiu, Chen Ji,
+# Yuan Yin and Li Feng and six generic squads (12 units); every enemy unit charges. A ridge in the
+# middle of the plain cannot be crossed by the enemy. Victory: rout Yuan Shu (600 gold). Zhang Fei
+# next to Ji Ling starts a duel that wins Ji Ling's three-pointed blade instead of a level (Ji Ling
+# withdraws). Treasuries (PC): 칠성검 and 400 gold.
+# (design) The two crossbow officers hold back until something comes within reach. Yuan Shu keeps
+# his PC level; Ji Ling (16) and the other officers (14-15) stand below theirs and the squads are
+# plain infantry, archers and bands (Lv14), because every one of them charges at once and the
+# army only has seven units. Yuan Shu's seal is the pack's imperial_seal accessory (10% troops and
+# 10 morale per turn); it is not dropped: in the novel it goes back to the court.
+#
+# Map: a wide plain; the northern road holds Liu Bei's line, Yuan Shu comes up the southern road,
+# and a cliff-lined ridge in the middle forces the fighting round its western and eastern ends,
+# where the two treasuries lie.
+
+id = "c1_guangling"
+name = "광릉 전투"
+location = "199년, 서주 광릉군"
+objective = "원술을 물리쳐라"
+bgm = "battle"
+bgm_enemy = "boss"
+turn_limit = 30
+reward_gold = 600
+intro = "guangling_intro"
+outro = "guangling_outro"
+victory = [{ type = "defeat_unit", target = "yuan_shu" }]
+
+[map]
+theme = "field"
+rows = '''
+^..,.,..,.,..,.,..,.,..,.,.^
+.v..,.,..,.,.v,.,..,.,..,.v.
+____________________________
+.,.,_.,.,..,.,..,.,..,._..,.
+,..,_,TT,.,..TT,..,.TT._.,..
+.,.._.T..,.,..,.,..,.T._,.,.
+..,._..,.,..,.,..,.,..,_,..,
+.,.,_.,.,^^^^^^^^^^..,._..,.
+,..,_,..^^^^^^^^^^^^,.._.,..
+.$.._.,.^^X^X^X^X^^^.,._,.,.
+..,._..,^^^X^X^X^X^^..,_,.$,
+.,.,_.,.^^^^^^^^^^^^.,._..,.
+,..,_,..,^^^^^^^^^^.,.._.,..
+.,.._.,..,.,..,.,..,.,._,.,.
+..,._.T,.,..,.,..,.,T.,_,..,
+.,.,_.,T,..,.TT.,.,..T._..,.
+,..,_,..,.,..,.,..,.,.._.,..
+____________________________
+.v,.,..,.,..,.,..,.,..,.,.v,
+^^.,..,.,..,.,..,.,..,.,..^^
+'''
+
+[deploy]
+max = 7
+slots = [[13, 2], [14, 2], [12, 2], [15, 2], [13, 3], [14, 3], [12, 3], [15, 3]]
+
+# --- Yuan Shu's army: every unit charges ----------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "yuan_shu"
+level = 20
+pos = [14, 17]
+ai = "aggressive"
+commander = true
+equip = { accessory = "imperial_seal" }
+
+[[units]]
+side = "enemy"
+officer = "ji_ling"
+level = 16
+pos = [12, 16]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "yue_jiu"
+level = 15
+pos = [16, 16]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "chen_ji"
+class = "long_infantry"
+level = 14
+pos = [9, 16]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+officer = "yuan_yin"
+level = 14
+pos = [13, 18]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "li_feng"
+level = 14
+pos = [15, 18]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [6, 16]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [21, 16]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 14
+pos = [10, 18]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 14
+pos = [18, 18]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 14
+pos = [12, 18]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 14
+pos = [16, 18]
+ai = "aggressive"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel (PC): Zhang Fei next to Ji Ling wins his blade (no level); Ji Ling withdraws.
+[[events]]
+trigger = { type = "adjacent", a = "zhang_fei", b = "ji_ling" }
+actions = [
+  { type = "drama", scene = "guangling_duel" },
+  { type = "give_item", item = "three_point_blade" },
+  { type = "retreat", target = "ji_ling" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [1, 9]
+item = "seven_star_sword"
+
+[[treasures]]
+pos = [26, 10]
+gold = 400

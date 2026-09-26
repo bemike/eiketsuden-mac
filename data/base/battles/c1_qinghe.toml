@@ -1,0 +1,188 @@
+# Chapter 1, act 1 (계교 전투), second choice B: 청하 전투 (Qinghe). Game-original prelude to
+# Jieqiao (novel chapter 7). Qu Yi, Yuan Shao's veteran commander, holds the Qinghe road behind a
+# stockaded village; Gongsun Zan's cavalry officer Yan Gang rides with the army. (Historically Qu Yi
+# cut Yan Gang down at Jieqiao; the original moves that to this battle.)
+#
+# PC original: 30 turns, 5 deployable officers; allied Yan Gang (light cavalry Lv4, dies against Qu
+# Yi); enemy Qu Yi Lv9 (never moves) with an infantry squad, an archer squad and a cavalry squad at
+# the granary behind him, a band, two infantry and an archer squad rushing from the village, and two
+# bandit squads on turn 7. Victory: rout Qu Yi (200 gold). Guan Yu next to Qu Yi starts a duel that
+# ends the battle (+1 level). Treasury: 100 gold; granary: wine.
+#
+# Map: one road from the east crosses the Qinghe river on a single bridge, runs through a
+# palisaded village and ends at Qu Yi's fort with the granary behind it in the west.
+
+id = "c1_qinghe"
+name = "청하 전투"
+location = "191년, 기주 청하국"
+objective = "적장 국의를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "enemy"
+turn_limit = 30
+reward_gold = 200
+intro = "qinghe_intro"
+outro = "qinghe_outro"
+victory = [{ type = "defeat_unit", target = "qu_yi" }]
+
+[map]
+theme = "field"
+rows = '''
+^^^^^^^,,,,...~,,,^^^^^^^^
+^^$,,,^^,,.TT.~,,..,,,^^^^
+^^,..,,^,,..T.~.,,..T,,,^^
+^,.,..,.,.,,..~..,,.TT.,,^
+^,.,..|||.,..,~,...,T..,.,
+,g.f..|v.,..T,~..,.....,.,
+,,....|...,.TT~,.,..,..,..
+,......v..,..,~.,...,..,..
+______________=___________
+,......v..,..,~.,..,...,..
+,,....|...,.TT~,..,...,..,
+,,.,..|v.,..T,~..,..T..,.,
+^,.,..|||.,..,~,.,..TT.,.,
+^,.$,.,.,.,,..~..,,.T..,,^
+^^,..,,^,,..T.~.,,....,,^^
+^^^^^^^,,,,...~,,,^^^^^^^^
+'''
+
+[deploy]
+max = 5
+slots = [[23, 8], [23, 7], [23, 9], [24, 8], [24, 7], [24, 9]]
+
+# --- Qu Yi's rearguard at the granary -------------------------------------------------------------
+
+# PC: Qu Yi never leaves his fort.
+[[units]]
+side = "enemy"
+officer = "qu_yi"
+level = 9
+pos = [3, 5]
+ai = "hold"
+commander = true
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 5
+pos = [4, 6]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 4
+pos = [2, 6]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 2
+pos = [4, 4]
+ai = "guard"
+
+# --- The village garrison rushes the bridge --------------------------------------------------------
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 4
+pos = [7, 7]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 4
+pos = [7, 9]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 5
+pos = [9, 7]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 4
+pos = [9, 9]
+ai = "aggressive"
+
+# --- Turn 7: bandits fall on the army's rear ------------------------------------------------------
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 3
+pos = [23, 1]
+ai = "aggressive"
+group = "bandits"
+
+[[units]]
+side = "enemy"
+name = "산적"
+class = "bandit"
+level = 3
+pos = [24, 2]
+ai = "aggressive"
+group = "bandits"
+
+# --- Gongsun Zan's cavalry (allied) ----------------------------------------------------------------
+
+# Rides straight for Qu Yi, as in the original.
+[[units]]
+side = "ally"
+officer = "yan_gang"
+level = 4
+pos = [21, 8]
+ai = "target"
+ai_target = "qu_yi"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Duel: Guan Yu next to Qu Yi ends the battle (PC).
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "qu_yi" }
+actions = [
+  { type = "drama", scene = "qinghe_duel" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "retreat", target = "qu_yi" },
+  { type = "victory" },
+]
+
+# Yan Gang reaching Qu Yi is cut down (PC); the fall scene plays however he retreats.
+[[events]]
+trigger = { type = "adjacent", a = "yan_gang", b = "qu_yi" }
+actions = [{ type = "retreat", target = "yan_gang" }]
+
+[[events]]
+trigger = { type = "unit_defeated", target = "yan_gang" }
+actions = [{ type = "drama", scene = "qinghe_yan_gang_falls" }]
+
+[[events]]
+trigger = { type = "turn_start", turn = 7, side = "enemy" }
+actions = [
+  { type = "spawn", group = "bandits" },
+  { type = "drama", scene = "qinghe_bandits" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [3, 13]
+gold = 100
+
+[[treasures]]
+pos = [1, 5]
+item = "wine"

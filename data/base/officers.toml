@@ -8,10 +8,20 @@
 #    stat corrections; levels from the PC walkthrough where it names them (otherwise the console level
 #    lowered to the PC scale). Values the sources do not give are (design) and marked as such.
 #  * `level` is the level at the officer's first appearance; battles may override it per spawn.
-#  * Officers invented by KOEI for the original game (e.g. its chapter-1 bandit chiefs and the
-#    Chencang tribesmen) are deliberately NOT part of this pack: the base pack only uses people from
-#    history and the public-domain novel (docs/DECISIONS.md D3). Their story slots will get our own
-#    characters when those chapters are written.
+#    Joining levels follow the PC scale (the brothers start at level 1, chapter-1 recruits join
+#    around levels 4-13), not the higher console levels.
+#  * Officers invented by KOEI for the original game are deliberately NOT part of this pack
+#    (docs/DECISIONS.md D3). Chapter 1 of the original has nine of them; their story slots are
+#    filled like this:
+#      Guangchuan recruits (infantry, bandit)  -> tian_yu (田豫, historical) and lian_biao (ours)
+#      Xindu garrison captain (martial artist) -> yue_lin (ours)
+#      Gongsun Zan's officer at Julu           -> tian_kai (田楷, historical)
+#      Gongsun Zan's officer cut down at Jieqiao -> an unnamed general, as in the novel (no entry)
+#      Kong Rong's officer at Beihai           -> zong_bao (宗寶, novel)
+#      Mount Tai bandit chief                  -> chang_xi (昌豨, historical)
+#      Xiaqiu and Pengcheng bandit chiefs      -> shi_meng and xia_kun (ours)
+#    The Jieqiao archer of Gongsun Zan's army is shan_jing (單經, historical). Characters written
+#    for this remake say so in their bio.
 #  * Bios are our own one- or two-line summaries.
 
 # ===================================================================================================
@@ -64,11 +74,49 @@ name = "간옹"
 hanja = "簡雍"
 courtesy = "헌화"
 class = "archer"
-level = 5
+level = 4
 str = 42
 int = 74
 lead = 36
 bio = "유비와 어릴 적부터 알고 지낸 동향 친구. 말솜씨가 좋고 격식에 얽매이지 않아 사신 노릇을 자주 맡는다."
+
+# Chapter 1, Guangchuan route. Historical: joined Liu Bei as a young man while Liu Bei served
+# Gongsun Zan. Stats (design).
+[[officer]]
+id = "tian_yu"
+name = "전예"
+hanja = "田豫"
+courtesy = "국양"
+class = "short_infantry"
+level = 5
+str = 63
+int = 72
+lead = 68
+bio = "유주 어양 출신의 젊은 무관. 유비가 공손찬에게 몸을 의탁하던 무렵 스스로 찾아와 그 휘하에 들었다. 나이는 어리지만 지략과 담력을 함께 갖추었다."
+
+# Chapter 1, Guangchuan route. Written for this remake; stats (design).
+[[officer]]
+id = "lian_biao"
+name = "염표"
+hanja = "廉彪"
+class = "bandit"
+level = 5
+str = 60
+int = 58
+lead = 55
+bio = "광천 일대의 산채를 이끌던 두목. 본래 고을의 아전이었으나 탐관의 횡포를 견디지 못해 산으로 들어갔다. 도적 무리 가운데 보기 드물게 글과 셈에 밝고, 칼솜씨도 녹록지 않다. (이 리메이크를 위해 새로 만든 인물)"
+
+# Chapter 1, Xindu route. Written for this remake; stats (design).
+[[officer]]
+id = "yue_lin"
+name = "악린"
+hanja = "岳麟"
+class = "martial"
+level = 5
+str = 64
+int = 48
+lead = 69
+bio = "신도성의 수비대장. 맨손 무예의 고수로, 원소의 대군에 에워싸이고도 끝내 성문을 내주지 않았다. 말수는 적지만 한번 맺은 의리는 저버리지 않는다. (이 리메이크를 위해 새로 만든 인물)"
 
 [[officer]]
 id = "geng_wu"
@@ -76,7 +124,7 @@ name = "경무"
 hanja = "耿武"
 courtesy = "문위"
 class = "short_infantry"
-level = 7
+level = 5
 str = 44
 int = 53
 lead = 32
@@ -88,7 +136,7 @@ name = "관순"
 hanja = "關純"
 courtesy = "공서"
 class = "archer"
-level = 7
+level = 5
 str = 42
 int = 61
 lead = 32
@@ -100,7 +148,7 @@ name = "조운"
 hanja = "趙雲"
 courtesy = "자룡"
 class = "light_cavalry"
-level = 14
+level = 11
 str = 98
 int = 84
 lead = 87
@@ -112,11 +160,48 @@ name = "손건"
 hanja = "孫乾"
 courtesy = "공우"
 class = "supply"
-level = 13
+level = 11
 str = 38
 int = 74
 lead = 34
 bio = "북해 출신의 문관. 도겸의 천거로 유비를 섬기며 외교 사절로 여러 번 공을 세운다."
+
+# Chapter 1, Mount Tai. Historical: a leader of the Mount Tai bandits who later rose against Cao
+# Cao and sided with Liu Bei. Class and stats (design).
+[[officer]]
+id = "chang_xi"
+name = "창희"
+hanja = "昌豨"
+class = "beast"
+level = 12
+str = 71
+int = 46
+lead = 68
+bio = "태산의 험준한 산세를 등에 업고 무리를 거느린 도적 두목. 사나운 부하들을 맹수처럼 부린다. 역사에서도 훗날 조조에게 맞서 유비와 손을 잡는다."
+
+# Chapter 1, Xiaqiu. Written for this remake; stats (design).
+[[officer]]
+id = "shi_meng"
+name = "석맹"
+hanja = "石猛"
+class = "bandit"
+level = 12
+str = 70
+int = 30
+lead = 60
+bio = "하구 산채의 두목. 황소도 메어친다는 장사지만 셈이 어두워 늘 부하들에게 속는다. 겉은 험상궂어도 약한 사람을 괴롭히는 일만은 싫어한다. (이 리메이크를 위해 새로 만든 인물)"
+
+# Chapter 1, Pengcheng. Written for this remake; stats (design).
+[[officer]]
+id = "xia_kun"
+name = "하곤"
+hanja = "夏昆"
+class = "bandit"
+level = 12
+str = 56
+int = 45
+lead = 49
+bio = "팽성 근처 늪지에 숨어 살던 도적 무리의 우두머리. 흉년에 굶주린 농민들을 이끌고 도적이 되었을 뿐, 본래는 성실한 농사꾼이었다. (이 리메이크를 위해 새로 만든 인물)"
 
 [[officer]]
 id = "mi_fang"
@@ -124,7 +209,7 @@ name = "미방"
 hanja = "糜芳"
 courtesy = "자방"
 class = "short_infantry"
-level = 18
+level = 13
 str = 63
 int = 25
 lead = 59
@@ -136,7 +221,7 @@ name = "미축"
 hanja = "糜竺"
 courtesy = "자중"
 class = "band"
-level = 17
+level = 13
 str = 40
 int = 64
 lead = 36
@@ -716,17 +801,29 @@ int = 58
 lead = 70
 bio = "원소의 아우. 연합군의 군량을 맡았으나 가문의 위세만 믿고 오만하게 굴어 원망을 산다."
 
-# int (design)
+# Allied at Julu (chapter 1). Historical; stats (design).
 [[officer]]
-id = "gongsun_yue"
-name = "공손월"
-hanja = "公孫越"
+id = "tian_kai"
+name = "전해"
+hanja = "田楷"
+class = "short_infantry"
+level = 6
+str = 58
+int = 52
+lead = 62
+bio = "공손찬이 세운 청주자사. 원소와 맞서 청주와 기주 일대에서 싸웠으며, 한때 유비를 휘하에 두고 함께 싸웠다."
+
+# Allied at Julu and Jieqiao (chapter 1). Historical; stats (design).
+[[officer]]
+id = "shan_jing"
+name = "단경"
+hanja = "單經"
 class = "archer"
-level = 10
-str = 60
-int = 45
+level = 6
+str = 55
+int = 48
 lead = 57
-bio = "공손찬의 사촌 아우. 형을 도와 원소와 싸운다."
+bio = "공손찬 휘하의 장수. 원소와의 싸움에서 평원 일대에 진을 치고 유비와 어깨를 나란히 했다."
 
 # All stats (design); first appears at Qinghe.
 [[officer]]
@@ -765,6 +862,18 @@ str = 93
 int = 66
 lead = 80
 bio = "동래 황현 출신의 명궁. 은혜를 갚으려고 홀로 포위를 뚫고 나가 유비에게 구원을 청한다."
+
+# Allied at Beihai (chapter 1). From the novel (chapter 11); stats (design).
+[[officer]]
+id = "zong_bao"
+name = "종보"
+hanja = "宗寶"
+class = "short_infantry"
+level = 3
+str = 48
+int = 25
+lead = 40
+bio = "북해 태수 공융의 부장. 황건 잔당이 성을 에워싸자 앞장서 성문을 나선다."
 
 # ===================================================================================================
 # Dong Zhuo's army (prologue)
@@ -1264,6 +1373,18 @@ bio = "조조가 서주를 맡긴 장수. 유비를 없애라는 밀명을 받�
 # ===================================================================================================
 # Yuan Shu's and Lü Bu's armies (chapter 1)
 # ===================================================================================================
+
+# Historical: commander of the Danyang troops at Xiapi who opened the gates to Lü Bu. Stats (design).
+[[officer]]
+id = "xu_dan"
+name = "허탐"
+hanja = "許耽"
+class = "short_infantry"
+level = 13
+str = 60
+int = 40
+lead = 58
+bio = "서주에 머물던 단양병의 장수. 여포와 몰래 손을 잡고 유비의 등 뒤를 친다."
 
 # Level (design, PC scale) and int (design)
 [[officer]]

@@ -1,17 +1,42 @@
 # Campaign flow of the base pack (`CampaignDef` in crates/hero-core/src/campaign.rs).
 #
-# Version 0.1 contains the prologue (서장): the anti-Dong Zhuo coalition, Sishui Pass and Hulao Pass.
-# The ending node below is a temporary end of this slice; chapter 1 will continue from `after_hulao`.
+# Version 0.2 contains the prologue (서장: the anti-Dong Zhuo coalition, Sishui Pass and Hulao Pass)
+# and chapter 1 (제1장, acts 1-1 to 1-5). The ending node at the bottom is a temporary end of this
+# slice; chapter 2 will continue from `c1_finale`.
 #
 # Money: the PC original starts with Cao Cao handing Liu Bei 500 gold in the Chenliu camp. We keep that
 # as a drama event (`@gold +500` in prologue_chenliu), so a new game starts with 0 gold and reaches the
 # first shop with exactly 500. The Chenliu shop (scorch scrolls, wine, beans) is the prologue's only
 # shop, as in the original.
+#
+# Shops follow the town shops of the PC original (namu.wiki "삼국지 영걸전/도구상"):
+#   북평 wine, bean, fog scroll
+#   신도 wine, bean, salve, scorch / whirlpool / rockfall scrolls (only on the Xindu route)
+#   북해 the Xindu list plus bombs
+#   서주 wine, bean, salve, great-encourage and great-aid scrolls
+#   소패 long spear, repeater, horse armour, martial manual, scorch / whirlpool / rockfall scrolls
+#   하비 bean, wheat, great-encourage and great-aid scrolls, bombs
+#   허창 long spear, repeater, horse armour, martial manual, wine, fine wine, bean, salve
+# Camps without a shop are the original's consecutive battles with no town in between (Jieqiao after
+# the second prelude battle, the Guangchuan route's second camp).
+#
+# Flags set by chapter 1 (dramas unless noted):
+#   c1_route_a      1 Xindu / 2 Guangchuan          c1_route_b      1 Julu / 2 Qinghe
+#   c1_xiaopei      1 fight Cao Cao at Xiaopei / 0 truce
+#   c1_taishan, c1_xiaqiu1, c1_pengcheng1   1 once that bandit camp is cleared
+#   c1_bandits      number of bandit camps cleared   c1_bandit_next  camp picked in the menu (0 = done)
+#   c1_join_chang_xi, c1_join_shi_meng, c1_join_xia_kun   1 when Liu Bei won that chief over (battles)
+#   c1_route_lubu   1 Xiaqiu II / 2 Pengcheng II     c1_gao_shun_duel  1 when Zhang Fei beat Gao Shun (battle)
+#   c1_edict_carried  1 when Liu Bei keeps the pledge on him   c1_exposed  1 when Cao Cao finds it
 
 title = "유비전"
 start = "prologue_opening"
 starting_officers = ["liu_bei", "guan_yu", "zhang_fei"]
 starting_gold = 0
+
+# ===================================================================================================
+# Prologue
+# ===================================================================================================
 
 [[node]]
 type = "drama"
@@ -62,10 +87,576 @@ next = "after_hulao"
 type = "drama"
 id = "after_hulao"
 scene = "prologue_coalition_breaks"
-next = "prologue_end"
+next = "c1_pingyuan"
+
+# ===================================================================================================
+# Chapter 1, act 1: 북방의 전란 (Jieqiao)
+#   [Xindu | Guangchuan] -> [Julu | Qinghe] -> Jieqiao (roster by the second choice)
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_pingyuan"
+scene = "c1_pingyuan"
+next = "c1_beiping"
+
+[[node]]
+type = "drama"
+id = "c1_beiping"
+scene = "c1_beiping"
+next = "c1_br_first"
+
+[[node]]
+type = "branch"
+id = "c1_br_first"
+flag = "c1_route_a"
+cmp = "=="
+value = 1
+then = "c1_camp_xindu"
+else = "c1_camp_guangchuan"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xindu"
+title = "북평 — 신도 구원 출진 준비"
+shop = ["wine", "bean", "scroll_fog"]
+battle = "c1_xindu"
+next = "c1_battle_xindu"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xindu"
+battle = "c1_xindu"
+next = "c1_after_xindu"
+
+[[node]]
+type = "drama"
+id = "c1_after_xindu"
+scene = "c1_after_xindu"
+next = "c1_second_choice"
+
+[[node]]
+type = "camp"
+id = "c1_camp_guangchuan"
+title = "북평 — 광천 토벌 출진 준비"
+shop = ["wine", "bean", "scroll_fog"]
+battle = "c1_guangchuan"
+next = "c1_battle_guangchuan"
+
+[[node]]
+type = "battle"
+id = "c1_battle_guangchuan"
+battle = "c1_guangchuan"
+next = "c1_after_guangchuan"
+
+[[node]]
+type = "drama"
+id = "c1_after_guangchuan"
+scene = "c1_after_guangchuan"
+next = "c1_second_choice"
+
+[[node]]
+type = "drama"
+id = "c1_second_choice"
+scene = "c1_second_choice"
+next = "c1_br_second"
+
+[[node]]
+type = "branch"
+id = "c1_br_second"
+flag = "c1_route_b"
+cmp = "=="
+value = 1
+then = "c1_br_julu"
+else = "c1_br_qinghe"
+
+# The Xindu route passes the Xindu shop; the Guangchuan route has no town before the next battle.
+[[node]]
+type = "branch"
+id = "c1_br_julu"
+flag = "c1_route_a"
+cmp = "=="
+value = 1
+then = "c1_camp_julu_xindu"
+else = "c1_camp_julu"
+
+[[node]]
+type = "branch"
+id = "c1_br_qinghe"
+flag = "c1_route_a"
+cmp = "=="
+value = 1
+then = "c1_camp_qinghe_xindu"
+else = "c1_camp_qinghe"
+
+[[node]]
+type = "camp"
+id = "c1_camp_julu_xindu"
+title = "신도 — 거록 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_julu"
+next = "c1_battle_julu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_julu"
+title = "광천 — 거록 출진 준비"
+battle = "c1_julu"
+next = "c1_battle_julu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_qinghe_xindu"
+title = "신도 — 청하 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_qinghe"
+next = "c1_battle_qinghe"
+
+[[node]]
+type = "camp"
+id = "c1_camp_qinghe"
+title = "광천 — 청하 출진 준비"
+battle = "c1_qinghe"
+next = "c1_battle_qinghe"
+
+[[node]]
+type = "battle"
+id = "c1_battle_julu"
+battle = "c1_julu"
+next = "c1_after_julu"
+
+[[node]]
+type = "drama"
+id = "c1_after_julu"
+scene = "c1_after_julu"
+next = "c1_camp_jieqiao_a"
+
+[[node]]
+type = "camp"
+id = "c1_camp_jieqiao_a"
+title = "계교 — 결전 준비"
+battle = "c1_jieqiao_a"
+next = "c1_battle_jieqiao_a"
+
+[[node]]
+type = "battle"
+id = "c1_battle_jieqiao_a"
+battle = "c1_jieqiao_a"
+next = "c1_after_jieqiao"
+
+[[node]]
+type = "battle"
+id = "c1_battle_qinghe"
+battle = "c1_qinghe"
+next = "c1_after_qinghe"
+
+[[node]]
+type = "drama"
+id = "c1_after_qinghe"
+scene = "c1_after_qinghe"
+next = "c1_camp_jieqiao_b"
+
+[[node]]
+type = "camp"
+id = "c1_camp_jieqiao_b"
+title = "계교 — 결전 준비"
+battle = "c1_jieqiao_b"
+next = "c1_battle_jieqiao_b"
+
+[[node]]
+type = "battle"
+id = "c1_battle_jieqiao_b"
+battle = "c1_jieqiao_b"
+next = "c1_after_jieqiao"
+
+[[node]]
+type = "drama"
+id = "c1_after_jieqiao"
+scene = "c1_after_jieqiao"
+next = "c1_beihai_call"
+
+# ===================================================================================================
+# Chapter 1, act 2: 북해, 서주 원군
+#   Beihai -> Xuzhou I -> {Xiaopei (fight Cao Cao) | truce: twin swords}; Zhao Yun is lent for the act
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_beihai_call"
+scene = "c1_beihai_call"
+next = "c1_camp_beihai"
+
+[[node]]
+type = "camp"
+id = "c1_camp_beihai"
+title = "평원 — 북해 구원 출진 준비"
+shop = ["wine", "bean", "scroll_fog"]
+battle = "c1_beihai"
+next = "c1_battle_beihai"
+
+[[node]]
+type = "battle"
+id = "c1_battle_beihai"
+battle = "c1_beihai"
+next = "c1_after_beihai"
+
+[[node]]
+type = "drama"
+id = "c1_after_beihai"
+scene = "c1_after_beihai"
+next = "c1_camp_xuzhou1"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xuzhou1"
+title = "북해 — 서주 구원 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall", "bomb"]
+battle = "c1_xuzhou1"
+next = "c1_battle_xuzhou1"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xuzhou1"
+battle = "c1_xuzhou1"
+next = "c1_after_xuzhou1"
+
+[[node]]
+type = "drama"
+id = "c1_after_xuzhou1"
+scene = "c1_after_xuzhou1"
+next = "c1_br_xiaopei"
+
+[[node]]
+type = "branch"
+id = "c1_br_xiaopei"
+flag = "c1_xiaopei"
+cmp = "=="
+value = 1
+then = "c1_camp_xiaopei"
+else = "c1_zhao_yun_leaves"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiaopei"
+title = "서주 — 소패 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_great_encourage", "scroll_great_aid"]
+battle = "c1_xiaopei"
+next = "c1_battle_xiaopei"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiaopei"
+battle = "c1_xiaopei"
+next = "c1_zhao_yun_leaves"
+
+[[node]]
+type = "drama"
+id = "c1_zhao_yun_leaves"
+scene = "c1_zhao_yun_leaves"
+next = "c1_xiaopei_bandits"
+
+# ===================================================================================================
+# Chapter 1, act 3: 성난 이리, 여포의 방문
+#   bandit camps Mount Tai / Xiaqiu I / Pengcheng I (at least one, any order; the villagers' thanks
+#   grow with the number cleared) -> Huainan (Lü Bu's betrayal) -> flight to Xuchang
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_xiaopei_bandits"
+scene = "c1_xiaopei_bandits"
+next = "c1_bandit_menu"
+
+# Shows only the camps not cleared yet; "back to Xiaopei" appears once one camp is cleared.
+[[node]]
+type = "drama"
+id = "c1_bandit_menu"
+scene = "c1_bandit_menu"
+next = "c1_br_bandit_1"
+
+[[node]]
+type = "branch"
+id = "c1_br_bandit_1"
+flag = "c1_bandit_next"
+cmp = "=="
+value = 1
+then = "c1_camp_taishan"
+else = "c1_br_bandit_2"
+
+[[node]]
+type = "branch"
+id = "c1_br_bandit_2"
+flag = "c1_bandit_next"
+cmp = "=="
+value = 2
+then = "c1_camp_xiaqiu1"
+else = "c1_br_bandit_3"
+
+[[node]]
+type = "branch"
+id = "c1_br_bandit_3"
+flag = "c1_bandit_next"
+cmp = "=="
+value = 3
+then = "c1_camp_pengcheng1"
+else = "c1_peasants"
+
+[[node]]
+type = "camp"
+id = "c1_camp_taishan"
+title = "소패 — 태산 토벌 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_taishan"
+next = "c1_battle_taishan"
+
+[[node]]
+type = "battle"
+id = "c1_battle_taishan"
+battle = "c1_taishan"
+next = "c1_after_taishan"
+
+[[node]]
+type = "drama"
+id = "c1_after_taishan"
+scene = "c1_after_taishan"
+next = "c1_bandit_menu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiaqiu1"
+title = "소패 — 하구 토벌 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_xiaqiu1"
+next = "c1_battle_xiaqiu1"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiaqiu1"
+battle = "c1_xiaqiu1"
+next = "c1_after_xiaqiu1"
+
+[[node]]
+type = "drama"
+id = "c1_after_xiaqiu1"
+scene = "c1_after_xiaqiu1"
+next = "c1_bandit_menu"
+
+[[node]]
+type = "camp"
+id = "c1_camp_pengcheng1"
+title = "소패 — 팽성 토벌 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "scroll_scorch", "scroll_whirlpool", "scroll_rockfall"]
+battle = "c1_pengcheng1"
+next = "c1_battle_pengcheng1"
+
+[[node]]
+type = "battle"
+id = "c1_battle_pengcheng1"
+battle = "c1_pengcheng1"
+next = "c1_after_pengcheng1"
+
+[[node]]
+type = "drama"
+id = "c1_after_pengcheng1"
+scene = "c1_after_pengcheng1"
+next = "c1_bandit_menu"
+
+[[node]]
+type = "drama"
+id = "c1_peasants"
+scene = "c1_peasants"
+next = "c1_xuzhou_succession"
+
+[[node]]
+type = "drama"
+id = "c1_xuzhou_succession"
+scene = "c1_xuzhou_succession"
+next = "c1_camp_huainan"
+
+[[node]]
+type = "camp"
+id = "c1_camp_huainan"
+title = "서주 — 회남 출진 준비"
+shop = ["wine", "bean", "salve", "scroll_great_encourage", "scroll_great_aid"]
+battle = "c1_huainan"
+next = "c1_battle_huainan"
+
+[[node]]
+type = "battle"
+id = "c1_battle_huainan"
+battle = "c1_huainan"
+next = "c1_flight_to_xuchang"
+
+[[node]]
+type = "drama"
+id = "c1_flight_to_xuchang"
+scene = "c1_flight_to_xuchang"
+next = "c1_lubu_campaign"
+
+# ===================================================================================================
+# Chapter 1, act 4: 여포 토벌전
+#   [Xiaqiu II (with Xun Yu, Cao Ren, Cao Hong) | Pengcheng II (with Guo Jia and the Xiahou)]
+#   -> Xiapi (without Gao Shun if Zhang Fei beat him at Pengcheng) -> the end of Lü Bu
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_lubu_campaign"
+scene = "c1_lubu_campaign"
+next = "c1_br_lubu"
+
+[[node]]
+type = "branch"
+id = "c1_br_lubu"
+flag = "c1_route_lubu"
+cmp = "=="
+value = 1
+then = "c1_camp_xiaqiu2"
+else = "c1_camp_pengcheng2"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiaqiu2"
+title = "허창 — 하구 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "wine", "fine_wine", "bean", "salve"]
+battle = "c1_xiaqiu2"
+next = "c1_battle_xiaqiu2"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiaqiu2"
+battle = "c1_xiaqiu2"
+next = "c1_before_xiapi"
+
+[[node]]
+type = "camp"
+id = "c1_camp_pengcheng2"
+title = "허창 — 팽성 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "wine", "fine_wine", "bean", "salve"]
+battle = "c1_pengcheng2"
+next = "c1_battle_pengcheng2"
+
+[[node]]
+type = "battle"
+id = "c1_battle_pengcheng2"
+battle = "c1_pengcheng2"
+next = "c1_before_xiapi"
+
+[[node]]
+type = "drama"
+id = "c1_before_xiapi"
+scene = "c1_before_xiapi"
+next = "c1_br_xiapi"
+
+[[node]]
+type = "branch"
+id = "c1_br_xiapi"
+flag = "c1_gao_shun_duel"
+cmp = "=="
+value = 1
+then = "c1_camp_xiapi_b"
+else = "c1_camp_xiapi"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiapi"
+title = "하비 — 결전 준비"
+shop = ["bean", "wheat", "scroll_great_encourage", "scroll_great_aid", "bomb"]
+battle = "c1_xiapi"
+next = "c1_battle_xiapi"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiapi"
+battle = "c1_xiapi"
+next = "c1_lubu_end"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiapi_b"
+title = "하비 — 결전 준비"
+shop = ["bean", "wheat", "scroll_great_encourage", "scroll_great_aid", "bomb"]
+battle = "c1_xiapi_b"
+next = "c1_battle_xiapi_b"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiapi_b"
+battle = "c1_xiapi_b"
+next = "c1_lubu_end"
+
+[[node]]
+type = "drama"
+id = "c1_lubu_end"
+scene = "c1_lubu_end"
+next = "c1_jade_belt"
+
+# ===================================================================================================
+# Chapter 1, act 5: 서주 공방전
+#   jade-belt affair (careless answers end the game) -> Guangling -> Xuzhou II (flight) -> end
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_jade_belt"
+scene = "c1_jade_belt"
+next = "c1_br_exposed"
+
+[[node]]
+type = "branch"
+id = "c1_br_exposed"
+flag = "c1_exposed"
+cmp = "=="
+value = 1
+then = "c1_bad_end"
+else = "c1_camp_guangling"
 
 [[node]]
 type = "ending"
-id = "prologue_end"
-scene = "prologue_to_be_continued"
-title = "서장 완료"
+id = "c1_bad_end"
+scene = "c1_bad_end"
+title = "허도의 흉변"
+
+[[node]]
+type = "camp"
+id = "c1_camp_guangling"
+title = "허창 — 광릉 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "wine", "fine_wine", "bean", "salve"]
+battle = "c1_guangling"
+next = "c1_battle_guangling"
+
+[[node]]
+type = "battle"
+id = "c1_battle_guangling"
+battle = "c1_guangling"
+next = "c1_after_guangling"
+
+[[node]]
+type = "drama"
+id = "c1_after_guangling"
+scene = "c1_after_guangling"
+next = "c1_camp_xuzhou2"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xuzhou2"
+title = "하비 — 서주 출진 준비"
+shop = ["bean", "wheat", "scroll_great_encourage", "scroll_great_aid", "bomb"]
+battle = "c1_xuzhou2"
+next = "c1_battle_xuzhou2"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xuzhou2"
+battle = "c1_xuzhou2"
+next = "c1_finale"
+
+# ===================================================================================================
+# End of the 0.2 slice: chapter 2 continues from here.
+# ===================================================================================================
+
+[[node]]
+type = "ending"
+id = "c1_finale"
+scene = "c1_scattered"
+title = "제1장 완료"
