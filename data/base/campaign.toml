@@ -26,6 +26,7 @@
 #   c1_taishan, c1_xiaqiu1, c1_pengcheng1   1 once that bandit camp is cleared
 #   c1_bandits      number of bandit camps cleared   c1_bandit_next  camp picked in the menu (0 = done)
 #   c1_join_chang_xi, c1_join_shi_meng, c1_join_xia_kun   1 when Liu Bei won that chief over (battles)
+#   c1_route_lubu   1 Xiaqiu II / 2 Pengcheng II     c1_gao_shun_duel  1 when Zhang Fei beat Gao Shun (battle)
 
 title = "유비전"
 start = "prologue_opening"
@@ -489,6 +490,104 @@ next = "c1_flight_to_xuchang"
 type = "drama"
 id = "c1_flight_to_xuchang"
 scene = "c1_flight_to_xuchang"
+next = "c1_lubu_campaign"
+
+# ===================================================================================================
+# Chapter 1, act 4: 여포 토벌전
+#   [Xiaqiu II (with Xun Yu, Cao Ren, Cao Hong) | Pengcheng II (with Guo Jia and the Xiahou)]
+#   -> Xiapi (without Gao Shun if Zhang Fei beat him at Pengcheng) -> the end of Lü Bu
+# ===================================================================================================
+
+[[node]]
+type = "drama"
+id = "c1_lubu_campaign"
+scene = "c1_lubu_campaign"
+next = "c1_br_lubu"
+
+[[node]]
+type = "branch"
+id = "c1_br_lubu"
+flag = "c1_route_lubu"
+cmp = "=="
+value = 1
+then = "c1_camp_xiaqiu2"
+else = "c1_camp_pengcheng2"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiaqiu2"
+title = "허창 — 하구 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "wine", "fine_wine", "bean", "salve"]
+battle = "c1_xiaqiu2"
+next = "c1_battle_xiaqiu2"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiaqiu2"
+battle = "c1_xiaqiu2"
+next = "c1_before_xiapi"
+
+[[node]]
+type = "camp"
+id = "c1_camp_pengcheng2"
+title = "허창 — 팽성 출진 준비"
+shop = ["long_spear", "repeater", "horse_armor", "martial_manual", "wine", "fine_wine", "bean", "salve"]
+battle = "c1_pengcheng2"
+next = "c1_battle_pengcheng2"
+
+[[node]]
+type = "battle"
+id = "c1_battle_pengcheng2"
+battle = "c1_pengcheng2"
+next = "c1_before_xiapi"
+
+[[node]]
+type = "drama"
+id = "c1_before_xiapi"
+scene = "c1_before_xiapi"
+next = "c1_br_xiapi"
+
+[[node]]
+type = "branch"
+id = "c1_br_xiapi"
+flag = "c1_gao_shun_duel"
+cmp = "=="
+value = 1
+then = "c1_camp_xiapi_b"
+else = "c1_camp_xiapi"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiapi"
+title = "하비 — 결전 준비"
+shop = ["bean", "wheat", "scroll_great_encourage", "scroll_great_aid", "bomb"]
+battle = "c1_xiapi"
+next = "c1_battle_xiapi"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiapi"
+battle = "c1_xiapi"
+next = "c1_lubu_end"
+
+[[node]]
+type = "camp"
+id = "c1_camp_xiapi_b"
+title = "하비 — 결전 준비"
+shop = ["bean", "wheat", "scroll_great_encourage", "scroll_great_aid", "bomb"]
+battle = "c1_xiapi_b"
+next = "c1_battle_xiapi_b"
+
+[[node]]
+type = "battle"
+id = "c1_battle_xiapi_b"
+battle = "c1_xiapi_b"
+next = "c1_lubu_end"
+
+[[node]]
+type = "drama"
+id = "c1_lubu_end"
+scene = "c1_lubu_end"
 next = "c1_finale"
 
 # ===================================================================================================

@@ -1,0 +1,432 @@
+# Chapter 1, act 4 (여포 토벌전) finale: 하비 전투 (Xiapi). Novel chapter 19: Cao Cao and Liu Bei
+# besiege Lü Bu in Xiapi and flood the city; Hou Cheng steals the Red Hare and deserts, Song Xian and
+# Wei Xu seize Lü Bu and open the gate, and Lü Bu is captured. This file has Gao Shun in the roster;
+# c1_xiapi_b.toml is the same battle for players whose Zhang Fei beat Gao Shun at Pengcheng.
+#
+# PC original: 45 turns, 7 deployable officers with Zhang Fei required; enemy Lü Bu Lv21 (heavy
+# cavalry) with Zhang Liao, Chen Gong, Gao Shun about Lv18, Hou Cheng, Song Xian, Wei Xu, Xu Si
+# about Lv17, Wang Kai Lv16 and generic squads (23 units). Phase 1: lower the drawbridge. Liu Bei
+# next to Hou Cheng, Song Xian or Wei Xu makes that officer defect (Liu Bei +1 level each); once all
+# three have defected the bridge comes down, otherwise it drops at the start of turn 30; Cao Cao's
+# army then joins the fight as allies. Phase 2: rout Lü Bu (500 gold). Guan Yu next to Zhang Liao starts a
+# duel (+1 level); Zhang Fei cannot duel Lü Bu here. Treasures: 방천화극 and 적토마.
+# (design) The engine cannot change terrain, so the city stays sealed behind its moat and the
+# "drawbridge" is Lü Bu's sortie: when the gate opens, Lü Bu and his guard appear on the bank before
+# it. Every defector's men gather inside the walls as allied units; the gate opens when all three
+# groups stand together (hou_band + song_band call out pair_band, which joins wei_band), and on turn
+# 30 the men inside rise anyway. Hou Cheng brings the Red Hare with him (novel) and Lü Bu drops his
+# halberd; the two outer treasuries hold rice and a 원대서. Cao Cao's besieging army stands in the
+# south from the start but only holds its lines until the gate opens; its officers keep the same
+# levels whatever was chosen at Xiaopei. Squads are Lv14 (PC about 15-16) and two of the four
+# cavalry squads guard their camps, because the army has no allies on the field before the gate.
+#
+# Map: the flooded city fills the north, ringed by its moat; outer camps with forts guard the west,
+# the east and the south-centre, and the army comes up the southern road.
+
+id = "c1_xiapi"
+name = "하비 전투"
+location = "198년, 서주 하비국 하비성"
+objective = "적장 세 명을 설득해 성문을 열게 한 뒤 여포를 물리쳐라"
+bgm = "battle"
+bgm_enemy = "boss"
+turn_limit = 45
+reward_gold = 500
+intro = "xiapi_intro"
+outro = "xiapi_outro"
+victory = [{ type = "defeat_unit", target = "lu_bu" }]
+
+[map]
+theme = "castle"
+rows = '''
+^^^..~##################~,.^^^
+^^,.,~#cccccccccccccccc#~..,^^
+.,..,~#cHcHcccffcHcccHc#~.,..,
+,..,.~#cccccHccccccHccc#~,..,.
+,.,..~#cccccccccccccccc#~,.,~~
+~~,.,~#cccccccccccccccc#~..~~~
+~~~.,~#cHccccccccHccccc#~.,..,
+,..,.~#ccccHccccccccHcc#~,..,.
+,.,..~#ccHcccccccccccHc#~,.,..
+..,.,~#cccccccccccccccc#~..,.,
+.,..,~########GG########~.,..,
+,..T.~~~~~~~~~~~~~~~~~~~~,T.,.
+,.,..,.,v.,.,.__.,..,v,..,.,..
+.|||||.,.,..,.__.,.,..,.|||||,
+.|$f,.,..,.,..__,..,.,..,.f$|,
+,|b,.,..,.,..,__..,.,..,.,.b|.
+,|||||.,..,f||__||f.,.,.|||||.
+..,.,..,.,..,.__.,.,..,.,..,.,
+.,..,.,TT,.,..__,..,.TT.,.,..,
+,..,.,.T,.,..,__..,.,.T,.,..,.
+,.,.v,.,..,.,.__.,..,.,..v.,..
+..,.,..,.,T.,.__.,.T..,.,..,.,
+.,..,.,..,.,..__,..,.,..,.,..,
+^^.,.,..,.,..,__..,.,..,.,..^^
+'''
+
+[deploy]
+max = 7
+required = ["zhang_fei"]
+slots = [[14, 21], [15, 21], [13, 21], [16, 21], [14, 22], [15, 22], [13, 22], [16, 22]]
+
+# --- Lü Bu's outer camps --------------------------------------------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "zhang_liao"
+class = "long_infantry"
+level = 18
+pos = [26, 14]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+officer = "gao_shun"
+level = 18
+pos = [3, 14]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+officer = "chen_gong"
+level = 18
+pos = [18, 16]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "xu_si"
+level = 17
+pos = [11, 16]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+officer = "wang_kai"
+level = 16
+pos = [19, 15]
+ai = "defensive"
+
+# The three wavering officers (see the defection events).
+[[units]]
+side = "enemy"
+officer = "hou_cheng"
+class = "heavy_cavalry"
+level = 17
+pos = [6, 12]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+officer = "song_xian"
+class = "crossbow"
+level = 17
+pos = [23, 12]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+officer = "wei_xu"
+class = "long_infantry"
+level = 17
+pos = [14, 14]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "long_infantry"
+level = 14
+pos = [13, 13]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "long_infantry"
+level = 14
+pos = [16, 13]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 14
+pos = [9, 13]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 14
+pos = [20, 13]
+ai = "aggressive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 14
+pos = [4, 14]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 14
+pos = [25, 14]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [3, 15]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "보병대"
+class = "short_infantry"
+level = 14
+pos = [25, 15]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 14
+pos = [9, 17]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "기병대"
+class = "light_cavalry"
+level = 14
+pos = [20, 17]
+ai = "guard"
+
+[[units]]
+side = "enemy"
+name = "군악대"
+class = "band"
+level = 14
+pos = [15, 15]
+ai = "defensive"
+
+[[units]]
+side = "enemy"
+name = "궁병대"
+class = "archer"
+level = 14
+pos = [12, 15]
+ai = "defensive"
+
+# --- The sortie: Lü Bu leaves the city when the gate opens ----------------------------------------
+
+[[units]]
+side = "enemy"
+officer = "lu_bu"
+class = "heavy_cavalry"
+level = 21
+pos = [14, 12]
+ai = "aggressive"
+commander = true
+drop = "sky_piercer"
+group = "sortie"
+
+[[units]]
+side = "enemy"
+name = "여포 친위대"
+class = "heavy_cavalry"
+level = 16
+pos = [13, 12]
+ai = "aggressive"
+group = "sortie"
+
+[[units]]
+side = "enemy"
+name = "여포 친위대"
+class = "heavy_cavalry"
+level = 16
+pos = [16, 12]
+ai = "aggressive"
+group = "sortie"
+
+# --- Cao Cao's besieging army (allied): holds the southern lines until the gate opens ------------
+
+[[units]]
+side = "ally"
+officer = "cao_cao"
+level = 20
+pos = [14, 23]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "xiahou_dun"
+level = 15
+pos = [3, 22]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "xiahou_yuan"
+level = 15
+pos = [26, 22]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "cao_ren"
+level = 15
+pos = [5, 21]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "cao_hong"
+level = 15
+pos = [24, 21]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "guo_jia"
+level = 14
+pos = [11, 23]
+ai = "defensive"
+
+[[units]]
+side = "ally"
+officer = "xun_yu"
+level = 15
+pos = [18, 23]
+ai = "defensive"
+
+# --- Men of the defectors gathering inside the walls (allied; they never move) --------------------
+
+[[units]]
+side = "ally"
+name = "후성의 부하"
+class = "short_infantry"
+level = 10
+pos = [10, 4]
+ai = "hold"
+tag = "hou_band"
+group = "hou_band"
+
+[[units]]
+side = "ally"
+name = "송헌의 부하"
+class = "short_infantry"
+level = 10
+pos = [11, 4]
+ai = "hold"
+tag = "song_band"
+group = "song_band"
+
+[[units]]
+side = "ally"
+name = "성안의 내응병"
+class = "short_infantry"
+level = 10
+pos = [12, 4]
+ai = "hold"
+tag = "pair_band"
+group = "pair_band"
+
+[[units]]
+side = "ally"
+name = "위속의 부하"
+class = "short_infantry"
+level = 10
+pos = [13, 4]
+ai = "hold"
+tag = "wei_band"
+group = "wei_band"
+
+# --- Events ---------------------------------------------------------------------------------------
+
+# Defections (PC): Liu Bei next to one of the three wavering officers.
+[[events]]
+trigger = { type = "adjacent", a = "liu_bei", b = "hou_cheng" }
+actions = [
+  { type = "drama", scene = "xiapi_hou_cheng" },
+  { type = "level_up", target = "liu_bei", amount = 1 },
+  { type = "give_item", item = "red_hare" },
+  { type = "retreat", target = "hou_cheng" },
+  { type = "spawn", group = "hou_band" },
+]
+
+[[events]]
+trigger = { type = "adjacent", a = "liu_bei", b = "song_xian" }
+actions = [
+  { type = "drama", scene = "xiapi_song_xian" },
+  { type = "level_up", target = "liu_bei", amount = 1 },
+  { type = "retreat", target = "song_xian" },
+  { type = "spawn", group = "song_band" },
+]
+
+[[events]]
+trigger = { type = "adjacent", a = "liu_bei", b = "wei_xu" }
+actions = [
+  { type = "drama", scene = "xiapi_wei_xu" },
+  { type = "level_up", target = "liu_bei", amount = 1 },
+  { type = "retreat", target = "wei_xu" },
+  { type = "spawn", group = "wei_band" },
+]
+
+# All three groups together inside the walls: the gate opens. (Hou Cheng's and Song Xian's men
+# stand side by side and call out the men between them, who stand next to Wei Xu's.)
+[[events]]
+trigger = { type = "adjacent", a = "hou_band", b = "song_band" }
+actions = [{ type = "spawn", group = "pair_band" }]
+
+[[events]]
+trigger = { type = "adjacent", a = "pair_band", b = "wei_band" }
+actions = [
+  { type = "drama", scene = "xiapi_gate_opens" },
+  { type = "spawn", group = "sortie" },
+  { type = "set_ai", target = "cao_cao", ai = "target", ai_target = "lu_bu" },
+  { type = "set_ai", target = "xiahou_dun", ai = "aggressive" },
+  { type = "set_ai", target = "xiahou_yuan", ai = "aggressive" },
+  { type = "set_ai", target = "cao_ren", ai = "aggressive" },
+  { type = "set_ai", target = "cao_hong", ai = "aggressive" },
+  { type = "set_ai", target = "guo_jia", ai = "aggressive" },
+  { type = "set_ai", target = "xun_yu", ai = "aggressive" },
+]
+
+# PC: on turn 30 the men inside rise anyway (the events above then open the gate).
+[[events]]
+trigger = { type = "turn_start", turn = 30 }
+actions = [
+  { type = "spawn", group = "hou_band" },
+  { type = "spawn", group = "song_band" },
+  { type = "spawn", group = "wei_band" },
+]
+
+# Duel: Guan Yu next to Zhang Liao (+1 level); Zhang Liao withdraws.
+[[events]]
+trigger = { type = "adjacent", a = "guan_yu", b = "zhang_liao" }
+actions = [
+  { type = "drama", scene = "xiapi_duel" },
+  { type = "level_up", target = "guan_yu", amount = 1 },
+  { type = "retreat", target = "zhang_liao" },
+]
+
+# --- Treasures ------------------------------------------------------------------------------------
+
+[[treasures]]
+pos = [2, 14]
+item = "rice"
+
+[[treasures]]
+pos = [27, 14]
+item = "scroll_great_aid"

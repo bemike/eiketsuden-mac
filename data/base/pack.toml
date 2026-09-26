@@ -30,12 +30,18 @@ battles = [
   "battles/c1_xiaqiu1.toml",
   "battles/c1_pengcheng1.toml",
   "battles/c1_huainan.toml",
+  # Chapter 1, act 4: the campaign against Lü Bu
+  "battles/c1_xiaqiu2.toml",
+  "battles/c1_pengcheng2.toml",
+  "battles/c1_xiapi.toml",
+  "battles/c1_xiapi_b.toml",
 ]
 dramas = [
   "dramas/prologue.drama",
   "dramas/c1_act1.drama",
   "dramas/c1_act2.drama",
   "dramas/c1_act3.drama",
+  "dramas/c1_act4.drama",
 ]
 
 [rules]
