@@ -3,7 +3,7 @@
 
 Writes into tools/assets/.cache/preview/ (or --out):
   map.png     a sample battle map drawn with gfx/tiles/terrain.toml, units of every class and
-              side standing on it, FX and flags, at 1x and 2x
+              side standing on it and the side banners, at 1x and 2x
   tiles.png   every tile key: its variants and all 16 autotile masks
   units.png   every unit sheet (all frames) of every side
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from assetlib import CACHE_DIR, PACK_DIR, paste
+from assetlib import CACHE_DIR, PACK_DIR, hash2, paste
 from tilemap import Tileset, parse_map, render
 
 SIDES = ("player", "ally", "enemy")
@@ -75,9 +75,9 @@ def map_preview(pack: Path, out: Path) -> None:
     if units_path.exists():
         specs, sheets = load_units(pack)
         keys = list(specs)
-        # passable spots for a parade of every class: player row, ally row, enemy row
+        # passable spots spread over the map (stable pseudo-random order), one unit per class and side
         spots = [(x, y) for y in range(len(grid)) for x in range(len(grid[0])) if grid[y][x] in ("plain", "grass")]
-        spots.sort(key=lambda p: (p[1], p[0]))
+        spots.sort(key=lambda p: hash2(p[0], p[1], 5))
         chosen: list[tuple[int, int]] = []
         for p in spots:
             if all(abs(p[0] - q[0]) + abs(p[1] - q[1]) >= 2 for q in chosen):

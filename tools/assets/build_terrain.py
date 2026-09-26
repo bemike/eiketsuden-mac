@@ -256,8 +256,8 @@ def river_auto(k: Kit) -> dict[int, Image.Image]:
 
 
 def _rock_texture(x: int, y: int) -> str:
-    h = hash2(x // 2, y, 7) % 24
-    return "#f2eaf1" if h == 0 else "#8d977f" if h in (1, 2, 3) else "#abc2bc"
+    h = hash2(x // 2, y, 7) % 16
+    return "#8d977f" if h in (0, 1) else "#abc2bc"
 
 
 def cliff_auto(k: Kit) -> dict[int, Image.Image]:
@@ -560,7 +560,7 @@ def tiles(k: Kit) -> list[Tile]:
         Tile("treasury", [paving, Layer(cells=treasury_cells())], "treasure house with a gold coin sign"),
         Tile("river", [water], "water with foam and banks"),
         Tile("wall", [Layer(auto=wall_auto(), connect=WALLS)], "crenellated stone wall, joins gates"),
-        Tile("cliff", [Layer(auto=cliff_auto(k), connect=["cliff"])], "raised rock with a front face"),
+        Tile("cliff", [plain, Layer(auto=cliff_auto(k), connect=["cliff"])], "raised rock with a front face"),
         Tile("house", [plain, Layer(cells=house_cells())], "town house with a tiled roof"),
         Tile("fence", [plain, Layer(auto=fence_auto(), connect=["fence"])], "wooden palisade"),
     ]
@@ -585,6 +585,11 @@ def build_terrain(src: Sources, pack: Path) -> list[str]:
     missing = [t for t in TERRAIN_IDS if t not in {tile.key for tile in all_tiles}]
     if missing:
         raise ValueError(f"terrain ids without a tile: {missing}")
+    for tile in all_tiles:
+        ground = tile.layers[0]
+        cells = list(ground.auto.values()) if ground.auto is not None else ground.cells
+        if any(c.getchannel("A").getextrema() != (255, 255) for c in cells):
+            raise ValueError(f"tiles.{tile.key}: the bottom layer must be opaque in every variant")
     for tile in all_tiles:
         lines.append(f"\n# {tile.comment}\n[tiles.{tile.key}]\nlayers = [\n")
         for layer in tile.layers:
