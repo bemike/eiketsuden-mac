@@ -7,28 +7,30 @@ Runs `cargo build -p hero-game --target wasm32-unknown-unknown` and copies eiket
 web/index.html, web/mq_js_bundle.js, web/hero_web.js and the data pack into the output folder
 (default target/web-dist, which is git-ignored) — the same layout the GitHub Pages workflow
 publishes. Browsers cannot load WebAssembly from file:// URLs, so serve the folder over HTTP
-(-Serve does that with Python's built-in server).
+(-Serve does that with tools/web/serve.py, a no-cache variant of Python's built-in server).
 
 .PARAMETER Data
-Data pack directory copied to <Out>/data/base (default: data/base).
+Data pack directory copied to <Out>/data/base (default: data/base of this repository). A relative
+path is taken relative to the current directory.
 
 .PARAMETER Out
-Output directory (default: target/web-dist). It is only ever cleared if an earlier run of this
-script created it.
+Output directory (default: target/web-dist of this repository; relative paths as for -Data). It
+is only ever cleared if an earlier run of this script created it.
 
 .PARAMETER Dev
 Build the debug profile (faster to compile, much slower to run).
 
 .PARAMETER Serve
-After building, serve the site with `python -m http.server` on this port (0 = do not serve).
+After building, serve the site on http://localhost:<port>/ with tools/web/serve.py (0 = do not
+serve).
 
 .EXAMPLE
 pwsh tools/web/build.ps1 -Serve 8080
 # then open http://localhost:8080/ or http://localhost:8080/#gallery
 #>
 param(
-    [string]$Data = "data/base",
-    [string]$Out = "target/web-dist",
+    [string]$Data = "",
+    [string]$Out = "",
     [switch]$Dev,
     [int]$Serve = 0
 )
@@ -36,6 +38,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Marker = ".eiketsuden-web-dist"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+# Explicit paths are relative to where the script was started, the defaults to the repository.
+$Data = if ($Data) { [IO.Path]::GetFullPath($Data, (Get-Location).Path) } else { Join-Path $Root "data/base" }
+$Out = if ($Out) { [IO.Path]::GetFullPath($Out, (Get-Location).Path) } else { Join-Path $Root "target/web-dist" }
 Push-Location $Root
 try {
     $buildProfile = if ($Dev) { "debug" } else { "release" }
@@ -76,8 +81,7 @@ try {
             Where-Object { (Get-Command $_).Source -notlike "*\WindowsApps\*" } |
             Select-Object -First 1
         if (-not $python) { throw "python is needed for -Serve (or serve $Out with any static web server)" }
-        Write-Host "serving on http://localhost:$Serve/  (UI gallery: http://localhost:$Serve/#gallery; Ctrl+C stops)"
-        & $python -m http.server $Serve --directory $Out
+        & $python (Join-Path $PSScriptRoot "serve.py") --port $Serve --dir $Out
     }
 } finally {
     Pop-Location

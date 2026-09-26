@@ -131,15 +131,16 @@ impl SaveLoadScreen {
                 }
             })
             .collect();
+        let first_refresh = self.menu.items.is_empty();
         let cursor = self.menu.cursor();
+        // A new menu starts on the first enabled slot: the first loadable save when loading,
+        // the first manual slot when saving.
         let mut menu = Menu::new(items).at(LIST_RECT.x, LIST_RECT.y, LIST_RECT.w);
         menu.wrap = false;
         menu.tag_width = 64.0;
-        if cursor > 0 || !self.saving() {
+        // After an action keep the cursor on the same slot while it is still selectable.
+        if !first_refresh && menu.items.get(cursor).is_some_and(|it| it.enabled) {
             menu.set_cursor(cursor);
-        } else {
-            // Saving: start on the first manual slot.
-            menu.set_cursor(1);
         }
         self.menu = menu;
     }

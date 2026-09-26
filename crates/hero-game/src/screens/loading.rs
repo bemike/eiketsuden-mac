@@ -143,18 +143,20 @@ impl LoadingScreen {
                     .into_results()
                     .remove("pack.toml")
                     .unwrap_or_else(|| Err("not requested".into()));
-                let parsed = result
-                    .and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
-                    .map_err(|e| format!("pack.toml: {e}"))
+                // The read error already names the file (path or URL).
+                let bytes = match result {
+                    Ok(b) => b,
+                    Err(e) => return self.fail("데이터 팩을 찾을 수 없습니다", vec![e], ctx),
+                };
+                let parsed = String::from_utf8(bytes)
+                    .map_err(|_| "pack.toml: not valid UTF-8 text".to_string())
                     .and_then(|s| match PackManifest::parse(&s) {
                         Ok(m) => Ok((m, s)),
                         Err(e) => Err(e.to_string()),
                     });
                 let (manifest, manifest_src) = match parsed {
                     Ok(m) => m,
-                    Err(e) => {
-                        return self.fail("데이터 팩을 찾을 수 없습니다", vec![e], ctx);
-                    }
+                    Err(e) => return self.fail("데이터 팩 오류", vec![e], ctx),
                 };
                 macroquad::logging::info!(
                     "pack {} {} ({})",

@@ -3,35 +3,45 @@
 #
 # usage: tools/web/build.sh [--dev] [--data <pack dir>] [--out <dir>] [--serve <port>]
 #
-#   --data   data pack copied to <out>/data/base (default: data/base)
+#   --data   data pack copied to <out>/data/base (default: data/base of this repository)
 #   --out    output directory (default: target/web-dist, git-ignored); only ever cleared if an
 #            earlier run of this script created it
 #   --dev    debug profile (faster to compile, much slower to run)
-#   --serve  afterwards serve the site with `python3 -m http.server <port>`
+#   --serve  afterwards serve the site on http://localhost:<port>/ with tools/web/serve.py
+#            (a no-cache variant of `python3 -m http.server`)
 #
-# The layout (index.html, mq_js_bundle.js, hero_web.js, eiketsuden.wasm, data/base/) matches what
-# the GitHub Pages workflow publishes. Browsers cannot load WebAssembly from file:// URLs, so the
-# folder has to be served over HTTP. Open http://localhost:<port>/#gallery for the UI gallery.
+# Relative --data / --out paths are taken relative to the current directory. The layout
+# (index.html, mq_js_bundle.js, hero_web.js, eiketsuden.wasm, data/base/) matches what the GitHub
+# Pages workflow publishes. Browsers cannot load WebAssembly from file:// URLs, so the folder has
+# to be served over HTTP. Open http://localhost:<port>/#gallery for the UI gallery.
 set -eu
 
-data="data/base"
-out="target/web-dist"
+root=$(cd "$(dirname "$0")/../.." && pwd)
+data="$root/data/base"
+out="$root/target/web-dist"
 profile="release"
 serve=""
 marker=".eiketsuden-web-dist"
 
+absolute() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$(pwd)" "$1" ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --data) data="$2"; shift 2 ;;
-        --out) out="$2"; shift 2 ;;
+        --data) data=$(absolute "$2"); shift 2 ;;
+        --out) out=$(absolute "$2"); shift 2 ;;
         --dev) profile="debug"; shift ;;
         --serve) serve="$2"; shift 2 ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 
-cd "$(dirname "$0")/../.."
+cd "$root"
 
 if [ "$profile" = "release" ]; then
     cargo build -p hero-game --target wasm32-unknown-unknown --release
@@ -69,6 +79,5 @@ if [ -n "$serve" ]; then
         echo "python is needed for --serve (or serve $out with any static web server)" >&2
         exit 1
     fi
-    echo "serving on http://localhost:$serve/  (UI gallery: http://localhost:$serve/#gallery; Ctrl+C stops)"
-    exec "$python" -m http.server "$serve" --directory "$out"
+    exec "$python" tools/web/serve.py --port "$serve" --dir "$out"
 fi
