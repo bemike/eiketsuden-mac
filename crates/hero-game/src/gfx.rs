@@ -5,8 +5,9 @@
 //! Everything is drawn in **virtual pixels** on a 480×270 canvas ([`VIRTUAL_W`]×[`VIRTUAL_H`]).
 //! The canvas is a render target of `480·S × 270·S` real pixels, where `S` is the largest integer
 //! scale that fits the window (at least 1), presented centred and letterboxed with nearest
-//! filtering. A `Camera2D` maps the virtual rectangle onto the render target, so screens never
-//! deal with window sizes:
+//! filtering (only a window smaller than 480×270 shrinks the canvas, with linear filtering). A
+//! `Camera2D` maps the virtual rectangle onto the render target, so screens never deal with
+//! window sizes:
 //!
 //! * pixel art drawn at virtual size ends up scaled by exactly `S` — crisp at every window size;
 //! * text is rasterised at `font_size · S` and drawn with `font_scale = 1/S` — one glyph texel
@@ -82,21 +83,34 @@ impl Canvas {
         let (sw, sh) = (screen_width(), screen_height());
         let scale = integer_scale(sw, sh);
         let (target, camera) = Self::make_target(scale);
-        Canvas {
+        let canvas = Canvas {
             target,
             camera,
             scale,
             present: present_rect(sw, sh, scale),
             screen: (sw, sh),
-        }
+        };
+        canvas.apply_present_filter();
+        canvas
     }
 
     fn make_target(scale: u32) -> (RenderTarget, Camera2D) {
         let target = render_target((VIRTUAL_W as u32) * scale, (VIRTUAL_H as u32) * scale);
-        target.texture.set_filter(FilterMode::Nearest);
         let mut camera = Camera2D::from_display_rect(SCREEN);
         camera.render_target = Some(target.clone());
         (target, camera)
+    }
+
+    /// Nearest filtering when the canvas is shown 1:1 (the normal case); linear filtering when a
+    /// window smaller than 480×270 (a phone in portrait) forces it to shrink, where nearest
+    /// sampling would drop whole pixel rows and make text unreadable.
+    fn apply_present_filter(&self) {
+        let shrunk = self.present.w < self.target.texture.width();
+        self.target.texture.set_filter(if shrunk {
+            FilterMode::Linear
+        } else {
+            FilterMode::Nearest
+        });
     }
 
     /// Follow window size changes; recreates the render target when the scale changes.
@@ -116,6 +130,7 @@ impl Canvas {
             self.scale = scale;
         }
         self.present = present_rect(sw, sh, self.scale);
+        self.apply_present_filter();
         changed
     }
 
