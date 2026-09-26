@@ -1215,8 +1215,8 @@ impl<'a> Planner<'a> {
 
     /// Tile of `allowed` closest to any goal along the cheapest path for this unit's move
     /// type (ignoring units); manhattan distance when no goal is reachable at all. Ties prefer
-    /// less threat, staying put, then position order. Careful units keep off tiles where they
-    /// would be defeated when they can.
+    /// less threat, more terrain defence, staying put, then position order. Careful units keep
+    /// off tiles where they would be defeated when they can.
     fn approach(&self, goals: &[Pos], allowed: &[Pos]) -> Pos {
         let hp = self.me.hp as i64;
         let survivable: Vec<Pos>;
@@ -1243,7 +1243,8 @@ impl<'a> Planner<'a> {
                 } else {
                     goals.iter().map(|g| g.manhattan(p)).min().unwrap_or(0) as i64
                 };
-                (d, self.threat_at(p), p != origin, p)
+                let defense = self.board.terrain(p).map_or(0, |t| t.defense);
+                (d, self.threat_at(p), Reverse(defense), p != origin, p)
             })
             .unwrap_or(origin)
     }
