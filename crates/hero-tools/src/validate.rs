@@ -1,5 +1,6 @@
 //! `hero-tools validate`: structural load, cross-reference checks, unknown TOML keys and the
-//! media check, printed grouped by severity.
+//! media check, printed grouped by severity. A layered pack is checked as the game loads it:
+//! the whole chain, with media looked up in every pack of it.
 
 use hero_core::pack::{DirSource, Issue, Pack, Severity};
 use std::fmt::Write as _;
@@ -8,14 +9,21 @@ use std::path::Path;
 /// Returns `Ok(true)` when the pack has no errors (warnings are fine).
 pub fn run(dir: &Path) -> Result<bool, String> {
     let pack = crate::load_pack(dir)?;
+    let issues = check(dir, &pack)?;
+    print!("{}", render(&pack, &issues));
+    Ok(!issues.iter().any(|i| i.severity == Severity::Error))
+}
+
+/// Every issue of the pack in `dir` (already loaded as `pack`): cross-references, unknown TOML
+/// keys and missing media.
+pub fn check(dir: &Path, pack: &Pack) -> Result<Vec<Issue>, String> {
     let src = DirSource {
         root: dir.to_path_buf(),
     };
     let mut issues = pack.validate();
     issues.extend(Pack::unknown_fields(&src).map_err(|e| e.to_string())?);
     issues.extend(pack.missing_media(dir));
-    print!("{}", render(&pack, &issues));
-    Ok(!issues.iter().any(|i| i.severity == Severity::Error))
+    Ok(issues)
 }
 
 fn count(n: usize, what: &str) -> String {
@@ -30,6 +38,9 @@ fn count(n: usize, what: &str) -> String {
 pub fn render(pack: &Pack, issues: &[Issue]) -> String {
     let m = &pack.manifest;
     let mut out = format!("{} ({} {})\n", m.name, m.id, m.version);
+    if let Some(parents) = crate::info::parents(pack) {
+        let _ = writeln!(out, "extends {parents}");
+    }
     let mut totals = Vec::new();
     for (severity, title) in [(Severity::Error, "Errors"), (Severity::Warning, "Warnings")] {
         let group: Vec<&Issue> = issues.iter().filter(|i| i.severity == severity).collect();
@@ -105,5 +116,26 @@ mod tests {
         assert!(!out.contains("Errors"), "{out}");
         assert!(out.ends_with("0 errors, 1 warning: OK\n"), "{out}");
         assert!(render(&pack, &[]).ends_with("0 errors, 0 warnings: OK\n"));
+    }
+
+    #[test]
+    fn layered_packs_are_checked_across_the_chain() {
+        let dir = crate::tests::layered_fixture_dir();
+        let pack = crate::tests::layered_fixture_pack();
+        let out = render(&pack, &[]);
+        assert!(
+            out.starts_with("Mini extension (mini_ext 0.1.0)\nextends ../mini (mini 0.1.0)\n"),
+            "{out}"
+        );
+        // The fixtures ship no media: only missing media files are reported, and each once
+        // although it is looked up in both packs.
+        let issues = check(&dir, &pack).unwrap();
+        assert!(!issues.is_empty());
+        assert_eq!(issues, pack.missing_media(&dir), "only media is missing");
+        let unknown_portrait = issues
+            .iter()
+            .filter(|i| i.msg.contains("gfx/portraits/_unknown.png"))
+            .count();
+        assert_eq!(unknown_portrait, 1);
     }
 }

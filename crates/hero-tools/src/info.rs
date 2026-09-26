@@ -12,9 +12,24 @@ pub fn run(dir: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+/// The packs a layered pack is built on, nearest first, e.g.
+/// `../mini (mini 0.1.0)`; `None` for a pack without `extends`.
+pub fn parents(pack: &Pack) -> Option<String> {
+    let parents: Vec<String> = pack
+        .layers
+        .iter()
+        .skip(1)
+        .map(|l| format!("{} ({} {})", l.dir, l.manifest.id, l.manifest.version))
+        .collect();
+    (!parents.is_empty()).then(|| parents.join(", then "))
+}
+
 pub fn render(pack: &Pack) -> String {
     let m = &pack.manifest;
     let mut out = format!("{} ({} {})\n", m.name, m.id, m.version);
+    if let Some(parents) = parents(pack) {
+        let _ = writeln!(out, "Extends:     {parents}");
+    }
     if !m.authors.is_empty() {
         let _ = writeln!(out, "Authors:     {}", m.authors.join(", "));
     }
@@ -24,6 +39,8 @@ pub fn render(pack: &Pack) -> String {
     if !m.description.is_empty() {
         let _ = writeln!(out, "About:       {}", m.description);
     }
+    let [w, h] = m.presentation.canvas;
+    let _ = writeln!(out, "Canvas:      {w}x{h}");
 
     let _ = writeln!(out, "\nTerrain:     {}", pack.terrain.len());
     let _ = writeln!(out, "Classes:     {}", pack.classes.len());
@@ -46,7 +63,7 @@ pub fn render(pack: &Pack) -> String {
         out,
         "Scenes:      {} in {} files ({lines} lines of dialogue and narration)",
         pack.scenes.len(),
-        m.dramas.len()
+        pack.files.dramas.len()
     );
 
     let c = &pack.campaign;
@@ -102,6 +119,24 @@ mod tests {
             "Scenes:      9 in 2 files (",
             "10 nodes (3 drama, 2 camp, 2 battle, 2 branch, 1 ending), starts at `prologue`",
             "Start:       3 officers, 500 gold, 3 items\n",
+            "Canvas:      480x270\n",
+        ] {
+            assert!(out.contains(expected), "missing {expected:?} in:\n{out}");
+        }
+        assert!(!out.contains("Extends:"), "{out}");
+    }
+
+    #[test]
+    fn summarises_a_layered_pack() {
+        let out = render(&crate::tests::layered_fixture_pack());
+        for expected in [
+            "Mini extension (mini_ext 0.1.0)\n",
+            "Extends:     ../mini (mini 0.1.0)\n",
+            "Canvas:      640x480\n",
+            "Terrain:     8\n",
+            "Battles:     3\n",
+            "Scenes:      10 in 3 files (",
+            "12 nodes (3 drama, 3 camp, 3 battle, 2 branch, 1 ending)",
         ] {
             assert!(out.contains(expected), "missing {expected:?} in:\n{out}");
         }

@@ -442,6 +442,15 @@ mod tests {
     }
 
     #[test]
+    fn layered_packs_simulate_every_battle_of_the_chain() {
+        let pack = crate::tests::layered_fixture_pack();
+        // b01 and b02 come from the parent pack, b03 from the child's campaign.
+        assert_eq!(battle_order(&pack, None).unwrap(), ["b01", "b02", "b03"]);
+        let dir = crate::tests::layered_fixture_dir();
+        assert!(matches!(run(&dir, 1, Some("b03")), Ok(true)));
+    }
+
+    #[test]
     fn army_deploys_required_lord_then_roster() {
         let pack = fixture_pack();
         let b01 = army_for(&pack, "b01").unwrap();

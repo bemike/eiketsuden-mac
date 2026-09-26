@@ -107,6 +107,22 @@ pub(crate) mod tests {
         load_pack(&fixture_dir()).expect("fixture pack loads")
     }
 
+    /// The layered hero-core fixture: `mini_ext`, which extends the `mini` pack next to it.
+    pub fn layered_fixture_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../hero-core/tests/fixtures/mini_ext")
+    }
+
+    pub fn layered_fixture_pack() -> Pack {
+        load_pack(&layered_fixture_dir()).expect("layered fixture pack loads")
+    }
+
+    #[test]
+    fn layered_packs_load_with_their_parents() {
+        let pack = layered_fixture_pack();
+        assert_eq!(pack.layers.len(), 2);
+        assert_eq!(pack.battles.len(), 3);
+    }
+
     #[test]
     fn load_errors_name_the_directory() {
         let missing = fixture_dir().join("does-not-exist");
