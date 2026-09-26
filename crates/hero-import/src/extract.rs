@@ -244,7 +244,8 @@ impl fmt::Display for ExtractError {
             ExtractError::OutputNotEmpty(path) => write!(
                 f,
                 "the output folder {} is not empty and holds no previous extraction \
-                 ({INDEX_FILE}); choose an empty or new folder",
+                 ({INDEX_FILE}); choose an empty or new folder (if an earlier extraction \
+                 into it was interrupted, delete the folder and run again)",
                 path.display()
             ),
             ExtractError::Output { path, message } => {
