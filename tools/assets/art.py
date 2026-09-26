@@ -526,6 +526,156 @@ def terrain(name: str) -> Image.Image:
     return draw(TERRAIN_ART[name])
 
 
+# --- unit parts (build_units.py) ---------------------------------------------------------------
+# Digits 0-4 are the side's team ramp (dark -> light).
+
+CROSSBOW_SMALL = """
+...k...
+..kwk..
+kkkskkk
+kNNNNNk
+.kkNkk.
+..kNk..
+..kNk..
+..kek..
+..kkk..
+"""
+
+DRUM = """
+.kkkkkkk.
+kfffffffk
+kFfffffFk
+kkkkkkkkk
+kRrrrrrRk
+kRyrrryRk
+kRrrrrrRk
+.kkkkkkk.
+"""
+
+WHEEL = """
+..kkkkk..
+.kNNkNNk.
+kNNaNaNNk
+kNaNkNaNk
+kkkkykkkk
+kNaNkNaNk
+kNNaNaNNk
+.kNNkNNk.
+..kkkkk..
+"""
+
+WHEEL_EDGE = """
+kkk
+kNk
+kNk
+kak
+kNk
+kNk
+kak
+kNk
+kNk
+kkk
+"""
+
+CAR_SIDE = """
+kkkkkkkkkkkk
+k3333333333k
+k2222222222k
+k2222222222k
+k1111111111k
+kkkkkkkkkkkk
+"""
+
+CAR_BACK = """
+kkkkkkkkkkkkkkkk
+k33333333333333k
+k22222222222222k
+k22222222222222k
+k22222222222222k
+k11111111111111k
+kkkkkkkkkkkkkkkk
+"""
+
+CLOTH_SIDE = """
+kkkkkkkkkk
+k33333333k
+k22222222k
+k22222222k
+k11111111k
+k1k1k1k1kk
+"""
+
+CLOTH_FRONT = """
+kkk........kkk
+k3k........k3k
+k2k........k2k
+k2k........k2k
+k1k........k1k
+kkk........kkk
+"""
+
+CLOTH_BACK = """
+kkkkkkkkkkkk
+k3333333333k
+k2222222222k
+k1111111111k
+kkkkkkkkkkkk
+"""
+
+PENNANT_SMALL = """
+kkkk.
+k332k
+kkkk.
+"""
+
+# Rice bale carried by supply troops.
+BALE_BIG = """
+.kkkkkkk.
+kyYYtYYyk
+kYYYtYYYk
+kYYYtYYYk
+kyYYtYYyk
+.kkkkkkk.
+"""
+
+UNIT_ART = {
+    "crossbow": CROSSBOW_SMALL,
+    "drum": DRUM,
+    "bale": BALE_BIG,
+    "wheel": WHEEL,
+    "wheel_edge": WHEEL_EDGE,
+    "car_side": CAR_SIDE,
+    "car_back": CAR_BACK,
+    "cloth_side": CLOTH_SIDE,
+    "cloth_front": CLOTH_FRONT,
+    "cloth_back": CLOTH_BACK,
+    "pennant": PENNANT_SMALL,
+}
+
+
+def team_palette(side: str) -> dict[str, str | None]:
+    return {**PAL, **{str(i): c for i, c in enumerate(TEAM_RAMPS[side])}}
+
+
+def unit_part(name: str, side: str = "player") -> Image.Image:
+    """A unit accessory; team-coloured parts use the ramp of `side`."""
+    return sprite(UNIT_ART[name], team_palette(side))
+
+
+def pennant_on(weapon: Image.Image, side: str) -> Image.Image:
+    """A pole weapon (pointing up, grip at the bottom centre) with a team pennant below its tip.
+
+    The image grows symmetrically so the grip stays at the bottom centre.
+    """
+    flag = unit_part("pennant", side)
+    w, h = weapon.size
+    out = Image.new("RGBA", (w + 2 * flag.width, h))
+    out.alpha_composite(weapon, (flag.width, 0))
+    shaft = flag.width + w // 2
+    out.alpha_composite(flag, (shaft + 1, min(3, h - flag.height)))
+    return out
+
+
 def icon(name: str) -> Image.Image:
     arts = {
         "sun": SUN,

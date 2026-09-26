@@ -23,11 +23,13 @@ from build_audio import build_fonts, build_sfx
 from build_fx import build_fx
 from build_terrain import build_terrain
 from build_ui import build_flags, build_icons
+from build_units import build_units
 
 Step = Callable[[Sources, Path], list[str]]
 
 STEPS: dict[str, Step] = {
     "terrain": build_terrain,
+    "units": build_units,
     "fonts": build_fonts,
     "sfx": build_sfx,
     "fx": build_fx,
