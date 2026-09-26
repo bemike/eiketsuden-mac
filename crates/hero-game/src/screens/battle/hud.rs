@@ -55,17 +55,22 @@ pub fn draw_top_bar(ctx: &Ctx, name: &str, hud: &HudView, turn_limit: u32, gold:
     );
     let small = TextStyle::small(theme::TEXT).shadow(theme::TEXT_SHADOW);
     let y = 2.0;
-    gfx.text(name, 6.0, y, small.color(theme::TEXT_ACCENT));
-    let mut x = 150.0;
+    let name_w = gfx.text(name, 6.0, y, small.color(theme::TEXT_ACCENT));
+    let mut x = (6.0 + name_w + 12.0).max(150.0);
     x += gfx.text(&format!("제 {}턴", hud.turn), x, y, small);
-    gfx.text(
+    x += gfx.text(
         &format!(" / {turn_limit}"),
         x,
         y,
         small.color(theme::TEXT_DIM),
     );
     let phase = text::phase_title(hud.phase);
-    gfx.text(&phase, 232.0, y, small.color(side_color(hud.phase)));
+    gfx.text(
+        &phase,
+        (x + 12.0).max(232.0),
+        y,
+        small.color(side_color(hud.phase)),
+    );
     draw_icon(ctx, text::weather_icon(hud.weather), vec2(318.0, 0.0));
     gfx.text(text::weather_name(hud.weather), 336.0, y, small);
     draw_icon(ctx, "gold", vec2(382.0, 0.0));
