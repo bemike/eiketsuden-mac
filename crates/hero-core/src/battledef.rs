@@ -90,7 +90,7 @@ pub struct UnitSpawn {
     /// Level; defaults to the officer's level (required for generic units).
     #[serde(default)]
     pub level: Option<u32>,
-    /// `[str, int, lead]` for generic units (default `[50, 30, 50]`).
+    /// `[str, int, lead]` for generic units (default: the class's `generic` stats).
     #[serde(default)]
     pub stats: Option<[i32; 3]>,
     pub pos: Pos,
