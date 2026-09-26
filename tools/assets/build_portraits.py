@@ -2,13 +2,14 @@
 
 Every portrait is a head-and-shoulders crop of one figure, chosen and framed by hand in
 `portraits.toml`: a full-length figure of that book, or (where the book's drawing does not read
-as a face at portrait size) a figure from another pinned woodblock book, whose printed panel on
-the scanned page is given so the levels ignore the rest of the scan. All of them get the same
+as a face at portrait size) a figure from another pinned public-domain work, whose panel on the
+source image is given so the levels ignore the rest of the scan. All of them get the same
 treatment so they read as one set next to the blue UI:
 
 1. the page scan (or the figure's panel) is levelled (1st percentile -> ink, 60th percentile ->
    paper), which restores the faded lithograph lines and clears the paper grain;
-2. the crop is lightly denoised (3x3 median) and scaled to 192x240 (4:5, docs/ASSETS.md);
+2. the crop is lightly denoised (3x3 median; lines much thinner than the book's are first
+   thickened by an optional minimum filter) and scaled to 192x240 (4:5, docs/ASSETS.md);
 3. brightness is mapped through one ramp from indigo ink to warm paper, with a soft vignette and
    an inset double rule echoing the frames printed around each figure in the book.
 
