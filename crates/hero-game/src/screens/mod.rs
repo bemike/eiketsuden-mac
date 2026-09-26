@@ -3,6 +3,7 @@
 
 pub mod backdrop;
 pub mod credits;
+pub mod drama;
 pub mod error;
 pub mod gallery;
 pub mod gameover;
