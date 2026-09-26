@@ -17,7 +17,9 @@
 //!
 //! Controls: arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc/right click cancel,
 //! Tab/E and Q cycle through units that can still act, mouse at the screen edge / right-drag /
-//! touch drag / wheel scroll the map, and holding confirm speeds animations up.
+//! touch drag / wheel scroll the map, and holding confirm speeds animations up. Touch has no
+//! cancel: a tap outside a menu or window steps back, and so does a second tap on a tile that
+//! is not a target in the attack / strategy / item target modes.
 
 mod anim;
 mod camera;
@@ -1002,6 +1004,11 @@ impl BattleScreen {
                 match menu.update(ctx) {
                     MenuEvent::Selected(i) => return self.battle_menu(ctx, BattleMenuItem::ALL[i]),
                     MenuEvent::Cancelled => {}
+                    // A tap outside closes it (touch has no cancel key).
+                    _ if tapped_outside(ctx, menu.rect()) => {
+                        ctx.sfx(sfx::CANCEL);
+                        ctx.input.consume();
+                    }
                     _ => self.panel = Panel::Menu(menu),
                 }
                 return Transition::None;
@@ -1032,6 +1039,11 @@ impl BattleScreen {
                         }
                     }
                     MenuEvent::Cancelled => {}
+                    // A tap outside the window (tabs included) closes it.
+                    _ if tapped_outside(ctx, unit_list_frame(menu.rect())) => {
+                        ctx.sfx(sfx::CANCEL);
+                        ctx.input.consume();
+                    }
                     _ => self.panel = Panel::Units { side, ids, menu },
                 }
                 return Transition::None;
@@ -1284,8 +1296,18 @@ impl BattleScreen {
             }
         }
         if let Some(at) = confirm_at {
+            let by_tap = !ctx.input.confirm_key();
+            let target_mode = self.is_target_mode();
             let before = std::mem::discriminant(&self.ui.mode);
             let req = self.ui.confirm(&self.state, &self.pack, at);
+            if req == Request::Invalid && target_mode && by_tap && self.touch_seen {
+                // Touch has no cancel key or right click: confirming a tile that is not a
+                // target (tapping it a second time) steps back to the menu the target mode
+                // came from, and from there a tap outside the menu steps back further. Mouse
+                // play keeps the error sound (right click cancels).
+                self.step_back(ctx);
+                return;
+            }
             let changed = std::mem::discriminant(&self.ui.mode) != before;
             if changed || matches!(req, Request::Apply(_)) {
                 ctx.sfx(sfx::CONFIRM);
@@ -1294,14 +1316,19 @@ impl BattleScreen {
             return;
         }
         if key_cancel || right_click {
-            // Stepping back puts the cursor on the unit that was selected.
-            if let Some(u) = self.ui.unit() {
-                ctx.sfx(sfx::CANCEL);
-                self.cursor = self.state.units[u].pos;
-            }
-            let req = self.ui.cancel(&self.state, &self.pack);
-            self.handle_request(ctx, req);
+            self.step_back(ctx);
         }
+    }
+
+    /// Cancel one level of the command flow on the map.
+    fn step_back(&mut self, ctx: &mut Ctx) {
+        // Stepping back puts the cursor on the unit that was selected.
+        if let Some(u) = self.ui.unit() {
+            ctx.sfx(sfx::CANCEL);
+            self.cursor = self.state.units[u].pos;
+        }
+        let req = self.ui.cancel(&self.state, &self.pack);
+        self.handle_request(ctx, req);
     }
 }
 
@@ -1317,6 +1344,16 @@ fn unit_tab_rect(i: usize) -> Rect {
 /// Index of the unit list tab under a tap.
 fn unit_tab_at(p: Vec2) -> Option<usize> {
     (0..UNIT_TABS.len()).find(|&i| unit_tab_rect(i).contains(p))
+}
+
+/// Window of the unit list around its menu (the side tabs sit in its top strip).
+fn unit_list_frame(menu: Rect) -> Rect {
+    Rect::new(menu.x - 4.0, menu.y - 26.0, menu.w + 8.0, menu.h + 30.0)
+}
+
+/// A tap landed outside `area` this frame.
+fn tapped_outside(ctx: &Ctx, area: Rect) -> bool {
+    ctx.input.tap().is_some_and(|p| !area.contains(p))
 }
 
 impl Screen for BattleScreen {

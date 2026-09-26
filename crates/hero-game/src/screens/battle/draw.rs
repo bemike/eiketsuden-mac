@@ -516,8 +516,7 @@ impl BattleScreen {
             }
             Panel::Units { side, menu, .. } => {
                 fill_rect(SCREEN, Color::new(0.0, 0.0, 0.0, 0.3));
-                let m = menu.rect();
-                let frame = Rect::new(m.x - 4.0, m.y - 26.0, m.w + 8.0, m.h + 30.0);
+                let frame = unit_list_frame(menu.rect());
                 draw_window(frame);
                 for (i, s) in UNIT_TABS.iter().enumerate() {
                     let tab = unit_tab_rect(i);

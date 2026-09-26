@@ -787,6 +787,80 @@ mod tests {
         assert!(matches!(ui.mode, Mode::Command { .. }));
     }
 
+    /// On touch screens (no cancel key, no right click) the screen turns a rejected tap in a
+    /// target mode into `cancel`: the rejected confirm must leave the mode as it was, and the
+    /// cancel must land on the menu the target mode came from.
+    #[test]
+    fn target_modes_reject_other_tiles_and_step_back_to_their_menu() {
+        let (pack, state) = begun();
+        let lb = state.find_unit("liu_bei").unwrap();
+        let foe = state
+            .units
+            .iter()
+            .position(|u| u.side == Side::Enemy && u.is_active())
+            .unwrap();
+        let elsewhere = Pos::new(0, 0);
+        assert_eq!(state.unit_at(elsewhere), None);
+        let strategy = StrategyEntry {
+            id: "scorch".into(),
+            name: "초열".into(),
+            mp: 4,
+            element: Some("fire".into()),
+            desc: String::new(),
+            aims: Ok(vec![state.units[foe].pos]),
+        };
+        let item = ItemEntry {
+            id: "bean".into(),
+            name: "콩".into(),
+            icon: String::new(),
+            count: 1,
+            desc: String::new(),
+            strategy: None,
+            targets: Ok(vec![lb]),
+        };
+        let cases = [
+            (
+                Mode::Attack {
+                    unit: lb,
+                    undo: None,
+                    targets: vec![foe],
+                },
+                "command",
+            ),
+            (
+                Mode::Aim {
+                    unit: lb,
+                    undo: None,
+                    list: vec![strategy],
+                    index: 0,
+                },
+                "strategies",
+            ),
+            (
+                Mode::ItemTarget {
+                    unit: lb,
+                    undo: None,
+                    list: vec![item],
+                    index: 0,
+                },
+                "items",
+            ),
+        ];
+        for (mode, menu) in cases {
+            let mut ui = PlayerUi { mode: mode.clone() };
+            assert_eq!(ui.confirm(&state, &pack, elsewhere), Request::Invalid);
+            assert_eq!(ui.mode, mode);
+            assert_eq!(ui.cancel(&state, &pack), Request::None);
+            let back = match &ui.mode {
+                Mode::Command { unit, .. } if *unit == lb => "command",
+                Mode::Strategies { unit, .. } if *unit == lb => "strategies",
+                Mode::Items { unit, .. } if *unit == lb => "items",
+                _ => "elsewhere",
+            };
+            assert_eq!(back, menu, "{:?}", ui.mode);
+        }
+    }
+
     #[test]
     fn strategies_and_items_explain_why_they_are_blocked() {
         let (pack, mut state) = begun();
