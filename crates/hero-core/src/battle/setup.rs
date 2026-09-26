@@ -33,19 +33,13 @@ pub(super) fn build(
         .map_err(|e| setup_err(format!("map of battle `{battle}`: {e}")))?;
 
     let mut units: Vec<Unit> = Vec::new();
-    let deployed = deployment(pack, def, campaign)?;
-    if deployed.len() > def.deploy.slots.len() {
-        return Err(setup_err(format!(
-            "{} officers deployed but battle `{battle}` has only {} deploy slots",
-            deployed.len(),
-            def.deploy.slots.len()
-        )));
-    }
-    for (officer, &slot) in deployed.iter().zip(&def.deploy.slots) {
+    // `normalize_deployment` keeps at most one officer per slot.
+    for (officer, &slot) in deployment(pack, def, campaign)
+        .iter()
+        .zip(&def.deploy.slots)
+    {
         let state = campaign
-            .roster
-            .iter()
-            .find(|o| &o.id == officer)
+            .officer(officer)
             .ok_or_else(|| setup_err(format!("deployed officer `{officer}` is not in the army")))?;
         units.push(officer_unit(pack, units.len(), state, slot)?);
     }
@@ -93,58 +87,61 @@ pub(super) fn build(
     })
 }
 
-/// Officers taking part: the deploy screen's choice, or required officers, the lord and then
-/// roster order up to `deploy.max` (skipping forbidden officers and officers not in the army).
-fn deployment(
+/// Most officers that may be deployed in `def`: `deploy.max`, but no more than it has slots.
+pub fn deploy_max(def: &BattleDef) -> usize {
+    (def.deploy.max as usize).min(def.deploy.slots.len())
+}
+
+/// The deployment `def` places for `chosen` (the deploy screen's choice), in slot order:
+///
+/// 1. the battle's required officers, in `deploy.required` order;
+/// 2. the lord;
+/// 3. the chosen officers, in roster order;
+///
+/// at most [`deploy_max`] officers. Officers who are not in the army or are forbidden in this
+/// battle are left out, and so are duplicates, so a list chosen for another battle can be
+/// passed as it is. The deploy screen shows this list; [`BattleState::new`] places it.
+pub fn normalize_deployment(
     pack: &Pack,
     def: &BattleDef,
     campaign: &CampaignState,
-) -> Result<Vec<Id>, BattleError> {
-    let in_army = |id: &str| campaign.roster.iter().any(|o| o.id == id);
+    chosen: &[Id],
+) -> Vec<Id> {
     let forbidden = |id: &str| def.deploy.forbidden.iter().any(|f| f == id);
     let mut out: Vec<Id> = Vec::new();
-    if !campaign.deployed.is_empty() {
-        for id in &campaign.deployed {
-            if !in_army(id) {
-                return Err(setup_err(format!(
-                    "deployed officer `{id}` is not in the army"
-                )));
-            }
-            if forbidden(id) {
-                return Err(setup_err(format!(
-                    "officer `{id}` may not be deployed in battle `{}`",
-                    def.id
-                )));
-            }
-            if out.contains(id) {
-                return Err(setup_err(format!("officer `{id}` is deployed twice")));
-            }
+    let mut add = |id: &Id| {
+        if campaign.officer(id).is_some() && !forbidden(id) && !out.contains(id) {
             out.push(id.clone());
         }
-        return Ok(out);
-    }
-    let allowed =
-        |id: &str, out: &[Id]| in_army(id) && !forbidden(id) && !out.iter().any(|o| o == id);
+    };
     for id in &def.deploy.required {
-        if allowed(id, &out) {
-            out.push(id.clone());
+        add(id);
+    }
+    for o in &campaign.roster {
+        if pack.officer(&o.id).is_some_and(|d| d.lord) {
+            add(&o.id);
         }
     }
     for o in &campaign.roster {
-        if pack.officer(&o.id).is_some_and(|d| d.lord) && allowed(&o.id, &out) {
-            out.push(o.id.clone());
+        if chosen.contains(&o.id) {
+            add(&o.id);
         }
     }
-    let max = (def.deploy.max as usize).min(def.deploy.slots.len());
-    for o in &campaign.roster {
-        if out.len() >= max {
-            break;
-        }
-        if allowed(&o.id, &out) {
-            out.push(o.id.clone());
-        }
-    }
-    Ok(out)
+    out.truncate(deploy_max(def));
+    out
+}
+
+/// Officers placed on the deploy slots: `campaign.deployed` (or, when nothing was chosen, the
+/// whole roster) normalised to this battle by [`normalize_deployment`]. The list is not trusted:
+/// it may have been chosen for another battle (a battle that follows a battle, or a camp
+/// without a deploy screen), or the army may have changed since.
+fn deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Vec<Id> {
+    let chosen: Vec<Id> = if campaign.deployed.is_empty() {
+        campaign.roster.iter().map(|o| o.id.clone()).collect()
+    } else {
+        campaign.deployed.clone()
+    };
+    normalize_deployment(pack, def, campaign, &chosen)
 }
 
 fn check_equipment(pack: &Pack, who: &str, equip: &Equipment) -> Result<(), BattleError> {

@@ -33,6 +33,7 @@ mod testkit;
 mod tests;
 
 use board::Board;
+pub use setup::{deploy_max, normalize_deployment};
 
 pub type UnitId = usize;
 
@@ -421,9 +422,9 @@ pub struct BattleState {
 }
 
 impl BattleState {
-    /// Build the initial state of `battle`: player units from `campaign.deployed` (falling back to
-    /// required officers + roster order up to `deploy.max`) placed on deploy slots, enemy/ally
-    /// spawns without a `group` placed on the map, grouped spawns hidden.
+    /// Build the initial state of `battle`: player units from `campaign.deployed` (the whole
+    /// roster when empty), normalised to this battle by [`normalize_deployment`] and placed on
+    /// deploy slots; spawns without a `group` placed on the map, grouped spawns hidden.
     pub fn new(
         pack: &Pack,
         battle: &str,

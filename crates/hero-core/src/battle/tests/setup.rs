@@ -26,8 +26,17 @@ fn spawn(side: Side, pos: Pos) -> UnitSpawn {
     }
 }
 
+/// Player officers placed by `st`, in unit order.
+fn placed(st: &BattleState) -> Vec<&str> {
+    st.units
+        .iter()
+        .filter(|u| u.side == Side::Player)
+        .filter_map(|u| u.officer.as_deref())
+        .collect()
+}
+
 #[test]
-fn deployed_officers_take_slots_in_order_with_campaign_progress() {
+fn deployed_officers_take_slots_with_campaign_progress() {
     let pack = pack(OPEN_MAP);
     let mut guan = officer_state(&pack, "guan_yu");
     guan.level = 12;
@@ -38,13 +47,17 @@ fn deployed_officers_take_slots_in_order_with_campaign_progress() {
         accessory: Some("horse".into()),
     };
     let liu = officer_state(&pack, "liu_bei");
-    let camp = campaign(vec![liu, guan], &["guan_yu", "liu_bei"]);
+    let zhang = officer_state(&pack, "zhang_fei");
+    // The lord is deployed without being chosen; zhang_fei was not chosen.
+    let camp = campaign(vec![guan, zhang, liu], &["guan_yu"]);
     let st = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
 
-    assert_eq!(st.units.len(), 2);
-    let g = &st.units[0];
-    assert_eq!(g.officer.as_deref(), Some("guan_yu"));
-    assert_eq!(g.pos, p(0, 0));
+    assert_eq!(placed(&st), ["liu_bei", "guan_yu"]);
+    let l = &st.units[0];
+    assert_eq!(l.pos, p(0, 0), "the lord takes the first slot");
+    assert!(l.lord);
+    let g = &st.units[1];
+    assert_eq!(g.pos, p(1, 0));
     assert_eq!((g.level, g.exp), (12, 40));
     assert_eq!(g.equip.weapon.as_deref(), Some("sword"));
     // cavalry: hp 600 + 20 * 11; MP (12 + 10) * 70 / 40 = 38
@@ -53,10 +66,7 @@ fn deployed_officers_take_slots_in_order_with_campaign_progress() {
     assert_eq!(g.morale, 100);
     assert!(!g.lord);
     assert_eq!(g.portrait.as_deref(), Some("guan_yu"));
-    let l = &st.units[1];
-    assert_eq!(l.pos, p(1, 0));
-    assert!(l.lord);
-    assert_eq!(st.move_points(&pack, 0), 8, "cavalry 6 + horse 2");
+    assert_eq!(st.move_points(&pack, 1), 8, "cavalry 6 + horse 2");
     assert_eq!(
         (st.turn, st.phase, st.weather),
         (1, Side::Player, Weather::Clear)
@@ -75,12 +85,47 @@ fn fallback_deploys_required_then_lord_then_roster_up_to_max() {
         .map(|id| officer_state(&pack, id))
         .collect();
     let st = BattleState::new(&pack, BATTLE, &campaign(roster, &[]), 1).unwrap();
-    let ids: Vec<_> = st
-        .units
+    assert_eq!(placed(&st), ["jian_yong", "liu_bei", "guan_yu"]);
+}
+
+/// `CampaignState::deployed` survives from battle to battle; a list chosen for another battle
+/// (or before the army changed) is fitted to this battle instead of stopping it.
+#[test]
+fn stale_deployments_are_normalised_to_the_battle() {
+    let mut def = battle(OPEN_MAP);
+    def.deploy.max = 3;
+    def.deploy.required = vec!["jian_yong".into()];
+    def.deploy.forbidden = vec!["zhang_fei".into()];
+    let pack = pack_with(def);
+    let roster = ["guan_yu", "zhang_fei", "zhang_bao", "liu_bei", "jian_yong"]
         .iter()
-        .map(|u| u.officer.clone().unwrap())
+        .map(|id| officer_state(&pack, id))
         .collect();
-    assert_eq!(ids, ["jian_yong", "liu_bei", "guan_yu"]);
+    // Missing the required officer and the lord; a forbidden officer, one who is not in the
+    // army and a duplicate; more officers than `deploy.max`.
+    let stale = ["zhang_fei", "zhang_bao", "cao_cao", "zhang_bao", "guan_yu"];
+    let camp = campaign(roster, &stale);
+    let st = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
+    // Required, lord, then the chosen officers in roster order, cut at `max`.
+    assert_eq!(placed(&st), ["jian_yong", "liu_bei", "guan_yu"]);
+    let def = &pack.battles[BATTLE];
+    assert_eq!(
+        crate::battle::normalize_deployment(&pack, def, &camp, &camp.deployed),
+        ["jian_yong", "liu_bei", "guan_yu"]
+    );
+
+    // No more officers than slots, even when `deploy.max` allows more.
+    let mut def = battle(OPEN_MAP);
+    def.deploy.slots.truncate(1);
+    let pack = pack_with(def);
+    let roster = vec![
+        officer_state(&pack, "guan_yu"),
+        officer_state(&pack, "liu_bei"),
+    ];
+    let camp = campaign(roster, &["liu_bei", "guan_yu"]);
+    assert_eq!(crate::battle::deploy_max(&pack.battles[BATTLE]), 1);
+    let st = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
+    assert_eq!(placed(&st), ["liu_bei"]);
 }
 
 #[test]
@@ -138,11 +183,6 @@ fn setup_errors() {
         BattleState::new(&pack, "nope", &campaign(Vec::new(), &[]), 1),
         Err(BattleError::UnknownBattle("nope".into()))
     );
-    let camp = campaign(vec![officer_state(&pack, "liu_bei")], &["guan_yu"]);
-    assert!(matches!(
-        BattleState::new(&pack, BATTLE, &camp, 1),
-        Err(BattleError::Setup(_))
-    ));
 
     let mut def = battle(OPEN_MAP);
     def.units = vec![spawn(Side::Enemy, p(0, 0))];
@@ -154,18 +194,15 @@ fn setup_errors() {
         "{err}"
     );
 
-    let mut def = battle(OPEN_MAP);
-    def.deploy.slots.truncate(1);
-    let pack = pack_with(def);
-    let roster = vec![
-        officer_state(&pack, "liu_bei"),
-        officer_state(&pack, "guan_yu"),
-    ];
-    let camp = campaign(roster, &["liu_bei", "guan_yu"]);
-    assert!(matches!(
-        BattleState::new(&pack, BATTLE, &camp, 1),
-        Err(BattleError::Setup(_))
-    ));
+    let pack = pack_with(battle(OPEN_MAP));
+    let mut guan = officer_state(&pack, "guan_yu");
+    guan.class = "sorcerer".into();
+    let camp = campaign(vec![officer_state(&pack, "liu_bei"), guan], &["guan_yu"]);
+    let err = BattleState::new(&pack, BATTLE, &camp, 1).unwrap_err();
+    assert!(
+        matches!(err, BattleError::Setup(ref m) if m.contains("unknown class `sorcerer`")),
+        "{err}"
+    );
 }
 
 #[test]

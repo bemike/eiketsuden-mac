@@ -208,7 +208,9 @@ pub struct CampaignState {
     pub inventory: BTreeMap<Id, u32>,
     pub gold: i64,
     pub flags: BTreeMap<String, i64>,
-    /// Officers chosen on the deploy screen for the upcoming battle.
+    /// Officers chosen on the deploy screen. The list is kept between battles as the player's
+    /// last choice; each battle normalises it to its own rules
+    /// ([`crate::battle::normalize_deployment`]).
     #[serde(default)]
     pub deployed: Vec<Id>,
     /// Battle ids won so far.
