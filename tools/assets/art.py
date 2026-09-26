@@ -45,6 +45,19 @@ PAL: dict[str, str | None] = {
     "p": "#ef9597",
     "P": "#a5608b",
     "v": "#d3a2c0",
+    "j": "#345a52",
+    "x": "#3b3643",
+    "z": "#4e484a",
+    "a": "#816855",
+    "t": "#d78b4a",
+    "f": "#eecf9b",
+    "F": "#d2b37d",
+    "i": "#b3957f",
+    "I": "#8e7c73",
+    "E": "#90775e",
+    "C": "#548789",
+    "H": "#d3865f",
+    "A": "#965340",
 }
 
 # Team colour ramps, dark -> light. Clothing/armour ramps of unit sprites and flags are remapped
@@ -314,6 +327,203 @@ P...P
 .....
 ..P..
 """
+
+
+# --- terrain objects (drawn onto 16x16 map cells by build_terrain.py) -------------------------
+
+# Thatched farmhouse of the village tile.
+HUT = """
+.....kk.....
+....kYYk....
+...kYYYtk...
+..kYYYYYtk..
+.kYYYYYYttk.
+kYYYYYYYtttk
+kttttttttttk
+.kffffNNffk.
+.kfFffNNfFk.
+.kkkkkkkkkk.
+"""
+
+# Wasteland decoration: loose stones and a dry tuft.
+STONES = """
+..kk.....
+.kiIk....
+.kIIk.kk.
+..kk.kiIk
+.....kkk.
+"""
+
+DRY_TUFT = """
+.F..F..
+..FiF.F
+F.iFi..
+.iIiIi.
+"""
+
+# Town house with a grey tiled roof (impassable `house`); fills the whole cell.
+HOUSE = """
+kk............kk
+.kkkkkkkkkkkkkk.
+kssSsSsSsSsSsSsk
+kCuCuCuCuCuCuCuk
+kCuCuCuCuCuCuCuk
+kCuCuCuCuCuCuCuk
+kuuuuuuuuuuuuuuk
+kkkkkkkkkkkkkkkk
+.kWWWWWNNWWWWWk.
+.kWRRRWNNWRRRWk.
+.kWRRRWNNWRRRWk.
+.kWRRRWNNWRRRWk.
+.kWWWWWNNWWWWWk.
+.kWWWWWaaWWWWWk.
+.kSSSSSaaSSSSSk.
+.kkkkkkkkkkkkkk.
+"""
+
+# Army tent of the barracks tile.
+TENT = """
+.....kk.....
+....kYWk....
+...kYYWWk...
+..kYYYWWWk..
+.kYYYYWWWWk.
+kYYYYYWWWWWk
+kYYYYkkWWWWk
+kYYYkxxkWWWk
+kYYkxxxxkWWk
+kkkkkkkkkkkk
+"""
+
+# Pennant on a pole (barracks and fort).
+PENNANT = """
+kk....
+kOrrk.
+kOrrrk
+kOrrk.
+kk....
+k.....
+k.....
+k.....
+k.....
+k.....
+"""
+
+# Watchtower of the fort tile (the palisade in front of it is drawn procedurally).
+WATCHTOWER = """
+....kkkkkk....
+...kOOOOOOk...
+..kOOOOOOOOk..
+.kOOOOOOOOOOk.
+kttttttttttttk
+kkkkkkkkkkkkkk
+.kNkkxxxxkkNk.
+.kNkxxxxxxkNk.
+.kNkkkkkkkkNk.
+.kNaNNNNNNaNk.
+"""
+
+# Storehouses of the granary (brown tiles) and treasury (slate tiles, golden coin sign).
+GRANARY = """
+k..............k
+kk............kk
+.kkkkkkkkkkkkkk.
+kotototototototk
+kAtAtAtAtAtAtAtk
+kAAAAAAAAAAAAAAk
+kkkkkkkkkkkkkkkk
+.kffffkNNkffffk.
+.kfFFfkNNkfFFfk.
+.kfFFfkaakfFFfk.
+.kffffkaakffffk.
+.kkkkkkkkkkkkkk.
+"""
+
+TREASURY = """
+k..............k
+kk............kk
+.kkkkkkkkkkkkkk.
+kIiIiIiIiIiIiIik
+kzxzxzxzxzxzxzxk
+kxxxxxxxxxxxxxxk
+kkkkkkkkkkkkkkkk
+.kSsSkkkkkkSsSk.
+.ksSkyyyyYOksSk.
+.kSskyyxxYOkSsk.
+.ksSkyyxxOOksSk.
+.kSskYYOOOOkSsk.
+.ksSskkkkkksSsk.
+.kSsSkddddkSsSk.
+.ksSskdzzdksSsk.
+.kkkkkkkkkkkkkk.
+"""
+
+# Straw rice bale (granary) and a small treasure chest (treasury).
+BALE = """
+.kkkkk.
+kyYtYyk
+kYYtYYk
+kYYtYYk
+.kkkkk.
+"""
+
+CHEST = """
+.kkkkkk.
+kNnnnnNk
+kkkkkkkk
+kNnyynNk
+kNNyyNNk
+kkkkkkkk
+"""
+
+SACK = """
+..kk..
+.kwWk.
+kwwWWk
+kwWWsk
+kWWssk
+.kkkk.
+"""
+
+# Open city gate: roofed gate tower over an arch, the castle floor showing through.
+GATE = """
+k..............k
+kk............kk
+.kkkkkkkkkkkkkk.
+kssSsSsSsSsSsSsk
+kCuCuCuCuCuCuCuk
+kuuuuuuuuuuuuuuk
+kkkkkkkkkkkkkkkk
+kRrRRrRRRRrRRrRk
+kSdSdkkkkkkdSdSk
+kdSdkxxxxxxkdSdk
+kSdkxxxxxxxxkdSk
+kdSkNxxxxxxNkSdk
+kSdkNxxxxxxNkdSk
+kdSkNxxxxxxNkSdk
+kSdkNffffffNkdSk
+kkkkkffffffkkkkk
+"""
+
+TERRAIN_ART = {
+    "hut": HUT,
+    "stones": STONES,
+    "dry_tuft": DRY_TUFT,
+    "house": HOUSE,
+    "tent": TENT,
+    "pennant": PENNANT,
+    "watchtower": WATCHTOWER,
+    "granary": GRANARY,
+    "sack": SACK,
+    "bale": BALE,
+    "chest": CHEST,
+    "treasury": TREASURY,
+    "gate": GATE,
+}
+
+
+def terrain(name: str) -> Image.Image:
+    return draw(TERRAIN_ART[name])
 
 
 def icon(name: str) -> Image.Image:
