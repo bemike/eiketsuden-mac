@@ -131,6 +131,10 @@ class Sources:
     def na_bytes(self, name: str) -> bytes:
         return self.member("ninja_adventure", self.NA_ROOT + name)
 
+    def na_palette(self) -> list[RGBA]:
+        """The Ninja Adventure master palette (`Palette.png`), used to fit other packs to its look."""
+        return colors(self.na("Palette.png"))
+
     def close(self) -> None:
         for z in self._zips.values():
             z.close()
@@ -293,6 +297,61 @@ def silhouette(img: Image.Image, color: Sequence[int]) -> Image.Image:
             if a:
                 px[x, y] = (c[0], c[1], c[2], a)
     return out
+
+
+def inner_outline(img: Image.Image, color: Sequence[int]) -> Image.Image:
+    """Paint opaque pixels that touch transparency (4-neighbourhood, image border counts) in `color`.
+
+    Unlike `outline` the image keeps its size, so sprites that already fill a 16x16 cell get the
+    dark contour of the Ninja Adventure style without growing.
+    """
+    out = img.copy()
+    src = img.load()
+    dst = out.load()
+    w, h = img.size
+    c = rgba(color)
+    for y in range(h):
+        for x in range(w):
+            if not src[x, y][3]:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h) or not src[nx, ny][3]:
+                    dst[x, y] = c
+                    break
+    return out
+
+
+def nearest_color(c: Sequence[int], palette: Sequence[Sequence[int]]) -> RGBA:
+    """The palette entry closest to `c` (weighted RGB distance, ties broken by palette order)."""
+    best = None
+    best_d = None
+    for p in palette:
+        dr, dg, db = c[0] - p[0], c[1] - p[1], c[2] - p[2]
+        d = 2 * dr * dr + 4 * dg * dg + 3 * db * db
+        if best_d is None or d < best_d:
+            best, best_d = p, d
+    assert best is not None
+    return (best[0], best[1], best[2], c[3] if len(c) > 3 else 255)
+
+
+def to_palette(
+    img: Image.Image,
+    palette: Sequence[Sequence[int]],
+    overrides: Mapping[str, str] | None = None,
+) -> Image.Image:
+    """Remap every opaque colour to its nearest palette colour; `overrides` ("#src" -> "#dst") win."""
+    table = {rgba(k)[:3]: rgba(v) for k, v in (overrides or {}).items()}
+    cache: dict[tuple[int, ...], RGBA] = {}
+
+    def fn(c: RGBA) -> RGBA:
+        key = c[:3]
+        if key not in cache:
+            cache[key] = table[key] if key in table else nearest_color(c, palette)
+        r, g, b, _ = cache[key]
+        return (r, g, b, c[3])
+
+    return map_pixels(img, fn)
 
 
 def map_pixels(img: Image.Image, fn) -> Image.Image:
