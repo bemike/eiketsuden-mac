@@ -214,7 +214,7 @@ impl SaveLoadScreen {
                     }
                 }
             }
-            SlotAction::Delete => match saves::delete(ctx.storage.as_mut(), slot) {
+            SlotAction::Delete => match saves::delete(ctx.storage.as_mut(), slot, &self.pack_id) {
                 Ok(()) => ctx.toast(format!("{}을(를) 삭제했습니다.", slot.name())),
                 Err(e) => {
                     ctx.sfx(sfx::ERROR);
