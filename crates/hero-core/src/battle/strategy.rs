@@ -460,7 +460,10 @@ impl BattleState {
         {
             return Err(bad());
         }
-        let def = pack.item(item).filter(|d| d.battle_use).ok_or_else(bad)?;
+        let def = pack
+            .item(item)
+            .filter(|d| d.is_battle_item())
+            .ok_or_else(bad)?;
         if let Some(sid) = &def.strategy {
             return pack.strategy(sid).map(BattleItem::Scroll).ok_or_else(bad);
         }

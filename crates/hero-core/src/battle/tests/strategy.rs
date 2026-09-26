@@ -6,7 +6,7 @@ use crate::battle::{
     Weather,
 };
 use crate::battledef::Side;
-use crate::data::StatusKind;
+use crate::data::{Effect, StatusKind};
 use crate::geom::Pos;
 
 fn cast(unit: UnitId, strategy: &str, target: Pos) -> Action {
@@ -634,6 +634,36 @@ fn healing_items_and_their_targets() {
         st.apply(&pack, use_item(foe, "bean", foe)),
         Err(ActionError::BadItem("bean".into()))
     );
+}
+
+/// `battle_use` on equipment is ignored (the validator warns about it): the campaign only
+/// takes battle consumables back from the battle, so using equipment would never use it up.
+#[test]
+fn equipment_is_never_a_battle_item() {
+    let mut pack = pack(OPEN_MAP);
+    let jade = pack.items.get_mut("jade").unwrap();
+    jade.battle_use = true;
+    jade.effects = vec![Effect::Heal { power: 300 }];
+    let mut st = state(&pack);
+    st.inventory.insert("jade".into(), 1);
+    let me = add(&mut st, &pack, Side::Player, "cavalry", 1, p(3, 3));
+    let hurt = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(0, 7));
+    st.units[me].mp = 0;
+    st.units[hurt].hp = 100;
+
+    assert!(st.item_targets(&pack, me, "jade").is_empty());
+    assert_eq!(
+        st.apply(&pack, use_item(me, "jade", hurt)),
+        Err(ActionError::BadItem("jade".into()))
+    );
+    // The AI (the player side in simulations) does not plan to use it either.
+    let plan = st.ai_actions(&pack, me);
+    assert!(
+        !plan.iter().any(|a| matches!(a, Action::UseItem { .. })),
+        "{plan:?}"
+    );
+    assert_eq!(st.inventory.get("jade"), Some(&1));
 }
 
 #[test]

@@ -868,7 +868,7 @@ impl<'a> Planner<'a> {
                 continue;
             };
             let usable = count > 0
-                && def.battle_use
+                && def.is_battle_item()
                 && def.strategy.is_none()
                 && !def.effects.is_empty()
                 && def

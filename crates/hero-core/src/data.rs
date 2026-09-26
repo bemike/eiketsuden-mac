@@ -449,6 +449,14 @@ pub struct OfficerDef {
     pub bio: String,
 }
 
+impl ItemDef {
+    /// A consumable the army can use in battle (`battle_use`). Equipment never is, even with
+    /// `battle_use` set: using it would not use it up.
+    pub fn is_battle_item(&self) -> bool {
+        self.kind == ItemKind::Consumable && self.battle_use
+    }
+}
+
 impl OfficerDef {
     pub fn portrait_key(&self) -> &str {
         self.portrait.as_deref().unwrap_or(&self.id)

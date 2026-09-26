@@ -588,10 +588,7 @@ impl CampaignState {
             state.equip = unit.equip.clone();
         }
 
-        let battle_item = |id: &str| {
-            pack.item(id)
-                .is_some_and(|d| d.kind == ItemKind::Consumable && d.battle_use)
-        };
+        let battle_item = |id: &str| pack.item(id).is_some_and(|d| d.is_battle_item());
         self.inventory.retain(|id, _| !battle_item(id));
         for (id, count) in &battle.inventory {
             if battle_item(id) {
