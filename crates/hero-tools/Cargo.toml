@@ -1,6 +1,6 @@
 [package]
 name = "hero-tools"
-description = "Command line tools for Eiketsuden Reloaded data packs (validate, simulate, info)"
+description = "Command line tools for Eiketsuden Reloaded data packs (validate, simulate, info, original)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,3 +13,5 @@ path = "src/main.rs"
 
 [dependencies]
 hero-core = { path = "../hero-core" }
+hero-import = { path = "../hero-import" }
+serde_json.workspace = true

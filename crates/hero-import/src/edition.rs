@@ -115,6 +115,17 @@ pub enum Confidence {
     None,
 }
 
+impl Confidence {
+    /// The word written in manifests.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Confidence::High => "high",
+            Confidence::Medium => "medium",
+            Confidence::None => "none",
+        }
+    }
+}
+
 /// An identification with its evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Edition {
@@ -141,9 +152,9 @@ impl Edition {
     /// An edition chosen by the user, keeping what identification found as evidence.
     pub fn forced(id: EditionId, identified: &Edition) -> Edition {
         let mut evidence = vec![format!(
-            "chosen with --edition; identification said `{}` ({:?} confidence)",
+            "chosen with --edition; identification said `{}` ({} confidence)",
             identified.id.as_str(),
-            identified.confidence
+            identified.confidence.as_str()
         )];
         evidence.extend(identified.evidence.iter().cloned());
         Edition {

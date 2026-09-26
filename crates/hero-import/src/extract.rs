@@ -19,7 +19,7 @@
 
 use crate::edition::{identify, Edition, EditionId};
 use crate::image::{encode_png, grey_ramp, Palette16};
-use crate::install::{InstallDir, InstallError};
+use crate::install::{lies_inside, InstallDir, InstallError};
 use crate::planar::{cells_to_image, CellLayout, CELL_BYTES};
 use crate::text::{parse_messages, TextEncoding};
 use crate::{ls11, palette, table6};
@@ -293,38 +293,6 @@ impl Output {
     }
 }
 
-/// Absolute path with `.`/`..` removed and the existing part canonicalised, so that a folder
-/// that does not exist yet can still be compared with an existing one.
-fn resolve(path: &Path) -> std::io::Result<PathBuf> {
-    let absolute = std::path::absolute(path)?;
-    let mut normal = PathBuf::new();
-    for c in absolute.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normal.pop();
-            }
-            other => normal.push(other),
-        }
-    }
-    let mut existing = normal.clone();
-    let mut missing = Vec::new();
-    while !existing.exists() {
-        match existing.file_name() {
-            Some(name) => {
-                missing.push(name.to_owned());
-                existing.pop();
-            }
-            None => break,
-        }
-    }
-    let mut resolved = existing.canonicalize()?;
-    for name in missing.iter().rev() {
-        resolved.push(name);
-    }
-    Ok(resolved)
-}
-
 /// A relative path from a previous index that stays inside the output folder.
 fn safe_relative(rel: &str) -> Option<PathBuf> {
     let path = Path::new(rel);
@@ -334,9 +302,7 @@ fn safe_relative(rel: &str) -> Option<PathBuf> {
 
 /// Check the output folder and remove the files of a previous extraction.
 fn prepare_output(source: &Path, out: &Path) -> Result<(), ExtractError> {
-    let source_resolved = resolve(source).map_err(|e| output_error(source, e))?;
-    let out_resolved = resolve(out).map_err(|e| output_error(out, e))?;
-    if out_resolved.starts_with(&source_resolved) {
+    if lies_inside(out, source).map_err(|e| output_error(out, e))? {
         return Err(ExtractError::OutputInsideSource {
             output: out.to_path_buf(),
             source: source.to_path_buf(),
@@ -781,8 +747,8 @@ fn portraits_report(install: &InstallDir, requested: bool) -> Result<KindReport,
     match table6::Table6::parse(&data) {
         Ok(table) => {
             report.summary = format!(
-                "{PORTRAIT_SOURCE}: {} portraits found (container valid), but their TF-DCE \
-                 compression is not implemented",
+                "{PORTRAIT_SOURCE}: {} entries (container valid); their TF-DCE compression is \
+                 not implemented",
                 table.len()
             );
             report.notes.extend([
@@ -878,7 +844,7 @@ mod tests {
         // Portraits: container found, codec unsupported (informational without --portraits).
         let portraits = &index.assets["portraits"];
         assert_eq!(portraits.status, Status::Unsupported);
-        assert!(portraits.summary.contains("3 portraits"));
+        assert!(portraits.summary.contains("3 entries"));
         assert!(portraits.ok());
 
         // The index lists every file and records provenance.

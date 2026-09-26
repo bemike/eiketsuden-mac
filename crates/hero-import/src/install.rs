@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Largest file read into memory (the known data files are below 1 MiB).
 pub const MAX_READ: u64 = 64 << 20;
@@ -100,6 +100,45 @@ impl InstallDir {
     }
 }
 
+/// Absolute path with `.`/`..` removed and the existing part canonicalised, so that a path
+/// that does not exist yet can still be compared with an existing one.
+fn resolve(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    let mut normal = PathBuf::new();
+    for c in absolute.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normal.pop();
+            }
+            other => normal.push(other),
+        }
+    }
+    let mut existing = normal;
+    let mut missing = Vec::new();
+    while !existing.exists() {
+        match existing.file_name() {
+            Some(name) => {
+                missing.push(name.to_owned());
+                existing.pop();
+            }
+            None => break,
+        }
+    }
+    let mut resolved = existing.canonicalize()?;
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
+}
+
+/// Whether `path` (which need not exist yet) is `folder` or lies inside it, after resolving
+/// `..`, symbolic links and letter case the way the file system does. Used to keep every
+/// output out of the install, which is only ever read.
+pub fn lies_inside(path: &Path, folder: &Path) -> std::io::Result<bool> {
+    Ok(resolve(path)?.starts_with(resolve(folder)?))
+}
+
 /// Read a file of at most [`MAX_READ`] bytes.
 pub fn read_limited(path: &Path) -> Result<Vec<u8>, InstallError> {
     let len = std::fs::metadata(path)
@@ -134,6 +173,18 @@ mod tests {
             install.names().collect::<Vec<_>>(),
             ["MAIN.EXE", "SNR0M.R3"]
         );
+    }
+
+    #[test]
+    fn containment() {
+        let dir = crate::testutil::TempDir::new("install-inside");
+        let root = dir.path();
+        std::fs::create_dir(root.join("game")).unwrap();
+        assert!(lies_inside(&root.join("game"), &root.join("game")).unwrap());
+        assert!(lies_inside(&root.join("game/new/deeper"), &root.join("game")).unwrap());
+        assert!(lies_inside(&root.join("x/../game/m.json"), &root.join("game")).unwrap());
+        assert!(!lies_inside(&root.join("gamex"), &root.join("game")).unwrap());
+        assert!(!lies_inside(&root.join("game/../out"), &root.join("game")).unwrap());
     }
 
     #[test]

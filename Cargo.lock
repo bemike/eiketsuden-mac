@@ -272,6 +272,8 @@ name = "hero-tools"
 version = "0.1.0"
 dependencies = [
  "hero-core",
+ "hero-import",
+ "serde_json",
 ]
 
 [[package]]
