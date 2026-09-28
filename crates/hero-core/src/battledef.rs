@@ -399,8 +399,10 @@ pub struct BattleDef {
 /// A reference to a unit by spawn `tag` or officer id: `(field name, value)`.
 pub type UnitRef<'a> = (&'static str, &'a str);
 
-// The `unit_refs` methods match every variant without a catch-all arm, so a new variant that
-// names a unit cannot be forgotten by the validator or the simulator, which both use them.
+// The `unit_refs` methods of the three enums match every variant without a catch-all arm, so a
+// new variant that names a unit cannot be forgotten by the validator or the simulator, which
+// both use them. (A new unit-naming *field* of a struct such as `UnitSpawn` or `EventDef` still
+// has to be added to `BattleDef::unit_refs` and the validator by hand.)
 
 impl Condition {
     /// The units this condition names.
@@ -536,6 +538,23 @@ actions = [{ type = "victory" }]
                 "boss"
             ]
         );
+        // Variants without the optional unit: nothing.
+        let none = Condition::Reach {
+            who: None,
+            pos: Pos::new(0, 0),
+            radius: 0,
+            to: None,
+        };
+        assert!(none.unit_refs().is_empty());
+        let set_ai = EventAction::SetAi {
+            target: "x".into(),
+            ai: AiMode::Hold,
+            ai_target: None,
+            ai_pos: None,
+        };
+        assert_eq!(set_ai.unit_refs(), [("target", "x")]);
+        let defeated = Trigger::UnitDefeated { target: "y".into() };
+        assert_eq!(defeated.unit_refs(), [("target", "y")]);
         let fields: Vec<&str> = Trigger::Adjacent {
             a: "x".into(),
             b: "y".into(),
