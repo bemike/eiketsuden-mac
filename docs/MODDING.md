@@ -727,7 +727,7 @@ the player's army (starting officers and everyone who joins through `@join`).
 | `hold` | Never moves; attacks or uses strategies from its tile. |
 | `guard` | Stays within 3 tiles of `ai_pos` (default: spawn tile). |
 | `target` | Heads for `ai_target` and attacks it. |
-| `advance` | Moves towards `ai_pos`, attacking targets of opportunity; enters the tile once it is in reach, and there behaves as `defensive`. |
+| `advance` | Moves towards `ai_pos`, attacking targets of opportunity; enters the tile once it is in reach, and within 3 tiles of it holds it like a `guard` post (fights from within those 3 tiles, else returns to it). |
 | `flee` | Moves away from hostile units. |
 | `march` | Heads for `ai_target`, else `ai_pos`, without attacking or using strategies; waits once there. |
 
