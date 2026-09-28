@@ -753,6 +753,74 @@ const EFFECT_LOOKUP: Pattern = pat!(
     0x8d 0x5e 0xf0
 );
 
+/// Class rules of `MAIN.EXE` (values read from the player's file), in class order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassRules {
+    /// Attack coefficient: the attack formula adds twice this value, so it is five times the
+    /// class's `atk` (FORMATS §10.6).
+    pub attack: Vec<u8>,
+    /// Defence coefficient, the same way.
+    pub defense: Vec<u8>,
+    /// Movement points.
+    pub move_points: Vec<u8>,
+    /// Attack range: 0 the four neighbours, 1 the eight, 2 the archer's ring, 3 the crossbow's,
+    /// 4 the catapult's, 255 none (the civilian).
+    pub range: Vec<u8>,
+}
+
+/// `call far class_of / mov bl, al / sub bh, bh / mov al, [bx+table] / sub ah, ah /
+/// sub dx, dx`: the attack formula reads the attack table here, the defence formula the
+/// defence table 20 bytes on.
+const CLASS_COEFFICIENT: Pattern =
+    pat!(0x9a _ _ _ _ 0x8a 0xd8 0x2a 0xff 0x8a 0x87 _ _ 0x2a 0xe4 0x2b 0xd2);
+/// The same lookup of the movement points, stored at `[bp-7]`.
+const CLASS_MOVE: Pattern = pat!(0x9a _ _ _ _ 0x8a 0xd8 0x2a 0xff 0x8a 0x87 _ _ 0x88 0x46 0xf9);
+/// The same lookup of the attack range, stored at `[bp-2]`.
+const CLASS_RANGE: Pattern =
+    pat!(0x9a _ _ _ _ 0x8a 0xd8 0x2a 0xff 0x8a 0x87 _ _ 0x88 0x46 0xfe 0x88);
+
+/// Locate the class rules through the code that reads them.
+pub fn find_class_rules(exe: &[u8]) -> Result<ClassRules, ExeTableError> {
+    /// The defence coefficients follow the attack ones in a 20-byte slot.
+    const COEFFICIENT_STRIDE: u16 = 20;
+    let base = data_base(exe)?;
+    let address = |at: usize| u16_at(exe, at + 11).unwrap_or(0);
+    let coefficients = find_all(exe, CLASS_COEFFICIENT);
+    let [attack_at, defense_at] = coefficients[..] else {
+        return Err(ExeTableError::Code {
+            what: "attack and defence coefficient tables",
+            found: coefficients.len(),
+        });
+    };
+    let (attack_address, defense_address) = (address(attack_at), address(defense_at));
+    if defense_address.wrapping_sub(attack_address) != COEFFICIENT_STRIDE {
+        return Err(ExeTableError::Table {
+            what: "attack and defence coefficient tables",
+            detail: format!(
+                "tables at {attack_address:#06x} and {defense_address:#06x} are not 20 bytes apart"
+            ),
+        });
+    }
+    let attack = table(exe, base, attack_address, CLASSES, "attack coefficients")?.to_vec();
+    let defense = table(exe, base, defense_address, CLASSES, "defence coefficients")?.to_vec();
+    let at = unique(exe, CLASS_MOVE, "movement points")?;
+    let move_points = table(exe, base, address(at), CLASSES, "movement points")?.to_vec();
+    let at = unique(exe, CLASS_RANGE, "attack ranges")?;
+    let range = table(exe, base, address(at), CLASSES, "attack ranges")?.to_vec();
+    if range.iter().any(|&r| r > 4 && r != 255) {
+        return Err(ExeTableError::Table {
+            what: "attack ranges",
+            detail: format!("{range:?} has a range other than 0-4 and 255"),
+        });
+    }
+    Ok(ClassRules {
+        attack,
+        defense,
+        move_points,
+        range,
+    })
+}
+
 /// Locate the movement rules through the code that reads them.
 pub fn find_move_rules(exe: &[u8]) -> Result<MoveRules, ExeTableError> {
     let base = data_base(exe)?;
@@ -982,6 +1050,38 @@ pub fn fixture_move_rules() -> MoveRules {
     }
 }
 
+/// The class rules [`build_exe_fixture`] embeds: the base pack's values in the original's class
+/// order, but the civilian's coefficients are 15 (atk and def 3) instead of 0.
+pub fn fixture_class_rules() -> ClassRules {
+    let rows: [(u8, u8, u8, u8); CLASSES] = [
+        (8, 8, 4, 0),
+        (12, 12, 4, 1),
+        (12, 16, 5, 1),
+        (6, 8, 4, 2),
+        (12, 8, 4, 3),
+        (16, 10, 3, 4),
+        (12, 6, 6, 0),
+        (14, 10, 5, 0),
+        (16, 12, 6, 0),
+        (10, 8, 4, 0),
+        (12, 10, 4, 1),
+        (14, 12, 4, 1),
+        (4, 4, 4, 0),
+        (16, 6, 4, 1),
+        (14, 12, 5, 1),
+        (4, 4, 4, 0),
+        (14, 16, 5, 1),
+        (3, 3, 3, 255),
+        (4, 4, 3, 1),
+    ];
+    ClassRules {
+        attack: rows.iter().map(|r| r.0 * 5).collect(),
+        defense: rows.iter().map(|r| r.1 * 5).collect(),
+        move_points: rows.iter().map(|r| r.2).collect(),
+        range: rows.iter().map(|r| r.3).collect(),
+    }
+}
+
 /// Build a small MZ executable whose start-up and table-reading code have the shapes
 /// [`find_exe_tables`] looks for (for this crate's tests and the golden fixtures). `len` pads
 /// it with `0x90` to at least that many bytes.
@@ -1035,6 +1135,15 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     data.extend(rules.cost.iter().flatten());
     let effect = data.len() as u16;
     data.extend(&rules.effect);
+    let classes = fixture_class_rules();
+    let attack = data.len() as u16;
+    data.extend(&classes.attack);
+    data.push(0);
+    data.extend(&classes.defense);
+    let class_move_points = data.len() as u16;
+    data.extend(&classes.move_points);
+    let class_range = data.len() as u16;
+    data.extend(&classes.range);
 
     let mut put = |pattern: Pattern, fill: &[u8]| {
         let mut fill = fill.iter();
@@ -1066,6 +1175,14 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     put(MOVE_LOOKUP, &[a, b, c, d]);
     let [lo, hi] = effect.to_le_bytes();
     put(EFFECT_LOOKUP, &[lo, hi, lo, hi]);
+    for table in [attack, attack + 20] {
+        let [lo, hi] = table.to_le_bytes();
+        put(CLASS_COEFFICIENT, &[0, 0, 0, 0, lo, hi]);
+    }
+    let [lo, hi] = class_move_points.to_le_bytes();
+    put(CLASS_MOVE, &[0, 0, 0, 0, lo, hi]);
+    let [lo, hi] = class_range.to_le_bytes();
+    put(CLASS_RANGE, &[0, 0, 0, 0, lo, hi]);
 
     let data_at = HEADER + DGROUP * 16;
     assert!(
@@ -1110,6 +1227,36 @@ mod tests {
         assert!(matches!(
             find_move_rules(&exe),
             Err(ExeTableError::Code { found: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn class_rules_are_found_through_their_code() {
+        assert_eq!(find_class_rules(&fixture_exe()), Ok(fixture_class_rules()));
+        // A third coefficient lookup leaves it unclear which table is which.
+        let mut exe = fixture_exe();
+        let at = find_all(&exe, CLASS_COEFFICIENT)[0];
+        let snippet = exe[at..at + CLASS_COEFFICIENT.len()].to_vec();
+        let pad = find_all(&exe, &[Some(0x90); 32])[0];
+        exe[pad..pad + snippet.len()].copy_from_slice(&snippet);
+        assert!(matches!(
+            find_class_rules(&exe),
+            Err(ExeTableError::Code { found: 3, .. })
+        ));
+        // A range code the game does not have.
+        let mut exe = fixture_exe();
+        let t = fixture_class_rules();
+        let at = find_all(&exe, CLASS_RANGE)[0];
+        let address = usize::from(u16_at(&exe, at + 11).unwrap());
+        let data = data_base(&exe).unwrap();
+        assert_eq!(exe[data + address], t.range[0]);
+        exe[data + address] = 5;
+        assert!(matches!(
+            find_class_rules(&exe),
+            Err(ExeTableError::Table {
+                what: "attack ranges",
+                ..
+            })
         ));
     }
 
