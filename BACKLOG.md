@@ -40,24 +40,21 @@
   - 무엇을: 입력한 경로의 `is_dir`/`read_dir`(응답 없는 UNC 경로는 SMB 시간 초과 동안 멈춤)와 X11 `clipboard_get`(클립보드 소유자가 응답하지 않으면 기다림)을 메인 스레드 밖에서 하거나 시간 제한을 둔다.
   - 왜: 드물지만 그동안 게임 창이 멈춘다. 목록 탐색으로는 UNC에 갈 수 없었고 경로 입력(PR #17)으로 생긴 경로다.
   - 영향 범위: hero-game `original.rs`(`typed_folder`, `list`), `screens/original.rs`
-- [ ] **유닛 프레임 크기의 단일 출처화**
-  - 무엇을: 캠프·갤러리 화면(`ui/art.rs unit_frame_size`)이 프레임을 시트 크기÷(4×6)로 추정하는 방식을 `units.toml`의 `frame`으로 통일하거나, 시트 크기를 validate에서 대조한다.
-  - 왜: 시트에 여백이 있으면 전투와 캠프의 결과가 어긋난다.
-  - 영향 범위: hero-game `ui/art.rs`, hero-core media 검증
 - [ ] **전투 맵 캐시 텍스처 크기 상한**
   - 무엇을: 맵 캐시 render target 크기에 상한을 두고 validate에서 경고하며, 넘치면 청크로 분할한다.
   - 왜: 큰 맵과 큰 타일이 겹치면 모바일 WebGL 텍스처 한도(2048~4096)를 넘어 맵이 검게 나온다.
   - 영향 범위: hero-game `screens/battle/tileset.rs`, hero-core 검증, `docs/ASSETS.md`
-- [ ] **중단된 추출의 재시도 가능화**
-  - 무엇을: `extract`가 도중에 실패해도 `index.json`을 남기거나, 임시 폴더에 쓴 뒤 교체한다.
-  - 왜: 지금은 중단된 출력 폴더를 다음 실행이 `OutputNotEmpty`로 거부한다.
-  - 영향 범위: hero-import `extract.rs`
 - [ ] **모드 팩 텍스트의 한자 커버리지 경고**
   - 무엇을: 팩 텍스트에 쓰인 한자 중 폰트에 없는 글자를 validate가 경고한다.
   - 왜: 지금은 기본 팩만 CI 폰트 테스트로 확인한다.
   - 영향 범위: hero-core/hero-tools, 폰트 cmap 파서
 
-## 게임 · 콘텐츠
+<<<<<<< HEAD
+=======
+- [ ] **원작 폴더 탐색기: 300개가 넘는 폴더에서 ★ 표시의 한계 안내**
+  - 무엇을: `list()`는 앞 300개 폴더만 원작 파일 여부를 검사한다. 목록이 그보다 길면 "앞 300개만 ★ 표시" 안내를 덧붙인다(`list()`가 전부 검사했는지를 함께 돌려주게).
+  - 왜: 뒤쪽 폴더는 원작 파일이 있어도 ★가 없는데 안내문은 모든 폴더를 표시하는 것처럼 읽힌다(PR #24 리뷰).
+  - 영향 범위: hero-game `original.rs`(`list`), `screens/original.rs`
 
 - [ ] **캠페인을 따라가는 밸런스 시뮬레이션**
   - 무엇을: `hero-tools simulate --campaign`을 추가한다. 선택지를 지정할 수 있고, 레벨과 영입을 이어받는다. 프로토타입은 제1장 작업 때 만든 워커를 참고한다.
