@@ -3,17 +3,18 @@
 #
 # usage: tools/web/build.sh [--dev] [--data <pack dir>] [--out <dir>] [--serve <port>]
 #
-#   --data   data pack copied to <out>/data/base (default: data/base of this repository)
+#   --data   data pack copied to <out>/data/base (default: data/base of this repository), with the
+#            packs it extends
 #   --out    output directory (default: target/web-dist, git-ignored); only ever cleared if an
 #            earlier run of this script created it
 #   --dev    debug profile (faster to compile, much slower to run)
 #   --serve  afterwards serve the site on http://localhost:<port>/ with tools/web/serve.py
 #            (a no-cache variant of `python3 -m http.server`)
 #
-# Relative --data / --out paths are taken relative to the current directory. The layout
-# (index.html, mq_js_bundle.js, hero_web.js, eiketsuden.wasm, data/base/) matches what the GitHub
-# Pages workflow publishes. Browsers cannot load WebAssembly from file:// URLs, so the folder has
-# to be served over HTTP. Open http://localhost:<port>/#gallery for the UI gallery.
+# Relative --data / --out paths are taken relative to the current directory. The site is laid out
+# by tools/web/assemble.py (Python 3.11+), the same step the GitHub Pages workflow runs. Browsers
+# cannot load WebAssembly from file:// URLs, so the folder has to be served over HTTP. Open
+# http://localhost:<port>/#gallery for the UI gallery.
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -21,7 +22,6 @@ data="$root/data/base"
 out="$root/target/web-dist"
 profile="release"
 serve=""
-marker=".eiketsuden-web-dist"
 
 absolute() {
     case "$1" in
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
         --out) out=$(absolute "$2"); shift 2 ;;
         --dev) profile="debug"; shift ;;
         --serve) serve="$2"; shift 2 ;;
-        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -49,35 +49,14 @@ else
     cargo build -p hero-game --target wasm32-unknown-unknown
 fi
 
-if [ -e "$out" ]; then
-    if [ ! -e "$out/$marker" ]; then
-        echo "$out exists but was not created by this script; refusing to overwrite it" >&2
-        exit 1
-    fi
-    rm -rf "$out"
+python=$(command -v python3 || command -v python || true)
+if [ -z "$python" ]; then
+    echo "python 3.11+ is needed to assemble the site (tools/web/assemble.py)" >&2
+    exit 1
 fi
-mkdir -p "$out/data"
-touch "$out/$marker"
-
-cp web/index.html web/mq_js_bundle.js web/hero_web.js "$out/"
-cp "target/wasm32-unknown-unknown/$profile/eiketsuden.wasm" "$out/"
-
-if [ -d "$data" ]; then
-    cp -R "$data" "$out/data/base"
-    if [ ! -f "$data/pack.toml" ]; then
-        echo "warning: $data has no pack.toml: only the UI gallery (#gallery) will work" >&2
-    fi
-else
-    echo "warning: data pack $data not found: the page will show the 'pack not found' error screen" >&2
-fi
-
-echo "site ready in $out ($(wc -c < "$out/eiketsuden.wasm") bytes of wasm)"
+"$python" tools/web/assemble.py --wasm "target/wasm32-unknown-unknown/$profile/eiketsuden.wasm" \
+    --out "$out" --data "$data"
 
 if [ -n "$serve" ]; then
-    python=$(command -v python3 || command -v python || true)
-    if [ -z "$python" ]; then
-        echo "python is needed for --serve (or serve $out with any static web server)" >&2
-        exit 1
-    fi
     exec "$python" tools/web/serve.py --port "$serve" --dir "$out"
 fi
