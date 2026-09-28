@@ -26,7 +26,7 @@
 //! # Mapping rules
 //!
 //! * **Portraits.** A base-pack officer gets the `FACEDAT` entry of the `BAKDATA` officer with the
-//!   same name (the Korean name in the Korean release, the hanja in the Chinese one). Two spellings
+//!   same name (the Korean name in the Korean release, the hanja in the Chinese one). A few spellings
 //!   differ between the release and the base pack ([`NAME_ALIASES`]); one name is used by two
 //!   officers and their stored Japanese reading tells them apart ([`READINGS`]). An officer with no
 //!   or several candidate portraits keeps the base pack's picture and is listed in the index.
@@ -893,6 +893,15 @@ pub const NAME_ALIASES: &[(&str, &str)] = &[
     ("zhang_liao", "장요"),
     // 紀靈: 기령 / 기영.
     ("ji_ling", "기영"),
+    // 宋憲 (ソウケン): 송겸 in the release, a Lü Bu officer next to 위속 and 진궁 with the
+    // base pack's stats (leadership 50, war 59); Xiapi's lines name "후성, 위속, 송겸", the three
+    // who betrayed Lü Bu.
+    ("song_xian", "송겸"),
+    // 王楷 (オウカイ): 왕개, Lü Bu's army, right after 허사.
+    ("wang_kai", "왕개"),
+    // 關興 (カンコウ): 관훙, a misspelling in the release (its lines say 관흥, "관우의 아들"), in
+    // 장포's and 관평's army with the base pack's stats (85 / 88 / 70).
+    ("guan_xing", "관훙"),
 ];
 
 /// Base-pack officers whose name `BAKDATA` gives to two officers, with the Japanese reading
