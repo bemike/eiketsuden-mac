@@ -5,26 +5,28 @@ use super::validate::is_media_key;
 use super::{Issue, Pack, Severity};
 use crate::battledef::{EventAction, MapDef};
 use crate::map::BattleMap;
+use crate::media_index::{
+    self, FxFile, TilesetFile, UnitsFile, DEFAULT_TILE, FX_FILE as FX_TOML,
+    TILESET_FILE as TILES_TOML, UNITS_FILE as UNITS_TOML,
+};
 use crate::script::Cmd;
+use serde::de::DeserializeOwned;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// Unit sheet colours; one sheet per sprite key and side.
 const SIDES: [&str; 3] = ["player", "ally", "enemy"];
-const UNITS_TOML: &str = "gfx/units/units.toml";
-const TILES_TOML: &str = "gfx/tiles/terrain.toml";
-const FX_TOML: &str = "gfx/fx/fx.toml";
 const ICONS_TOML: &str = "gfx/ui/icons.toml";
 const UNKNOWN_PORTRAIT: &str = "gfx/portraits/_unknown.png";
-/// Tile size of a tileset without `tile_size`, and of the flat-colour map drawn without one
-/// (`docs/ASSETS.md`).
-const DEFAULT_TILE_SIZE: u32 = 16;
 
 impl Pack {
     /// Check that every media file the pack refers to exists below `root` (the top pack
     /// directory) — for a layered pack in the directory of any of its [`Pack::layers`], looked
     /// up top pack first like the game does, so a media index file (`units.toml`,
     /// `terrain.toml`, `fx.toml`, `icons.toml`) is read from the first pack that has one.
+    ///
+    /// The index files are read with the game's schema ([`crate::media_index`]): a missing field
+    /// or a value of the wrong type, which the game could not read, is an error.
     ///
     /// Checked: unit sheets `gfx/units/<sprite>_<side>.png` and their `units.toml` entries,
     /// officer and `@show` portraits `gfx/portraits/<key>.png` (warnings: `_unknown.png` is
@@ -42,7 +44,7 @@ impl Pack {
             dirs,
             issues: Vec::new(),
             reported: BTreeSet::new(),
-            tile_size: DEFAULT_TILE_SIZE,
+            tile_size: DEFAULT_TILE,
         };
         m.units(self);
         m.portraits(self);
@@ -93,9 +95,9 @@ impl MediaCheck {
         }
     }
 
-    /// Parse a media index file (each is read once); reports and returns `None` when it is
-    /// missing or broken.
-    fn index(&mut self, rel: &str, context: &str) -> Option<toml::Table> {
+    /// Parse a media index file as `T` (each is read once); reports and returns `None` when it
+    /// is missing or does not fit the schema.
+    fn index<T: DeserializeOwned>(&mut self, rel: &str, context: &str) -> Option<T> {
         let Some(path) = self.find(rel) else {
             self.push(Severity::Error, context, format!("missing {rel}"));
             return None;
@@ -108,10 +110,10 @@ impl MediaCheck {
                 return None;
             }
         };
-        match toml::from_str::<toml::Table>(text.strip_prefix('\u{feff}').unwrap_or(&text)) {
+        match media_index::parse::<T>(&text) {
             Ok(t) => Some(t),
             Err(e) => {
-                self.push(Severity::Error, rel, e.to_string().trim_end().to_string());
+                self.push(Severity::Error, rel, e);
                 None
             }
         }
@@ -121,11 +123,8 @@ impl MediaCheck {
         if pack.classes.is_empty() {
             return;
         }
-        let index = self.index(UNITS_TOML, "unit sprites");
-        let sprites = index
-            .as_ref()
-            .and_then(|t| t.get("sprites"))
-            .and_then(|v| v.as_table());
+        let index: Option<UnitsFile> = self.index(UNITS_TOML, "unit sprites");
+        let sprites = index.as_ref().map(|f| &f.sprites);
         let mut keys_seen = BTreeSet::new();
         for class in pack.classes.values() {
             let key = class.sprite.as_str();
@@ -229,35 +228,27 @@ impl MediaCheck {
         if pack.terrain.is_empty() {
             return;
         }
-        let Some(index) = self.index(TILES_TOML, "terrain tiles") else {
+        let Some(index) = self.index::<TilesetFile>(TILES_TOML, "terrain tiles") else {
             return;
         };
-        match index.get("tile_size") {
-            None => {}
-            Some(v) => match v.as_integer().and_then(|n| u32::try_from(n).ok()) {
-                Some(n) if n > 0 => self.tile_size = n,
-                _ => self.push(
-                    Severity::Error,
-                    TILES_TOML,
-                    format!("tile_size {v} must be a positive whole number of pixels"),
-                ),
-            },
-        }
-        match index.get("image").and_then(|v| v.as_str()) {
-            Some(image) => {
-                let rel = format!("gfx/tiles/{image}");
-                self.require(Severity::Error, TILES_TOML, &rel, "terrain atlas");
-            }
-            None => self.push(
+        if index.tile_size > 0 {
+            self.tile_size = index.tile_size;
+        } else {
+            self.push(
                 Severity::Error,
                 TILES_TOML,
-                "has no `image` atlas file name".into(),
-            ),
+                "tile_size 0 must be a positive whole number of pixels".into(),
+            );
         }
-        let tiles = index.get("tiles").and_then(|v| v.as_table());
+        let rel = format!("gfx/tiles/{}", index.image);
+        self.require(Severity::Error, TILES_TOML, &rel, "terrain atlas");
+        // A layer the game cannot draw is left out of the map.
+        for problem in index.layers().1 {
+            self.push(Severity::Error, TILES_TOML, problem);
+        }
         for t in &pack.terrain {
             let key = t.tile_key();
-            if !tiles.is_some_and(|tiles| tiles.contains_key(key)) {
+            if !index.tiles.contains_key(key) {
                 self.push(
                     Severity::Error,
                     &format!("terrain {}", t.id),
@@ -366,13 +357,12 @@ impl MediaCheck {
         if users.is_empty() {
             return;
         }
-        let Some(index) = self.index(FX_TOML, "strategy effects") else {
+        let Some(index) = self.index::<FxFile>(FX_TOML, "strategy effects") else {
             return;
         };
-        let fx = index.get("fx").and_then(|v| v.as_table());
         for s in users {
             let ctx = format!("strategy {}", s.id);
-            if !fx.is_some_and(|fx| fx.contains_key(&s.fx)) {
+            if !index.fx.contains_key(&s.fx) {
                 self.push(
                     Severity::Error,
                     &ctx,
@@ -401,7 +391,7 @@ impl MediaCheck {
             );
             return;
         }
-        let Some(index) = self.index(ICONS_TOML, "item icons") else {
+        let Some(index) = self.index::<toml::Table>(ICONS_TOML, "item icons") else {
             return;
         };
         let icons = index.get("icons").and_then(|v| v.as_table());

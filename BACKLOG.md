@@ -5,10 +5,6 @@
 
 ## 원작 모드 착수 전에 할 것
 
-- [ ] **미디어 색인 스키마를 hero-core로 이전**
-  - 무엇을: `units.toml`·`terrain.toml`·`fx.toml`의 serde 타입(SpriteDef/FxDef/Tileset)과 `validate_layer`를 hero-game에서 hero-core로 옮긴다. `Pack::missing_media`가 타입 오류를 Error로 보고하게 하고, 색인 파일을 `unknown_fields` 린트에 넣는다.
-  - 왜: 지금은 검증기가 키 존재만 봐서 `anchor` 하나가 빠져도 validate는 통과하고, 게임에서는 스프라이트가 조용히 깨진다. 임포터도 같은 스키마를 써야 한다.
-  - 영향 범위: hero-core `pack/media.rs`, hero-game `screens/battle/{sprites,tileset}.rs`, `docs/ASSETS.md`
 - [ ] **전투 색인과 credits.txt도 오버레이·부모 팩 순서로 읽기**
   - 무엇을: 전투 색인 3종과 `credits.txt`를 `DataRoot::path` 대신 `media_paths` 순서로 읽고, `FirstOf`를 `assets.rs`에서 공용화한다.
   - 왜: 오버레이 이미지와 팩 색인이 섞이면 셀이 어긋날 수 있다.

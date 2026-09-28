@@ -2710,6 +2710,14 @@ mod tests {
                 "{f}"
             );
         }
+        // The indexes fit the schema the game and the validator read them with.
+        let text = |f: &str| std::fs::read_to_string(pack.join(f)).unwrap();
+        let sprites = hero_core::media_index::parse_units(&text("gfx/units/units.toml")).unwrap();
+        assert_eq!(sprites.len(), CLASS_SPRITES.len());
+        let tileset =
+            hero_core::media_index::TilesetFile::parse(&text("gfx/tiles/terrain.toml")).unwrap();
+        assert_eq!(tileset.tile_size, ICON_PX as u32);
+        assert!(tileset.layers().1.is_empty(), "{:?}", tileset.layers().1);
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(pack.join(PACK_INDEX)).unwrap()).unwrap();
         assert_eq!(json["format"], PACK_FORMAT);

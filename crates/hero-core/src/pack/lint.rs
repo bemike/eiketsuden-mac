@@ -13,6 +13,7 @@ use super::{Issue, Pack, Severity};
 use crate::battledef::BattleDef;
 use crate::campaign::CampaignDef;
 use crate::data::GameRules;
+use crate::media_index::{FxFile, TilesetFile, UnitsFile, FX_FILE, TILESET_FILE, UNITS_FILE};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use toml::Value;
@@ -21,7 +22,10 @@ impl Pack {
     /// Keys in the pack's TOML files that the schema does not know (typos such as
     /// `hp_grwth`), as warnings with the file as context. For a layered pack every `pack.toml`
     /// of the chain, the rules, officer and campaign files in use and the battle and map files
-    /// of every layer are checked. Files that fail to parse return the same error as [`Pack::load`].
+    /// of every layer are checked, and the battle media indexes (`units.toml`, `terrain.toml`,
+    /// `fx.toml`) the game reads, each from the first layer that has it. Files that fail to parse
+    /// return the same error as [`Pack::load`]; a media index that does not parse is left to
+    /// [`Pack::missing_media`], which reports it.
     pub fn unknown_fields(src: &dyn FileSource) -> Result<Vec<Issue>, PackError> {
         let chain = PackChain::read(src)?;
         let files = chain.resolve()?;
@@ -46,6 +50,24 @@ impl Pack {
         }
         for file in &files.maps {
             run(file, check::<MapsFile>)?;
+        }
+        let media: [(&str, Check); 3] = [
+            (UNITS_FILE, check::<UnitsFile>),
+            (TILESET_FILE, check::<TilesetFile>),
+            (FX_FILE, check::<FxFile>),
+        ];
+        for (rel, check) in media {
+            let found = chain
+                .layers()
+                .iter()
+                .map(|layer| layer.file(rel))
+                .find_map(|path| src.read_text(&path).ok().map(|text| (path, text)));
+            if let Some((path, text)) = found {
+                let mut found_issues = Vec::new();
+                if check(&path, &text, &mut found_issues).is_ok() {
+                    issues.extend(found_issues);
+                }
+            }
         }
         Ok(issues)
     }

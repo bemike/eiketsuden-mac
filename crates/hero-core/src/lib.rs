@@ -9,6 +9,7 @@ pub mod data;
 pub mod drama;
 pub mod geom;
 pub mod map;
+pub mod media_index;
 pub mod pack;
 pub mod rng;
 pub mod save;

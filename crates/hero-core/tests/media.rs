@@ -130,14 +130,18 @@ fn missing_media_is_reported() {
     write(
         root,
         "gfx/units/units.toml",
-        "[sprites.archer]\nframe = [16, 16]\n",
+        "[sprites.archer]\nframe = [16, 16]\nanchor = [8, 15]\n",
     );
     write(
         root,
         "gfx/tiles/terrain.toml",
         "image = \"terrain.png\"\n[tiles.plain]\nlayers = []\n",
     );
-    write(root, "gfx/fx/fx.toml", "[fx.fire]\nframes = 8\n");
+    write(
+        root,
+        "gfx/fx/fx.toml",
+        "[fx.fire]\nframe = [32, 32]\nframes = 8\nfps = 12\n",
+    );
     write(root, "gfx/ui/icons.toml", "[icons]\nbean = [0, 0]\n");
 
     let issues = load_fixture().missing_media(root);
@@ -242,7 +246,7 @@ fn layered_packs_find_media_in_any_layer_top_first() {
     write(
         &top,
         "gfx/units/units.toml",
-        "[sprites.archer]\nframe = [16, 16]\n",
+        "[sprites.archer]\nframe = [16, 16]\nanchor = [8, 15]\n",
     );
     std::fs::remove_file(parent.join("bgm/battle.ogg")).unwrap();
     let issues = load().missing_media(&top);
@@ -292,4 +296,40 @@ fn missing_index_files_are_errors() {
     write(&dir.0, "gfx/tiles/terrain.toml", "image = ");
     let issues = load_fixture().missing_media(&dir.0);
     assert_issue(&issues, Severity::Error, "gfx/tiles/terrain.toml", "");
+}
+
+#[test]
+fn index_files_are_read_with_the_games_schema() {
+    let dir = TempDir::new("media-schema");
+    // Entries the game cannot read: a sprite without its anchor, an effect without its frame
+    // size, a tile size that is not a number.
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        "[sprites.archer]\nframe = [16, 16]\n",
+    );
+    write(
+        &dir.0,
+        "gfx/fx/fx.toml",
+        "[fx.fire]\nframes = 8\nfps = 12\n",
+    );
+    write(&dir.0, "gfx/tiles/terrain.toml", "tile_size = \"big\"\n");
+    let issues = load_fixture().missing_media(&dir.0);
+    let expect = |context: &str, msg: &str| assert_issue(&issues, Severity::Error, context, msg);
+    expect("gfx/units/units.toml", "missing field `anchor`");
+    expect("gfx/fx/fx.toml", "missing field `frame`");
+    expect("gfx/tiles/terrain.toml", "tile_size");
+
+    // A zero tile size and a layer the game leaves out; without `image` the game uses
+    // `terrain.png`.
+    write(
+        &dir.0,
+        "gfx/tiles/terrain.toml",
+        "tile_size = 0\n[tiles.plain]\nlayers = [{ auto = [[0, 0]] }]\n",
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    let expect = |msg: &str| assert_issue(&issues, Severity::Error, "gfx/tiles/terrain.toml", msg);
+    expect("tile_size 0 must be a positive whole number of pixels");
+    expect("tile `plain` layer 0: autotile layers need exactly 16 cells per frame");
+    expect("missing gfx/tiles/terrain.png (terrain atlas)");
 }
