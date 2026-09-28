@@ -21,13 +21,16 @@ use std::thread::JoinHandle;
 /// Directory name the converted pack is mounted under, next to the base pack.
 pub const PACK_DIR: &str = hero_import::pack::PACK_ID;
 
-/// Files whose presence marks a folder as a likely install in the folder browser (checked
-/// case-insensitively; the full identification reads the files).
+/// Files whose presence alone marks a folder as a likely install in the folder browser
+/// (checked case-insensitively; the full identification reads the files).
 const MARKERS: [&str; 3] = [
     hero_import::edition::DISK_ID_FILE,
     "HEXZMAP.R3",
     hero_import::edition::STEAM_LAUNCHER,
 ];
+/// The DOS/V file family (`hero_import::edition::identify`): both files together mark a likely
+/// install too, because the Traditional-Chinese rule needs neither of the [`MARKERS`].
+const DOS_V_FAMILY: [&str; 2] = ["MAIN.EXE", "SNR0M.R3"];
 
 /// What a folder holds, for the folder browser and the original-data screen.
 #[derive(Debug, Clone)]
@@ -101,17 +104,33 @@ pub fn check_folder(dir: &Path) -> FolderCheck {
     }
 }
 
-/// Quick hint for the folder browser: `dir` directly holds a file only an install has. Reads
-/// the folder listing only.
+/// Quick hint for the folder browser: `dir` directly holds a file only an install has, or the
+/// DOS/V file family. Reads the folder listing only. Every folder that the identification can
+/// find a playable edition in passes this test (the Korean rules need `DISK1.R3I` or the family,
+/// the Chinese rule the family), so the browser runs the full identification — which also reads
+/// the head of every file, too slow for every folder browsed — only on folders that pass.
 pub fn looks_like_install(dir: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return false;
     };
-    entries.flatten().any(|entry| {
+    let mut family = [false; DOS_V_FAMILY.len()];
+    for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        MARKERS.iter().any(|m| name.eq_ignore_ascii_case(m))
-    })
+        if MARKERS.iter().any(|m| name.eq_ignore_ascii_case(m)) {
+            return true;
+        }
+        for (seen, m) in family.iter_mut().zip(DOS_V_FAMILY) {
+            *seen |= name.eq_ignore_ascii_case(m);
+        }
+    }
+    family.iter().all(|&seen| seen)
+}
+
+/// The folder as it is stored in the settings: `None` when its path is not valid Unicode (the
+/// settings are JSON text, so such a path could not be saved without changing it).
+pub fn storable_path(dir: &Path) -> Option<String> {
+    dir.to_str().map(str::to_string)
 }
 
 type Outcome = Result<MemoryPack, String>;
@@ -323,20 +342,37 @@ mod tests {
     #[test]
     fn lists_folders_and_marks_installs() {
         let tmp = TempDir::new("list");
-        for d in ["b", "A", ".hidden", "$RECYCLE.BIN", "game"] {
+        for d in ["b", "A", ".hidden", "$RECYCLE.BIN", "game", "zh", "zh_half"] {
             std::fs::create_dir_all(tmp.0.join(d)).unwrap();
         }
         std::fs::write(tmp.0.join("file.txt"), b"x").unwrap();
         std::fs::write(tmp.0.join("game/disk1.r3i"), b"x").unwrap();
+        // A Traditional-Chinese copy is identified from MAIN.EXE + SNR0M.R3 alone.
+        std::fs::write(tmp.0.join("zh/Main.exe"), b"x").unwrap();
+        std::fs::write(tmp.0.join("zh/snr0m.r3"), b"x").unwrap();
+        std::fs::write(tmp.0.join("zh_half/MAIN.EXE"), b"x").unwrap();
         let folders = list(&Place::Dir(tmp.0.clone())).unwrap();
         let names: Vec<_> = folders
             .iter()
             .map(|f| (f.name.as_str(), f.install))
             .collect();
-        assert_eq!(names, [("A", false), ("b", false), ("game", true)]);
+        assert_eq!(
+            names,
+            [
+                ("A", false),
+                ("b", false),
+                ("game", true),
+                ("zh", true),
+                ("zh_half", false)
+            ]
+        );
         assert!(looks_like_install(&tmp.0.join("game")));
         assert!(!looks_like_install(&tmp.0));
         assert!(list(&Place::Dir(tmp.0.join("missing"))).is_err());
+        assert_eq!(
+            storable_path(&tmp.0.join("game")).as_deref(),
+            tmp.0.join("game").to_str()
+        );
 
         // A folder that is not an install cannot be used.
         assert!(matches!(

@@ -357,9 +357,17 @@ impl OriginalScreen {
                     };
                     // Identify again: the folder may have changed since it was listed.
                     match original::check_folder(dir) {
-                        FolderCheck::Supported(_) => {
-                            OriginalScreen::apply(ctx, Some(dir.display().to_string()), true)
-                        }
+                        FolderCheck::Supported(_) => match original::storable_path(dir) {
+                            Some(path) => OriginalScreen::apply(ctx, Some(path), true),
+                            None => {
+                                ctx.sfx(sfx::ERROR);
+                                ctx.toast(
+                                    "폴더 경로에 저장할 수 없는 문자가 있습니다(유니코드가 아닌 이름). \
+                                     폴더 이름을 바꾸거나 다른 곳으로 옮겨 주세요.",
+                                );
+                                Transition::None
+                            }
+                        },
                         other => {
                             ctx.sfx(sfx::ERROR);
                             ctx.toast(other.summary());
