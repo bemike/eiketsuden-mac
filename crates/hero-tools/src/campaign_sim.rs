@@ -5,7 +5,8 @@
 //! * **Drama** nodes, the scenes battles play (intro, events, outro) and an ending's scene run
 //!   headless ([`DramaRunner`]) with their side effects: flags, gold, items, officers joining
 //!   or leaving. A choice takes the option `--choose SCENE=N,N,...` names for that scene's
-//!   choices in order (1 = the first; the last one again after that), else the first.
+//!   choices in order (1 = the first), else the first option not taken yet at that question
+//!   in this play of the scene (so a question that loops back until answered right is left).
 //! * **Camp** nodes buy and equip nothing and deploy what the camp screen selects when the
 //!   player changes nothing ([`camp_deployment`]): the first camp the whole army, later camps
 //!   that same selection fitted to their battle (an officer who joined since is not added).
@@ -25,16 +26,19 @@ use hero_core::campaign::{CampaignState, Node};
 use hero_core::data::Id;
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::{Pack, Severity};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 
 /// Campaign nodes visited in one run before it counts as looping.
 pub const MAX_NODES: usize = 1000;
+/// Choices one play of a scene may ask before it counts as looping.
+pub const MAX_CHOICES_PER_SCENE: usize = 100;
 
-/// `--choose` options: scene id -> the option (0-based) to take at each choice the scene asks,
-/// in order; the last one is kept for later choices (a scene played again asks again).
+/// `--choose` options: scene id -> the option (0-based) to take at each choice the scene asks
+/// in the run, in order (a scene played again asks again); past them the default rule of
+/// [`Sim::play_scene`] applies.
 pub type Choices = BTreeMap<String, Vec<usize>>;
 
 /// One battle fought in a run.
@@ -222,23 +226,36 @@ impl Sim<'_> {
         }
     }
 
-    /// Play `scene` to its end, taking the `--choose` options (else the first) at its choices.
+    /// Play `scene` to its end. At each choice it takes the next `--choose` option of the
+    /// scene; past those (or without any), the first option not taken yet at that question
+    /// while the scene plays: a question that leads back to itself until the right answer is
+    /// given is answered the way a player would, one option after another.
     fn play_scene(&mut self, campaign: &mut CampaignState, scene: &str) -> Result<(), String> {
         let pack = self.pack;
         let at = |e: hero_core::drama::DramaError| format!("scene `{scene}`: {e}");
         let mut runner = DramaRunner::new(pack, scene).map_err(at)?;
+        // Options taken at each question (by its position in the scene) during this play.
+        let mut taken: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+        let mut asked_here = 0;
         loop {
             match runner.next(pack, campaign).map_err(at)? {
                 Step::End => return Ok(()),
                 Step::Choice(options) => {
+                    asked_here += 1;
+                    if asked_here > MAX_CHOICES_PER_SCENE {
+                        return Err(format!(
+                            "scene `{scene}` asked more than {MAX_CHOICES_PER_SCENE} choices: \
+                             --choose it a way out"
+                        ));
+                    }
                     let asked = self.asked.entry(scene.to_string()).or_default();
-                    let pick = self
-                        .choices
-                        .get(scene)
-                        .and_then(|list| list.get(*asked).or(list.last()))
-                        .copied()
-                        .unwrap_or(0);
+                    let tried = taken.entry(runner.pc).or_default();
+                    let pick = match self.choices.get(scene).and_then(|list| list.get(*asked)) {
+                        Some(&pick) => pick,
+                        None => (0..options.len()).find(|i| !tried.contains(i)).unwrap_or(0),
+                    };
                     *asked += 1;
+                    tried.insert(pick);
                     let Some(text) = options.get(pick) else {
                         return Err(format!(
                             "--choose {scene}: option {} at choice {} of the scene, which offers {} option(s)",
@@ -483,8 +500,8 @@ mod tests {
         );
         assert!(bad.fought.is_empty());
 
-        // A scene that asks again takes the options in order, the last one after that: two
-        // more choices right after the label every path of `oath` passes.
+        // A scene that asks again takes the options in order, then the default: two more
+        // choices right after the label every path of `oath` passes.
         let mut pack = fixture();
         let oath = pack.scenes.get_mut("oath").unwrap();
         let at = oath.labels["recruit"] + 1;
@@ -512,10 +529,83 @@ mod tests {
         let run = run_seed(&pack, 1, &choose("oath", &[0, 1]));
         assert_eq!(
             run.chose[..3],
-            ["oath: 적을 끝까지 쫓는다", "oath: 둘", "oath: 둘"],
+            ["oath: 적을 끝까지 쫓는다", "oath: 둘", "oath: 하나"],
             "{run:?}"
         );
         assert_eq!(run.asked["oath"], 3);
+    }
+
+    #[test]
+    fn a_question_that_leads_back_to_itself_is_left() {
+        // After `@label recruit` of `oath`: a question whose first answer asks it again.
+        let with_loop = |exit: bool| {
+            let mut pack = fixture();
+            let oath = pack.scenes.get_mut("oath").unwrap();
+            let at = oath.labels["recruit"] + 1;
+            for i in oath.labels.values_mut() {
+                if *i >= at {
+                    *i += 1;
+                }
+            }
+            oath.labels.insert("again".into(), at);
+            oath.labels.insert("out".into(), at + 1);
+            let out = if exit { "out" } else { "again" };
+            oath.cmds.insert(
+                at,
+                Cmd::Choice(vec![
+                    ChoiceOption {
+                        text: "다시".into(),
+                        label: "again".into(),
+                    },
+                    ChoiceOption {
+                        text: "나간다".into(),
+                        label: out.into(),
+                    },
+                ]),
+            );
+            pack
+        };
+        let run = run_seed(&with_loop(true), 1, &Choices::new());
+        assert_eq!(run.chose[1..3], ["oath: 다시", "oath: 나간다"], "{run:?}");
+        assert_eq!(run.end, End::Ending("finale".into()));
+        // A question with no way out is reported, not played forever.
+        let run = run_seed(&with_loop(false), 1, &Choices::new());
+        assert!(
+            matches!(&run.end, End::Error(e) if e.contains("asked more than 100 choices")),
+            "{:?}",
+            run.end
+        );
+    }
+
+    #[test]
+    fn the_base_packs_questions_are_answered() {
+        // `c1_jade_belt` asks who the heroes are until 5 or 6 is chosen, then what to do next
+        // until 2 is chosen.
+        let pack = crate::load_pack(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base"))
+            .unwrap();
+        let choices = Choices::new();
+        let mut sim = Sim {
+            pack: &pack,
+            seed: 1,
+            choices: &choices,
+            fought: Vec::new(),
+            chose: Vec::new(),
+            asked: BTreeMap::new(),
+        };
+        let mut campaign = CampaignState::new_game(&pack);
+        sim.play_scene(&mut campaign, "c1_jade_belt").unwrap();
+        assert!(
+            sim.chose
+                .iter()
+                .any(|c| c.ends_with("소인의 눈으로는 알 수 없습니다")),
+            "{:?}",
+            sim.chose
+        );
+        assert!(
+            sim.chose.last().unwrap().ends_with("원술을 막겠다고 한다"),
+            "{:?}",
+            sim.chose
+        );
     }
 
     #[test]

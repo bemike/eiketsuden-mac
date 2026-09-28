@@ -1185,8 +1185,10 @@ hero-tools --help | --version
   fitted to their battle: an officer who joins later is not added), battles are fought AI against AI with
   the army earlier battles left (levels, classes, recruits, items), and a defeat follows the battle's
   `on_defeat` or ends the run (game over). A choice takes option N (1 = the first) where `--choose
-  SCENE=N,N,...` names its scene, one N per choice the scene asks in order and the last N after that
-  (a scene played again asks again), else the first option. It prints how each run ended and the choices
+  SCENE=N,N,...` names its scene, one N per choice the scene asks in order (a scene played again asks
+  again); past them, and by default, the first option not taken yet at that question while the scene
+  plays, so a question that leads back to itself until answered right is left the way a player would
+  (a scene asking more than 100 choices in one play fails the run). It prints how each run ended and the choices
   it took, then per battle how often it was fought and won, its average turns and the army's average level
   at its start; it warns when no run reaches an ending or a `--choose` scene never asks, and fails (exit 1)
   when a run panics, a battle does not finish within 200 phases, the campaign cannot go on (a missing

@@ -24,8 +24,8 @@ USAGE:
         levels, recruits, items and flags from battle to battle: dramas run with their side
         effects, camps buy nothing and keep the camp screen's first selection, a lost battle
         follows its on_defeat or ends the run. --choose takes option N (1 = first) at the
-        choices of scene SCENE, one N per choice it asks in order (the last N after that;
-        default: the first option). Reports each run's end and, per battle, how often it was
+        choices of scene SCENE, one N per choice it asks in order (past them, and by default:
+        the first option not taken yet at that question while the scene plays). Reports each run's end and, per battle, how often it was
         won, its average turns and the army's average level at its start; exits with 1 when a
         run panics, gets stuck or cannot go on, and with 2 when --choose names an unknown
         scene.
