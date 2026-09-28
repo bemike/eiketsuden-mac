@@ -33,6 +33,35 @@ fn new_game_uses_the_campaign_definition() {
     assert!(state.flags.is_empty() && state.deployed.is_empty() && state.battles_won.is_empty());
 }
 
+/// The original's hidden command: the lord at the level cap with 100 in every ability, 10000
+/// gold (clamped to the cap); the other officers are untouched.
+#[test]
+fn the_forbidden_secret_raises_the_lord() {
+    let (mut pack, mut state) = new_game();
+    let guan_yu = state.officer("guan_yu").unwrap().clone();
+    state.officer_mut("liu_bei").unwrap().exp = 42;
+    assert_eq!(state.forbidden_secret(&pack).as_deref(), Some("liu_bei"));
+    let liu_bei = state.officer("liu_bei").unwrap();
+    assert_eq!(
+        (liu_bei.level, liu_bei.exp),
+        (pack.rules.level_cap, 0),
+        "the level cap"
+    );
+    assert_eq!(
+        (liu_bei.strength, liu_bei.int, liu_bei.lead),
+        (100, 100, 100)
+    );
+    assert_eq!(state.gold, (500 + 10_000).min(pack.rules.gold_cap));
+    assert_eq!(state.officer("guan_yu"), Some(&guan_yu));
+    // An army without a lord gets nothing.
+    for o in pack.officers.values_mut() {
+        o.lord = false;
+    }
+    let gold = state.gold;
+    assert_eq!(state.forbidden_secret(&pack), None);
+    assert_eq!(state.gold, gold);
+}
+
 #[test]
 fn campaign_state_survives_json() {
     let (_, state) = new_game();

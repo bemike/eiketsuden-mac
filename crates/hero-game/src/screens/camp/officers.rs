@@ -1,6 +1,7 @@
 //! 무장 정보: a table of the army (class, level and battle values) and a detail page per officer
 //! with portrait, names, class, level and EXP, battle values, 무력/지력/통솔, known strategies,
-//! equipment and biography.
+//! equipment and biography. Tapping the lord's portrait many times leads to the original's hidden
+//! command ([`crate::secret`]).
 
 use super::stats::officer_stats;
 use super::widgets::{back_button, back_tapped, content_rect, draw_back_button, help_y};
@@ -11,10 +12,12 @@ use super::widgets::{
 };
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
-use crate::gfx::{Align, FontId, TextStyle};
+use crate::gfx::{fill_rect, Align, FontId, TextStyle};
 use crate::input::Dir;
+use crate::secret::SecretStep;
 use crate::ui::art::draw_portrait_card;
 use crate::ui::bars::{draw_gauge, draw_gauge_labeled, GaugeKind};
+use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
@@ -48,11 +51,29 @@ pub fn strategy_list(pack: &Pack, officer: &OfficerState) -> Vec<(String, i32)> 
         .collect()
 }
 
+/// Where the detail page draws the officer's portrait.
+fn portrait_rect(canvas: Vec2) -> Rect {
+    let panel = content_rect(canvas);
+    Rect::new(panel.x + 8.0, panel.y + 8.0, 96.0, 120.0)
+}
+
+/// The orb of the hidden command, in the top left corner as in the original (left of the title,
+/// which starts at x 10).
+fn orb_rect() -> Rect {
+    Rect::new(0.0, 1.0, 10.0, 10.0)
+}
+
+/// The prompt of the hidden command (our wording; the original's warning is not reproduced).
+const SECRET_PROMPT: &str =
+    "금단의 비법\n이 명령은 게임의 균형을 무너뜨립니다. 그래도 쓰시겠습니까?";
+
 /// The officer table and detail pages.
 pub struct OfficersScreen {
     menu: Menu,
     /// Index of the officer whose detail page is open.
     detail: Option<usize>,
+    /// The prompt of the hidden command, while it is open.
+    prompt: Option<ConfirmDialog>,
 }
 
 impl Default for OfficersScreen {
@@ -66,6 +87,7 @@ impl OfficersScreen {
         OfficersScreen {
             menu: Menu::new(Vec::new()),
             detail: None,
+            prompt: None,
         }
     }
 
@@ -155,7 +177,7 @@ impl OfficersScreen {
         draw_portrait_card(
             ctx,
             Some(portrait_key(pack, &o.id)),
-            Rect::new(x, y, 96.0, 120.0),
+            portrait_rect(gfx.size()),
             1.0,
             1.0,
         );
@@ -313,6 +335,95 @@ impl OfficersScreen {
     }
 }
 
+impl OfficersScreen {
+    /// The hidden command: its prompt, its orb and taps on the lord's portrait. Returns `true`
+    /// when it took the input.
+    fn update_secret(&mut self, ctx: &mut Ctx) -> bool {
+        let Some(pack) = ctx.pack.clone() else {
+            return false;
+        };
+        if let Some(mut prompt) = self.prompt.take() {
+            match prompt.update(ctx) {
+                ConfirmEvent::None => self.prompt = Some(prompt),
+                answer => {
+                    ctx.input.consume();
+                    let yes = answer == ConfirmEvent::Yes;
+                    if let Some(session) = ctx.session.as_mut() {
+                        session.secret.answer(yes);
+                    }
+                    if yes {
+                        ctx.sfx(sfx::TREASURE);
+                    }
+                }
+            }
+            return true;
+        }
+        let enabled = ctx.session.as_ref().is_some_and(|s| s.secret.enabled());
+        if enabled && ctx.input.tapped(orb_rect()) {
+            ctx.input.consume();
+            let Some(session) = ctx.session.as_mut() else {
+                return true;
+            };
+            let gold = session.campaign.gold;
+            if let Some(lord) = session.campaign.forbidden_secret(&pack) {
+                let level = session.campaign.officer(&lord).map_or(0, |o| o.level);
+                // The gold the army actually got (the cap may cut it).
+                let gained = session.campaign.gold - gold;
+                ctx.sfx(sfx::LEVELUP);
+                ctx.toast(format!(
+                    "금단의 비법: {} Lv {level} · 무력·지력·통솔 {} · 군자금 +{}",
+                    officer_name(&pack, &lord),
+                    hero_core::campaign::FORBIDDEN_SECRET_ABILITY,
+                    format::thousands(gained),
+                ));
+            }
+            return true;
+        }
+        // A tap on the lord's portrait on its detail page counts, until the command is enabled.
+        let lord_page = !enabled
+            && self.detail.is_some_and(|i| {
+                ctx.session
+                    .as_ref()
+                    .and_then(|s| s.campaign.roster.get(i))
+                    .and_then(|o| pack.officer(&o.id))
+                    .is_some_and(|d| d.lord)
+            });
+        if !lord_page || !ctx.input.tapped(portrait_rect(ctx.gfx.size())) {
+            return false;
+        }
+        ctx.input.consume();
+        let step = ctx
+            .session
+            .as_mut()
+            .map_or(SecretStep::None, |s| s.secret.tap());
+        match step {
+            SecretStep::None => {}
+            SecretStep::Chime => ctx.sfx(sfx::PHASE),
+            SecretStep::Ask => {
+                self.prompt = Some(
+                    ConfirmDialog::new(&ctx.gfx, SECRET_PROMPT)
+                        .labels("예", "아니오")
+                        .default_no(),
+                );
+            }
+        }
+        true
+    }
+
+    fn draw_secret(&self, ctx: &Ctx) {
+        if ctx.session.as_ref().is_some_and(|s| s.secret.enabled()) {
+            let c = orb_rect().center();
+            draw_circle(c.x, c.y, 4.0, Color::from_hex(0x10267a));
+            draw_circle(c.x, c.y, 3.0, Color::from_hex(0x3f7bff));
+            draw_circle(c.x - 1.0, c.y - 1.0, 1.0, Color::from_hex(0xcfe0ff));
+        }
+        if let Some(prompt) = &self.prompt {
+            fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
+            prompt.draw(ctx);
+        }
+    }
+}
+
 impl Screen for OfficersScreen {
     fn name(&self) -> &'static str {
         "camp-officers"
@@ -323,6 +434,9 @@ impl Screen for OfficersScreen {
     }
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
+        if self.update_secret(ctx) {
+            return Transition::None;
+        }
         let count = ctx.session.as_ref().map_or(0, |s| s.campaign.roster.len());
         let back = back_tapped(ctx);
         if let Some(i) = self.detail {
@@ -394,6 +508,7 @@ impl Screen for OfficersScreen {
             }
         }
         draw_back_button(ctx);
+        self.draw_secret(ctx);
     }
 }
 
