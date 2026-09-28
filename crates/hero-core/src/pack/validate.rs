@@ -4,7 +4,9 @@
 use super::{Issue, Pack, Severity};
 use crate::battledef::{AiMode, BattleDef, Condition, EventAction, Side, Trigger, UnitSpawn};
 use crate::campaign::Node;
-use crate::data::{ClassDef, Effect, Equipment, ItemKind, RangeSpec, StrategyKind, TargetSide};
+use crate::data::{
+    Area, ClassDef, Effect, Equipment, ItemKind, RangeSpec, StrategyKind, TargetSide,
+};
 use crate::geom::Pos;
 use crate::map::BattleMap;
 use crate::script::Cmd;
@@ -773,6 +775,18 @@ impl<'a> Validator<'a> {
         let mut occupied: BTreeSet<Pos> = BTreeSet::new();
         self.deploy(&ctx, b, map, &mut occupied);
         self.units(&ctx, b, map, &names, &mut occupied);
+        // Only when defeating every enemy is the one way to win: with another victory
+        // condition or a `victory` event, an enemy out of reach does not block the win.
+        let other_win = b.victory.iter().any(|c| *c != Condition::DefeatAll)
+            || b.events
+                .iter()
+                .flat_map(|e| &e.actions)
+                .any(|a| matches!(a, EventAction::Victory));
+        if let (Some(map), true, false) =
+            (map, b.victory.contains(&Condition::DefeatAll), other_win)
+        {
+            self.reachability(&ctx, b, map);
+        }
 
         for c in &b.victory {
             self.condition(&ctx, "victory", c, b, map, &names);
@@ -1236,6 +1250,126 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
+        }
+    }
+
+    /// In a battle won only by `defeat_all`, every enemy on the map from the start must be
+    /// attackable from somewhere the player's side can walk to from the deployment slots (or
+    /// the start tiles of its own and allied units), or the battle cannot be won. Generous on
+    /// purpose: a tile counts as walkable when any class of the pack can enter it, before or
+    /// after a `set_terrain` event changes it; the enemy may walk too; an enemy counts as
+    /// reached when any class's attack range or any damage strategy's reach (with its area)
+    /// touches it; enemies a `retreat` event removes are left out.
+    fn reachability(&mut self, ctx: &str, b: &BattleDef, map: &BattleMap) {
+        let pack = self.pack;
+        let move_types: BTreeSet<&str> = pack
+            .classes
+            .values()
+            .map(|c| c.move_type.as_str())
+            .collect();
+        let walkable = |terrain: &str| {
+            pack.terrain(terrain)
+                .is_some_and(|t| move_types.iter().any(|m| t.move_cost(m).is_some()))
+        };
+        let changed: Vec<(Pos, &str)> = b
+            .events
+            .iter()
+            .flat_map(|e| &e.actions)
+            .filter_map(|a| match a {
+                EventAction::SetTerrain { pos, terrain, .. } => Some((*pos, terrain.as_str())),
+                _ => None,
+            })
+            .collect();
+        let open = |p: Pos| {
+            map.terrain_at(p).is_some_and(&walkable)
+                || changed.iter().any(|&(q, t)| q == p && walkable(t))
+        };
+        let flood = |start: Vec<Pos>| {
+            let mut seen: BTreeSet<Pos> = start.iter().copied().collect();
+            let mut queue = start;
+            while let Some(p) = queue.pop() {
+                for n in p.neighbors4() {
+                    if map.in_bounds(n) && open(n) && seen.insert(n) {
+                        queue.push(n);
+                    }
+                }
+            }
+            seen
+        };
+        // Only the slots the army can fill: setup places at most `deploy.max` officers, in
+        // slot order.
+        let starts: Vec<Pos> = b
+            .deploy
+            .slots
+            .iter()
+            .take(crate::battle::deploy_max(b))
+            .copied()
+            .chain(
+                b.units
+                    .iter()
+                    .filter(|u| u.side != Side::Enemy)
+                    .map(|u| u.pos),
+            )
+            .filter(|&p| map.in_bounds(p))
+            .collect();
+        let reached = flood(starts);
+        if reached.is_empty() {
+            return; // no deployment: reported elsewhere
+        }
+        let mut offsets: BTreeSet<Pos> = BTreeSet::new();
+        for c in pack.classes.values() {
+            offsets.extend(c.range.offsets().unwrap_or_default());
+        }
+        for s in pack.strategies.values() {
+            if !s.effects.iter().any(|e| matches!(e, Effect::Damage { .. })) {
+                continue;
+            }
+            for o in s.range.offsets().unwrap_or_default() {
+                offsets.insert(o);
+                if s.area == Area::Cross {
+                    offsets.extend(o.neighbors4());
+                }
+            }
+        }
+        // Tiles from which the player's side can hit something.
+        let hit: BTreeSet<Pos> = reached
+            .iter()
+            .flat_map(|p| offsets.iter().map(move |o| p.offset(o.x, o.y)))
+            .collect();
+        let removed: BTreeSet<&str> = b
+            .events
+            .iter()
+            .flat_map(|e| &e.actions)
+            .filter_map(|a| match a {
+                EventAction::Retreat { target } => Some(target.as_str()),
+                _ => None,
+            })
+            .collect();
+        for u in b
+            .units
+            .iter()
+            .filter(|u| u.side == Side::Enemy && u.group.is_none())
+        {
+            let ids = [u.tag.as_deref(), u.officer.as_deref()];
+            if ids.iter().flatten().any(|id| removed.contains(id)) {
+                continue;
+            }
+            if hit.contains(&u.pos) || flood(vec![u.pos]).iter().any(|p| hit.contains(p)) {
+                continue;
+            }
+            let who = u
+                .officer
+                .as_deref()
+                .or(u.tag.as_deref())
+                .or(u.name.as_deref())
+                .unwrap_or("enemy");
+            self.warn(
+                ctx,
+                format!(
+                    "defeat_all is the only way to win, but {who} at ({}, {}) can never be attacked: no tile it can walk to is in reach of anywhere the player's units can walk to from the deployment slots",
+                    u.pos.x, u.pos.y
+                ),
+            );
         }
     }
 

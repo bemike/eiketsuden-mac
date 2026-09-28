@@ -337,6 +337,63 @@ fn advance_heads_for_its_position() {
 }
 
 #[test]
+fn advance_holds_its_destination_like_a_post() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(7, 0));
+    st.units[foe].ai = AiMode::Advance;
+    st.units[foe].ai_pos = Some(p(7, 0));
+    // A hostile unit within move range (4) but beyond the post's 3 tiles is not chased: it
+    // could only be attacked from (4, 1) or (3, 0), 4 tiles from the post.
+    let liu = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 1));
+    enemy_phase(&mut st);
+    assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
+    // One near the post is fought from a tile near it.
+    st.units[liu].pos = p(5, 2);
+    let plan = st.ai_actions(&pack, foe);
+    let tile = move_target(&plan).unwrap_or(p(7, 0));
+    assert!(tile.manhattan(p(7, 0)) <= 3, "{plan:?}");
+    assert!(
+        matches!(last(&plan), Action::Attack { target, .. } if *target == liu),
+        "{plan:?}"
+    );
+    // After the sortie, with the enemy gone, it goes back instead of wandering.
+    st.units[foe].pos = p(5, 1);
+    st.units[liu].pos = p(0, 7);
+    assert_eq!(move_target(&st.ai_actions(&pack, foe)), Some(p(7, 0)));
+    // With the enemy still next to it, it fights on rather than walking back first.
+    st.units[liu].pos = p(4, 1);
+    assert!(
+        matches!(last(&st.ai_actions(&pack, foe)), Action::Attack { target, .. } if *target == liu),
+    );
+    // A better action near the post beats a weaker one from the destination: the sure kill
+    // next to it over a full-HP unit next to the destination.
+    st.units[liu].hp = 1;
+    let full = add(&mut st, &pack, Side::Player, "infantry", 1, p(7, 1));
+    let plan = st.ai_actions(&pack, foe);
+    assert!(
+        matches!(last(&plan), Action::Attack { target, .. } if *target == liu),
+        "{plan:?} (not {full})"
+    );
+}
+
+#[test]
+fn advance_near_its_destination_threatens_only_the_posts_radius() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    st.units[foe].ai = AiMode::Advance;
+    st.units[foe].ai_pos = Some(p(1, 1));
+    // A careful unit one hit from defeat approaches as close as it safely can: 5 tiles from
+    // the post (the advance unit acts from within 3 tiles of it and strikes 1 tile further),
+    // not 6 as it would keep from a unit free to use its whole move of 4.
+    let me = brawler(&mut st, &pack, Side::Player, p(6, 4));
+    st.units[me].hp = 1;
+    let to = move_target(&st.ai_actions(&pack, me)).expect("approaches");
+    assert_eq!(to.manhattan(p(1, 1)), 5, "{to:?}");
+}
+
+#[test]
 fn hurt_careful_units_heal_on_villages() {
     let pack = pack(
         "

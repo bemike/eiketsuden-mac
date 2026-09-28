@@ -1320,9 +1320,20 @@ impl BattleScreen {
         if !touches().is_empty() {
             self.touch_seen = true;
         }
-        if !self.touch_seen && self.rdrag.is_none() && !input.down() {
+        if !self.touch_seen
+            && self.rdrag.is_none()
+            && !input.down()
+            && !crate::platform::pointer_left()
+        {
             if let Some(p) = pointer {
-                let d = edge_direction(vp, p, self.pointer_rest);
+                // In the browser leaving the canvas is reported, so a pointer resting at the edge
+                // keeps scrolling; natively the rest time stands in for it.
+                let rest = if crate::platform::is_web() {
+                    0.0
+                } else {
+                    self.pointer_rest
+                };
+                let d = edge_direction(vp, p, rest);
                 if d != Vec2::ZERO {
                     self.camera.pan(d * EDGE_PAN_SPEED * dt);
                 }

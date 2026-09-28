@@ -493,11 +493,7 @@ impl<'a> Planner<'a> {
             },
             AiMode::Advance => match self.me.ai_pos {
                 None => self.aggressive(&reach),
-                Some(p) if p == origin => self.defensive(&reach),
-                // A destination in reach is entered (`approach` stops next to it), then the unit
-                // acts from there.
-                Some(p) if reach.contains(&p) => self.act_at(p),
-                Some(p) => self.approach_and_act(&[p], &reach),
+                Some(p) => self.advance(p, &reach),
             },
             AiMode::Flee => {
                 let tile = self.flee_tile(&reach);
@@ -717,6 +713,47 @@ impl<'a> Planner<'a> {
         match best {
             Some(c) if hostile_in_reach => (c.tile, Some(c.action)),
             _ => self.act_at(self.me.pos),
+        }
+    }
+
+    /// `advance` towards `dest`. A destination in reach is entered (`approach` stops next to
+    /// it) and the unit acts from there. Near it (within [`GUARD_RADIUS`]) the unit holds it
+    /// like a `guard` post: it takes the best action from the tiles within that radius (the
+    /// destination winning ties, so a reach trigger there still fires), else returns to the
+    /// destination. It never chases beyond the post's radius, so a sortie is followed by more
+    /// fighting or by the way back, not by a sortie every other turn.
+    fn advance(&mut self, dest: Pos, reach: &[Pos]) -> (Pos, Option<Action>) {
+        let origin = self.me.pos;
+        // `reach` is already filtered (lord safety, scripted defeats): the destination is
+        // entered only when it survives that.
+        let dest_open = reach.contains(&dest);
+        if origin.manhattan(dest) > GUARD_RADIUS {
+            return if dest_open {
+                self.act_at(dest)
+            } else {
+                self.approach_and_act(&[dest], reach)
+            };
+        }
+        let zone: Vec<Pos> = reach
+            .iter()
+            .copied()
+            .filter(|p| p.manhattan(dest) <= GUARD_RADIUS)
+            .collect();
+        let best = self.best_from(&zone, None).0;
+        let at_dest = if dest_open {
+            self.best_from(&[dest], None).0
+        } else {
+            None
+        };
+        match (best, at_dest) {
+            (Some(b), Some(d)) if d.score >= b.score => (dest, Some(d.action)),
+            (Some(b), _) => (b.tile, Some(b.action)),
+            (None, _) if dest_open => (dest, None),
+            // The destination is taken (or unsafe): wait as close as the post's radius allows.
+            (None, _) => {
+                let near = if zone.is_empty() { reach } else { &zone };
+                self.approach_and_act(&[dest], near)
+            }
         }
     }
 
@@ -1236,9 +1273,9 @@ impl<'a> Planner<'a> {
     }
 
     /// Tiles hostile unit `h` may act from during its next phase: its movement range, except
-    /// that an AI-controlled `hold` unit stays on its tile and a `guard` at its post stays
-    /// within [`GUARD_RADIUS`] of it. Player units are commanded by a human, whatever their
-    /// `ai` field says.
+    /// that an AI-controlled `hold` unit stays on its tile and a `guard` at its post (or an
+    /// `advance` near its destination) stays within [`GUARD_RADIUS`] of it. Player units are
+    /// commanded by a human, whatever their `ai` field says.
     fn threat_origins(&self, board: &Board, h: &Unit) -> Vec<Pos> {
         let ai = if h.side == Side::Player {
             AiMode::Aggressive
@@ -1256,7 +1293,9 @@ impl<'a> Planner<'a> {
             self.st.base_move_points(self.pack, h.id),
         );
         let post = match (ai, h.ai_pos) {
-            (AiMode::Guard, Some(c)) if h.pos.manhattan(c) <= GUARD_RADIUS => Some(c),
+            (AiMode::Guard | AiMode::Advance, Some(c)) if h.pos.manhattan(c) <= GUARD_RADIUS => {
+                Some(c)
+            }
             _ => None,
         };
         range

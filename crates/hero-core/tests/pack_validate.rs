@@ -772,6 +772,109 @@ fn battle_logic_checks() {
 }
 
 #[test]
+fn defeat_all_enemies_must_be_reachable() {
+    let unreachable = |issues: &[hero_core::pack::Issue]| -> Vec<String> {
+        issues
+            .iter()
+            .filter(|i| i.msg.contains("can never be attacked"))
+            .map(|i| i.msg.clone())
+            .collect()
+    };
+    // Walled off by one row, the castle's enemies can walk to its front row, which archers
+    // outside reach: no warning.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        B02,
+        "#cc...cc#
+",
+        "#########
+",
+    );
+    let issues = load(&files).validate();
+    assert!(
+        unreachable(&issues).is_empty(),
+        "{}",
+        format_issues(&issues)
+    );
+
+    // Two rows of wall: nothing the player's side has (attack ranges, strategies up to 2
+    // tiles) reaches into the castle.
+    edit(
+        &mut files,
+        B02,
+        "....G....
+",
+        "#########
+",
+    );
+    let issues = load(&files).validate();
+    for who in [
+        "성벽 궁병 at (2, 1)",
+        "성벽 궁병 at (6, 1)",
+        "chief at (4, 2)",
+    ] {
+        assert_issue(
+            &issues,
+            Severity::Warning,
+            "battle b02",
+            &format!("defeat_all is the only way to win, but {who} can never be attacked"),
+        );
+    }
+    assert_eq!(unreachable(&issues).len(), 3, "{}", format_issues(&issues));
+
+    let opened = |from: &str, to: &str| {
+        let mut f = files.clone();
+        edit(&mut f, B02, from, to);
+        unreachable(&load(&f).validate())
+    };
+    let gold = "{ type = \"give_gold\", amount = 100 }";
+    // Another way to win, or a `victory` event: no warning.
+    assert!(opened(
+        "victory = [{ type = \"defeat_all\" }]",
+        "victory = [{ type = \"defeat_all\" }, { type = \"defeat_unit\", target = \"chief\" }]",
+    )
+    .is_empty());
+    assert!(opened(gold, "{ type = \"victory\" }").is_empty());
+    // An enemy a `retreat` event removes is left out.
+    let left = opened(gold, "{ type = \"retreat\", target = \"chief\" }");
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(!left.iter().any(|m| m.contains("chief")), "{left:?}");
+    // A wall an event turns into castle floor opens the way.
+    assert!(opened(
+        gold,
+        "{ type = \"set_terrain\", pos = [4, 3], terrain = \"castle\" }, { type = \"set_terrain\", pos = [4, 4], terrain = \"castle\" }",
+    )
+    .is_empty());
+    // A strategy whose area adds a tile reaches 3 tiles, into the castle's front row.
+    let mut f = files.clone();
+    let strategies = "rules/strategies.toml";
+    let text = f[strategies].replacen("area = \"single\"", "area = \"cross\"", 1);
+    f.insert(strategies.into(), text);
+    assert!(unreachable(&load(&f).validate()).is_empty());
+    // An allied unit inside the castle starts the walk there.
+    assert!(opened(
+        "[[events]]",
+        "[[units]]
+side = \"ally\"
+name = \"의용군\"
+class = \"archer\"
+level = 1
+pos = [3, 1]
+
+[[events]]",
+    )
+    .is_empty());
+    // A slot inside the castle opens it only when the army can fill it: setup uses the first
+    // `deploy.max` (3) slots.
+    assert_eq!(opened("[5, 6], [4, 5]]", "[5, 6], [2, 2]]").len(), 3);
+    let mut f = files.clone();
+    edit(&mut f, B02, "[5, 6], [4, 5]]", "[5, 6], [2, 2]]");
+    edit(&mut f, B02, "max = 3", "max = 4");
+    assert!(unreachable(&load(&f).validate()).is_empty());
+}
+
+#[test]
 fn defeat_all_needs_enemies_on_the_map() {
     let mut files = fixture_files();
     let b02 = files.get_mut(B02).unwrap();
