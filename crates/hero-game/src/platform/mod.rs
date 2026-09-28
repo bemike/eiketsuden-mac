@@ -406,6 +406,20 @@ pub fn unix_now() -> u64 {
     }
 }
 
+/// Whether the pointer is known to have left the game (the canvas, or the page lost focus):
+/// the browser tells (`hero_web.js`); natively macroquad does not, so this is always `false`
+/// there and callers fall back to how long the pointer has rested.
+pub fn pointer_left() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        !web::pointer_inside()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
 /// `true` in the browser build.
 pub const fn is_web() -> bool {
     cfg!(target_arch = "wasm32")

@@ -84,8 +84,9 @@ How the pieces fit:
   the bundle by hand. (macroquad's prebuilt bundle hides the `sapp-jsutils`
   helpers that `hero_web.js` needs.)
 * `web/hero_web.js` is the game's own plugin: `localStorage` save slots and settings
-  (keys `eiketsuden.<key>`), the wall clock, the URL hash, removing the HTML loading overlay after the
-  first frame and showing a crash message after a panic. Its counterpart is
+  (keys `eiketsuden.<key>`), the wall clock, the URL hash, whether the pointer is over the canvas and
+  the page has focus (edge scrolling), removing the HTML loading overlay after the first frame and
+  showing a crash message after a panic. Its counterpart is
   `crates/hero-game/src/platform/web.rs`; when the function set changes, bump `version` in the plugin
   and `HERO_WEB_VERSION` together.
 * `crates/hero-game/build.rs` passes `--allow-undefined` to the wasm linker so the JavaScript imports

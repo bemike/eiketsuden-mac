@@ -14,11 +14,12 @@ use macroquad::prelude::*;
 pub const EDGE_PAN_SPEED: f32 = 220.0;
 /// Width of the edge scrolling zone, in virtual pixels.
 pub const EDGE_ZONE: f32 = 6.0;
-/// Seconds a resting pointer keeps edge scrolling. macroquad reports no "pointer left the
-/// window" event, so a pointer that left the window (or the web canvas) across an edge stays
-/// at its last position inside the zone; scrolling only while the pointer moved recently makes
-/// the map stop instead of scrolling until the pointer returns. One rest still scrolls
-/// 220 pixels, more than any map of the base pack can scroll (128).
+/// Seconds a resting pointer keeps edge scrolling in native builds. macroquad reports no
+/// "pointer left the window" event, so a pointer that left the window across an edge stays at
+/// its last position inside the zone; scrolling only while the pointer moved recently makes the
+/// map stop instead of scrolling until the pointer returns. One rest still scrolls 220 pixels,
+/// more than any map of the base pack can scroll (128). The browser reports leaving the canvas
+/// (`platform::pointer_left`), so there the rest time is not used.
 pub const EDGE_HOLD: f32 = 1.0;
 
 #[derive(Debug, Clone, PartialEq)]
