@@ -79,7 +79,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 2: `maps` (the converted battle maps) and the map file in `pack.toml`.
 /// 3: `battles` (the base battles re-staged as the original battles) and their battle files.
 /// 4: the battles' mid-battle events (`events`, [`DRAMA_FILE`], tile pictures of changed cells).
-pub const PACK_FORMAT_VERSION: u32 = 4;
+/// 5: `rules` (the terrain rules, with the original's closed gate as [`CLOSED_GATE`]).
+pub const PACK_FORMAT_VERSION: u32 = 5;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×480 VGA screen.
@@ -219,6 +220,12 @@ impl PackOptions {
             class_moves: parent
                 .classes
                 .values()
+                // A class drawn with an original class's sprite stands for it, but when several
+                // share the sprite, the one named after it does.
+                .filter(|c| {
+                    c.id.as_str() == c.sprite
+                        || !parent.classes.values().any(|o| o.id.as_str() == c.sprite)
+                })
                 .map(|c| (c.sprite.clone(), c.move_type.clone()))
                 .collect(),
         }
@@ -447,11 +454,24 @@ fn convert(
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
     progress(4);
+    // The rules come first: the battle maps' rules grids use the terrain they add.
+    let (rules, rule_terrain) = convert_rules(
+        &exe,
+        options,
+        output,
+        with_exe(KindReport::new(Status::Extracted, false, "")),
+    )?;
+    let known: BTreeSet<&str> = options
+        .terrain
+        .iter()
+        .map(|t| t.id.as_str())
+        .chain(rule_terrain.iter().flatten().map(String::as_str))
+        .collect();
     let (maps, map_records, map_store) = convert_maps(
         install,
         encoding,
         &exe,
-        options,
+        &known,
         tiles_ok,
         output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
@@ -463,15 +483,10 @@ fn convert(
         encoding,
         edition.id,
         options,
+        &known,
         &exe,
         &map_records,
         map_store.as_ref(),
-        output,
-        with_exe(KindReport::new(Status::Extracted, false, "")),
-    )?;
-    let (rules, terrain_rules) = convert_rules(
-        &exe,
-        options,
         output,
         with_exe(KindReport::new(Status::Extracted, false, "")),
     )?;
@@ -484,7 +499,7 @@ fn convert(
         !map_records.is_empty(),
         &battle_files,
         drama,
-        terrain_rules,
+        rule_terrain.is_some(),
     )
     .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
@@ -522,8 +537,11 @@ pub const TERRAIN_RULES: &str = "rules/terrain.toml";
 /// The pack chain's terrain rules with the original's movement costs and terrain effects
 /// (`MAIN.EXE`, FORMATS §10.4), and the changes as notes. Terrain the original does not have
 /// (the base pack's road) and everything but `cost` and `defense` stay the chain's. The
-/// original's four move types are named after the chain's classes: a move type is the one the
-/// chain gives the classes the original gives it (an error when the chain splits them).
+/// original's closed gate is added as [`CLOSED_GATE`] (a copy of the chain's `gate` with its
+/// own glyph) unless the chain has it; the chain's open `gate` stays as it is. The original's
+/// four move types are named after the chain's classes: a move type is the one the chain gives
+/// the classes the original gives it (an error when the chain splits them or gives two move
+/// types that cost differently one name).
 pub fn original_terrain(
     rules: &maps::MoveRules,
     terrain: &[TerrainDef],
@@ -549,13 +567,53 @@ pub fn original_terrain(
             }
         }
     }
-    let mut out = Vec::with_capacity(terrain.len());
     let mut notes = Vec::new();
-    for t in terrain {
-        let Some(code) = TERRAIN_MAP.iter().position(|id| *id == Some(t.id.as_str())) else {
-            out.push(t.clone());
+    for (&a, &name) in &names {
+        for (&b, &other) in names.range(a + 1..) {
+            if name == other && rules.cost[usize::from(a)] != rules.cost[usize::from(b)] {
+                return Err(format!(
+                    "the original's move types {a} and {b} cost differently but are both \
+                     `{name}` in the pack"
+                ));
+            }
+        }
+    }
+    for m in 0..maps::MOVE_TYPES as u8 {
+        if !names.contains_key(&m) && rules.class_move.contains(&m) {
+            notes.push(format!(
+                "the original's move type {m} has no class in the pack; its costs are left out"
+            ));
+        }
+    }
+    let mut chain: Vec<TerrainDef> = terrain.to_vec();
+    if !chain.iter().any(|t| t.id == CLOSED_GATE) {
+        if let Some(gate) = chain.iter().find(|t| t.id == "gate") {
+            let glyph = CLOSED_GATE_GLYPHS
+                .iter()
+                .copied()
+                .find(|&g| chain.iter().all(|t| t.glyph != g))
+                .ok_or("the pack's terrain uses every glyph the closed gate could have")?;
+            let closed = TerrainDef {
+                id: CLOSED_GATE.into(),
+                glyph,
+                tile: Some(gate.tile.clone().unwrap_or_else(|| gate.id.to_string())),
+                ..gate.clone()
+            };
+            notes.push(format!(
+                "{CLOSED_GATE}: added (glyph {glyph:?}), the original's gates are closed"
+            ));
+            chain.push(closed);
+        }
+    }
+    let mut out = Vec::with_capacity(chain.len());
+    for t in chain {
+        let Some(code) =
+            (0..TERRAIN_COUNT as u8).find(|&c| rules_terrain(c) == Some(t.id.as_str()))
+        else {
+            out.push(t);
             continue;
         };
+        let code = usize::from(code);
         let mut t2 = t.clone();
         for (&m, &name) in &names {
             match rules.cost[usize::from(m)][code] {
@@ -582,16 +640,18 @@ pub fn original_terrain(
     Ok((out, notes))
 }
 
+/// The terrain rules of the original mode ([`original_terrain`]). Returns the report and, when
+/// they were written, the ids of the pack's terrain (for the battle maps' rules grids).
 fn convert_rules(
     exe: &Exe,
     options: &PackOptions,
     out: &mut Output,
     mut report: KindReport,
-) -> Result<(KindReport, bool), ExtractError> {
+) -> Result<(KindReport, Option<Vec<String>>), ExtractError> {
     if options.terrain_defs.is_empty() {
         report.status = Status::MissingSource;
         report.summary = "the pack chain has no terrain rules to start from".into();
-        return Ok((report, false));
+        return Ok((report, None));
     }
     report.status = Status::Failed;
     let rules = match &exe.rules {
@@ -599,7 +659,7 @@ fn convert_rules(
         Err(e) => {
             report.summary = "no movement rules".into();
             report.errors.push(e.clone());
-            return Ok((report, false));
+            return Ok((report, None));
         }
     };
     let (terrain, notes) =
@@ -608,7 +668,7 @@ fn convert_rules(
             Err(e) => {
                 report.summary = "the pack's move types do not follow the original's".into();
                 report.errors.push(e);
-                return Ok((report, false));
+                return Ok((report, None));
             }
         };
     #[derive(Serialize)]
@@ -631,7 +691,10 @@ fn convert_rules(
         notes.len()
     );
     report.notes.extend(notes);
-    Ok((report, true))
+    Ok((
+        report,
+        Some(terrain.iter().map(|t| t.id.to_string()).collect()),
+    ))
 }
 
 /// A TOML basic string.
@@ -810,6 +873,7 @@ fn convert_battles(
     encoding: TextEncoding,
     edition: EditionId,
     options: &PackOptions,
+    known: &BTreeSet<&str>,
     exe: &Exe,
     maps: &[MapRecord],
     store: Option<&MapStore>,
@@ -954,10 +1018,8 @@ fn convert_battles(
                     return Ok(None);
                 };
                 cell_state.insert((x, y), (after, code));
-                let terrain = TERRAIN_MAP
-                    .get(usize::from(code))
-                    .copied()
-                    .flatten()
+                let terrain = rules_terrain(code)
+                    .filter(|id| known.contains(*id))
                     .ok_or_else(|| format!("terrain code {code} has no pack terrain"))?;
                 let image = maps::render_tiles(&after, 2, 2, &store.banks[&set])
                     .map_err(|e| e.to_string())?;
@@ -1598,6 +1660,25 @@ pub const TERRAIN_MAP: [Option<&str>; TERRAIN_COUNT] = [
     None,
 ];
 
+/// Terrain code of the original's gate, which no unit passes until an event opens it (FORMATS
+/// §13.5). The base pack's `gate` is an open gate, so a battle's rules grid has
+/// [`CLOSED_GATE`] for it, a terrain the terrain rules add; the tiles still draw it as `gate`.
+pub const GATE_CODE: u8 = 10;
+/// Terrain id of the original's closed gate (see [`GATE_CODE`]).
+pub const CLOSED_GATE: &str = "closed_gate";
+/// Glyphs [`original_terrain`] tries for [`CLOSED_GATE`], the first the chain does not use.
+const CLOSED_GATE_GLYPHS: &[char] = &['K', 'k', '%', '&', '*', '+', '@', '!'];
+
+/// Terrain id of a cell of terrain `code` in a battle's rules grid: [`TERRAIN_MAP`]'s, but
+/// [`CLOSED_GATE`] for [`GATE_CODE`].
+pub fn rules_terrain(code: u8) -> Option<&'static str> {
+    if code == GATE_CODE {
+        Some(CLOSED_GATE)
+    } else {
+        TERRAIN_MAP.get(usize::from(code)).copied().flatten()
+    }
+}
+
 /// Base-pack terrain without an original terrain code, and the terrain whose tile it reuses.
 /// (The original draws roads with plain cells.)
 pub const TILE_FALLBACK: &[(&str, &str)] = &[("road", "plain")];
@@ -2225,7 +2306,7 @@ pub fn map_rows(
                     used
                 }
             };
-            let id = TERRAIN_MAP[usize::from(used)].expect("stand-ins have a pack terrain");
+            let id = rules_terrain(used).expect("stand-ins have a pack terrain");
             if !known.contains(id) {
                 return Err(format!(
                     "terrain code {used} is `{id}`, which the pack's terrain does not have"
@@ -2311,7 +2392,7 @@ fn convert_maps(
     install: &InstallDir,
     encoding: TextEncoding,
     exe: &Exe,
-    options: &PackOptions,
+    known: &BTreeSet<&str>,
     tiles_ok: bool,
     out: &mut Output,
     mut report: KindReport,
@@ -2368,7 +2449,6 @@ fn convert_maps(
         .map(|(i, m)| (m, tables.chip_set_for(*i)))
         .collect();
     let chips = ChipTerrain::new(&pairs, [maps::COMMON_CHIPS, bank_cells(1), bank_cells(2)]);
-    let known: BTreeSet<&str> = options.terrain.iter().map(|t| t.id.as_str()).collect();
     let pal = &bank[MAP_PALETTE_SLOT];
     let decode = |bytes: &[u8]| encoding.decode(bytes).text.trim().to_string();
 
@@ -3179,11 +3259,13 @@ mod tests {
         }
     }
 
-    /// Movement rules: every class on move type 0 but the cavalry (6-8) on 1; plain costs 1,
+    /// Movement rules: every class on move type 0 but the cavalry (6-8) on 1 and the bandits
+    /// (9-11) on 3; plain costs 1,
     /// forest 1 on foot and cannot be entered on horse, the gate (10) cannot be entered.
     fn move_rules() -> maps::MoveRules {
         let mut class_move = vec![0u8; maps::CLASSES];
         class_move[6..9].fill(1);
+        class_move[9..12].fill(3);
         let mut cost = vec![vec![255u8; TERRAIN_COUNT]; maps::MOVE_TYPES];
         cost[0][0] = 1;
         cost[1][0] = 1;
@@ -3217,9 +3299,15 @@ mod tests {
         // Forest: foot 1, horses cannot enter; its effect is the defence.
         assert_eq!((cost(1, "foot"), cost(1, "horse")), (Some(1), None));
         assert_eq!(out[1].defense, 20);
-        // The closed gate cannot be entered; its effect (255) leaves the defence alone.
-        assert_eq!((cost(2, "foot"), cost(2, "horse")), (None, None));
-        assert_eq!(out[2].defense, 0);
+        // The chain's gate is an open one and stays as it is; the original's closed gate is a
+        // terrain of its own, drawn with the gate's tile, which cannot be entered, and its
+        // effect (255) leaves the defence alone.
+        assert_eq!(out[2], terrain[2]);
+        let closed = &out[4];
+        assert_eq!((closed.id.as_str(), closed.glyph), (CLOSED_GATE, 'K'));
+        assert_eq!(closed.tile.as_deref(), Some("gate"));
+        assert_eq!((cost(4, "foot"), cost(4, "horse")), (None, None));
+        assert_eq!(closed.defense, 0);
         // Terrain the original does not have stays the chain's.
         assert_eq!(out[3], terrain[3]);
         assert!(
@@ -3231,9 +3319,25 @@ mod tests {
             "{notes:?}"
         );
         assert!(
-            notes.contains(&"gate: foot 1 -> cannot enter".to_string()),
+            notes.contains(&"closed_gate: foot 1 -> cannot enter".to_string()),
             "{notes:?}"
         );
+        // The move types the pack has no class for (2 and 3 here) are left out, with a note.
+        assert!(
+            notes.iter().any(|n| n.contains("move type 3 has no class")),
+            "{notes:?}"
+        );
+
+        // Two original move types that cost differently cannot share a name.
+        let mut rules = move_rules();
+        rules.class_move[12] = 2;
+        rules.cost[2][0] = 2;
+        let merged: Vec<(String, String)> = [("short_infantry", "foot"), ("band", "foot")]
+            .iter()
+            .map(|&(s, m)| (s.to_string(), m.to_string()))
+            .collect();
+        let err = original_terrain(&rules, &terrain, &merged).unwrap_err();
+        assert!(err.contains("move types 0 and 2"), "{err}");
 
         // A chain that puts two classes of one original move type on different move types
         // cannot be followed.
