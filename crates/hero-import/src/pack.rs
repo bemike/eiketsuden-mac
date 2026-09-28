@@ -34,7 +34,7 @@
 //!   army colour, in the game's class order ([`CLASS_SPRITES`]). Only the right-facing picture is
 //!   stored (the game mirrors it). Engine sheets have 4 columns (down, up, left, right) × 6 rows
 //!   (walk 0–3, attack, hurt), see `docs/ASSETS.md`; [`unit_sheet`] fills them with the two frames.
-//!   Which colour is the player's is not decoded; [`PLAYER_ICON`] records the choice.
+//!   The even entry of each pair is the player's side, allies included ([`PLAYER_ICON`]).
 //! * **Terrain tiles.** One engine tile is one 2×2-chip cell of the original maps (32 px, the
 //!   grid units move on). For every terrain and every mask of orthogonal neighbours (the engine's
 //!   `auto` layers) [`learn_tiles`] takes the 2×2 chip block the original maps show most often; a
@@ -1107,11 +1107,11 @@ pub const CLASS_SPRITES: [&str; 19] = [
     "supply",
 ];
 
-/// `HEXZCHR` entry `2k + PLAYER_ICON` (the green / teal one) is drawn for the player's and
-/// allied units, entry `2k + 1 - PLAYER_ICON` (the orange one) for enemies. Which colour the
-/// game gives which army is not decoded (docs/reverse-engineering/STATUS.md); green is chosen
-/// because it is the cooler of the two, like the base pack's blue player.
-pub const PLAYER_ICON: usize = 1;
+/// `HEXZCHR` entry `2k + PLAYER_ICON` (the orange one) is drawn for the player's and allied
+/// units, entry `2k + 1 - PLAYER_ICON` (the green / teal one) for enemies: `MAIN.EXE` picks
+/// `class × 2 + 1` for a unit off the player's side (unit slots 15–44) and `class × 2` for the
+/// player's side (slots 0–14, allies included), see docs/reverse-engineering/FORMATS.md §8.
+pub const PLAYER_ICON: usize = 0;
 
 /// Frame size of a map icon.
 pub const ICON_PX: usize = 32;
@@ -1265,8 +1265,8 @@ fn convert_units(
     report.status = Status::Extracted;
     report.summary = format!("{} classes, 32×32 frames", sheets.len());
     report.notes.push(
-        "allied units use the player's colour (the original's third colour, if any, is not \
-         decoded); which of the two colours is the player's is a choice (PLAYER_ICON)"
+        "officer-specific icons (HEXZCHR 38-40, 45-46) and status icons (43-44) are not \
+         used: every unit is drawn with its class icon"
             .into(),
     );
     Ok(report)
@@ -2550,7 +2550,16 @@ mod tests {
             ls11::build(&[&a.encode(), &b.encode(), &names]),
         )
         .unwrap();
-        let icons: Vec<Vec<u8>> = (0..47).map(|_| testutil::cells(8)).collect();
+        // Odd entries (the enemy colour) are blank, so the sheets show which entry they came from.
+        let icons: Vec<Vec<u8>> = (0..47)
+            .map(|i| {
+                if i % 2 == 0 {
+                    testutil::cells(8)
+                } else {
+                    vec![0; 8 * 128]
+                }
+            })
+            .collect();
         let refs: Vec<&[u8]> = icons.iter().map(Vec::as_slice).collect();
         std::fs::write(dir.join("HEXZCHR.R3"), ls11::build(&refs)).unwrap();
     }
@@ -2663,6 +2672,19 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(pack.join(PACK_INDEX)).unwrap()).unwrap();
         assert_eq!(json["format"], PACK_FORMAT);
+        // The player's side (player and allies) is drawn with the even entry, enemies with the odd.
+        let drawn = |f: &str| {
+            let mut decoder =
+                png::Decoder::new(std::io::Cursor::new(std::fs::read(pack.join(f)).unwrap()));
+            decoder.set_transformations(png::Transformations::IDENTITY);
+            let mut reader = decoder.read_info().unwrap();
+            let mut buf = vec![0; reader.output_buffer_size()];
+            reader.next_frame(&mut buf).unwrap();
+            buf.iter().any(|&b| b != 0)
+        };
+        assert!(drawn("gfx/units/short_infantry_player.png"));
+        assert!(drawn("gfx/units/short_infantry_ally.png"));
+        assert!(!drawn("gfx/units/short_infantry_enemy.png"));
 
         // Both maps, with their names, sizes and chip sets; the pictures are 16 px per chip.
         let summary: Vec<(&str, &str, [usize; 2], usize)> = index
