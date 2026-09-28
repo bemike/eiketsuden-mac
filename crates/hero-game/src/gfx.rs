@@ -253,8 +253,8 @@ impl FontId {
     /// Pack-relative file of the font.
     pub fn file(self) -> &'static str {
         match self {
-            FontId::Main => "fonts/Galmuri11.ttf",
-            FontId::Small => "fonts/Galmuri9.ttf",
+            FontId::Main => hero_core::pack::FONT_FILES[0],
+            FontId::Small => hero_core::pack::FONT_FILES[1],
         }
     }
 }

@@ -364,7 +364,7 @@ fn unit_sheets_match_their_frame_size() {
 fn hanja_the_fonts_lack_are_reported() {
     let dir = TempDir::new("media-hanja");
     complete_media(&dir.0);
-    // The base pack's real fonts: they hold only the Hanja the base pack's text uses.
+    // The base pack's real fonts (Galmuri's own Hanja plus the ones the base pack needs).
     let fonts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base/fonts");
     for f in ["Galmuri11.ttf", "Galmuri9.ttf"] {
         write(

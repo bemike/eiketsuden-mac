@@ -17,6 +17,7 @@
 //! The file format is documented for modders in `docs/MODDING.md`.
 
 mod chain;
+#[cfg(not(target_arch = "wasm32"))]
 mod cmap;
 mod lint;
 #[cfg(not(target_arch = "wasm32"))]
@@ -24,6 +25,10 @@ mod media;
 mod validate;
 
 pub use chain::{join_path, PackChain, PackFile, PackFiles, PackLayer, MAX_CHAIN_DEPTH};
+
+/// The fonts the game draws text with, as pack-relative paths: the main font (UI and dialogue)
+/// and the small one (numbers and captions).
+pub const FONT_FILES: [&str; 2] = ["fonts/Galmuri11.ttf", "fonts/Galmuri9.ttf"];
 
 use crate::battledef::{BattleDef, MapEntry};
 use crate::campaign::CampaignDef;

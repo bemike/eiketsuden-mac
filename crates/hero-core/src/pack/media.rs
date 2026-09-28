@@ -432,8 +432,7 @@ impl MediaCheck {
     }
 }
 
-/// The fonts the game draws text with (`FontId::file` in hero-game).
-const FONT_FILES: [&str; 2] = ["fonts/Galmuri11.ttf", "fonts/Galmuri9.ttf"];
+use super::FONT_FILES;
 
 /// A CJK ideograph (extension A, unified, compatibility), as `tools/assets/build_fonts.py`
 /// collects them for the base pack's fonts.
@@ -449,7 +448,8 @@ fn text_files(dir: &Path, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        // Not through symbolic links, which could loop.
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
             text_files(&path, out);
         } else {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -467,7 +467,7 @@ fn text_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 impl MediaCheck {
     /// Hanja of the pack's text files (every layer) that a font lacks: the game draws them as
-    /// blanks. The base pack's fonts hold only the Hanja its own text needs.
+    /// blanks. The base pack's fonts hold Galmuri's own Hanja plus the ones its text needs.
     fn hanja(&mut self) {
         let mut files = Vec::new();
         for dir in &self.dirs {

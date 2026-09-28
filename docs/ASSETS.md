@@ -227,8 +227,8 @@ SFX keys used by the engine: `cursor`, `confirm`, `cancel`, `error`, `step`, `hi
 The base pack's two fonts are OFL Modified Versions that contain Fusion Pixel glyphs, so both licence files must
 travel with them: a pack that copies `fonts/` copies all four files.
 
-The two fonts hold every Hangul syllable but **only the Hanja the base pack's text uses** (the pixel fonts would
-be far larger otherwise); a Hanja a font lacks is drawn as a blank. `hero-tools validate` warns about Hanja in a
+The two fonts hold every Hangul syllable but **not every Hanja**: Galmuri's own (about 6,700) plus the ones the
+base pack's text needs that Galmuri lacks; a Hanja a font lacks is drawn as a blank. `hero-tools validate` warns about Hanja in a
 pack's text that the fonts in use lack; add them to the fonts (the base pack's are built by
 `tools/assets/build_fonts.py`, which collects the pack's Hanja) or avoid them.
 
