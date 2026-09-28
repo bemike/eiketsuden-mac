@@ -169,18 +169,21 @@ eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINA
 ```
 
 * 게임의 미디어 저장소(텍스처·사운드·아이콘 목록)가 **오버레이 폴더를 먼저, 그다음 데이터 팩을** 찾습니다.
-  오버레이에 없는 파일은 팩에서 읽습니다. 규칙·대사 같은 팩의 텍스트 파일은 오버레이하지 않습니다.
+  오버레이에 없는 파일은 팩에서 읽습니다. 규칙·대사 같은 팩의 텍스트 파일은 오버레이하지 않습니다(미디어로 찾는
+  색인 파일과 `credits.txt`는 예외, 아래).
 * `index.json`이 없는 폴더(예: 설치 폴더 자체)를 지정하면 경고를 남기고 무시합니다.
 * **현재 한계**: 추출물의 키(`original/...`)는 기본 팩이 쓰는 키(`portraits/liu_bei`, `units/archer_player` 등)와
   다르므로, 오버레이를 켜도 기본 게임 화면이 자동으로 원작 그림으로 바뀌지는 않습니다. 팩(모드)이 `original/...`
   키를 참조하거나, 오버레이 폴더 안에 팩과 같은 키 이름으로 파일을 두면(예: `gfx/portraits/liu_bei.png`) 그 파일이
   우선합니다. 원작 그림을 기본 팩의 키로 옮겨 게임 화면에 쓰는 것은 오버레이가 아니라 원작 모드 팩(4.5절)이
   합니다. 이 오버레이는 추출물을 살펴보거나 모드가 `original/...` 키를 직접 참조할 때 쓰는 경로입니다.
-* **오버레이가 바꾸지 않는 것**: 오버레이는 이미지·사운드와 `gfx/ui/icons.toml`만 바꿉니다. 전투 화면의 색인
-  파일(`gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml`)은 오버레이에 같은 이름으로 두어도
-  읽지 않고 팩의 것을 그대로 씁니다. 그래서 프레임·타일 크기가 다른 시트(원작의 48×48/64×64 유닛 스프라이트,
-  다른 칩 크기의 타일 아틀라스)를 오버레이에 넣으면 팩의 프레임(24×24)과 `tile_size`(16)로 잘려 그려집니다.
-  이런 시트는 오버레이가 아니라 색인 파일과 함께 레이어드 팩(8절)으로 넣어야 합니다.
+* **오버레이가 바꾸는 것**: 이미지·사운드와 색인 파일 4종(`gfx/ui/icons.toml`, `gfx/units/units.toml`,
+  `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml`), `credits.txt`입니다. 모두 파일마다 따로 찾으므로(오버레이 → 팩),
+  프레임·타일 크기가 다른 시트(원작의 48×48/64×64 유닛 스프라이트, 다른 칩 크기의 타일 아틀라스)를 오버레이에
+  넣을 때는 그 크기를 적은 색인도 함께 넣어야 합니다. 오버레이 색인은 팩 색인을 **통째로** 대체하므로 팩이 쓰는
+  모든 키를 적어야 합니다(없으면 그 키는 기본 16×16 프레임이나 평면 색으로 그려집니다). `hero-tools original
+  extract`는 색인 파일을 쓰지 않으므로 추출물 그대로는 팩 색인을 씁니다. 원작 그림을 게임 화면에 쓰는 일반적인
+  방법은 오버레이가 아니라 원작 모드 팩(4.5절)입니다.
 * **웹 빌드는 지원하지 않습니다.** 브라우저에는 로컬 폴더를 읽는 경로가 없어 `--original`이 없습니다
   (향후 File System Access API/OPFS로 검토).
 
@@ -381,9 +384,11 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   `hero-tools original extract <dir> --out <overlay> [--text] [--sprites] [--portraits] [--maps]`, then
   `eiketsuden --original <overlay>` (or `EIKETSUDEN_ORIGINAL`; native builds only). Media keys are looked up in
   the overlay first, then in the pack. The extracted keys live under `original/...` and do not replace the base
-  pack's own keys automatically yet. The overlay replaces images, sounds and `gfx/ui/icons.toml` only: the
-  battle index files (`units.toml`, `terrain.toml`, `fx.toml`) always come from the pack, so sheets with other
-  frame or tile sizes belong in a layered pack (section 8, `original pack`), not in the overlay.
+  pack's own keys automatically yet. The overlay replaces images, sounds, the four index files (`icons.toml`,
+  `units.toml`, `terrain.toml`, `fx.toml`) and `credits.txt`, each file on its own: sheets with other frame
+  or tile sizes need their index in the overlay too, and an overlay index replaces the pack's as a whole.
+  `extract` writes no index files; the original mode pack (section 4.5) is the usual way to play with the
+  original art.
 * **Help wanted**: run `probe` on a Steam install (`steamapps/common/Eiketsuden1`) and attach the manifest to an
   issue. A manifest contains relative paths, sizes, SHA-256, the first 16 bytes of each file and container
   summaries — no game content, no absolute paths.

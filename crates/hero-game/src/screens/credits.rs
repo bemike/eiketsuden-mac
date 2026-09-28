@@ -1,6 +1,6 @@
-//! Credits: scrolls the pack's `credits.txt` (in the pack directory, e.g.
-//! `data/base/credits.txt`) followed by the engine credits; when the pack has no such file only
-//! the engine credits are shown.
+//! Credits: scrolls the pack's `credits.txt` (e.g. `data/base/credits.txt`; looked up like a
+//! media file: the original-data overlay, the top pack, then the packs it extends) followed by
+//! the engine credits; when no pack has such a file only the engine credits are shown.
 //!
 //! `credits.txt` is UTF-8 plain text with two markup rules: a line starting with `# ` is a large
 //! heading and a line starting with `## ` a section heading. Long lines wrap.

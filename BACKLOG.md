@@ -66,6 +66,14 @@
 
 ## 견고성 · 회귀 방지
 
+- [ ] **자식 팩의 `credits.txt`가 부모 팩의 저작자 표시를 가림**
+  - 무엇을: 레이어드 팩의 제작진 화면이 체인의 모든 `credits.txt`를 이어 보이거나(가까운 팩부터), 자식 팩이 부모 표시를 포함하도록 validate가 경고한다.
+  - 왜: 지금은 가장 가까운 팩의 파일 하나만 보여, 부모(기본 팩)의 CC BY·CC BY-SA 저작자 표시가 게임 안에서 사라질 수 있다(원작 모드 팩은 `credits.txt`가 없어 해당 없음).
+  - 영향 범위: hero-game `screens/credits.rs`, hero-core `pack/media.rs`, MODDING
+- [ ] **`DataRoot::path`를 최상위 팩 전용으로 줄이기**
+  - 무엇을: 미디어가 모두 `media_paths`로 옮겨 가 `path()`의 체인 탐색(`memfs::is_file`)은 테스트만 쓴다. 최상위 팩 경로만 돌려주게 하고 테스트·ARCHITECTURE·DECISIONS·memfs 설명을 정리한다.
+  - 왜: 쓰이지 않는 경로가 문서에 살아 있는 것처럼 남는다.
+  - 영향 범위: hero-game `platform/mod.rs`, `platform/memfs.rs`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
 - [ ] **유닛 프레임 크기의 단일 출처화**
   - 무엇을: 캠프·갤러리 화면(`ui/art.rs unit_frame_size`)이 프레임을 시트 크기÷(4×6)로 추정하는 방식을 `units.toml`의 `frame`으로 통일하거나, 시트 크기를 validate에서 대조한다.
   - 왜: 시트에 여백이 있으면 전투와 캠프의 결과가 어긋난다.
