@@ -34,7 +34,7 @@
 //!   army colour, in the game's class order ([`CLASS_SPRITES`]). Only the right-facing picture is
 //!   stored (the game mirrors it). Engine sheets have 4 columns (down, up, left, right) × 6 rows
 //!   (walk 0–3, attack, hurt), see `docs/ASSETS.md`; [`unit_sheet`] fills them with the two frames.
-//!   Which colour is the player's is not decoded; [`PLAYER_ICON`] records the choice.
+//!   The even entry of each pair is the player's side, allies included ([`PLAYER_ICON`]).
 //! * **Terrain tiles.** One engine tile is one 2×2-chip cell of the original maps (32 px, the
 //!   grid units move on). For every terrain and every mask of orthogonal neighbours (the engine's
 //!   `auto` layers) [`learn_tiles`] takes the 2×2 chip block the original maps show most often; a
@@ -1109,11 +1109,11 @@ pub const CLASS_SPRITES: [&str; 19] = [
     "supply",
 ];
 
-/// `HEXZCHR` entry `2k + PLAYER_ICON` (the green / teal one) is drawn for the player's and
-/// allied units, entry `2k + 1 - PLAYER_ICON` (the orange one) for enemies. Which colour the
-/// game gives which army is not decoded (docs/reverse-engineering/STATUS.md); green is chosen
-/// because it is the cooler of the two, like the base pack's blue player.
-pub const PLAYER_ICON: usize = 1;
+/// `HEXZCHR` entry `2k + PLAYER_ICON` (the orange one) is drawn for the player's and allied
+/// units, entry `2k + 1 - PLAYER_ICON` (the green / teal one) for enemies: `MAIN.EXE` picks
+/// `class × 2 + 1` for a unit off the player's side (unit slots 15–29) and `class × 2` for the
+/// player's side (slots 0–14, allies included), see docs/reverse-engineering/FORMATS.md §8.
+pub const PLAYER_ICON: usize = 0;
 
 /// Frame size of a map icon.
 pub const ICON_PX: usize = 32;
@@ -1267,8 +1267,8 @@ fn convert_units(
     report.status = Status::Extracted;
     report.summary = format!("{} classes, 32×32 frames", sheets.len());
     report.notes.push(
-        "allied units use the player's colour (the original's third colour, if any, is not \
-         decoded); which of the two colours is the player's is a choice (PLAYER_ICON)"
+        "officer-specific icons (HEXZCHR 38-40, 45-46) and status icons (43-44) are not \
+         used: every unit is drawn with its class icon"
             .into(),
     );
     Ok(report)

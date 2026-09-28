@@ -205,7 +205,7 @@ eiketsuden --data data/original
   | 종류 | 원본 | 결과 | 매핑 규칙 |
   |---|---|---|---|
   | 얼굴 | `BAKDATA` + `FACEDAT` | `gfx/portraits/<무장>.png` 105/118명 | 기본 팩 무장과 `BAKDATA` 무장을 **이름**으로 대응(중문판은 한자 이름). 표기가 다른 2명(장료=장요, 기령=기영)은 별칭 표, 이름이 겹치는 우금(于禁/牛金)은 일본어 읽기(`ｳｷﾝ`)로 구분. 기본 팩이 새로 만든 인물 등 대응이 없는 13명은 기본 팩 얼굴 그대로이며 `original-pack.json`에 사유와 함께 기록 |
-  | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3 + `units.toml`(32×32 프레임) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **초록 = 아군·우군, 주황 = 적군은 선택**입니다(어느 색이 누구인지는 미해독, STATUS 2절) |
+  | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3 + `units.toml`(32×32 프레임) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **주황 = 아군·우군, 초록 = 적군**은 원작 코드가 고르는 대로입니다([FORMATS §8.2](reverse-engineering/FORMATS.md#planar)). 무장 전용·상태 아이콘(38–40, 43–46)은 쓰지 않습니다 |
   | 지형 타일 | `HEXZMAP` + `HEXZCHP` | `gfx/tiles/terrain.png`·`terrain.toml`(`tile_size = 32`) | 원작 맵의 2×2 칩 칸(32 px, 유닛이 움직이는 격자) = 엔진 타일 하나. 지형마다, 이웃 마스크(`auto` 층의 4비트)마다 **원작 맵 58개에서 가장 자주 나오는 칸**을 고름. 맵에 없는 마스크는 가장 가까운 관찰 마스크를 빌리고, 이웃과 무관한 지형(평지·마을·병영 등)은 가장 흔한 칸 하나. 원작에 없는 `road`는 평지 칸 |
   | 전투 | `SNR0D`·`SNR1D` + `BAKDATA` | `battles/<전투>.toml` 21개(기본 팩 서장·1장의 전투 id를 대체) | 기본 팩 전투마다 원작의 같은 전투(`battles.rs`의 대응표)를 찾아 **원작 맵(`use = "hexz_NN"`), 턴 제한, 배치 칸, 적·우군 명단**(무장 = 같은 이름의 기본 팩 무장, 아니면 `BAKDATA` 이름의 일반 유닛; 병종·레벨·AI는 원작 값), **보물**(금·아이템 칸), 유비의 **목표 칸**, 나중에 합류하는 부대와 그 **합류 조건**(턴·칸·영역·격파·인접 → `spawn` 이벤트)을 원작대로 둔다. 이름·목표 문구·전후 대사 장면·음악·보상과, 남은 무장만 가리키는 기본 팩 이벤트(관우-화웅 일기토 등)는 기본 팩 것. 기본 팩이 원작 인물의 자리를 다른 인물로 바꾼 곳(산적 두목 창희·하곤·석맹)은 역할 대응표로 그 무장이 맡는다. 옮기지 못한 것(원작 명단에 없는 기본 팩 무장, 그 무장이나 기본 맵의 칸을 가리키는 이벤트·조건, 기본 팩의 증원 그룹)은 전투 파일 주석과 `original-pack.json`에 적는다 |
   | 전투 중 이벤트 | `SNR0D`·`SNR1D` 트리거 레코드 + `SNR0M`·`SNR1M` + `MAIN.EXE`(칸 변경 표) | 전투 파일의 `[[events]]`, `dramas/original_battles.drama`(대사 장면 43개), `gfx/maps/hexz_NN_X_Y_OP.png`(바뀐 칸 7개) | 전투 블록의 그룹 3부터를 **단계**로 보고(FORMATS §13.2), 레코드마다 트리거(턴·인접·칸·영역·격파)와 동작을 옮긴다: 대사·안내문·일기토 → 대사 장면(화자 = 같은 이름의 기본 팩 무장, 아니면 원작 이름), 합류 → `spawn`, AI 변경 → `set_ai`, 레벨 → `level_up`, 퇴장 → `retreat`, 금·아이템, 성문·적교 → `set_terrain`(바뀐 칩으로 그린 칸 그림), `battle_end` → 승리, 단계 넘김 → `set_stage`. 경로 플래그(계교)와 한 번만 실행하는 플래그는 변환할 때 판정하고, 한 레코드가 켜고 다른 레코드가 검사하는 플래그(하비의 세 장수, 계교의 군량고)는 전투 플래그 `orig_<전투>_<번호>`와 `when` 조건이 된다. 기본 팩이 같은 계기의 이벤트를 유지하면(대부분의 일기토 등) 그 이벤트가 이야기를 맡고 원작의 나머지 동작(퇴장·단계 넘김)을 더한다(DECISIONS D12) |
@@ -407,8 +407,8 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. It holds officer
   portraits (matched to the base pack's officers by name, with two spelling aliases and one reading used to tell
   two officers of the same name apart; 105 of 118 on the verified copy), unit sheets of all 19 classes from the
-  `HEXZCHR` map icons (32×32 frames; green for the player and allies, orange for enemies is a choice, the colour
-  assignment is not decoded) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
+  `HEXZCHR` map icons (32×32 frames; orange for the player and allies, green for enemies, as `MAIN.EXE` picks
+  them) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
   neighbour mask the 2×2-chip block the maps show most often). It also holds the 58 original battle maps as a
   map file (`maps/original.toml`, ids `hexz_NN`): the chips as a picture layer (`gfx/maps/hexz_NN.png`) and the
   terrain bytes as the rules grid. The 21 battles of the base pack's prologue and chapter 1 are re-staged as the
