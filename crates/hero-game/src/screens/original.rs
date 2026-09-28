@@ -86,6 +86,9 @@ struct Busy {
     since: f64,
     /// What is being read, for the note.
     what: String,
+    /// Opening the browser at the saved folder: cancelling opens it without that folder (an
+    /// unresponsive network share would otherwise keep the browser out of reach).
+    skips_saved: bool,
 }
 
 /// Seconds a read may take before the "reading" note shows.
@@ -263,6 +266,7 @@ impl OriginalScreen {
             blocking,
             since: ctx.time,
             what,
+            skips_saved: false,
         });
     }
 
@@ -276,17 +280,23 @@ impl OriginalScreen {
     }
 
     /// Open the browser where [`original::start_place`] says (it tests the saved path too).
-    fn open_browser(&mut self, ctx: &Ctx) {
+    /// With `use_saved` it starts at the saved folder (or its nearest existing parent);
+    /// without, at the home folder.
+    fn open_browser(&mut self, ctx: &Ctx, use_saved: bool) {
         // Letters typed on earlier screens would jump through the list.
         drain_chars();
-        let saved = ctx.settings.original_dir.clone();
-        let what = saved.clone().unwrap_or_default();
+        let saved = ctx.settings.original_dir.clone().filter(|_| use_saved);
+        let skips_saved = saved.is_some();
+        let what = saved.clone().unwrap_or_else(|| "시작 위치".to_string());
         self.start(ctx, true, what, move || {
             Done::Show(
                 original::look(original::start_place(saved.as_deref())),
                 None,
             )
         });
+        if let Some(busy) = &mut self.busy {
+            busy.skips_saved = skips_saved;
+        }
     }
 
     /// The overview; the saved folder's edition is read in the background.
@@ -512,7 +522,7 @@ impl OriginalScreen {
                 Command::PlayOriginal => OriginalScreen::apply(ctx, None, true),
                 Command::PlayBase => OriginalScreen::apply(ctx, None, false),
                 Command::Browse => {
-                    self.open_browser(ctx);
+                    self.open_browser(ctx, true);
                     Transition::None
                 }
                 Command::Back => Transition::Pop,
@@ -540,14 +550,21 @@ impl OriginalScreen {
             Err(e) => {
                 ctx.sfx(sfx::ERROR);
                 ctx.toast(e);
-                return self.after_cancel();
+                return self.after_cancel(ctx);
             }
         };
         match done {
             Done::Saved(check) => {
                 self.saved = Some(check);
-                if matches!(self.view, View::Overview { .. }) {
+                if let View::Overview { commands } = &self.view {
+                    // Keep the cursor on its command: the menu is rebuilt (and may move).
+                    let on = commands.get(self.menu.cursor()).copied();
                     self.render_overview(ctx);
+                    if let (Some(on), View::Overview { commands }) = (on, &self.view) {
+                        if let Some(i) = commands.iter().position(|c| *c == on) {
+                            self.menu.set_cursor(i);
+                        }
+                    }
                 }
             }
             Done::Show(listing, focus) => self.show_place(ctx, listing, focus.as_deref()),
@@ -586,34 +603,51 @@ impl OriginalScreen {
         Transition::None
     }
 
-    /// Where a cancelled (or failed) read leaves the screen: the view it was started from, or
-    /// out of the screen when the browser was opened directly and has shown nothing yet.
-    fn after_cancel(&mut self) -> Transition {
-        if self.browse_only && matches!(self.view, View::Overview { .. }) {
-            Transition::Pop
-        } else {
-            Transition::None
+    /// Where a cancelled (or failed) read leaves the screen: the view it was started from (the
+    /// overview checks the saved folder again, the cancelled read may have replaced that
+    /// check), or out of the screen when the browser was opened directly and has shown
+    /// nothing yet.
+    fn after_cancel(&mut self, ctx: &Ctx) -> Transition {
+        match self.view {
+            View::Overview { .. } if self.browse_only => Transition::Pop,
+            View::Overview { .. } => {
+                self.show_overview(ctx);
+                Transition::None
+            }
+            View::Browse { .. } => Transition::None,
         }
     }
 
     /// While a read runs: its result, or Esc / a right click to cancel a read the browser waits
-    /// for (the rest of the input is ignored meanwhile).
+    /// for (its input is ignored meanwhile). The overview's check of the saved folder runs
+    /// alongside the menu (`None`: go on with the view's update).
     fn update_busy(&mut self, ctx: &mut Ctx) -> Option<Transition> {
         let busy = self.busy.as_mut()?;
+        if !busy.blocking {
+            if let Some(done) = busy.job.poll() {
+                self.busy = None;
+                self.finish(ctx, done);
+            }
+            return None;
+        }
+        // Keys pressed meanwhile (or in the frame the result arrives) must not act on the view
+        // that the result brings.
+        let cancel = ctx.input.key_pressed(KeyCode::Escape) || ctx.input.right_click();
+        ctx.input.consume();
+        drain_chars();
         if let Some(done) = busy.job.poll() {
             self.busy = None;
             return Some(self.finish(ctx, done));
         }
-        if !busy.blocking {
-            return None;
-        }
-        let cancel = ctx.input.key_pressed(KeyCode::Escape) || ctx.input.right_click();
-        ctx.input.consume();
-        drain_chars();
         if cancel {
             ctx.sfx(sfx::CANCEL);
+            let skips_saved = busy.skips_saved;
             self.busy = None;
-            return Some(self.after_cancel());
+            if skips_saved {
+                self.open_browser(ctx, false);
+                return Some(Transition::None);
+            }
+            return Some(self.after_cancel(ctx));
         }
         Some(Transition::None)
     }
@@ -784,7 +818,7 @@ impl Screen for OriginalScreen {
             return;
         }
         if self.browse_only {
-            self.open_browser(ctx);
+            self.open_browser(ctx, true);
         } else {
             self.show_overview(ctx);
         }
@@ -877,8 +911,13 @@ impl OriginalScreen {
         draw_window(frame);
         let x = MARGIN + theme::PADDING;
         let dots = ".".repeat(1 + (ctx.time * 2.0) as usize % 3);
+        let cancel = if busy.skips_saved {
+            "저장된 폴더를 건너뛰고 홈 폴더에서 열기"
+        } else {
+            "취소"
+        };
         gfx.text(
-            &format!("읽는 중{dots} — Esc·우클릭: 취소"),
+            &format!("읽는 중{dots} — Esc·우클릭: {cancel}"),
             x,
             frame.y + theme::PADDING,
             TextStyle::small(theme::TEXT_DIM),

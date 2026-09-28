@@ -223,7 +223,9 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> &str {
 /// as long as the file system does (an unresponsive network share, `\\server\share`, only
 /// gives up after its timeout), so the folder browser reads through this, keeps drawing and
 /// lets the player cancel. A cancelled read is dropped: its thread ends on its own once the
-/// file system answers, and its result is thrown away.
+/// file system answers, and its result is thrown away. (So each read cancelled on a stalled
+/// share leaves one thread waiting out the share's timeout; the player has to cancel again
+/// and again for that to add up.) The errors are the player-facing messages.
 pub struct Background<T> {
     running: Option<JoinHandle<T>>,
     /// The error when the thread could not be started.
@@ -242,7 +244,7 @@ impl<T: Send + 'static> Background<T> {
             },
             Err(e) => Background {
                 running: None,
-                failed: Some(format!("cannot start reading: {e}")),
+                failed: Some(format!("폴더를 읽을 스레드를 시작하지 못했습니다: {e}")),
             },
         }
     }
@@ -259,9 +261,9 @@ impl<T: Send + 'static> Background<T> {
             return None;
         }
         Some(
-            handle
-                .join()
-                .map_err(|panic| format!("reading crashed: {}", panic_message(&*panic))),
+            handle.join().map_err(|panic| {
+                format!("폴더를 읽다가 오류가 났습니다: {}", panic_message(&*panic))
+            }),
         )
     }
 }
@@ -518,7 +520,10 @@ mod tests {
     fn background_reads_report_their_result_or_crash() {
         assert_eq!(wait(Background::spawn(|| 7)), Ok(7));
         let crashed: Result<(), String> = wait(Background::spawn(|| panic!("disk on fire")));
-        assert_eq!(crashed, Err("reading crashed: disk on fire".to_string()));
+        assert_eq!(
+            crashed,
+            Err("폴더를 읽다가 오류가 났습니다: disk on fire".to_string())
+        );
     }
 
     #[test]
@@ -716,6 +721,24 @@ mod tests {
             return;
         };
         assert!(check_folder(Path::new(&install)).is_supported());
+        // Its folder in the browser: the install is marked, and above it (a DOSBox package's
+        // `GAME`) offered when it is the only one.
+        let install_dir = PathBuf::from(&install);
+        let at = look(Place::Dir(install_dir.clone()));
+        assert!(matches!(at.check, Some(FolderCheck::Supported(_))));
+        if let Some(parent) = install_dir.parent() {
+            let above = look(Place::Dir(parent.to_path_buf()));
+            let installs = above
+                .folders
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|f| f.install)
+                .count();
+            if installs == 1 && above.check.is_none() {
+                assert_eq!(above.child.map(|f| f.path), Some(install_dir.clone()));
+            }
+        }
         let base_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
         let base = Pack::load(&DirSource {
             root: base_dir.clone(),
