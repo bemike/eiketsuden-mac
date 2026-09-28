@@ -731,5 +731,67 @@ mod tests {
             );
             assert!(!b.events.is_empty(), "{id}");
         }
+
+        // Mid-battle events. Xuzhou II plays in three stages: Che Zhou falls (the base event,
+        // with the original's retreat of his troops), Cao Cao arrives, then the south-western
+        // village wins.
+        use hero_core::battledef::{EventAction, Trigger};
+        let stages: Vec<Option<u32>> = xuzhou2.events.iter().map(|e| e.stage).collect();
+        assert_eq!(stages, [Some(0), Some(1), Some(2)]);
+        assert!(xuzhou2.events[0]
+            .actions
+            .iter()
+            .any(|a| matches!(a, EventAction::Retreat { .. })));
+        assert_eq!(
+            xuzhou2.events[2].trigger,
+            Trigger::Reach {
+                who: Some("liu_bei".into()),
+                pos: hero_core::geom::Pos::new(1, 16),
+                radius: 0,
+                to: None
+            }
+        );
+        // Xiapi: turn 30 or Liu Bei at (12, 12) lowers the drawbridge; the middle cell becomes a
+        // bridge (the chip the game checks), the others keep their terrain with new chips.
+        let xiapi = &pack.battles["c1_xiapi"];
+        let bridges: Vec<_> = xiapi
+            .events
+            .iter()
+            .flat_map(|e| &e.actions)
+            .filter_map(|a| match a {
+                EventAction::SetTerrain {
+                    pos,
+                    terrain,
+                    image,
+                } => Some((pos.x, pos.y, terrain.as_str(), image.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(bridges.len(), 12, "two triggers × six cells");
+        assert!(bridges.contains(&(12, 11, "bridge", Some("hexz_14_12_11_2".into()))));
+        assert!(bridges.contains(&(11, 11, "river", Some("hexz_14_11_11_2".into()))));
+        assert!(out.join("gfx/maps/hexz_14_12_11_2.png").is_file());
+        // Beihai: Taishi Ci's gate opens (a gate becomes plain).
+        assert!(pack.battles["c1_beihai"]
+            .events
+            .iter()
+            .any(|e| e.actions.contains(&EventAction::SetTerrain {
+                pos: hero_core::geom::Pos::new(2, 2),
+                terrain: "plain".into(),
+                image: Some("hexz_07_2_2_0".into()),
+            })));
+        // The dialogue comes from the player's copy.
+        let drama = std::fs::read_to_string(out.join("dramas/original_battles.drama")).unwrap();
+        assert!(
+            drama.contains("== orig_c1_julu_4_3\nguan_chun: "),
+            "{drama}"
+        );
+        assert!(pack.scene("orig_c1_xuzhou2_4").is_some());
+        let json_battles = json["battles"].as_array().unwrap();
+        let events: u64 = json_battles
+            .iter()
+            .map(|b| b["events"].as_u64().unwrap())
+            .sum();
+        assert!(events >= 60, "{events} events");
     }
 }

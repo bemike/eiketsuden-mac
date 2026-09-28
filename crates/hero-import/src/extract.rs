@@ -610,7 +610,7 @@ struct TextCounts {
 }
 
 /// The message bytes of a file: the file itself, or the single entry of an LS11 archive.
-fn message_payload(data: &[u8]) -> Result<Cow<'_, [u8]>, String> {
+pub(crate) fn message_payload(data: &[u8]) -> Result<Cow<'_, [u8]>, String> {
     if !(ls11::has_magic(data) || ls11::has_variant_magic(data)) {
         return Ok(Cow::Borrowed(data));
     }

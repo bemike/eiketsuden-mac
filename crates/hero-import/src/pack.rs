@@ -13,6 +13,8 @@
 //! <out>/gfx/maps/hexz_NN.png          ... and their picture layers
 //! <out>/battles/<battle>.toml         the base pack's prologue and chapter 1 battles re-staged
 //!                                     as the original battles on those maps (`crate::battles`)
+//! <out>/dramas/original_battles.drama the dialogue of their mid-battle events, from the scenario
+//! <out>/gfx/maps/hexz_NN_X_Y_OP.png   cells the events change (a gate opens, a bridge comes down)
 //! ```
 //!
 //! Everything the pack does not hold (rules, officers, battles, dramas, music, the other
@@ -74,7 +76,8 @@ pub const PACK_INDEX: &str = "original-pack.json";
 pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 2: `maps` (the converted battle maps) and the map file in `pack.toml`.
 /// 3: `battles` (the base battles re-staged as the original battles) and their battle files.
-pub const PACK_FORMAT_VERSION: u32 = 3;
+/// 4: the battles' mid-battle events (`events`, [`DRAMA_FILE`], tile pictures of changed cells).
+pub const PACK_FORMAT_VERSION: u32 = 4;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×480 VGA screen.
@@ -154,6 +157,9 @@ pub struct PackOptions {
     /// Battles of the pack chain; those that follow an original battle are re-staged
     /// ([`crate::battles`]).
     pub battles: Vec<hero_core::battledef::BattleDef>,
+    /// Officers of the player's army in the pack chain: the campaign's starting officers and
+    /// those that join in its scenes (events of any battle may name them).
+    pub player_officers: Vec<String>,
 }
 
 impl PackOptions {
@@ -202,8 +208,27 @@ impl PackOptions {
                 })
                 .collect(),
             battles: parent.battles.values().cloned().collect(),
+            player_officers: player_officers(parent),
         }
     }
+}
+
+/// The campaign's starting officers and the officers its scenes let join, in id order.
+fn player_officers(pack: &hero_core::pack::Pack) -> Vec<String> {
+    let mut ids: BTreeSet<String> = pack
+        .campaign
+        .starting_officers
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    for scene in pack.scenes.values() {
+        for cmd in &scene.cmds {
+            if let hero_core::script::Cmd::Join(o) = cmd {
+                ids.insert(o.clone());
+            }
+        }
+    }
+    ids.into_iter().collect()
 }
 
 /// A portrait given to a base-pack officer.
@@ -256,6 +281,7 @@ impl PackIndex {
 struct Exe {
     bank: Result<[Palette16; palette::SLOTS], String>,
     tables: Result<maps::ExeTables, String>,
+    cells: Result<maps::CellChanges, String>,
 }
 
 impl Exe {
@@ -265,6 +291,7 @@ impl Exe {
             return Ok(Exe {
                 bank: Err(missing()),
                 tables: Err(missing()),
+                cells: Err(missing()),
             });
         };
         Ok(Exe {
@@ -272,6 +299,8 @@ impl Exe {
                 .map(|b| b.slots)
                 .map_err(|e| format!("MAIN.EXE palette bank: {e}")),
             tables: maps::find_exe_tables(&exe).map_err(|e| format!("MAIN.EXE map tables: {e}")),
+            cells: maps::find_cell_changes(&exe)
+                .map_err(|e| format!("MAIN.EXE map-cell tables: {e}")),
         })
     }
 }
@@ -285,7 +314,7 @@ pub fn write_pack(
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
     // Checked before anything is written; the final manifest also lists the map file.
-    pack_toml(&options.extends, edition.id, false, &[])
+    pack_toml(&options.extends, edition.id, false, &[], false)
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
     let mut output = Output::dir(out);
@@ -307,7 +336,7 @@ pub struct MemoryPack {
 pub fn build_pack(source: &Path, options: &PackOptions) -> Result<MemoryPack, ExtractError> {
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
-    pack_toml(&options.extends, edition.id, false, &[])
+    pack_toml(&options.extends, edition.id, false, &[], false)
         .map_err(|e| output_error(Path::new("pack.toml"), e))?;
     let mut output = Output::in_memory(PACK_ID);
     let index = convert(&install, edition, encoding, options, &mut output)?;
@@ -374,7 +403,7 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
-    let (maps, map_records) = convert_maps(
+    let (maps, map_records, map_store) = convert_maps(
         install,
         encoding,
         &exe,
@@ -384,14 +413,16 @@ fn convert(
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
 
-    let (battles, battle_records) = convert_battles(
+    let (battles, battle_records, drama) = convert_battles(
         install,
         encoding,
         edition.id,
         options,
+        &exe,
         &map_records,
+        map_store.as_ref(),
         output,
-        KindReport::new(Status::Extracted, false, ""),
+        with_exe(KindReport::new(Status::Extracted, false, "")),
     )?;
 
     let battle_files: Vec<String> = battle_records.iter().map(|b| b.file.clone()).collect();
@@ -400,6 +431,7 @@ fn convert(
         edition.id,
         !map_records.is_empty(),
         &battle_files,
+        drama,
     )
     .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
@@ -446,12 +478,13 @@ fn toml_str(s: &str) -> String {
 }
 
 /// The `pack.toml` of the pack; `extends` must be a relative directory. `maps`: list
-/// [`MAPS_FILE`]; `battles`: the battle files.
+/// [`MAPS_FILE`]; `battles`: the battle files; `dramas`: list [`DRAMA_FILE`].
 fn pack_toml(
     extends: &str,
     edition: EditionId,
     maps: bool,
     battles: &[String],
+    dramas: bool,
 ) -> Result<String, String> {
     if extends.is_empty()
         || Path::new(extends).is_absolute()
@@ -477,6 +510,11 @@ fn pack_toml(
             .collect();
         format!("battles = [\n{}]\n", list.concat())
     };
+    let dramas = if dramas {
+        format!("dramas = [{}]\n", toml_str(DRAMA_FILE))
+    } else {
+        String::new()
+    };
     Ok(format!(
         "# Original mode, written by `hero-tools original pack` ({tool}) from the player's own copy\n\
          # of KOEI's Sangokushi Eiketsuden ({edition}). It holds converted game art: keep it on this\n\
@@ -491,6 +529,7 @@ fn pack_toml(
          extends = {extends}\n\
          {maps}\
          {battles}\
+         {dramas}\
          \n\
          [presentation]\n\
          canvas = [{w}, {h}]\n",
@@ -523,21 +562,63 @@ pub struct BattleRecord {
     pub turn_limit: u32,
     pub units: usize,
     pub treasures: usize,
+    /// Events of the battle, and how many of them are the base battle's.
+    pub events: usize,
+    pub base_events: usize,
     /// What did not carry over.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
 
-type BattlesResult = (KindReport, Vec<BattleRecord>);
+type BattlesResult = (KindReport, Vec<BattleRecord>, bool);
+
+/// Drama file of the original battles' mid-battle events.
+pub const DRAMA_FILE: &str = "dramas/original_battles.drama";
+
+/// A scene's text section (`SNRnM`) decoded for [`battles::TextSource`].
+struct SceneText<'a> {
+    section: crate::text::Section<'a>,
+    encoding: TextEncoding,
+}
+
+impl battles::TextSource for SceneText<'_> {
+    fn dialogue(&self, offset: u16) -> Result<Vec<(u16, String)>, String> {
+        let (lines, _) = self
+            .section
+            .dialogue_at(usize::from(offset))
+            .map_err(|e| e.to_string())?;
+        Ok(lines
+            .iter()
+            .map(|l| (l.speaker, self.encoding.decode(l.text).text))
+            .collect())
+    }
+
+    fn string(&self, offset: u16) -> Result<String, String> {
+        let bytes = self
+            .section
+            .string_at(usize::from(offset))
+            .map_err(|e| e.to_string())?;
+        Ok(self.encoding.decode(bytes).text)
+    }
+}
+
+/// The key of the tile picture of cell `(x, y)` of map `map_id` after operation `op`.
+pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
+    format!("{map_id}_{x}_{y}_{op}")
+}
 
 /// Re-stage the base battles that follow an original battle ([`battles::ORIGINAL_BATTLES`]) on
-/// the converted maps and write them to [`BATTLES_DIR`].
+/// the converted maps and write them to [`BATTLES_DIR`], with the dialogue of their mid-battle
+/// events in [`DRAMA_FILE`] (the last value: whether it was written).
+#[allow(clippy::too_many_arguments)]
 fn convert_battles(
     install: &InstallDir,
     encoding: TextEncoding,
     edition: EditionId,
     options: &PackOptions,
+    exe: &Exe,
     maps: &[MapRecord],
+    store: Option<&MapStore>,
     out: &mut Output,
     mut report: KindReport,
 ) -> Result<BattlesResult, ExtractError> {
@@ -549,23 +630,23 @@ fn convert_battles(
         report.status = Status::Unsupported;
         report.summary =
             "the pack chain has none of the base pack's battles that follow the original".into();
-        return Ok((report, Vec::new()));
+        return Ok((report, Vec::new(), false));
     }
     report.status = Status::Failed;
     let Some(bak) = read_source(install, "BAKDATA.R3", &mut report)? else {
         report.status = Status::MissingSource;
         report.summary = "BAKDATA.R3 missing".into();
-        return Ok((report, Vec::new()));
+        return Ok((report, Vec::new(), false));
     };
     let bak = match bakdata::parse(&bak, encoding) {
         Ok(b) => b,
         Err(e) => {
             report.summary = "BAKDATA.R3 invalid".into();
             report.errors.push(e.to_string());
-            return Ok((report, Vec::new()));
+            return Ok((report, Vec::new(), false));
         }
     };
-    let names = battles::Names::new(
+    let mut names = battles::Names::new(
         &bak.officers,
         &bak.items,
         |person| {
@@ -582,19 +663,32 @@ fn convert_battles(
         &options.classes,
         &item_names(&options.items, edition),
     );
+    names.player_officers = options.player_officers.iter().cloned().collect();
 
-    // Scenario files, read once.
-    let mut sources: BTreeMap<usize, Option<Vec<u8>>> = BTreeMap::new();
+    // Scenario and message files, read once.
+    let mut scenarios: BTreeMap<usize, Option<Vec<u8>>> = BTreeMap::new();
+    let mut messages: BTreeMap<usize, Option<Vec<u8>>> = BTreeMap::new();
     let mut records = Vec::new();
+    let mut drama = String::from(
+        "# Dialogue of the original battles' mid-battle events, converted from the scenario of the\n\
+         # player's own copy by `hero-tools original pack` (do not edit; run the importer again).\n\
+         # Scene `orig_<battle>_<record>` belongs to trigger record <record> of the battle's block.\n",
+    );
+    let mut scenes = 0usize;
+    let mut pictures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for pairing in &wanted {
         let (id, file, scene_index, map) =
             (pairing.battle, pairing.file, pairing.scene, pairing.map);
         let name = format!("SNR{file}D.R3");
-        if let std::collections::btree_map::Entry::Vacant(slot) = sources.entry(file) {
+        let message_name = format!("SNR{file}M.R3");
+        if let std::collections::btree_map::Entry::Vacant(slot) = scenarios.entry(file) {
             slot.insert(read_source(install, &name, &mut report)?);
         }
-        let result = (|| -> Result<BattleRecord, String> {
-            let bytes = sources[&file]
+        if let std::collections::btree_map::Entry::Vacant(slot) = messages.entry(file) {
+            slot.insert(read_source(install, &message_name, &mut report)?);
+        }
+        let result = (|| -> Result<(BattleRecord, String), String> {
+            let bytes = scenarios[&file]
                 .as_deref()
                 .ok_or_else(|| format!("{name} missing"))?;
             let archive = ls11::Archive::parse(bytes).map_err(|e| format!("{name}: {e}"))?;
@@ -603,18 +697,84 @@ fn convert_battles(
                 .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
             let scene = crate::scenario::parse_scene(&data)
                 .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
+            let message_bytes = messages[&file]
+                .as_deref()
+                .ok_or_else(|| format!("{message_name} missing"))?;
+            let payload = crate::extract::message_payload(message_bytes)
+                .map_err(|e| format!("{message_name}: {e}"))?;
+            let sections = crate::text::parse_messages(&payload)
+                .map_err(|e| format!("{message_name}: {e}"))?;
+            let section = sections
+                .sections
+                .get(scene_index)
+                .cloned()
+                .ok_or_else(|| format!("{message_name} has no section {scene_index}"))?;
+            let text = SceneText { section, encoding };
             let original = battles::find_battle(&scene, map, pairing.flags)
                 .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
             let map_id = map_id(usize::from(map));
             if !maps.iter().any(|m| m.id == map_id) {
                 return Err(format!("battle map {map} ({map_id}) was not converted"));
             }
+            let mut cell_change =
+                |pos: hero_core::geom::Pos, op: u8| -> Result<battles::CellChange, String> {
+                    let store = store.ok_or("the battle maps were not read")?;
+                    let (cells, tables) = match (&exe.cells, &exe.tables) {
+                        (Ok(c), Ok(t)) => (c, t),
+                        (Err(e), _) | (_, Err(e)) => return Err(e.clone()),
+                    };
+                    let number = usize::from(map);
+                    let grid = store
+                        .maps
+                        .get(&number)
+                        .ok_or_else(|| format!("battle map {number} was not read"))?;
+                    let (w, h) = grid.cells();
+                    let (Ok(x), Ok(y)) = (usize::try_from(pos.x), usize::try_from(pos.y)) else {
+                        return Err("outside the map".into());
+                    };
+                    if x >= w || y >= h {
+                        return Err("outside the map".into());
+                    }
+                    let chip =
+                        |dx: usize, dy: usize| grid.chips[(2 * y + dy) * grid.width + 2 * x + dx];
+                    let chips = [chip(0, 0), chip(1, 0), chip(0, 1), chip(1, 1)];
+                    let set = tables.chip_set_for(number);
+                    let Some((after, code)) =
+                        cells.apply(chips, grid.terrain[y * w + x], set == 2, op)?
+                    else {
+                        return Ok(None);
+                    };
+                    let terrain = TERRAIN_MAP
+                        .get(usize::from(code))
+                        .copied()
+                        .flatten()
+                        .ok_or_else(|| format!("terrain code {code} has no pack terrain"))?;
+                    let key = cell_picture(&map_id, x, y, op & 0x7f);
+                    if !pictures.contains_key(&key) {
+                        let image = maps::render_tiles(&after, 2, 2, &store.banks[&set])
+                            .map_err(|e| e.to_string())?;
+                        let png =
+                            encode_png(&image, &store.palette, false).map_err(|e| e.to_string())?;
+                        pictures.insert(key.clone(), png);
+                    }
+                    Ok(Some((terrain.to_string(), Some(key))))
+                };
             let base = options
                 .battles
                 .iter()
                 .find(|b| b.id == id)
                 .expect("filtered above");
-            let converted = battles::convert(base, &original, &names, pairing.roles, &map_id)?;
+            let converted = battles::convert(
+                base,
+                &original,
+                &names,
+                pairing,
+                &map_id,
+                &mut battles::EventSources {
+                    text: &text,
+                    cell_change: &mut cell_change,
+                },
+            )?;
             let source = format!("{name} scene {scene_index} block {}", original.block);
             let file = format!("{BATTLES_DIR}/{id}.toml");
             let body = toml::to_string(&converted.battle)
@@ -631,23 +791,42 @@ fn convert_battles(
             text.push_str(&body);
             out.write(&file, text.as_bytes())
                 .map_err(|e| e.to_string())?;
-            Ok(BattleRecord {
-                id: id.to_string(),
-                file,
-                source,
-                map: map_id,
-                turn_limit: converted.battle.turn_limit,
-                units: converted.battle.units.len(),
-                treasures: converted.battle.treasures.len(),
-                notes: converted.notes,
-            })
+            let base_events = base.events.len();
+            Ok((
+                BattleRecord {
+                    id: id.to_string(),
+                    file,
+                    source,
+                    map: map_id,
+                    turn_limit: converted.battle.turn_limit,
+                    units: converted.battle.units.len(),
+                    treasures: converted.battle.treasures.len(),
+                    events: converted.battle.events.len(),
+                    base_events,
+                    notes: converted.notes,
+                },
+                converted.drama,
+            ))
         })();
         match result {
-            Ok(r) => records.push(r),
+            Ok((r, text)) => {
+                if !text.is_empty() {
+                    let _ = write!(drama, "\n# ----- {} ({})\n{text}", r.id, r.source);
+                    scenes += text.matches("\n== ").count();
+                }
+                records.push(r);
+            }
             Err(e) => report.errors.push(format!("{id}: {e}")),
         }
     }
-    report.outputs = records.len();
+    for (key, png) in &pictures {
+        out.write(&format!("gfx/maps/{key}.png"), png)?;
+    }
+    let wrote_drama = scenes > 0;
+    if wrote_drama {
+        out.write(DRAMA_FILE, drama.as_bytes())?;
+    }
+    report.outputs = records.len() + pictures.len() + usize::from(wrote_drama);
     report.status = if report.errors.is_empty() {
         Status::Extracted
     } else if records.is_empty() {
@@ -655,20 +834,23 @@ fn convert_battles(
     } else {
         Status::Partial
     };
+    let events: usize = records.iter().map(|r| r.events).sum();
     report.summary = format!(
-        "{} of {} base battles re-staged as the original battles on the original maps",
+        "{} of {} base battles re-staged as the original battles on the original maps, {events} \
+         events ({scenes} drama scenes, {} changed-cell pictures)",
         records.len(),
-        wanted.len()
+        wanted.len(),
+        pictures.len()
     );
     report.notes.push(
-        "the original's own mid-battle events (trigger records) are not converted yet: the base \
-         battles' events that still fit are kept, the others are listed per battle"
+        "the original's mid-battle events come from the scenario's trigger records; where the \
+         base battle keeps an event with the same trigger, the base event stays"
             .into(),
     );
     report.notes.push(
         "AI modes 0, 5 and 6 are inferred (docs/reverse-engineering/FORMATS.md §13.4)".into(),
     );
-    Ok((report, records))
+    Ok((report, records, wrote_drama))
 }
 
 // ----- portraits -----------------------------------------------------------------------------
@@ -1763,7 +1945,15 @@ fn maps_file_header() -> String {
     )
 }
 
-type MapsResult = (KindReport, Vec<MapRecord>);
+/// The decoded battle maps, their chip banks and palette, for the battles' changed cells.
+pub struct MapStore {
+    maps: BTreeMap<usize, BattleMap>,
+    /// Chip bank by `HEXZCHP` entry (1 or 2).
+    banks: BTreeMap<usize, Vec<u8>>,
+    palette: Palette16,
+}
+
+type MapsResult = (KindReport, Vec<MapRecord>, Option<MapStore>);
 
 fn convert_maps(
     install: &InstallDir,
@@ -1782,14 +1972,14 @@ fn convert_maps(
              use the base pack's 16-px tiles"
                 .into(),
         );
-        return Ok((report, Vec::new()));
+        return Ok((report, Vec::new(), None));
     }
     let (bank, tables) = match (&exe.bank, &exe.tables) {
         (Ok(bank), Ok(tables)) => (bank, tables),
         (Err(e), _) | (_, Err(e)) => {
             report.summary = "MAIN.EXE tables not found".into();
             report.errors.push(e.clone());
-            return Ok((report, Vec::new()));
+            return Ok((report, Vec::new(), None));
         }
     };
     let BattleMaps {
@@ -1801,7 +1991,7 @@ fn convert_maps(
         Err(e) => {
             report.summary = "battle maps not readable".into();
             report.errors.push(e);
-            return Ok((report, Vec::new()));
+            return Ok((report, Vec::new(), None));
         }
     };
     let banks: Result<BTreeMap<usize, Vec<u8>>, String> = [1, 2]
@@ -1817,7 +2007,7 @@ fn convert_maps(
         Err(e) => {
             report.summary = "chip banks not readable".into();
             report.errors.push(e);
-            return Ok((report, Vec::new()));
+            return Ok((report, Vec::new(), None));
         }
     };
     let bank_cells = |set: usize| chipsets.get(set).map_or(0, |c| c.len() / CELL_BYTES);
@@ -1868,7 +2058,7 @@ fn convert_maps(
     }
     if records.is_empty() {
         report.summary = "no battle map could be converted".into();
-        return Ok((report, records));
+        return Ok((report, records, None));
     }
     out.write(MAPS_FILE, toml.as_bytes())?;
     report.outputs += 1;
@@ -1898,7 +2088,12 @@ fn convert_maps(
          maps wait for the chapters the base pack does not have yet"
             .into(),
     );
-    Ok((report, records))
+    let store = MapStore {
+        maps: battle.into_iter().collect(),
+        banks,
+        palette: *pal,
+    };
+    Ok((report, records, Some(store)))
 }
 
 #[cfg(test)]
@@ -2183,12 +2378,12 @@ mod tests {
 
     #[test]
     fn manifest_needs_a_relative_extends() {
-        let toml = pack_toml("../base", EditionId::KoreanDos, false, &[]).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, false, &[], false).unwrap();
         assert!(toml.contains("\nid = \"original\"\n"), "{toml}");
         assert!(toml.contains("\nextends = \"../base\"\n"), "{toml}");
         assert!(toml.contains("canvas = [640, 480]"), "{toml}");
         assert!(!toml.contains("maps"), "{toml}");
-        let toml = pack_toml("../base", EditionId::KoreanDos, true, &[]).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, true, &[], false).unwrap();
         assert!(
             toml.contains(
                 "\nextends = \"../base\"\nmaps = [\"maps/original.toml\"]\n\n[presentation]"
@@ -2199,12 +2394,13 @@ mod tests {
             "battles/p1_sishui.toml".to_string(),
             "battles/p2_hulao.toml".to_string(),
         ];
-        let toml = pack_toml("../base", EditionId::KoreanDos, true, &battles).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, true, &battles, true).unwrap();
         let manifest: hero_core::pack::PackManifest = toml::from_str(&toml).unwrap();
         assert_eq!(manifest.battles, battles);
+        assert_eq!(manifest.dramas, [DRAMA_FILE]);
         for bad in ["", "C:/data/base", "/data/base", "..\\base"] {
             assert!(
-                pack_toml(bad, EditionId::KoreanDos, false, &[]).is_err(),
+                pack_toml(bad, EditionId::KoreanDos, false, &[], false).is_err(),
                 "{bad}"
             );
         }

@@ -43,6 +43,32 @@ pub enum Compare {
 }
 
 impl Compare {
+    /// The operator as data files write it.
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Compare::Eq => "==",
+            Compare::Ne => "!=",
+            Compare::Lt => "<",
+            Compare::Le => "<=",
+            Compare::Gt => ">",
+            Compare::Ge => ">=",
+        }
+    }
+
+    /// An operator (`==`, `!=`, `<`, `<=`, `>`, `>=`) or a variant name (`Eq`, `Ge`, ... in
+    /// any case).
+    pub fn parse(s: &str) -> Option<Compare> {
+        Some(match s.to_ascii_lowercase().as_str() {
+            "==" | "eq" => Compare::Eq,
+            "!=" | "ne" => Compare::Ne,
+            "<" | "lt" => Compare::Lt,
+            "<=" | "le" => Compare::Le,
+            ">" | "gt" => Compare::Gt,
+            ">=" | "ge" => Compare::Ge,
+            _ => return None,
+        })
+    }
+
     pub fn eval(self, lhs: i64, rhs: i64) -> bool {
         match self {
             Compare::Eq => lhs == rhs,
@@ -52,6 +78,31 @@ impl Compare {
             Compare::Gt => lhs > rhs,
             Compare::Ge => lhs >= rhs,
         }
+    }
+}
+
+/// Serde helpers for a `cmp` field of the data files: written as an operator, read as an
+/// operator or a variant name ([`Compare::parse`]); `!=` when left out.
+pub(crate) mod cmp_field {
+    use super::Compare;
+    use serde::de::Error as _;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn default() -> Compare {
+        Compare::Ne
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Compare, D::Error> {
+        let s = String::deserialize(d)?;
+        Compare::parse(&s).ok_or_else(|| {
+            D::Error::custom(format!(
+                "unknown comparison `{s}`, expected one of ==, !=, <, <=, >, >="
+            ))
+        })
+    }
+
+    pub fn serialize<S: Serializer>(cmp: &Compare, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(cmp.symbol())
     }
 }
 

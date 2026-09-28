@@ -559,6 +559,73 @@ fn player_guests_are_not_army_officers() {
 }
 
 #[test]
+fn stage_and_terrain_actions_are_checked() {
+    run(&[
+        error(
+            &[(
+                B01,
+                "actions = [{ type = \"set_flag\", flag = \"captives\", value = 2 }]",
+                "actions = [{ type = \"set_terrain\", pos = [1, 1], terrain = \"lava\" }]",
+            )],
+            "battle b01 event #3",
+            "set_terrain to unknown terrain `lava`",
+        ),
+        error(
+            &[(
+                B01,
+                "actions = [{ type = \"set_flag\", flag = \"captives\", value = 2 }]",
+                "actions = [{ type = \"set_terrain\", pos = [1, 40], terrain = \"plain\" }]",
+            )],
+            "battle b01 event #3",
+            "position [1, 40] is outside the map",
+        ),
+        error(
+            &[(
+                B01,
+                "actions = [{ type = \"set_flag\", flag = \"captives\", value = 2 }]",
+                "actions = [{ type = \"set_terrain\", pos = [1, 1], terrain = \"plain\", image = \"../gate\" }]",
+            )],
+            "battle b01 event #3",
+            "map image `../gate` must be a media key",
+        ),
+        warning(
+            &[(
+                B01,
+                "trigger = { type = \"unit_defeated\", target = \"boss\" }",
+                "trigger = { type = \"unit_defeated\", target = \"boss\" }\nstage = 2",
+            )],
+            "battle b01 event #3",
+            "fires only at stage 2, which no event's set_stage reaches",
+        ),
+        warning(
+            &[(
+                B01,
+                "trigger = { type = \"unit_defeated\", target = \"boss\" }",
+                "trigger = { type = \"unit_defeated\", target = \"boss\" }\nwhen = [{ flag = \"ghost\" }]",
+            )],
+            "battle b01 event #3",
+            "flag `ghost` is tested but never set",
+        ),
+    ]);
+    // A stage some event moves to is fine.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        B01,
+        "trigger = { type = \"unit_defeated\", target = \"boss\" }",
+        "trigger = { type = \"unit_defeated\", target = \"boss\" }\nstage = 1",
+    );
+    edit(
+        &mut files,
+        B01,
+        "actions = [{ type = \"give_item\", item = \"fire_scroll\" }]",
+        "actions = [{ type = \"give_item\", item = \"fire_scroll\" }, { type = \"set_stage\", stage = 1 }]",
+    );
+    let issues = load(&files).validate();
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+}
+
+#[test]
 fn battle_logic_checks() {
     run(&[
         error(

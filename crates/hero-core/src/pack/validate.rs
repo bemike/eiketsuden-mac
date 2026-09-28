@@ -821,6 +821,24 @@ impl<'a> Validator<'a> {
                 format!("units of group `{g}` never appear: no event spawns the group"),
             );
         }
+        let stages: BTreeSet<u32> = b
+            .events
+            .iter()
+            .flat_map(|e| &e.actions)
+            .filter_map(|a| match a {
+                EventAction::SetStage { stage } => Some(*stage),
+                _ => None,
+            })
+            .chain([0])
+            .collect();
+        for (i, e) in b.events.iter().enumerate() {
+            if let Some(stage) = e.stage.filter(|s| !stages.contains(s)) {
+                self.warn(
+                    &format!("{ctx} event #{}", i + 1),
+                    format!("fires only at stage {stage}, which no event's set_stage reaches"),
+                );
+            }
+        }
 
         let mut treasure_tiles = BTreeSet::new();
         for t in &b.treasures {
@@ -1322,7 +1340,21 @@ impl<'a> Validator<'a> {
                     self.error(ctx, "set_flag needs a flag name");
                 }
             }
-            EventAction::GiveGold { .. } | EventAction::Victory | EventAction::Defeat => {}
+            EventAction::SetTerrain {
+                pos,
+                terrain,
+                image,
+            } => {
+                if pack.terrain(terrain).is_none() {
+                    self.error(ctx, format!("set_terrain to unknown terrain `{terrain}`"));
+                }
+                self.position(ctx, map, *pos, 0, None);
+                self.map_image(ctx, image.as_deref());
+            }
+            EventAction::GiveGold { .. }
+            | EventAction::SetStage { .. }
+            | EventAction::Victory
+            | EventAction::Defeat => {}
         }
     }
 
@@ -1386,7 +1418,13 @@ impl<'a> Validator<'a> {
                 }
             }
         }
-        for id in pack.scenes.keys() {
+        // A parent pack's scene that the top pack no longer plays (it replaced the battle that
+        // did) is the parent's business, not a flaw of the pack being checked.
+        for id in pack
+            .scenes
+            .keys()
+            .filter(|id| !pack.parent_scenes.contains(*id))
+        {
             if !used.contains(id.as_str()) {
                 self.warn(
                     &format!("scene {id}"),
@@ -1601,11 +1639,14 @@ impl<'a> Validator<'a> {
             }
         }
         for b in pack.battles.values() {
-            for e in &b.events {
+            for (i, e) in b.events.iter().enumerate() {
                 for a in &e.actions {
                     if let EventAction::SetFlag { flag, .. } = a {
                         set.insert(flag);
                     }
+                }
+                for c in &e.when {
+                    read.push((format!("battle {} event #{}", b.id, i + 1), &c.flag));
                 }
             }
         }

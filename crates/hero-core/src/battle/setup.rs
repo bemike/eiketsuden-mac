@@ -96,6 +96,9 @@ pub(super) fn build(
         gold_found: 0,
         items_found: Vec::new(),
         flags: BTreeMap::new(),
+        stage: 0,
+        start_flags: campaign.flags.clone(),
+        map_images: Vec::new(),
     })
 }
 

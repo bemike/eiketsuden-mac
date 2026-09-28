@@ -240,6 +240,8 @@ pub struct Pack {
     pub maps: BTreeMap<Id, MapEntry>,
     /// Drama scenes by globally unique scene id.
     pub scenes: BTreeMap<String, Scene>,
+    /// Scenes whose kept definition comes from a pack this one extends (not from the top pack).
+    pub parent_scenes: BTreeSet<String>,
     pub campaign: CampaignDef,
 }
 
@@ -392,12 +394,15 @@ impl PackManifest {
 
 /// Parse drama and battle files of every layer, farthest parent first. Within one pack an id
 /// must be unique; an id that a later (nearer) pack defines again replaces the earlier one.
-/// `parse` turns one file into its `(id, value)` entries.
+/// `parse` turns one file into its `(id, value)` entries. Returns the entries and, by id, the
+/// directory of the pack whose definition was kept ([`PackFile::dir`]).
+type Merged<T> = (BTreeMap<String, T>, BTreeMap<String, String>);
+
 fn merge_layers<T>(
     files: &[PackFile],
     what: &str,
     mut parse: impl FnMut(&str) -> Result<Vec<(String, T)>, PackError>,
-) -> Result<BTreeMap<String, T>, PackError> {
+) -> Result<Merged<T>, PackError> {
     let mut merged: BTreeMap<String, T> = BTreeMap::new();
     // Id -> (pack directory, file) of its current definition.
     let mut defined: BTreeMap<String, (&str, String)> = BTreeMap::new();
@@ -416,7 +421,11 @@ fn merge_layers<T>(
             merged.insert(id, value);
         }
     }
-    Ok(merged)
+    let origins = defined
+        .into_iter()
+        .map(|(id, (dir, _))| (id, dir.to_string()))
+        .collect();
+    Ok((merged, origins))
 }
 
 impl Pack {
@@ -503,7 +512,7 @@ impl Pack {
             None => Ok(()),
         };
         let mut map_files: BTreeMap<Id, String> = BTreeMap::new();
-        let maps = merge_layers(&files.maps, "map", |path| {
+        let (maps, _) = merge_layers(&files.maps, "map", |path| {
             let file: MapsFile = parse_toml(path, &read(src, path)?)?;
             let mut entries = Vec::new();
             for map in file.map {
@@ -522,7 +531,7 @@ impl Pack {
         }
 
         let mut battle_files: BTreeMap<Id, String> = BTreeMap::new();
-        let mut battles = merge_layers(&files.battles, "battle", |path| {
+        let (mut battles, _) = merge_layers(&files.battles, "battle", |path| {
             let battle: BattleDef = parse_toml(path, &read(src, path)?)?;
             if battle.id.trim().is_empty() {
                 return Err(parse_error(path, "battle with an empty id"));
@@ -557,7 +566,7 @@ impl Pack {
                 .map_err(|e| parse_error(file, format!("battle `{id}` map: {e}")))?;
         }
 
-        let scenes = merge_layers(&files.dramas, "scene", |path| {
+        let (scenes, scene_dirs) = merge_layers(&files.dramas, "scene", |path| {
             let parsed = crate::script::parse_drama(path, &read(src, path)?)
                 .map_err(|e| parse_error(&e.file, format!("line {}: {}", e.line, e.msg)))?;
             Ok(parsed.into_iter().map(|s| (s.id.clone(), s)).collect())
@@ -565,6 +574,12 @@ impl Pack {
 
         let mut manifest = chain.layers()[0].manifest.clone();
         manifest.presentation = chain.presentation();
+        let top = &chain.layers()[0].dir;
+        let parent_scenes = scene_dirs
+            .into_iter()
+            .filter(|(_, dir)| dir != top)
+            .map(|(id, _)| id)
+            .collect();
         Ok(Pack {
             manifest,
             layers: chain.layers().to_vec(),
@@ -578,6 +593,7 @@ impl Pack {
             battles,
             maps,
             scenes,
+            parent_scenes,
             campaign,
         })
     }

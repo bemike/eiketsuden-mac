@@ -3,11 +3,12 @@
 
 use crate::battle::testkit::*;
 use crate::battle::{
-    Action, ActionError, ActiveStatus, BattleEvent, BattleState, DefeatReason, Outcome, UnitId,
-    UnitState, Weather,
+    Action, ActionError, ActiveStatus, BattleEvent, BattleState, DefeatReason, MapImage, Outcome,
+    UnitId, UnitState, Weather,
 };
 use crate::battledef::{
-    AiMode, BattleDef, BonusDef, Condition, EventAction, EventDef, Side, Trigger, UnitSpawn,
+    AiMode, BattleDef, BonusDef, Condition, EventAction, EventDef, FlagCond, Side, Trigger,
+    UnitSpawn,
 };
 use crate::data::{StatusKind, WeatherChances};
 use crate::geom::Pos;
@@ -17,6 +18,8 @@ fn event(trigger: Trigger, actions: Vec<EventAction>) -> EventDef {
     EventDef {
         trigger,
         once: true,
+        stage: None,
+        when: Vec::new(),
         actions,
     }
 }
@@ -676,6 +679,8 @@ fn repeatable_events_fire_after_every_check() {
         EventDef {
             trigger: everywhere.clone(),
             once: false,
+            stage: None,
+            when: Vec::new(),
             actions: vec![EventAction::GiveGold { amount: 10 }],
         },
         event(everywhere, vec![EventAction::GiveGold { amount: 1 }]),
@@ -691,6 +696,186 @@ fn repeatable_events_fire_after_every_check() {
     st.apply(&pack, Action::Wait { unit: b }).unwrap();
     assert_eq!(st.gold_found, 31);
     assert_eq!(st.fired, vec![true, true]);
+}
+
+/// Events with a `stage` wait for `set_stage`; an event of the stage that has passed no longer
+/// fires even when its trigger holds.
+#[test]
+fn staged_events_fire_only_at_their_stage() {
+    let mut def = battle(OPEN_MAP);
+    let staged = |stage, trigger, actions| EventDef {
+        trigger,
+        once: true,
+        stage: Some(stage),
+        when: Vec::new(),
+        actions,
+    };
+    let turn = |turn| Trigger::TurnStart {
+        turn,
+        side: Side::Enemy,
+    };
+    def.events = vec![
+        // Stage 0: a unit on the gate tile moves the battle on.
+        staged(
+            0,
+            Trigger::Reach {
+                who: None,
+                pos: p(3, 3),
+                radius: 0,
+                to: None,
+            },
+            vec![
+                EventAction::GiveGold { amount: 1 },
+                EventAction::SetStage { stage: 1 },
+            ],
+        ),
+        // Stage 0 on turn 2: too late once the stage has moved on.
+        staged(0, turn(2), vec![EventAction::GiveGold { amount: 100 }]),
+        staged(1, turn(2), vec![EventAction::GiveGold { amount: 10 }]),
+        // No stage: at every stage.
+        event(turn(2), vec![EventAction::GiveGold { amount: 1000 }]),
+    ];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    assert_eq!((st.stage, st.gold_found), (1, 1));
+    st.apply(&pack, Action::Wait { unit: me }).unwrap();
+    end_phase(&mut st, &pack); // enemy phase 1
+    end_phase(&mut st, &pack); // player phase 2
+    end_phase(&mut st, &pack); // enemy phase 2
+    assert_eq!(st.gold_found, 1011);
+    assert_eq!(st.fired, vec![true, false, true, true]);
+}
+
+/// Events with `when` wait for their flags: set by this battle's events, else as the campaign
+/// had them when the battle began.
+#[test]
+fn event_conditions_read_battle_and_campaign_flags() {
+    let mut def = battle(OPEN_MAP);
+    let cond = |text: &str| -> Vec<FlagCond> {
+        toml::from_str::<toml::Table>(&format!("when = [{text}]")).unwrap()["when"]
+            .clone()
+            .try_into()
+            .unwrap()
+    };
+    let turn = |turn| Trigger::TurnStart {
+        turn,
+        side: Side::Enemy,
+    };
+    let gated = |when, turn, amount| EventDef {
+        trigger: turn,
+        once: true,
+        stage: None,
+        when,
+        actions: vec![EventAction::GiveGold { amount }],
+    };
+    def.events = vec![
+        // Turn 2: waits for `gate`, which turn 1 sets.
+        gated(cond("{ flag = \"gate\" }"), turn(2), 1),
+        event(
+            turn(1),
+            vec![EventAction::SetFlag {
+                flag: "gate".into(),
+                value: 1,
+            }],
+        ),
+        // The campaign's flag at the start: `route == 2` holds, `route >= 3` does not.
+        gated(
+            cond("{ flag = \"route\", cmp = \"==\", value = 2 }"),
+            turn(1),
+            10,
+        ),
+        gated(
+            cond("{ flag = \"route\", cmp = \">=\", value = 3 }"),
+            turn(1),
+            100,
+        ),
+        // Flags never set are 0.
+        gated(cond("{ flag = \"nobody\", cmp = \"==\" }"), turn(1), 1000),
+    ];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    st.start_flags.insert("route".into(), 2);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    end_phase(&mut st, &pack); // enemy phase 1
+    assert_eq!(st.gold_found, 1010);
+    end_phase(&mut st, &pack); // player phase 2
+    end_phase(&mut st, &pack); // enemy phase 2
+    assert_eq!(st.gold_found, 1011);
+    assert_eq!(st.fired, vec![true, true, true, false, true]);
+    // Written back with operators.
+    let text = toml::to_string(&def_of(&pack).events[2]).unwrap();
+    assert!(text.contains("cmp = \"==\""), "{text}");
+}
+
+fn def_of(pack: &Pack) -> &BattleDef {
+    &pack.battles[BATTLE]
+}
+
+/// `set_terrain` changes the rules grid (movement follows it at once) and remembers the tile
+/// picture; an unknown terrain changes nothing.
+#[test]
+fn set_terrain_changes_the_tile_and_keeps_its_picture() {
+    let mut def = battle(
+        "
+        ........
+        ~~~~~~~~
+        ........",
+    );
+    let bridge_at = |x| EventAction::SetTerrain {
+        pos: p(x, 1),
+        terrain: "plain".into(),
+        image: Some(format!("drawbridge_{x}")),
+    };
+    def.events = vec![event(
+        Trigger::TurnStart {
+            turn: 1,
+            side: Side::Player,
+        },
+        vec![
+            bridge_at(3),
+            EventAction::SetTerrain {
+                pos: p(4, 1),
+                terrain: "lava".into(),
+                image: None,
+            },
+            bridge_at(3),
+        ],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 2));
+    let ev = st.begin(&pack);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, BattleEvent::TerrainChanged { .. }))
+            .count(),
+        2,
+        "{ev:?}"
+    );
+    assert_eq!(st.map.terrain_at(p(3, 1)), Some("plain"));
+    assert_eq!(st.map.terrain_at(p(4, 1)), Some("river"));
+    assert_eq!(
+        st.map_images,
+        [MapImage {
+            pos: p(3, 1),
+            image: "drawbridge_3".into()
+        }],
+        "one picture per tile"
+    );
+    assert!(
+        st.terrain_at(&pack, p(3, 1))
+            .is_some_and(|t| t.id == "plain"),
+        "the rules follow the new terrain"
+    );
+    // A mid-battle save keeps the change.
+    let saved: BattleState = serde_json::from_str(&serde_json::to_string(&st).unwrap()).unwrap();
+    assert_eq!(saved, st);
 }
 
 #[test]

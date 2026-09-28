@@ -15,6 +15,23 @@ impl BattleScreen {
             atlas.as_ref(),
             ctx.time,
         );
+        // Tiles whose terrain an event changed, with their own picture.
+        let tile = self.tile();
+        for m in &self.shown_tiles {
+            if let Some(texture) = ctx.media.texture(&format!("maps/{}", m.image)) {
+                let at = self.camera.tile_screen(m.pos);
+                draw_texture_ex(
+                    &texture,
+                    at.x.round(),
+                    at.y.round(),
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2(tile, tile)),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         // Untaken treasures twinkle.
         for (i, t) in self.def().treasures.iter().enumerate() {
             if !self.state.treasures_taken.get(i).copied().unwrap_or(false) {

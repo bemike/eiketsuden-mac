@@ -52,8 +52,8 @@ use crate::ui::theme;
 use crate::ui::window::{draw_icon, draw_window, draw_window_ex, WindowStyle};
 use anim::{Cue, EventPlayer, Scene};
 use camera::{edge_direction, Camera, EDGE_PAN_SPEED};
-use hero_core::battle::{Action, BattleEvent, BattleState, Outcome, UnitId};
-use hero_core::battledef::Side;
+use hero_core::battle::{Action, BattleEvent, BattleState, MapImage, Outcome, UnitId};
+use hero_core::battledef::{EventAction, Side};
 use hero_core::geom::Pos;
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
@@ -236,6 +236,11 @@ pub struct BattleScreen {
     cues: Vec<Cue>,
     /// Unit levels when the screen opened (for the level-ups in the result window).
     start_levels: Vec<u32>,
+    /// Tile pictures of changed terrain drawn over the map: the state's
+    /// [`BattleState::map_images`] as far as the animation has shown them.
+    shown_tiles: Vec<MapImage>,
+    /// The map was drawn from the tileset before a terrain change; rebuild it.
+    map_stale: bool,
 }
 
 impl BattleScreen {
@@ -352,6 +357,8 @@ impl BattleScreen {
             sheets,
             cues: Vec::new(),
             start_levels: state.units.iter().map(|u| u.level).collect(),
+            shown_tiles: state.map_images.clone(),
+            map_stale: false,
             state,
         }
     }
@@ -382,6 +389,16 @@ impl BattleScreen {
             .as_ref()
             .map(|key| format!("maps/{key}"));
         textures.extend(self.meta.picture.iter().cloned());
+        for e in &self.def().events {
+            for a in &e.actions {
+                if let EventAction::SetTerrain {
+                    image: Some(key), ..
+                } = a
+                {
+                    textures.push(format!("maps/{key}"));
+                }
+            }
+        }
         ctx.media.preload_textures(&textures);
         let mut sounds: Vec<String> = sfx::ALL.iter().map(|k| format!("sfx/{k}")).collect();
         for key in [self.bgm_for(Side::Player), self.bgm_for(Side::Enemy)] {
@@ -433,6 +450,10 @@ impl BattleScreen {
                     macroquad::logging::warn!("{} unavailable, no effects: {}", sprites::FX_FILE, e)
                 }
             }
+        }
+        if self.map_stale && self.map.is_built() {
+            self.map_stale = false;
+            self.map = MapRenderer::new(&self.state.map, self.map.tile);
         }
         if !self.map.is_built() && self.meta.tileset_req.is_none() {
             // The tile size is known now (the tileset's, or the default without one), so the
@@ -487,6 +508,16 @@ impl BattleScreen {
     /// Size of a map tile in virtual pixels (the tileset's `tile_size`).
     fn tile(&self) -> f32 {
         self.map.tile
+    }
+
+    /// The animation reached a terrain change at `pos`: draw the tile's new picture, or redraw
+    /// the tileset map with the new terrain.
+    fn show_terrain(&mut self, pos: Pos) {
+        self.shown_tiles.retain(|m| m.pos != pos);
+        match self.state.map_images.iter().find(|m| m.pos == pos) {
+            Some(m) => self.shown_tiles.push(m.clone()),
+            None => self.map_stale = !self.map.uses_picture(),
+        }
     }
 
     /// Lay the map out with `tile` pixel tiles (the tileset's `tile_size`): a new map renderer
@@ -601,6 +632,7 @@ impl BattleScreen {
                         ctx.audio.play_jingle(key);
                     }
                 }
+                Cue::Terrain(pos) => self.show_terrain(pos),
                 Cue::Drama(scene) => {
                     if self.pack.scene(&scene).is_some() {
                         self.waiting = Some(Waiting::Drama);

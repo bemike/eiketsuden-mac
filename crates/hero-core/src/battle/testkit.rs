@@ -461,6 +461,7 @@ pub fn pack_with(def: BattleDef) -> Pack {
         battles,
         maps: BTreeMap::new(),
         scenes: BTreeMap::new(),
+        parent_scenes: Default::default(),
         campaign: CampaignDef {
             title: "test".into(),
             start: "start".into(),

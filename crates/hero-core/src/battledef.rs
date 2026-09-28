@@ -2,6 +2,7 @@
 
 use crate::data::{Equipment, Id};
 use crate::geom::Pos;
+use crate::script::{cmp_field, Compare};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -285,6 +286,21 @@ pub enum EventAction {
         flag: String,
         value: i64,
     },
+    /// Move the battle to another stage: events with a `stage` fire only while the battle is at
+    /// that stage (every battle starts at stage 0).
+    SetStage {
+        stage: u32,
+    },
+    /// Change the terrain of one tile for the rest of the battle (a gate opens, a drawbridge
+    /// comes down). `image`, a media key of `gfx/maps/<image>.png` one tile in size, is drawn
+    /// over the tile from then on. Without it, a map drawn from the tileset shows the new
+    /// terrain's tile; a map with a picture layer keeps its picture there.
+    SetTerrain {
+        pos: Pos,
+        terrain: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image: Option<String>,
+    },
     Victory,
     Defeat,
 }
@@ -295,7 +311,25 @@ pub struct EventDef {
     /// Fire only the first time the trigger becomes true.
     #[serde(default = "yes")]
     pub once: bool,
+    /// Fire only while the battle is at this stage (`set_stage`); without it, at every stage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<u32>,
+    /// Fire only while every condition holds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub when: Vec<FlagCond>,
     pub actions: Vec<EventAction>,
+}
+
+/// A condition on a flag: `flag <cmp> value`, with the flag's value as this battle's events set
+/// it, else as the campaign had it when the battle began (0 when never set). `cmp` defaults to
+/// `!=` and `value` to 0, so `{ flag = "x" }` means "x is set".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlagCond {
+    pub flag: String,
+    #[serde(default = "cmp_field::default", with = "cmp_field")]
+    pub cmp: Compare,
+    #[serde(default)]
+    pub value: i64,
 }
 
 /// Optional secondary objective; completing it gives every surviving deployed unit bonus EXP.

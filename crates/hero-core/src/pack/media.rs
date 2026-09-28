@@ -3,7 +3,7 @@
 
 use super::validate::is_media_key;
 use super::{Issue, Pack, Severity};
-use crate::battledef::MapDef;
+use crate::battledef::{EventAction, MapDef};
 use crate::map::BattleMap;
 use crate::script::Cmd;
 use std::collections::BTreeSet;
@@ -315,6 +315,44 @@ impl MediaCheck {
                     &ctx,
                     format!("{}: not a readable PNG: {e}", path.display()),
                 ),
+            }
+        }
+        // Tile pictures of `set_terrain` events: one tile each.
+        for b in pack.battles.values() {
+            for (i, e) in b.events.iter().enumerate() {
+                for a in &e.actions {
+                    let EventAction::SetTerrain {
+                        image: Some(key), ..
+                    } = a
+                    else {
+                        continue;
+                    };
+                    if !is_media_key(key) {
+                        continue; // reported by `Pack::validate`
+                    }
+                    let ctx = format!("battle {} event {i}", b.id);
+                    let rel = format!("gfx/maps/{key}.png");
+                    let Some(path) = self.find(&rel) else {
+                        self.require(Severity::Warning, &ctx, &rel, "tile picture");
+                        continue;
+                    };
+                    let tile = self.tile_size;
+                    match png_size(&path) {
+                        Ok(size) if size == (tile, tile) => {}
+                        Ok((w, h)) => self.push(
+                            Severity::Warning,
+                            &ctx,
+                            format!(
+                                "{rel} is {w}×{h} pixels; a tile picture is one tile ({tile}×{tile}, the tileset's tile_size)"
+                            ),
+                        ),
+                        Err(e) => self.push(
+                            Severity::Error,
+                            &ctx,
+                            format!("{}: not a readable PNG: {e}", path.display()),
+                        ),
+                    }
+                }
             }
         }
     }

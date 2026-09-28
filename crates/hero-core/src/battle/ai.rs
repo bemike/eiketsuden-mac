@@ -257,7 +257,10 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
             .collect()
     };
     for (i, e) in def.events.iter().enumerate() {
-        if e.once && st.fired.get(i).copied().unwrap_or(false) {
+        if (e.once && st.fired.get(i).copied().unwrap_or(false))
+            || e.stage.is_some_and(|s| s != st.stage)
+            || !st.conditions_hold(&e.when)
+        {
             continue;
         }
         let wins = if e.actions.iter().any(|a| matches!(a, EventAction::Defeat)) {

@@ -291,6 +291,8 @@ fn state_copies_inventory_and_sizes_tracking_arrays() {
                 side: Side::Enemy,
             },
             once: true,
+            stage: None,
+            when: Vec::new(),
             actions: vec![EventAction::GiveGold { amount: 1 }],
         };
         3
@@ -314,6 +316,8 @@ fn begin_plays_intro_then_starts_turn_one() {
             side: Side::Player,
         },
         once: true,
+        stage: None,
+        when: Vec::new(),
         actions: vec![EventAction::Drama { scene: "t1".into() }],
     }];
     let pack = pack_with(def);

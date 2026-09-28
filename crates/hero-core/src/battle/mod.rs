@@ -391,8 +391,21 @@ pub enum BattleEvent {
     BonusAchieved {
         exp: u32,
     },
+    /// An event changed the terrain of a tile (`set_terrain`); [`BattleState::map_images`]
+    /// holds the picture drawn over it, if the event gave one.
+    TerrainChanged {
+        pos: Pos,
+    },
     Victory,
     Defeat(DefeatReason),
+}
+
+/// A picture drawn over one tile of the map from a `set_terrain` event on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapImage {
+    pub pos: Pos,
+    /// Media key of `gfx/maps/<image>.png`.
+    pub image: String,
 }
 
 /// Full battle state; `Clone` for move-cancel snapshots and `Serialize` for mid-battle saves.
@@ -426,6 +439,17 @@ pub struct BattleState {
     pub items_found: Vec<Id>,
     /// Campaign flags set by event actions during the battle.
     pub flags: BTreeMap<String, i64>,
+    /// Stage set by `set_stage` events (0 at the start); events with a `stage` fire only at it.
+    #[serde(default)]
+    pub stage: u32,
+    /// The campaign's flags when the battle began, for event conditions (`when`). Mid-battle
+    /// saves from before this field load without them: conditions then see 0.
+    #[serde(default)]
+    pub start_flags: BTreeMap<String, i64>,
+    /// Pictures of tiles whose terrain events changed, in the order they were changed (at most
+    /// one per tile). `map` already holds the new terrain.
+    #[serde(default)]
+    pub map_images: Vec<MapImage>,
 }
 
 impl BattleState {
@@ -470,6 +494,21 @@ impl BattleState {
             .iter()
             .find(|u| u.matches(reference))
             .map(|u| u.id)
+    }
+
+    /// A flag's value for event conditions: as this battle's events set it, else as the
+    /// campaign had it when the battle began.
+    pub fn flag(&self, name: &str) -> i64 {
+        self.flags
+            .get(name)
+            .or_else(|| self.start_flags.get(name))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Whether every condition of an event holds now.
+    pub fn conditions_hold(&self, when: &[crate::battledef::FlagCond]) -> bool {
+        when.iter().all(|c| c.cmp.eval(self.flag(&c.flag), c.value))
     }
 
     pub fn terrain_at<'a>(&self, pack: &'a Pack, pos: Pos) -> Option<&'a TerrainDef> {
