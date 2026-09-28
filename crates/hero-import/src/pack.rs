@@ -1218,7 +1218,9 @@ fn officer_sprite(officer: &str, class: Option<usize>) -> String {
     }
 }
 
-fn units_toml() -> String {
+/// `units.toml` for the class sheets and the officer icons `officers` that were built:
+/// (officer, class, sprite key).
+fn units_toml(officers: &[(&str, Option<usize>, String)]) -> String {
     let mut s = String::from(
         "# Unit sprites of the original mode: the battle-map icons of HEXZCHR.R3, written by\n\
          # `hero-tools original pack` (do not edit; run the importer again). 32×32 frames stand on\n\
@@ -1242,12 +1244,14 @@ fn units_toml() -> String {
             ICON_PX - 1
         );
     }
-    for (officer, icons) in OFFICER_ICONS {
-        let _ = write!(s, "\n[officers.{officer}]\n");
-        for &(class, _) in *icons {
-            let class_key = class.map_or("\"*\"", |k| CLASS_SPRITES[k]);
-            let _ = writeln!(s, "{class_key} = \"{}\"", officer_sprite(officer, class));
+    let mut current = None;
+    for (officer, class, key) in officers {
+        if current != Some(*officer) {
+            let _ = write!(s, "\n[officers.{officer}]\n");
+            current = Some(*officer);
         }
+        let class_key = class.map_or("\"*\"", |k| CLASS_SPRITES[k]);
+        let _ = writeln!(s, "{class_key} = \"{key}\"");
     }
     s
 }
@@ -1317,7 +1321,7 @@ fn convert_units(
     };
     // Build every sheet first: the index file is written only for a complete set.
     let mut sheets = Vec::new();
-    let mut owned: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut owned: Vec<(&str, Option<usize>, String, Vec<u8>)> = Vec::new();
     for (k, key) in CLASS_SPRITES.iter().enumerate() {
         let player = icon(2 * k + PLAYER_ICON).and_then(|i| unit_sheet(&i));
         let enemy = icon(2 * k + 1 - PLAYER_ICON).and_then(|i| unit_sheet(&i));
@@ -1331,6 +1335,11 @@ fn convert_units(
             Err(e) => report.errors.push(format!("{key}: {e}")),
         }
     }
+    if !report.errors.is_empty() {
+        report.summary = "HEXZCHR.R3 does not hold every class icon".into();
+        return Ok(report);
+    }
+    // Officers' own icons: one that cannot be built leaves that officer on his class icon.
     for (officer, icons) in OFFICER_ICONS {
         for &(class, entry) in *icons {
             let key = officer_sprite(officer, class);
@@ -1339,14 +1348,12 @@ fn convert_units(
                 .and_then(|sheet| encode_png(&sheet, &pal, true).map_err(|e| e.to_string()));
             match png {
                 // One icon for every side, as the original draws it.
-                Ok(png) => owned.push((key, png)),
-                Err(e) => report.errors.push(format!("{key}: {e}")),
+                Ok(png) => owned.push((*officer, class, key, png)),
+                Err(e) => report.notes.push(format!(
+                    "{key}: {e}; {officer} is drawn with the class icon instead"
+                )),
             }
         }
-    }
-    if !report.errors.is_empty() {
-        report.summary = "HEXZCHR.R3 does not hold every class icon".into();
-        return Ok(report);
     }
     for (key, (player, enemy)) in &sheets {
         out.write(&format!("gfx/units/{key}_player.png"), player)?;
@@ -1354,13 +1361,17 @@ fn convert_units(
         out.write(&format!("gfx/units/{key}_enemy.png"), enemy)?;
         report.outputs += 3;
     }
-    for (key, png) in &owned {
+    for (_, _, key, png) in &owned {
         for side in ["player", "ally", "enemy"] {
             out.write(&format!("gfx/units/{key}_{side}.png"), png)?;
         }
         report.outputs += 3;
     }
-    out.write("gfx/units/units.toml", units_toml().as_bytes())?;
+    let officers: Vec<(&str, Option<usize>, String)> = owned
+        .iter()
+        .map(|(officer, class, key, _)| (*officer, *class, key.clone()))
+        .collect();
+    out.write("gfx/units/units.toml", units_toml(&officers).as_bytes())?;
     report.outputs += 1;
     report.status = Status::Extracted;
     report.summary = format!(

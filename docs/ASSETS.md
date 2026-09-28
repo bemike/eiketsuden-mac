@@ -201,7 +201,9 @@ short_infantry = "officer_liu_bei_short_infantry"   # drawn with this sheet whil
 ```
 
 `hero-tools validate` reports an officer or class sprite key the pack does not have (warning) and a
-missing sheet or entry of the sprite drawn instead (error).
+missing sheet or entry of the sprite drawn instead (error). Like the rest of `units.toml`, the table
+belongs to the index a layered pack replaces as a whole: a child with its own `units.toml` keeps
+officers' own sprites only if it copies the `[officers]` tables.
 
 ## Portraits — `gfx/portraits/<key>.png`
 
