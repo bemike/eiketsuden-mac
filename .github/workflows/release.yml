@@ -12,7 +12,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # A release is built only from a commit whose rules and base pack pass (a subset of CI's checks).
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rules tests
+        run: cargo test -p hero-core
+      - name: Validate base data pack
+        run: cargo run --release -p hero-tools -- validate data/base
+
   build:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:

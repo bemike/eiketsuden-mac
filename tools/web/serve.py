@@ -12,6 +12,7 @@ usage: python tools/web/serve.py [--port 8080] [--bind 127.0.0.1] [--dir target/
 """
 
 import argparse
+import contextlib
 import functools
 import http.server
 
@@ -37,12 +38,13 @@ def main():
     handler = functools.partial(NoCacheHandler, directory=args.dir)
     with http.server.ThreadingHTTPServer((args.bind, args.port), handler) as server:
         host = "localhost" if args.bind in ("127.0.0.1", "0.0.0.0") else args.bind
-        print(f"serving {args.dir} on http://{host}:{args.port}/ "
-              f"(UI gallery: http://{host}:{args.port}/#gallery; Ctrl+C stops)", flush=True)
-        try:
+        print(
+            f"serving {args.dir} on http://{host}:{args.port}/ "
+            f"(UI gallery: http://{host}:{args.port}/#gallery; Ctrl+C stops)",
+            flush=True,
+        )
+        with contextlib.suppress(KeyboardInterrupt):
             server.serve_forever()
-        except KeyboardInterrupt:
-            pass
 
 
 if __name__ == "__main__":

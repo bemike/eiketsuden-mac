@@ -3,15 +3,15 @@
 Builds the WebAssembly version of the game and assembles a static site.
 
 .DESCRIPTION
-Runs `cargo build -p hero-game --target wasm32-unknown-unknown` and copies eiketsuden.wasm,
-web/index.html, web/mq_js_bundle.js, web/hero_web.js and the data pack into the output folder
-(default target/web-dist, which is git-ignored) — the same layout the GitHub Pages workflow
-publishes. Browsers cannot load WebAssembly from file:// URLs, so serve the folder over HTTP
+Runs `cargo build -p hero-game --target wasm32-unknown-unknown`, then tools/web/assemble.py
+(Python 3.11+, the same step the GitHub Pages workflow runs) lays out the site in the output folder
+(default target/web-dist, which is git-ignored): the page, the wasm and the data pack with the packs
+it extends. Browsers cannot load WebAssembly from file:// URLs, so serve the folder over HTTP
 (-Serve does that with tools/web/serve.py, a no-cache variant of Python's built-in server).
 
 .PARAMETER Data
-Data pack directory copied to <Out>/data/base (default: data/base of this repository). A relative
-path is taken relative to the current directory.
+Data pack directory copied to <Out>/data/base, with the packs it extends (default: data/base of this
+repository). A relative path is taken relative to the current directory.
 
 .PARAMETER Out
 Output directory (default: target/web-dist of this repository; relative paths as for -Data). It
@@ -36,7 +36,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Marker = ".eiketsuden-web-dist"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 # Explicit paths are relative to where the script was started, the defaults to the repository.
 $Data = if ($Data) { [IO.Path]::GetFullPath($Data, (Get-Location).Path) } else { Join-Path $Root "data/base" }
@@ -50,37 +49,19 @@ try {
     & cargo @cargoArgs
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed (exit code $LASTEXITCODE)" }
 
-    if (Test-Path $Out) {
-        if (-not (Test-Path (Join-Path $Out $Marker))) {
-            throw "$Out exists but was not created by this script; refusing to overwrite it"
-        }
-        Remove-Item -Recurse -Force $Out
-    }
-    New-Item -ItemType Directory -Force (Join-Path $Out "data") | Out-Null
-    New-Item -ItemType File (Join-Path $Out $Marker) | Out-Null
-
-    Copy-Item "web/index.html", "web/mq_js_bundle.js", "web/hero_web.js" $Out
-    Copy-Item "target/wasm32-unknown-unknown/$buildProfile/eiketsuden.wasm" $Out
-
-    if (Test-Path $Data -PathType Container) {
-        Copy-Item -Recurse $Data (Join-Path $Out "data/base")
-        if (-not (Test-Path (Join-Path $Data "pack.toml"))) {
-            Write-Warning "$Data has no pack.toml: only the UI gallery (#gallery) will work."
-        }
-    } else {
-        Write-Warning "data pack $Data not found: the page will show the 'pack not found' error screen."
-    }
-
-    $wasm = Get-Item (Join-Path $Out "eiketsuden.wasm")
-    Write-Host ("site ready in {0} (eiketsuden.wasm {1:N0} KB)" -f (Resolve-Path $Out), ($wasm.Length / 1KB))
+    # `python3` on Windows is often only the Microsoft Store stub, so try `python` first; take the
+    # first one that is 3.11 or newer.
+    $python = @("python", "python3") |
+        Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } |
+        Where-Object { (Get-Command $_).Source -notlike "*\WindowsApps\*" } |
+        Where-Object { & $_ -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>$null; $LASTEXITCODE -eq 0 } |
+        Select-Object -First 1
+    if (-not $python) { throw "python 3.11+ is needed to assemble the site (tools/web/assemble.py)" }
+    $wasm = "target/wasm32-unknown-unknown/$buildProfile/eiketsuden.wasm"
+    & $python (Join-Path $PSScriptRoot "assemble.py") --wasm $wasm --out $Out --data $Data
+    if ($LASTEXITCODE -ne 0) { throw "assembling the site failed (exit code $LASTEXITCODE)" }
 
     if ($Serve -gt 0) {
-        # `python3` on Windows is often only the Microsoft Store stub, so try `python` first.
-        $python = @("python", "python3") |
-            Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } |
-            Where-Object { (Get-Command $_).Source -notlike "*\WindowsApps\*" } |
-            Select-Object -First 1
-        if (-not $python) { throw "python is needed for -Serve (or serve $Out with any static web server)" }
         & $python (Join-Path $PSScriptRoot "serve.py") --port $Serve --dir $Out
     }
 } finally {
