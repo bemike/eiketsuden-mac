@@ -35,17 +35,17 @@ laid out without engine changes:
 ```toml
 # pack.toml
 [presentation]
-canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 1280×800
+canvas = [640, 480]   # virtual canvas in pixels, each side within 480×270 ..= 1280×800
 ```
 
-* **Canvas.** A pack whose canvas lies outside 320×200 ..= 1280×800 (each side on its own) does not load.
+* **Canvas.** A pack whose canvas lies outside 480×270 ..= 1280×800 (each side on its own) does not load.
   Before a pack is loaded (loading, error and gallery screens) and when no pack of the chain sets
   `canvas` the canvas is 480×270. Every screen is laid out relative to the canvas: windows
   are centred or anchored to its edges, lists and panels grow with it, fonts keep their pixel size
-  (so a bigger canvas shows more, not bigger, text). The camp and battle screens are laid out for at
-  least **480×270**; smaller canvases are accepted, but those screens overlap and `Pack::validate`
-  warns about it. Procedural backdrops (title, credits, missing drama backgrounds) are designed for
-  a 270-pixel-high canvas and stretch vertically with the canvas height.
+  (so a bigger canvas shows more, not bigger, text). 480×270 is also the smallest canvas: the camp
+  and battle screens are laid out for at least that size (`docs/DECISIONS.md` D13). Procedural
+  backdrops (title, credits, missing drama backgrounds) are designed for a 270-pixel-high canvas and
+  stretch vertically with the canvas height.
 * **Tile size.** The battle map, camera, cursor, range highlights, unit placement, floating numbers,
   effects and pointer hit-testing use the tileset's `tile_size`: one atlas pixel is one virtual
   pixel. Maps are drawn with flat colours at 16 pixels per tile when the tileset is missing. The
@@ -187,6 +187,23 @@ anchor = [12, 23]     # frame pixel placed on the tile's bottom-centre pixel, (8
 Frames larger than the tile overhang it upwards and sideways around the anchor. Every base pack sheet
 uses 24×24 frames (the chariot 32×24, anchor `[16, 23]`); a 16×16 frame with anchor `[8, 15]` fits a 16-pixel
 tile exactly. On `T`-pixel tiles the anchor lands on the tile pixel `(T/2, T−1)`.
+
+**Officers' own sprites.** An `[officers.<officer id>]` table draws that officer with another sprite key in
+battle: its keys are the sprite key of the class the officer is (`*` for any class), its values sprite keys
+with sheets and a `[sprites.…]` entry like a class's. The camp keeps showing the class sprite. The original
+mode uses it for the original's own icons of Liu Bei (per class), Lü Bu and Cao Cao:
+
+```toml
+[officers.liu_bei]
+short_infantry = "officer_liu_bei_short_infantry"   # drawn with this sheet while he is 단병
+[officers.lu_bu]
+"*" = "officer_lu_bu"                                # whatever his class
+```
+
+`hero-tools validate` reports an officer or class sprite key the pack does not have (warning) and a
+missing sheet or entry of the sprite drawn instead (error). Like the rest of `units.toml`, the table
+belongs to the index a layered pack replaces as a whole: a child with its own `units.toml` keeps
+officers' own sprites only if it copies the `[officers]` tables.
 
 ## Portraits — `gfx/portraits/<key>.png`
 

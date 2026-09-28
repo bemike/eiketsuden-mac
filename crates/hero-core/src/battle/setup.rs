@@ -97,6 +97,7 @@ pub(super) fn build(
         items_found: Vec::new(),
         flags: BTreeMap::new(),
         stage: 0,
+        objective: None,
         start_flags: campaign.flags.clone(),
         map_images: Vec::new(),
     })

@@ -11,7 +11,9 @@ use hero_core::geom::Dir;
 use macroquad::prelude::*;
 
 // The index files' schema is shared with the validator and the importer.
-pub use hero_core::media_index::{parse_fx, parse_units, FxDef, SpriteDef, FX_FILE, UNITS_FILE};
+pub use hero_core::media_index::{
+    parse_fx, parse_units, FxDef, SpriteDef, UnitsFile, FX_FILE, UNITS_FILE,
+};
 
 /// Sheet colour suffix of a side (`<sprite>_<side>.png`).
 pub fn side_suffix(side: Side) -> &'static str {
@@ -80,8 +82,8 @@ mod tests {
             "[sprites.archer]\nframe = [24, 24]\nanchor = [12, 23]\n[sprites.chariot]\nframe = [32, 24]\nanchor = [16, 23]\n",
         )
         .unwrap();
-        assert_eq!(units["chariot"].frame, [32, 24]);
-        let o = frame_origin(vec2(32.0, 48.0), 16.0, &units["archer"]);
+        assert_eq!(units.sprites["chariot"].frame, [32, 24]);
+        let o = frame_origin(vec2(32.0, 48.0), 16.0, &units.sprites["archer"]);
         // The anchor pixel (12, 23) of the frame sits on the tile pixel (8, 15).
         assert_eq!(o + vec2(12.0, 23.0), vec2(32.0 + 8.0, 48.0 + 15.0));
         assert_eq!(
@@ -89,7 +91,7 @@ mod tests {
             Vec2::ZERO
         );
         // On 32-pixel tiles the anchor sits on the tile pixel (16, 31).
-        let o = frame_origin(vec2(64.0, 96.0), 32.0, &units["archer"]);
+        let o = frame_origin(vec2(64.0, 96.0), 32.0, &units.sprites["archer"]);
         assert_eq!(o + vec2(12.0, 23.0), vec2(64.0 + 16.0, 96.0 + 31.0));
         assert_eq!(tile_foot(16.0), vec2(8.0, 15.0));
         assert_eq!(tile_foot(48.0), vec2(24.0, 47.0));
@@ -119,7 +121,7 @@ mod tests {
     fn base_pack_metadata_parses() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
         let units = parse_units(&std::fs::read_to_string(dir.join(UNITS_FILE)).unwrap()).unwrap();
-        assert_eq!(units.len(), 19);
+        assert_eq!(units.sprites.len(), 19);
         let fx = parse_fx(&std::fs::read_to_string(dir.join(FX_FILE)).unwrap()).unwrap();
         for key in ["slash", "arrow", "fire", "water", "rock", "heal", "levelup"] {
             assert!(fx.contains_key(key), "fx `{key}` missing");

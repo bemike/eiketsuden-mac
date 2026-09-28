@@ -625,7 +625,8 @@ mod tests {
                 .iter()
                 .filter(|f| f.starts_with("gfx/units/") && f.ends_with(".png"))
                 .count(),
-            57
+            // 19 classes and 5 officer icons (Liu Bei's three, Lü Bu's, Cao Cao's), 3 sides.
+            (19 + 5) * 3
         );
         let portraits = json["portraits"].as_array().unwrap().len();
         assert!(portraits >= 100, "{portraits} portraits");
@@ -634,6 +635,19 @@ mod tests {
             .unwrap()
             .iter()
             .any(|p| p["officer"] == "yu_jin" && p["bakdata"] == 62));
+        // The officers with their own unit icons are the original's officers 0, 4 and 8
+        // (MAIN.EXE picks the icons by those numbers).
+        for (officer, bakdata) in [("liu_bei", 0), ("lu_bu", 4), ("cao_cao", 8)] {
+            assert!(pack::OFFICER_ICONS.iter().any(|(id, _)| *id == officer));
+            assert!(
+                json["portraits"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p["officer"] == officer && p["bakdata"] == bakdata),
+                "{officer} is not BAKDATA {bakdata}"
+            );
+        }
         // All 58 battle maps (FORMATS.md §10.1); the only cell of a code without terrain is the
         // code 255 of map 32 (§10.4). Their pictures passed the size check of `run_pack`.
         let maps = json["maps"].as_array().unwrap();

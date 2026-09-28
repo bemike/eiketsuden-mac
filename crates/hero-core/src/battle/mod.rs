@@ -396,6 +396,10 @@ pub enum BattleEvent {
     TerrainChanged {
         pos: Pos,
     },
+    /// An event changed the objective text to `text` ([`BattleState::objective_text`]).
+    ObjectiveChanged {
+        text: String,
+    },
     Victory,
     Defeat(DefeatReason),
 }
@@ -442,6 +446,9 @@ pub struct BattleState {
     /// Stage set by `set_stage` events (0 at the start); events with a `stage` fire only at it.
     #[serde(default)]
     pub stage: u32,
+    /// The objective text a `set_objective` event put in place of the battle's `objective`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective: Option<String>,
     /// The campaign's flags when the battle began, for event conditions (`when`). Mid-battle
     /// saves from before this field load without them: conditions then see 0.
     #[serde(default)]
@@ -474,6 +481,13 @@ impl BattleState {
 
     pub fn def<'a>(&self, pack: &'a Pack) -> &'a BattleDef {
         &pack.battles[&self.battle_id]
+    }
+
+    /// The objective the battle shows: the one a `set_objective` event set, else the battle's.
+    pub fn objective_text<'a>(&'a self, pack: &'a Pack) -> &'a str {
+        self.objective
+            .as_deref()
+            .unwrap_or(&self.def(pack).objective)
     }
 
     pub fn unit(&self, id: UnitId) -> &Unit {
@@ -509,6 +523,13 @@ impl BattleState {
     /// Whether every condition of an event holds now.
     pub fn conditions_hold(&self, when: &[crate::battledef::FlagCond]) -> bool {
         when.iter().all(|c| c.cmp.eval(self.flag(&c.flag), c.value))
+    }
+
+    /// Whether the flags let `event` fire now: all of its `when` hold and, if it has an
+    /// `unless`, not all of that.
+    pub fn flags_allow(&self, event: &crate::battledef::EventDef) -> bool {
+        self.conditions_hold(&event.when)
+            && (event.unless.is_empty() || !self.conditions_hold(&event.unless))
     }
 
     pub fn terrain_at<'a>(&self, pack: &'a Pack, pos: Pos) -> Option<&'a TerrainDef> {

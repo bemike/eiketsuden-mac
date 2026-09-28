@@ -112,7 +112,7 @@ items = "rules/items.toml"
 | `battles` | list of paths | no (`[]`) | Battle files, one battle each. |
 | `dramas` | list of paths | no (`[]`) | Drama scripts, any number of scenes each. |
 | `maps` | list of paths | no (`[]`) | [Map files](#map-files): maps that battles `use` by id. |
-| `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[320, 200]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
+| `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[480, 270]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
 
 ```toml
 [presentation]
@@ -763,6 +763,7 @@ actions = [{ type = "drama", scene = "b01_duel" }, { type = "level_up", target =
 | `once` | bool | `true` | Fire only the first time. |
 | `stage` | integer | none | Fire only while the battle is at this stage (see below); without it, at every stage. |
 | `when` | list of flag conditions | `[]` | Fire only while every condition holds (see below). |
+| `unless` | list of flag conditions | `[]` | Fire only while at least one of these fails, i.e. not all of them hold (see below). |
 | `actions` | list of actions | required | Run in order. |
 
 **Stages.** Every battle starts at stage 0; a `set_stage` action moves it to another. An event with a
@@ -785,7 +786,9 @@ actions = [{ type = "victory" }]
 fires only while every condition holds. A condition compares a [flag](#flags) with `value` (default 0)
 using `cmp` (`==`, `!=`, `<`, `<=`, `>`, `>=`; default `!=`, so `{ flag = "x" }` means "x is set"). The
 flag's value is the one this battle's `set_flag` actions gave it, else the campaign's when the battle began.
-An event whose conditions do not hold is not used up: it fires later when they do.
+An event whose conditions do not hold is not used up: it fires later when they do. `unless` takes
+conditions of the same form and holds the event back once **all** of them hold ("before Liu Bei has
+talked to all three generals"); an event may have both.
 
 Triggers:
 
@@ -810,6 +813,7 @@ Actions:
 | `give_gold` | `amount` | Give the player gold (kept after a victory). |
 | `set_flag` | `flag`, `value` | Set a campaign [flag](#flags). |
 | `set_stage` | `stage` | Move the battle to another stage (see above). |
+| `set_objective` | `text` | Replace the objective text the battle shows for the rest of the battle (a banner announces it); the victory and defeat conditions do not change. |
 | `set_terrain` | `pos`, `terrain`, `image` (opt.) | Change one tile's terrain for the rest of the battle (a gate opens, a drawbridge comes down); movement and defence follow the new terrain at once. `image` is a media key of `gfx/maps/<image>.png`, one tile in size, drawn over the tile from then on. Without it, a map drawn from the tileset shows the new terrain's tile, while a map with a picture layer keeps its picture there. |
 | `victory` / `defeat` | — | End the battle. |
 
@@ -1027,7 +1031,7 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
   names the file and the TOML position).
 * A list file uses an unknown top-level table (`[[classes]]` instead of `[[class]]`).
 * `pack.toml` paths that leave the pack or use `\`, and files listed twice; `presentation.canvas`
-  outside `[320, 200]`..`[1280, 800]`; a pack without `extends` that does not list all five rules files,
+  outside `[480, 270]`..`[1280, 800]`; a pack without `extends` that does not list all five rules files,
   `officers` and `campaign`.
 * [Layered packs](#layered-packs-extends): an `extends` that is not a relative `/` directory, a parent
   without a readable `pack.toml`, a pack that extends itself (directly or through others), two packs of
@@ -1047,9 +1051,6 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
 ### 2. Cross-references (`Pack::validate`)
 
 E = error, W = warning.
-
-**pack.toml** — W: a `presentation.canvas` smaller than 480×270 (the camp and battle screens are laid
-out for at least that size and overlap on smaller canvases).
 
 **rules/game.toml** — E: `level_cap`/`exp_per_level` below 1, negative `gold_cap`/`mp_cap`/
 `morale_loss_pct`/`counter_damage_pct`, `morale_start` or `confuse_morale` outside 0..=100, EXP tables not
@@ -1108,7 +1109,7 @@ commander, `survive_turns`/`turn_start` with turn 0, `hp_below` outside 1..=100,
 `give_item` items, `set_flag` without a name, `set_terrain` to an unknown terrain or with an image that
 is not a media key. W: `survive_turns` or `turn_start` after `turn_limit`, events without actions,
 `adjacent` naming the same unit twice, `set_ai` to `advance` without `ai_pos`, `level_up` by 0, an event
-`stage` that no `set_stage` reaches, a `when` flag that nothing sets, a battle won only by `defeat_all`
+`stage` that no `set_stage` reaches, a `when` or `unless` flag that nothing sets, a battle won only by `defeat_all`
 (no other victory condition, no `victory` event) with an enemy on the map that can never be attacked: no
 tile it can walk to is within an attack range or a damage strategy's reach (with its area) of anywhere
 walkable from the first `deploy.max` deployment slots or the start tiles of player and allied units

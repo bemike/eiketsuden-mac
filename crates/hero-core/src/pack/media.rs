@@ -6,7 +6,7 @@ use super::{Issue, Pack, Severity};
 use crate::battledef::{EventAction, MapDef};
 use crate::map::BattleMap;
 use crate::media_index::{
-    self, FxFile, TilesetFile, UnitsFile, DEFAULT_TILE, FX_FILE as FX_TOML,
+    self, FxFile, TilesetFile, UnitsFile, ANY_CLASS, DEFAULT_TILE, FX_FILE as FX_TOML,
     TILESET_FILE as TILES_TOML, UNITS_FILE as UNITS_TOML,
 };
 use crate::script::Cmd;
@@ -133,47 +133,80 @@ impl MediaCheck {
             return;
         }
         let index: Option<UnitsFile> = self.index(UNITS_TOML, "unit sprites");
-        let sprites = index.as_ref().map(|f| &f.sprites);
         let mut keys_seen = BTreeSet::new();
         for class in pack.classes.values() {
             let key = class.sprite.as_str();
-            if !keys_seen.insert(key) {
-                continue;
+            if keys_seen.insert(key) {
+                self.sprite_sheets(&format!("class {}", class.id), key, index.as_ref());
             }
-            let ctx = format!("class {}", class.id);
-            let def = sprites.and_then(|s| s.get(key));
-            for side in SIDES {
-                let rel = format!("gfx/units/{key}_{side}.png");
-                self.require(Severity::Error, &ctx, &rel, "unit sprite sheet");
-                // The battle cuts frames by `frame`, the camp by the sheet size (4 columns × 6
-                // rows): both must agree. (Computed wide, so a huge `frame` cannot wrap around.)
-                if let (Some(def), Some(path)) = (def, self.find(&rel)) {
-                    let want = (4 * u64::from(def.frame[0]), 6 * u64::from(def.frame[1]));
-                    match png_size(&path) {
-                        Ok((w, h)) if (u64::from(w), u64::from(h)) == want => {}
-                        Ok((w, h)) => self.push(
-                            Severity::Error,
-                            &ctx,
-                            format!(
-                                "{rel} is {w}×{h} pixels; with frame = [{}, {}] in {UNITS_TOML} a sheet of 4 × 6 frames is {}×{}",
-                                def.frame[0], def.frame[1], want.0, want.1
-                            ),
-                        ),
-                        Err(e) => self.push(
-                            Severity::Error,
-                            &ctx,
-                            format!("{}: not a readable PNG: {e}", path.display()),
-                        ),
-                    }
-                }
-            }
-            if index.is_some() && def.is_none() {
+        }
+        let Some(index) = &index else {
+            return;
+        };
+        // Officers' own sprites: known officers and class sprite keys, and sheets like a
+        // class's.
+        let class_sprites: BTreeSet<&str> =
+            pack.classes.values().map(|c| c.sprite.as_str()).collect();
+        for (officer, by_class) in &index.officers {
+            let ctx = format!("{UNITS_TOML} officer {officer}");
+            if pack.officer(officer).is_none() {
                 self.push(
-                    Severity::Error,
+                    Severity::Warning,
                     &ctx,
-                    format!("{UNITS_TOML} has no [sprites.{key}] entry"),
+                    "names no officer of the pack: never drawn".to_string(),
                 );
             }
+            for (class_sprite, key) in by_class {
+                if class_sprite != ANY_CLASS && !class_sprites.contains(class_sprite.as_str()) {
+                    self.push(
+                        Severity::Warning,
+                        &ctx,
+                        format!(
+                            "`{class_sprite}` is no class's sprite key (nor `{ANY_CLASS}`): never drawn"
+                        ),
+                    );
+                }
+                if keys_seen.insert(key.as_str()) {
+                    self.sprite_sheets(&ctx, key, Some(index));
+                }
+            }
+        }
+    }
+
+    /// The three side sheets of sprite `key` and its `[sprites.key]` entry, sized alike.
+    fn sprite_sheets(&mut self, ctx: &str, key: &str, index: Option<&UnitsFile>) {
+        let def = index.and_then(|f| f.sprites.get(key));
+        for side in SIDES {
+            let rel = format!("gfx/units/{key}_{side}.png");
+            self.require(Severity::Error, ctx, &rel, "unit sprite sheet");
+            // The battle cuts frames by `frame`, the camp by the sheet size (4 columns × 6
+            // rows): both must agree. (Computed wide, so a huge `frame` cannot wrap around.)
+            if let (Some(def), Some(path)) = (def, self.find(&rel)) {
+                let want = (4 * u64::from(def.frame[0]), 6 * u64::from(def.frame[1]));
+                match png_size(&path) {
+                    Ok((w, h)) if (u64::from(w), u64::from(h)) == want => {}
+                    Ok((w, h)) => self.push(
+                        Severity::Error,
+                        ctx,
+                        format!(
+                            "{rel} is {w}×{h} pixels; with frame = [{}, {}] in {UNITS_TOML} a sheet of 4 × 6 frames is {}×{}",
+                            def.frame[0], def.frame[1], want.0, want.1
+                        ),
+                    ),
+                    Err(e) => self.push(
+                        Severity::Error,
+                        ctx,
+                        format!("{}: not a readable PNG: {e}", path.display()),
+                    ),
+                }
+            }
+        }
+        if index.is_some() && def.is_none() {
+            self.push(
+                Severity::Error,
+                ctx,
+                format!("{UNITS_TOML} has no [sprites.{key}] entry"),
+            );
         }
     }
 

@@ -124,7 +124,7 @@ impl BattleScreen {
                 .total_cmp(&(vb.pos.y + vb.offset.y))
                 .then(a.cmp(&b))
         });
-        let default_sprite = SpriteDef::default();
+        let default_sprite = sprites::SpriteDef::default();
         let tile = self.tile();
         let canvas = ctx.gfx.size();
         // Units whose tile is this far outside the canvas cannot show (sprites overhang their
@@ -141,11 +141,13 @@ impl BattleScreen {
             {
                 continue;
             }
-            let sprite = self
-                .sprite_of
-                .get(&v.class)
-                .map_or(v.class.as_str(), |s| s.as_str());
-            let def = self.meta.sprites.get(sprite).unwrap_or(&default_sprite);
+            let sprite = self.unit_sprite(u.officer.as_deref(), &v.class);
+            let def = self
+                .meta
+                .units
+                .sprites
+                .get(sprite)
+                .unwrap_or(&default_sprite);
             let frame = vec2(def.frame[0] as f32, def.frame[1] as f32);
             let origin = sprites::frame_origin(screen, tile, def);
             // Marks above the unit sit relative to the top of its frame.
@@ -639,7 +641,7 @@ impl BattleScreen {
     pub(super) fn draw_objective(&self, ctx: &Ctx, footer: &str) {
         hud::draw_text_window(
             ctx,
-            &self.def().objective,
+            self.state.objective_text(&self.pack),
             &self.objective_sections(),
             footer,
         );

@@ -1,5 +1,5 @@
-//! `[presentation]` of `pack.toml`: the default canvas, the allowed range (checked when the
-//! manifest loads) and the warning for canvases the frontend's screens are not laid out for.
+//! `[presentation]` of `pack.toml`: the default canvas and the allowed range (checked when the
+//! manifest loads).
 
 mod common;
 
@@ -44,8 +44,9 @@ fn a_declared_canvas_is_used() {
 #[test]
 fn canvases_outside_the_range_do_not_load() {
     for bad in [
-        "canvas = [319, 240]",
-        "canvas = [640, 199]",
+        "canvas = [479, 270]",
+        "canvas = [640, 269]",
+        "canvas = [320, 200]",
         "canvas = [1281, 480]",
         "canvas = [640, 801]",
     ] {
@@ -57,29 +58,6 @@ fn canvases_outside_the_range_do_not_load() {
             other => panic!("{bad}: unexpected error {other:?}"),
         }
     }
-}
-
-#[test]
-fn small_canvases_are_allowed_with_a_warning() {
-    for small in ["canvas = [320, 200]", "canvas = [640, 240]"] {
-        let issues = load(&with_presentation(small)).validate();
-        assert!(
-            issues
-                .iter()
-                .all(|i| i.severity == hero_core::pack::Severity::Warning),
-            "{small}:\n{}",
-            format_issues(&issues)
-        );
-        assert_issue(
-            &issues,
-            hero_core::pack::Severity::Warning,
-            "pack.toml",
-            "smaller than 480x270",
-        );
-    }
-    // The default and bigger canvases do not warn.
-    let issues = load(&with_presentation("canvas = [480, 270]")).validate();
-    assert!(issues.is_empty(), "{}", format_issues(&issues));
 }
 
 #[test]

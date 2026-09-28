@@ -304,6 +304,11 @@ pub enum EventAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         image: Option<String>,
     },
+    /// Replace the objective text the battle shows (the battle's `objective`) for the rest of
+    /// the battle. The victory and defeat conditions are unchanged.
+    SetObjective {
+        text: String,
+    },
     Victory,
     Defeat,
 }
@@ -320,6 +325,10 @@ pub struct EventDef {
     /// Fire only while every condition holds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub when: Vec<FlagCond>,
+    /// Fire only while at least one of these conditions fails (not all of them hold); empty:
+    /// no such check.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unless: Vec<FlagCond>,
     pub actions: Vec<EventAction>,
 }
 
@@ -452,6 +461,7 @@ impl EventAction {
             | EventAction::SetFlag { .. }
             | EventAction::SetStage { .. }
             | EventAction::SetTerrain { .. }
+            | EventAction::SetObjective { .. }
             | EventAction::Victory
             | EventAction::Defeat => Vec::new(),
         }

@@ -16,13 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// no terrain cost for it instead needs its slots passable for at least one class move type.
 pub(super) const FOOT_MOVE_TYPE: &str = "foot";
 
-/// Smallest canvas the frontend's camp and battle screens are laid out for (`docs/ASSETS.md`,
-/// "Presentation profile"); smaller canvases are allowed but draw those screens overlapping.
-const LAYOUT_MIN_CANVAS: [u32; 2] = [480, 270];
-
 pub(super) fn validate(pack: &Pack) -> Vec<Issue> {
     let mut v = Validator::new(pack);
-    v.presentation();
     v.rules();
     v.terrain();
     v.classes();
@@ -160,24 +155,6 @@ impl<'a> Validator<'a> {
 
     fn level_ok(&self, level: u32) -> bool {
         (1..=self.pack.rules.level_cap).contains(&level)
-    }
-
-    // ----- pack.toml [presentation] ---------------------------------------------------------
-
-    /// The canvas range itself is checked when the manifest loads; a canvas below
-    /// [`LAYOUT_MIN_CANVAS`] is allowed but warned about.
-    fn presentation(&mut self) {
-        let [w, h] = self.pack.manifest.presentation.canvas;
-        let [min_w, min_h] = LAYOUT_MIN_CANVAS;
-        if w < min_w || h < min_h {
-            self.warn(
-                super::MANIFEST_FILE,
-                format!(
-                    "presentation.canvas [{w}, {h}] is smaller than {min_w}x{min_h}: the camp and \
-                     battle screens are laid out for at least that size and overlap on this canvas"
-                ),
-            );
-        }
     }
 
     // ----- rules/game.toml -----------------------------------------------------------------
@@ -1484,6 +1461,11 @@ impl<'a> Validator<'a> {
                 self.position(ctx, map, *pos, 0, None);
                 self.map_image(ctx, image.as_deref());
             }
+            EventAction::SetObjective { text } => {
+                if text.trim().is_empty() {
+                    self.error(ctx, "set_objective with an empty text".to_string());
+                }
+            }
             EventAction::GiveGold { .. }
             | EventAction::SetStage { .. }
             | EventAction::Victory
@@ -1778,7 +1760,7 @@ impl<'a> Validator<'a> {
                         set.insert(flag);
                     }
                 }
-                for c in &e.when {
+                for c in e.when.iter().chain(&e.unless) {
                     read.push((format!("battle {} event #{}", b.id, i + 1), &c.flag));
                 }
             }
