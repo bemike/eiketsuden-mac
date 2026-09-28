@@ -316,9 +316,21 @@ fn advance_heads_for_its_position() {
             Action::Wait { unit: foe }
         ]
     );
-    // Next to its destination it steps onto it (a reach trigger there needs the tile itself).
+    // Next to its destination it steps onto it (a reach trigger there needs the tile itself),
+    // and acts from there.
     st.units[foe].pos = p(6, 0);
     assert_eq!(move_target(&st.ai_actions(&pack, foe)), Some(p(7, 0)));
+    let near = add(&mut st, &pack, Side::Player, "infantry", 1, p(7, 1));
+    let plan = st.ai_actions(&pack, foe);
+    assert_eq!(move_target(&plan), Some(p(7, 0)));
+    let at_near = st.units[near].pos;
+    assert!(
+        matches!(last(&plan), Action::Attack { target, .. } if *target == near)
+            || matches!(last(&plan), Action::Strategy { target, .. } if *target == at_near),
+        "{plan:?}"
+    );
+    // (Out of the way again, far from the destination.)
+    st.units[near].pos = p(1, 7);
     // At its destination it holds the position.
     st.units[foe].pos = p(7, 0);
     assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);

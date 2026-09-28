@@ -193,7 +193,7 @@ The lord retreating loses the battle immediately.
   confusion/morale-down on dangerous targets, minus the expected damage the unit would receive on that tile from
   hostile units next phase, plus terrain defence. Strategies are used when they out-score the best physical attack.
 * Mode rules: `hold` never moves; `defensive` stays until a hostile unit can be reached this phase; `guard` stays within
-  3 tiles of `ai_pos` (default: spawn tile); `target` moves towards `ai_target`; `advance` moves towards `ai_pos`;
+  3 tiles of `ai_pos` (default: spawn tile); `target` moves towards `ai_target`; `advance` moves towards `ai_pos` (entering it once in reach, then acting as `defensive` there);
   `flee` maximises distance from hostile units; `march` heads for `ai_target` or `ai_pos` without acting (and is no
   threat to plan around); `aggressive` approaches the best target anywhere.
 * When no action is possible, the unit moves towards its goal (nearest hostile unit, target or position) along the
