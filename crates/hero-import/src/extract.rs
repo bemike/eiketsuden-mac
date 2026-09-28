@@ -256,9 +256,9 @@ impl fmt::Display for ExtractError {
             ExtractError::OutputNotEmpty(path) => write!(
                 f,
                 "the output folder {} is not empty and holds no previous run of the importer \
-                 ({INDEX_FILE} of an extraction, {} of an original pack); choose an empty or \
-                 new folder (if an earlier run into it was interrupted, delete the folder and \
-                 run again)",
+                 of the same kind ({INDEX_FILE} of an extraction, {} of an original pack, or the \
+                 {JOURNAL_FILE} of an interrupted one); choose an empty or new folder (a folder \
+                 left by an interrupted run of an older version: delete it and run again)",
                 path.display(),
                 crate::pack::PACK_INDEX
             ),
@@ -284,6 +284,11 @@ pub(crate) fn output_error(path: &Path, e: impl fmt::Display) -> ExtractError {
     }
 }
 
+/// Name of the journal a run keeps in the output folder while it writes: the output format on
+/// the first line, then every file written. A finished run removes it; after an interrupted run
+/// it lets the next run into the same folder remove exactly those files ([`prepare_output`]).
+pub(crate) const JOURNAL_FILE: &str = ".hero-import-partial";
+
 /// Files written into the output folder, or kept in memory when `memory` is set (the game
 /// converts the original mode at launch without writing anything, `pack::build_pack`).
 pub(crate) struct Output {
@@ -292,16 +297,30 @@ pub(crate) struct Output {
     pub(crate) files: Vec<String>,
     /// File contents by relative path, instead of writing them to `root`.
     pub(crate) memory: Option<BTreeMap<String, Vec<u8>>>,
+    /// The journal of a folder output ([`JOURNAL_FILE`]).
+    journal: Option<PathBuf>,
 }
 
 impl Output {
-    /// Files written into the folder `root`.
-    pub(crate) fn dir(root: &Path) -> Output {
-        Output {
+    /// Files written into the folder `root` (prepared by [`prepare_output`]), journalled until
+    /// [`Output::finish`] as output of `format`.
+    pub(crate) fn dir(root: &Path, format: &str) -> Result<Output, ExtractError> {
+        let journal = root.join(JOURNAL_FILE);
+        std::fs::write(&journal, format!("{format}\n")).map_err(|e| output_error(&journal, e))?;
+        Ok(Output {
             root: root.to_path_buf(),
             files: Vec::new(),
             memory: None,
+            journal: Some(journal),
+        })
+    }
+
+    /// The run is complete (its index written): drop the journal.
+    pub(crate) fn finish(&mut self) -> Result<(), ExtractError> {
+        if let Some(journal) = self.journal.take() {
+            std::fs::remove_file(&journal).map_err(|e| output_error(&journal, e))?;
         }
+        Ok(())
     }
 
     /// Files kept in memory; `name` stands for the folder in error messages.
@@ -310,6 +329,7 @@ impl Output {
             root: PathBuf::from(name),
             files: Vec::new(),
             memory: Some(BTreeMap::new()),
+            journal: None,
         }
     }
 
@@ -318,6 +338,15 @@ impl Output {
             files.insert(rel.to_string(), bytes.to_vec());
         } else {
             let path = self.root.join(rel);
+            // Journalled before it exists, so an interrupted write is cleaned up too.
+            if let Some(journal) = &self.journal {
+                use std::io::Write;
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(journal)
+                    .and_then(|mut f| writeln!(f, "{rel}"))
+                    .map_err(|e| output_error(journal, e))?;
+            }
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| output_error(parent, e))?;
             }
@@ -339,7 +368,7 @@ impl Output {
     }
 }
 
-/// A relative path from a previous index that stays inside the output folder.
+/// A relative path from a previous index or journal that stays inside the output folder.
 fn safe_relative(rel: &str) -> Option<PathBuf> {
     let path = Path::new(rel);
     let ok = !rel.is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)));
@@ -347,7 +376,8 @@ fn safe_relative(rel: &str) -> Option<PathBuf> {
 }
 
 /// Check the output folder and remove the files of a previous run: the folder must be new,
-/// empty, or hold an `index_file` whose `format` is `format` (the files it lists are removed).
+/// empty, hold an `index_file` whose `format` is `format` (the files it lists are removed), or
+/// the [`JOURNAL_FILE`] of an interrupted run of `format` (the files it names are removed).
 pub(crate) fn prepare_output(
     source: &Path,
     out: &Path,
@@ -379,6 +409,25 @@ pub(crate) fn prepare_output(
     if entries.next().is_none() {
         return Ok(());
     }
+    // The journal is kept until the new run's `Output::dir` replaces it, so a run interrupted
+    // while cleaning up is still recognised by the next one.
+    let journal = out.join(JOURNAL_FILE);
+    match std::fs::read_to_string(&journal) {
+        Ok(text) => {
+            let mut lines = text.lines();
+            // An empty journal: the run stopped while creating it, before writing anything.
+            if !matches!(lines.next(), Some(f) if f == format) && !text.is_empty() {
+                return Err(ExtractError::OutputNotEmpty(out.to_path_buf()));
+            }
+            remove_listed(out, &journal, lines)?;
+            // An interrupted run removed the previous index first; nothing else to clean.
+            if !out.join(index_file).exists() {
+                return Ok(());
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(output_error(&journal, e)),
+    }
     let index_path = out.join(index_file);
     let previous: PreviousIndex = match std::fs::read(&index_path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
@@ -388,10 +437,33 @@ pub(crate) fn prepare_output(
     if previous.format != format {
         return Err(ExtractError::OutputNotEmpty(out.to_path_buf()));
     }
-    for rel in &previous.files {
+    // Journal the cleanup itself (the index last), so an interruption here is retried too.
+    let mut listed = format!("{format}\n");
+    for rel in previous
+        .files
+        .iter()
+        .map(String::as_str)
+        .chain([index_file])
+    {
+        listed.push_str(rel);
+        listed.push('\n');
+    }
+    std::fs::write(&journal, listed).map_err(|e| output_error(&journal, e))?;
+    remove_listed(out, &index_path, previous.files.iter().map(String::as_str))?;
+    std::fs::remove_file(&index_path).map_err(|e| output_error(&index_path, e))
+}
+
+/// Remove the files `list` (a previous run's index or journal, `listed_in`) names below `out`;
+/// files already gone are fine.
+fn remove_listed<'a>(
+    out: &Path,
+    listed_in: &Path,
+    list: impl Iterator<Item = &'a str>,
+) -> Result<(), ExtractError> {
+    for rel in list.filter(|l| !l.is_empty()) {
         let Some(path) = safe_relative(rel) else {
             return Err(output_error(
-                &index_path,
+                listed_in,
                 format!("lists an unsafe path `{rel}`; remove the folder by hand"),
             ));
         };
@@ -402,7 +474,7 @@ pub(crate) fn prepare_output(
             Err(e) => return Err(output_error(&path, e)),
         }
     }
-    std::fs::remove_file(&index_path).map_err(|e| output_error(&index_path, e))
+    Ok(())
 }
 
 /// Extract the selected assets of the install in `source` into `out`.
@@ -423,7 +495,7 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
         Some(s) => (s, true),
         None => (Selection::all(), false),
     };
-    let mut output = Output::dir(out);
+    let mut output = Output::dir(out, FORMAT)?;
     let mut assets = BTreeMap::new();
     if selection.text {
         let (names, bakdata) = extract_names(&install, encoding, &mut output, requested)?;
@@ -461,6 +533,7 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
         files: output.files.clone(),
     };
     output.write_json(INDEX_FILE, &index)?;
+    output.finish()?;
     Ok(index)
 }
 
@@ -2727,6 +2800,54 @@ mod tests {
         )
         .unwrap();
         let err = extract(src.path(), out.path(), &Options::default()).unwrap_err();
+        assert!(err.to_string().contains("unsafe path"), "{err}");
+
+        // A finished run leaves no journal; an interrupted one (its journal and some files, no
+        // index) is cleaned up by the next run, which keeps the user's own files.
+        let out = TempDir::new("ex-out-interrupted");
+        extract(src.path(), out.path(), &text_only).unwrap();
+        assert!(!out.path().join(JOURNAL_FILE).exists());
+        std::fs::remove_file(out.path().join(INDEX_FILE)).unwrap();
+        std::fs::write(out.path().join("mine.txt"), b"keep").unwrap();
+        std::fs::write(
+            out.path().join(JOURNAL_FILE),
+            format!("{FORMAT}\ntext/leftover.json\n"),
+        )
+        .unwrap();
+        std::fs::write(out.path().join("text/leftover.json"), b"{}").unwrap();
+        let index = extract(src.path(), out.path(), &text_only).unwrap();
+        assert!(!out.path().join("text/leftover.json").exists());
+        assert!(out.path().join("mine.txt").is_file());
+        assert!(!out.path().join(JOURNAL_FILE).exists());
+        assert!(index.files.iter().all(|f| out.path().join(f).is_file()));
+        // Interrupted after the index was written but before the journal was removed: the
+        // journal names every file, the index included, and the next run starts over.
+        let files = index.files.clone();
+        let mut journal = format!("{FORMAT}\n");
+        for f in files.iter().map(String::as_str).chain([INDEX_FILE]) {
+            journal.push_str(f);
+            journal.push('\n');
+        }
+        std::fs::write(out.path().join(JOURNAL_FILE), journal).unwrap();
+        extract(src.path(), out.path(), &text_only).unwrap();
+        assert!(!out.path().join(JOURNAL_FILE).exists());
+        assert!(out.path().join(INDEX_FILE).is_file());
+        // Interrupted while creating the journal (empty): accepted as ours.
+        std::fs::remove_file(out.path().join(INDEX_FILE)).unwrap();
+        std::fs::write(out.path().join(JOURNAL_FILE), "").unwrap();
+        extract(src.path(), out.path(), &text_only).unwrap();
+        // A journal of another output format (an original pack) is not ours to clean.
+        std::fs::write(out.path().join(JOURNAL_FILE), "other-format\n").unwrap();
+        std::fs::remove_file(out.path().join(INDEX_FILE)).unwrap();
+        let err = extract(src.path(), out.path(), &text_only).unwrap_err();
+        assert!(matches!(err, ExtractError::OutputNotEmpty(_)), "{err}");
+        // A journal with an escaping path is refused.
+        std::fs::write(
+            out.path().join(JOURNAL_FILE),
+            format!("{FORMAT}\n../escape\n"),
+        )
+        .unwrap();
+        let err = extract(src.path(), out.path(), &text_only).unwrap_err();
         assert!(err.to_string().contains("unsafe path"), "{err}");
     }
 
