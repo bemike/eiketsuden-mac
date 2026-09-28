@@ -183,6 +183,7 @@ fn duel_pack(extra: Vec<EventDef>) -> Pack {
         once: true,
         stage: None,
         when: Vec::new(),
+        unless: Vec::new(),
         actions: vec![
             EventAction::Drama {
                 scene: "duel".into(),
@@ -247,6 +248,7 @@ fn the_player_side_avoids_a_scripted_defeat() {
         once: true,
         stage: None,
         when: Vec::new(),
+        unless: Vec::new(),
         actions: vec![EventAction::Defeat],
     };
     let pack = duel_pack(vec![trap]);

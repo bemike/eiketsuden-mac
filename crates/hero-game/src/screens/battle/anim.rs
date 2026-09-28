@@ -710,6 +710,9 @@ pub fn plan(
             )),
             BattleEvent::Drama { scene } => BeatKind::Drama(scene.clone()),
             BattleEvent::TerrainChanged { pos } => BeatKind::Terrain(*pos),
+            BattleEvent::ObjectiveChanged { text } => {
+                BeatKind::Banner(banner("목표 변경", Some(text.clone()), Tone::Neutral, 2.0))
+            }
             BattleEvent::BonusAchieved { exp } => BeatKind::Banner(banner(
                 "보너스 달성!",
                 Some(format!("승리하면 출진한 전원 경험치 +{exp}")),

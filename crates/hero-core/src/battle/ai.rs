@@ -267,7 +267,7 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
     for (i, e) in def.events.iter().enumerate() {
         if (e.once && st.fired.get(i).copied().unwrap_or(false))
             || e.stage.is_some_and(|s| s != st.stage)
-            || !st.conditions_hold(&e.when)
+            || !st.flags_allow(e)
         {
             continue;
         }

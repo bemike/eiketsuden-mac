@@ -40,7 +40,8 @@
 //! What cannot follow is left out and listed as a note: base units whose officer the original
 //! roster does not have, events and conditions that name them or a tile of the base map,
 //! reinforcement groups, and the parts of the original's scripts the engine has no counterpart
-//! for (music, mid-battle objective texts, campaign flags, changes of allegiance).
+//! for (music, campaign flags, changes of allegiance). Objective texts a script changes become
+//! `set_objective` actions.
 //!
 //! # Mapping rules
 //!
@@ -729,6 +730,9 @@ enum ScriptEnd {
 #[derive(Debug, Clone, PartialEq)]
 struct Branch {
     when: Vec<FlagCond>,
+    /// The part runs only while not all of these hold (what a script does past a guarded part
+    /// that ends it).
+    unless: Vec<FlagCond>,
     actions: Vec<EventAction>,
     end: ScriptEnd,
 }
@@ -927,6 +931,35 @@ impl EventWriter<'_, '_> {
         end
     }
 
+    /// The part of a script past a flag-guarded part that ends it: it runs while `when` holds
+    /// but not all of `tested`. A test of shared flags inside it would need both at once, so
+    /// such a part is left out with a note.
+    fn unless_part(
+        &mut self,
+        record: usize,
+        code: &[Instr],
+        with_text: bool,
+        when: &[FlagCond],
+        tested: Vec<FlagCond>,
+    ) {
+        let taken = std::mem::take(&mut self.branches);
+        let mut actions = Vec::new();
+        let end = self.script_part(record, code, &mut actions, with_text, when);
+        if !std::mem::replace(&mut self.branches, taken).is_empty() {
+            self.notes.push(format!(
+                "record {record}: what its script does while its flags do not hold is left out \
+                 (it tests shared flags again)"
+            ));
+            return;
+        }
+        self.branches.push(Branch {
+            when: when.to_vec(),
+            unless: tested,
+            actions,
+            end,
+        });
+    }
+
     /// [`EventWriter::script`] for a part of a script that runs while `when` holds.
     fn script_part(
         &mut self,
@@ -1014,19 +1047,22 @@ impl EventWriter<'_, '_> {
                                 with_text,
                                 &cond,
                             );
+                            // The flags this test adds to those the part already runs under.
+                            let tested: Vec<FlagCond> =
+                                cond.iter().filter(|c| !when.contains(c)).cloned().collect();
                             self.branches.push(Branch {
                                 when: cond,
+                                unless: Vec::new(),
                                 actions: guarded,
                                 end: branch_end,
                             });
                             skip = *n;
                             if branch_end != ScriptEnd::Done {
-                                // What follows runs only while the flags do not hold.
-                                if code[guarded_to..].iter().any(|c| c.mnemonic != "end") {
-                                    self.notes.push(format!(
-                                        "record {record}: what its script does while its flags \
-                                         do not hold is left out"
-                                    ));
+                                // What follows runs only while the flags do not hold: a part
+                                // of its own that fires unless they all do.
+                                let rest = &code[guarded_to..];
+                                if rest.iter().any(|c| c.mnemonic != "end") {
+                                    self.unless_part(record, rest, with_text, when, tested);
                                 }
                                 end = ScriptEnd::Branched;
                                 break;
@@ -1195,10 +1231,16 @@ impl EventWriter<'_, '_> {
                     end = ScriptEnd::EndsBattle;
                     break;
                 }
-                "set_objective" => {
-                    self.skipped
-                        .insert("objective texts changed during battles");
-                }
+                "set_objective" => match self.sources.text.string(get("text")) {
+                    Ok(text) => {
+                        let text = objective_text(&text);
+                        if !text.is_empty() {
+                            flush(&mut scene, actions, self);
+                            actions.push(EventAction::SetObjective { text });
+                        }
+                    }
+                    Err(e) => self.notes.push(format!("record {record}: objective: {e}")),
+                },
                 "set_country" | "set_allegiance" | "set_class" | "set_officer_bit"
                 | "withdraw_unit" => {
                     self.notes.push(format!(
@@ -1216,6 +1258,27 @@ impl EventWriter<'_, '_> {
         }
         end
     }
+}
+
+/// An original objective text as one line: the original lists its conditions numbered on lines
+/// of their own (`1,적의 전멸\r2,유비가 …`) and marks names in brackets (`[여포]`).
+pub fn objective_text(raw: &str) -> String {
+    raw.split(['\r', '\n'])
+        .map(|line| {
+            let line = line.trim();
+            let line = match line.split_once(',') {
+                Some((n, rest))
+                    if !n.is_empty() && n.trim().chars().all(|c| c.is_ascii_digit()) =>
+                {
+                    rest.trim()
+                }
+                _ => line,
+            };
+            line.replace(['[', ']'], "")
+        })
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" / ")
 }
 
 /// Re-stage `base` as the original battle `orig` of `pairing` on the map `map_id`, with the
@@ -1827,6 +1890,7 @@ pub fn convert(
             let branches = std::mem::take(&mut writer.branches);
             let parts = std::iter::once(Branch {
                 when: Vec::new(),
+                unless: Vec::new(),
                 actions,
                 end,
             })
@@ -1842,6 +1906,7 @@ pub fn convert(
                     once: true,
                     stage: staged.then_some(stage),
                     when: part.when,
+                    unless: part.unless,
                     actions,
                 });
             }
@@ -2458,6 +2523,21 @@ item = "wine"
         }
     }
 
+    #[test]
+    fn objective_texts_become_one_line() {
+        assert_eq!(objective_text("1, [여포]의 괴멸"), "여포의 괴멸");
+        assert_eq!(
+            objective_text("\n1,적의 전멸 \r\n2,유비가 북서쪽 성채에 도달"),
+            "적의 전멸 / 유비가 북서쪽 성채에 도달"
+        );
+        // A comma that is no list number stays.
+        assert_eq!(
+            objective_text("성문을 열고, 들어가라"),
+            "성문을 열고, 들어가라"
+        );
+        assert_eq!(objective_text(" \r\n "), "");
+    }
+
     fn text() -> Text {
         let mut t = Text::default();
         t.dialogues.insert(0x10, vec![(1, "결투다!".into())]);
@@ -2630,6 +2710,7 @@ item = "wine"
                 once: true,
                 stage: Some(0),
                 when: Vec::new(),
+                unless: Vec::new(),
                 actions: vec![EventAction::Spawn {
                     group: "original_7".into()
                 }],
@@ -2645,6 +2726,7 @@ item = "wine"
                 once: true,
                 stage: Some(0),
                 when: Vec::new(),
+                unless: Vec::new(),
                 actions: vec![
                     EventAction::SetTerrain {
                         pos: Pos::new(3, 1),
@@ -2670,6 +2752,7 @@ item = "wine"
                 once: true,
                 stage: Some(1),
                 when: Vec::new(),
+                unless: Vec::new(),
                 actions: vec![
                     EventAction::Drama {
                         scene: "orig_b_10".into()
@@ -2703,6 +2786,7 @@ item = "wine"
                 once: true,
                 stage: Some(1),
                 when: Vec::new(),
+                unless: Vec::new(),
                 actions: vec![EventAction::Victory],
             }
         );
@@ -2953,5 +3037,85 @@ item = "wine"
             .iter()
             .flat_map(|e| &e.actions)
             .any(|a| matches!(a, EventAction::SetTerrain { .. })));
+    }
+
+    /// What a script does past a part guarded by shared flags that ends it runs only while the
+    /// flags do not all hold: an event with `unless`. An objective text becomes `set_objective`.
+    #[test]
+    fn the_part_past_a_guarded_end_fires_unless_the_flags_hold() {
+        let mut scene = scene();
+        // Record 7, on the route of flag 133: while flag 90 is set it narrates and ends the
+        // phase; otherwise it narrates something else and changes the objective.
+        let code = &mut scene.blocks[1].records[7].code;
+        code.insert(
+            0,
+            instr(
+                "if_flags",
+                Operands::Condition {
+                    skip: 2,
+                    all_set: vec![90],
+                    all_clear: vec![],
+                },
+            ),
+        );
+        code.insert(1, fields("narration", &[("text", 0x30)]));
+        code.insert(2, op("leave_parallel"));
+        code.insert(3, fields("narration", &[("text", 0x50)]));
+        code.insert(4, fields("set_objective", &[("text", 0x60)]));
+        let mut text = text();
+        text.strings
+            .insert(0x60, "1, [장수]를 설득\r\n2,성문 도달".into());
+        let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        let orig = find_battle(&scene, 2, &[]).unwrap();
+        let converted = convert(
+            &base_battle(),
+            &orig,
+            &names(),
+            &Pairing {
+                flags: &[133],
+                ..pair("b", 1, 0, 2)
+            },
+            "hexz_02",
+            &mut EventSources {
+                text: &text,
+                cell_change: &mut none,
+            },
+        )
+        .unwrap();
+        let flag90 = FlagCond {
+            flag: "orig_b_90".into(),
+            cmp: Compare::Ne,
+            value: 0,
+        };
+        let rec7: Vec<&EventDef> = converted
+            .battle
+            .events
+            .iter()
+            .filter(|e| matches!(e.trigger, Trigger::Reach { to: Some(_), .. }))
+            .collect();
+        let guarded = rec7
+            .iter()
+            .find(|e| e.when.contains(&flag90))
+            .expect("the guarded part");
+        assert!(guarded.unless.is_empty());
+        let otherwise = rec7
+            .iter()
+            .find(|e| e.unless.contains(&flag90))
+            .expect("the part past it");
+        assert!(otherwise.when.is_empty(), "{otherwise:#?}");
+        assert!(
+            otherwise.actions.contains(&EventAction::SetObjective {
+                text: "장수를 설득 / 성문 도달".into()
+            }),
+            "{otherwise:#?}"
+        );
+        assert!(
+            !converted
+                .notes
+                .iter()
+                .any(|n| n.contains("do not hold is left out")),
+            "{:?}",
+            converted.notes
+        );
     }
 }

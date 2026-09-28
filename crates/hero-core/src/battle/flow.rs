@@ -267,7 +267,7 @@ impl BattleState {
                 if this_check[i]
                     || (e.once && self.fired[i])
                     || e.stage.is_some_and(|s| s != self.stage)
-                    || !self.conditions_hold(&e.when)
+                    || !self.flags_allow(e)
                 {
                     continue;
                 }
@@ -390,6 +390,10 @@ impl BattleState {
                 self.flags.insert(flag.clone(), *value);
             }
             EventAction::SetStage { stage } => self.stage = *stage,
+            EventAction::SetObjective { text } => {
+                self.objective = Some(text.clone());
+                ev.push(BattleEvent::ObjectiveChanged { text: text.clone() });
+            }
             EventAction::SetTerrain {
                 pos,
                 terrain,

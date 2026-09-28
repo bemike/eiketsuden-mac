@@ -20,6 +20,7 @@ fn event(trigger: Trigger, actions: Vec<EventAction>) -> EventDef {
         once: true,
         stage: None,
         when: Vec::new(),
+        unless: Vec::new(),
         actions,
     }
 }
@@ -681,6 +682,7 @@ fn repeatable_events_fire_after_every_check() {
             once: false,
             stage: None,
             when: Vec::new(),
+            unless: Vec::new(),
             actions: vec![EventAction::GiveGold { amount: 10 }],
         },
         event(everywhere, vec![EventAction::GiveGold { amount: 1 }]),
@@ -708,6 +710,7 @@ fn staged_events_fire_only_at_their_stage() {
         once: true,
         stage: Some(stage),
         when: Vec::new(),
+        unless: Vec::new(),
         actions,
     };
     let turn = |turn| Trigger::TurnStart {
@@ -749,6 +752,75 @@ fn staged_events_fire_only_at_their_stage() {
     assert_eq!(st.fired, vec![true, false, true, true]);
 }
 
+/// An event with `unless` fires only while not all of those conditions hold.
+#[test]
+fn unless_holds_an_event_back_once_all_its_flags_hold() {
+    let run = |flags: &[(&str, i64)]| {
+        let mut def = battle(OPEN_MAP);
+        let mut e = event(
+            Trigger::TurnStart {
+                turn: 1,
+                side: Side::Player,
+            },
+            vec![EventAction::GiveGold { amount: 5 }],
+        );
+        e.unless = ["a", "b"]
+            .map(|flag| FlagCond {
+                flag: flag.into(),
+                cmp: crate::script::Compare::Ne,
+                value: 0,
+            })
+            .to_vec();
+        def.events = vec![e];
+        let pack = pack_with(def);
+        let mut st = state(&pack);
+        for (flag, value) in flags {
+            st.flags.insert(flag.to_string(), *value);
+        }
+        add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        st.begin(&pack);
+        st.gold_found
+    };
+    assert_eq!(run(&[]), 5);
+    assert_eq!(run(&[("a", 1)]), 5, "one flag of two");
+    assert_eq!(run(&[("a", 1), ("b", 1)]), 0, "both hold");
+}
+
+/// `set_objective` replaces the objective text for the rest of the battle (and survives a
+/// mid-battle save); the conditions stay.
+#[test]
+fn set_objective_replaces_the_objective_text() {
+    let mut def = battle(OPEN_MAP);
+    def.objective = "적을 물리쳐라".into();
+    def.events = vec![event(
+        Trigger::TurnStart {
+            turn: 1,
+            side: Side::Enemy,
+        },
+        vec![EventAction::SetObjective {
+            text: "여포를 물리쳐라".into(),
+        }],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.begin(&pack);
+    assert_eq!(st.objective_text(&pack), "적을 물리쳐라");
+    st.apply(&pack, Action::Wait { unit: me }).unwrap();
+    let ev = end_phase(&mut st, &pack);
+    assert!(
+        ev.contains(&BattleEvent::ObjectiveChanged {
+            text: "여포를 물리쳐라".into()
+        }),
+        "{ev:?}"
+    );
+    assert_eq!(st.objective_text(&pack), "여포를 물리쳐라");
+    let saved: BattleState = serde_json::from_str(&serde_json::to_string(&st).unwrap()).unwrap();
+    assert_eq!(saved.objective_text(&pack), "여포를 물리쳐라");
+}
+
 /// Events with `when` wait for their flags: set by this battle's events, else as the campaign
 /// had them when the battle began.
 #[test]
@@ -769,6 +841,7 @@ fn event_conditions_read_battle_and_campaign_flags() {
         once: true,
         stage: None,
         when,
+        unless: Vec::new(),
         actions: vec![EventAction::GiveGold { amount }],
     };
     def.events = vec![

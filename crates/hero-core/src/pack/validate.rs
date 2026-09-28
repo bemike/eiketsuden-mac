@@ -1484,6 +1484,11 @@ impl<'a> Validator<'a> {
                 self.position(ctx, map, *pos, 0, None);
                 self.map_image(ctx, image.as_deref());
             }
+            EventAction::SetObjective { text } => {
+                if text.trim().is_empty() {
+                    self.error(ctx, "set_objective with an empty text".to_string());
+                }
+            }
             EventAction::GiveGold { .. }
             | EventAction::SetStage { .. }
             | EventAction::Victory
@@ -1778,7 +1783,7 @@ impl<'a> Validator<'a> {
                         set.insert(flag);
                     }
                 }
-                for c in &e.when {
+                for c in e.when.iter().chain(&e.unless) {
                     read.push((format!("battle {} event #{}", b.id, i + 1), &c.flag));
                 }
             }

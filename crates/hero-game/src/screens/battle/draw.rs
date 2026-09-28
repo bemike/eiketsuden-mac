@@ -639,7 +639,7 @@ impl BattleScreen {
     pub(super) fn draw_objective(&self, ctx: &Ctx, footer: &str) {
         hud::draw_text_window(
             ctx,
-            &self.def().objective,
+            self.state.objective_text(&self.pack),
             &self.objective_sections(),
             footer,
         );
