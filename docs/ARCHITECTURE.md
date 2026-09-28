@@ -112,7 +112,7 @@ to catch unwinnable maps, stuck AI and panics.
 The game renders to a **virtual canvas** whose size comes from the data pack (the base pack: 480×270 with
 16×16 px tiles; the tile size comes from the tileset, see [ASSETS.md](ASSETS.md#presentation-profile)) and scales
 it to the window with integer factors when possible (nearest-neighbour, letterboxed). `pack.toml`
-declares the canvas size its media is laid out for in `[presentation] canvas = [w, h]` (320×200 to
+declares the canvas size its media is laid out for in `[presentation] canvas = [w, h]` (480×270 to
 1280×800, default 480×270); `Pack::manifest.presentation` holds the effective value, which a layered
 pack may inherit. All UI
 coordinates are virtual pixels. Text uses the Galmuri pixel fonts (OFL), which cover Hangul, Latin

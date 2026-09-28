@@ -108,8 +108,8 @@ both sizes with Hangul and Hanja, word wrap (←/→ change the width), windows,
 adjustable items, tooltips, icons, sprites, portraits and their fallbacks, the message box, choice box
 and yes/no dialog, gauges, number formatting, toasts and banners, and a page that opens the real
 screens and exercises the audio manager. Tab / Shift+Tab, PageUp / PageDown, the keys 1–5 or a tap on
-a tab switch pages. **V** switches the canvas between 480×270, 640×480 and 320×200 (the
-presentation profiles screens must lay out on; see below). Check it at a few window sizes and
+a tab switch pages. **V** switches the canvas between 480×270 (the default and smallest allowed), 640×480 and 1280×800
+(the largest allowed; the presentation profiles screens must lay out on, see below). Check it at a few window sizes and
 canvas sizes after changing anything in `gfx.rs` or `ui/`.
 
 ## Writing screens

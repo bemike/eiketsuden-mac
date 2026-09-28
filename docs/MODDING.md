@@ -111,7 +111,7 @@ items = "rules/items.toml"
 | `battles` | list of paths | no (`[]`) | Battle files, one battle each. |
 | `dramas` | list of paths | no (`[]`) | Drama scripts, any number of scenes each. |
 | `maps` | list of paths | no (`[]`) | [Map files](#map-files): maps that battles `use` by id. |
-| `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[320, 200]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
+| `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[480, 270]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
 
 ```toml
 [presentation]
@@ -1026,7 +1026,7 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
   names the file and the TOML position).
 * A list file uses an unknown top-level table (`[[classes]]` instead of `[[class]]`).
 * `pack.toml` paths that leave the pack or use `\`, and files listed twice; `presentation.canvas`
-  outside `[320, 200]`..`[1280, 800]`; a pack without `extends` that does not list all five rules files,
+  outside `[480, 270]`..`[1280, 800]`; a pack without `extends` that does not list all five rules files,
   `officers` and `campaign`.
 * [Layered packs](#layered-packs-extends): an `extends` that is not a relative `/` directory, a parent
   without a readable `pack.toml`, a pack that extends itself (directly or through others), two packs of
@@ -1046,9 +1046,6 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
 ### 2. Cross-references (`Pack::validate`)
 
 E = error, W = warning.
-
-**pack.toml** — W: a `presentation.canvas` smaller than 480×270 (the camp and battle screens are laid
-out for at least that size and overlap on smaller canvases).
 
 **rules/game.toml** — E: `level_cap`/`exp_per_level` below 1, negative `gold_cap`/`mp_cap`/
 `morale_loss_pct`/`counter_damage_pct`, `morale_start` or `confuse_morale` outside 0..=100, EXP tables not

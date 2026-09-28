@@ -854,7 +854,7 @@ mod tests {
         assert_eq!(canvas_size(&Presentation::default()), DEFAULT_CANVAS);
         let p = |w, h| Presentation { canvas: [w, h] };
         assert_eq!(canvas_size(&p(640, 480)), vec2(640.0, 480.0));
-        assert_eq!(canvas_size(&p(320, 200)), vec2(320.0, 200.0));
+        assert_eq!(canvas_size(&p(1280, 800)), vec2(1280.0, 800.0));
     }
 
     #[test]
