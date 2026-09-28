@@ -28,7 +28,8 @@ impl Pack {
     /// The index files are read with the game's schema ([`crate::media_index`]): a missing field
     /// or a value of the wrong type, which the game could not read, is an error.
     ///
-    /// Checked: unit sheets `gfx/units/<sprite>_<side>.png` and their `units.toml` entries,
+    /// Checked: unit sheets `gfx/units/<sprite>_<side>.png`, their `units.toml` entries and that
+    /// each sheet is 4 × 6 of the entry's `frame`,
     /// officer and `@show` portraits `gfx/portraits/<key>.png` (warnings: `_unknown.png` is
     /// shown instead, which must exist), `bgm/<key>.ogg` of battles and dramas, `gfx/bg/<key>.png`
     /// and `sfx/<key>.(ogg|wav)` of dramas, a `gfx/tiles/terrain.toml` tile for every terrain,
@@ -132,11 +133,33 @@ impl MediaCheck {
                 continue;
             }
             let ctx = format!("class {}", class.id);
+            let def = sprites.and_then(|s| s.get(key));
             for side in SIDES {
                 let rel = format!("gfx/units/{key}_{side}.png");
                 self.require(Severity::Error, &ctx, &rel, "unit sprite sheet");
+                // The battle cuts frames by `frame`, the camp and gallery by the sheet size
+                // (4 columns × 6 rows): both must agree.
+                if let (Some(def), Some(path)) = (def, self.find(&rel)) {
+                    let want = (4 * def.frame[0], 6 * def.frame[1]);
+                    match png_size(&path) {
+                        Ok(size) if size == want => {}
+                        Ok((w, h)) => self.push(
+                            Severity::Error,
+                            &ctx,
+                            format!(
+                                "{rel} is {w}×{h} pixels; with frame = [{}, {}] in {UNITS_TOML} a sheet of 4 × 6 frames is {}×{}",
+                                def.frame[0], def.frame[1], want.0, want.1
+                            ),
+                        ),
+                        Err(e) => self.push(
+                            Severity::Error,
+                            &ctx,
+                            format!("{}: not a readable PNG: {e}", path.display()),
+                        ),
+                    }
+                }
             }
-            if index.is_some() && !sprites.is_some_and(|s| s.contains_key(key)) {
+            if index.is_some() && def.is_none() {
                 self.push(
                     Severity::Error,
                     &ctx,
