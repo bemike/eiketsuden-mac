@@ -356,7 +356,7 @@ struct Planner<'a> {
     strategies: Vec<&'a StrategyDef>,
     /// Deduplicated reach offsets per strategy.
     strategy_offsets: Vec<Vec<Pos>>,
-    /// `ai = "target"`: the unit to go for.
+    /// `ai = "target"` or `"march"`: the unit to go for.
     focus: Option<UnitId>,
     /// Scripted victories and defeats this unit can bring about by moving.
     script: Vec<Scripted>,
@@ -498,8 +498,11 @@ impl<'a> Planner<'a> {
                     None => self.me.ai_pos,
                 };
                 match goal {
-                    Some(g) if g != origin => (self.approach(&[g], &reach), None),
-                    _ => (origin, None),
+                    Some(g) if g == origin => (origin, None),
+                    // A destination tile is entered, not just reached: `approach` stops next to it.
+                    Some(g) if self.focus.is_none() && reach.contains(&g) => (g, None),
+                    Some(g) => (self.approach(&[g], &reach), None),
+                    None => (origin, None),
                 }
             }
         };

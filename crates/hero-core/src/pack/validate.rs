@@ -1328,6 +1328,12 @@ impl<'a> Validator<'a> {
                         "set_ai to `advance` without an ai_pos clears the destination; the unit then behaves as `aggressive`",
                     );
                 }
+                if *ai == AiMode::March && ai_target.is_none() && ai_pos.is_none() {
+                    self.warn(
+                        ctx,
+                        "set_ai to `march` without ai_target or ai_pos has nowhere to go; the unit waits",
+                    );
+                }
             }
             EventAction::Retreat { target } => self.reference(ctx, names, "target", target),
             EventAction::LevelUp { target, amount } => {

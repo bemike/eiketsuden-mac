@@ -231,8 +231,11 @@ fn march_moves_without_attacking() {
     st.units[mark].tag = Some("mark".into());
     let to = move_target(&st.ai_actions(&pack, foe)).expect("marches");
     assert!(to.manhattan(p(1, 7)) < p(1, 1).manhattan(p(1, 7)), "{to:?}");
-    // At the destination it waits.
+    // Next to the destination it steps onto it (a reach trigger there needs the tile itself).
     st.units[foe].ai_target = None;
+    st.units[foe].ai_pos = Some(p(1, 2));
+    assert_eq!(move_target(&st.ai_actions(&pack, foe)), Some(p(1, 2)));
+    // At the destination it waits.
     st.units[foe].ai_pos = Some(p(1, 1));
     assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
 }

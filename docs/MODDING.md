@@ -704,7 +704,7 @@ army is built from `officers.toml` and does not join it.
 | `pos` | position | required | Starting tile: inside the map, passable for the unit's move type, not shared with another starting unit or a deploy slot. |
 | `ai` | [AI mode](#ai-modes) | `aggressive` | Behaviour. |
 | `ai_target` | tag or officer id | none | Target for `ai = "target"` (and the destination of `march`). |
-| `ai_pos` | position | none | Destination for `advance`, centre for `guard` (default: the spawn tile). |
+| `ai_pos` | position | none | Destination for `advance` and `march`, centre for `guard` (default: the spawn tile). |
 | `commander` | bool | `false` | Enemy commander (for `defeat_commander`, extra EXP). |
 | `tag` | string | none | Name that conditions and events use for this unit; unique in the battle. |
 | `group` | string | none | Reinforcement group: the unit stays off the map until an event `spawn`s the group. If its tile is taken or impassable then, the nearest free passable tile is used. |

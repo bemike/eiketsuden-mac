@@ -375,6 +375,22 @@ pub fn ai_mode(mode: u8, param: u16) -> (AiMode, Option<u16>, Option<Pos>) {
     }
 }
 
+/// The AI of a unit whose target officer could not be resolved: `target` attacks the nearest
+/// enemy instead, `march` (which never attacks) stays where it is.
+fn without_target(ai: AiMode) -> AiMode {
+    match ai {
+        AiMode::March => AiMode::Hold,
+        _ => AiMode::Aggressive,
+    }
+}
+
+fn fallback_note(ai: AiMode) -> &'static str {
+    match ai {
+        AiMode::Hold => "holds its ground instead",
+        _ => "attacks instead",
+    }
+}
+
 /// The engine trigger of an original trigger record, with `unit` naming a person (`None` for
 /// [`ANY_UNIT`], any player unit). Kinds: 9 turn, 6 unit on a tile, 11 unit in a rectangle, 12 unit
 /// defeated, 4 two units next to each other; tiles of trigger records are row first.
@@ -1083,11 +1099,12 @@ impl EventWriter<'_, '_> {
                         match self.unit_ref(t) {
                             Ok(Some(r)) => ai_target = Some(r),
                             _ => {
+                                ai = without_target(ai);
                                 self.notes.push(format!(
-                                    "record {record}: AI target {} is not on the map; attacks instead",
-                                    self.names.person_label(t)
+                                    "record {record}: AI target {} is not on the map; {}",
+                                    self.names.person_label(t),
+                                    fallback_note(ai)
                                 ));
-                                ai = AiMode::Aggressive;
                             }
                         }
                     }
@@ -1410,12 +1427,13 @@ pub fn convert(
                 match officer_ref(t) {
                     Some(id) => spawn.ai_target = Some(id),
                     None => {
+                        spawn.ai = without_target(spawn.ai);
                         notes.push(format!(
-                            "{}: AI target {} has no base-pack officer; attacks instead",
+                            "{}: AI target {} has no base-pack officer; {}",
                             names.person_label(u.person),
-                            names.person_label(t)
+                            names.person_label(t),
+                            fallback_note(spawn.ai)
                         ));
-                        spawn.ai = AiMode::Aggressive;
                     }
                 }
             }
@@ -1475,8 +1493,8 @@ pub fn convert(
                 .zip(&persons)
                 .filter(|(_, &p)| p == get("person"))
             {
-                (u.ai, u.ai_target, u.ai_pos) = match (ai, &ai_target) {
-                    (AiMode::Target, None) => (AiMode::Aggressive, None, None),
+                (u.ai, u.ai_target, u.ai_pos) = match (target, &ai_target) {
+                    (Some(_), None) => (without_target(ai), None, None),
                     _ => (ai, ai_target.clone(), ai_pos),
                 };
             }
@@ -2518,7 +2536,11 @@ item = "wine"
         // The hidden units wait for the records that bring them in.
         assert_eq!(b.units[2].group.as_deref(), Some("original_7"));
         assert_eq!(b.units[3].group.as_deref(), Some("original_10"));
-        assert_eq!(b.units[4].ai, AiMode::Hold, "the opening's AI (mode 2, 부동)");
+        assert_eq!(
+            b.units[4].ai,
+            AiMode::Hold,
+            "the opening's AI (mode 2, 부동)"
+        );
 
         assert_eq!(
             b.victory,
