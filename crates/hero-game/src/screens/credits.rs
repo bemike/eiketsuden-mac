@@ -87,29 +87,40 @@ fn layout(text: &str, mut wrap: impl FnMut(&str) -> Vec<String>) -> Vec<Line> {
     out
 }
 
-/// The pack credits: every readable `credits.txt` of the chain (nearest first), each once, or
-/// `None` when there is none. A file that is not UTF-8 is skipped with a warning.
-fn join_credits(results: Vec<Result<Vec<u8>, String>>) -> Option<String> {
+/// The pack credits: every readable `credits.txt` of the chain (`paths` and their `results`,
+/// nearest first), each text once, or `None` when there is none. A byte-order mark is dropped;
+/// a file that cannot be read (other than missing) or is not UTF-8 is logged and skipped.
+fn join_credits(paths: &[String], results: Vec<Result<Vec<u8>, String>>) -> Option<String> {
     let mut texts: Vec<String> = Vec::new();
-    for bytes in results.into_iter().flatten() {
-        match String::from_utf8(bytes) {
-            Ok(s) if s.trim().is_empty() || texts.contains(&s) => {}
-            Ok(s) => texts.push(s),
-            Err(_) => macroquad::logging::warn!("a credits.txt is not valid UTF-8; skipped"),
+    for (path, result) in paths.iter().zip(results) {
+        let bytes = match result {
+            Ok(b) => b,
+            Err(e) => {
+                macroquad::logging::debug!("no credits at {}: {}", path, e);
+                continue;
+            }
+        };
+        let Ok(text) = String::from_utf8(bytes) else {
+            macroquad::logging::warn!("{} is not valid UTF-8; skipped", path);
+            continue;
+        };
+        // One form for comparing: no BOM, LF line ends, no trailing blank lines.
+        let text = text
+            .strip_prefix('\u{feff}')
+            .unwrap_or(&text)
+            .replace("\r\n", "\n")
+            .trim_end()
+            .to_string();
+        if !text.trim().is_empty() && !texts.contains(&text) {
+            texts.push(text);
         }
     }
-    (!texts.is_empty()).then(|| {
-        texts
-            .iter()
-            .map(|t| t.trim_end())
-            .collect::<Vec<_>>()
-            .join("\n\n\n")
-    })
+    (!texts.is_empty()).then(|| texts.join("\n\n\n"))
 }
 
 pub struct CreditsScreen {
     ending: Option<String>,
-    request: Option<AllOf>,
+    request: Option<(Vec<String>, AllOf)>,
     lines: Vec<Line>,
     total_height: f32,
     scroll: f32,
@@ -181,7 +192,8 @@ impl Screen for CreditsScreen {
 
     fn on_enter(&mut self, ctx: &mut Ctx, how: Enter) {
         if how == Enter::Fresh {
-            self.request = Some(AllOf::new(ctx.data_root.media_paths("credits.txt")));
+            let paths = ctx.data_root.media_paths("credits.txt");
+            self.request = Some((paths.clone(), AllOf::new(paths)));
             if self.ending.is_some() {
                 ctx.audio.play_bgm(bgm::ENDING);
             }
@@ -189,11 +201,11 @@ impl Screen for CreditsScreen {
     }
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
-        if let Some(req) = self.request.as_mut() {
+        if let Some((paths, req)) = self.request.as_mut() {
             let Some(results) = req.poll() else {
                 return Transition::None;
             };
-            let pack_credits = join_credits(results);
+            let pack_credits = join_credits(paths, results);
             if pack_credits.is_none() {
                 macroquad::logging::info!("no pack credits; showing engine credits");
             }
@@ -295,21 +307,34 @@ mod tests {
     #[test]
     fn every_pack_of_the_chain_is_credited() {
         let ok = |s: &str| Ok(s.as_bytes().to_vec());
-        let joined = join_credits(vec![
-            Err("overlay: missing".into()),
-            ok("# Mod\nme\n"),
-            ok("# Base\nthem\n"),
-        ]);
+        let paths = |n: usize| {
+            (0..n)
+                .map(|i| format!("p{i}/credits.txt"))
+                .collect::<Vec<_>>()
+        };
+        let joined = join_credits(
+            &paths(3),
+            vec![
+                Err("overlay: missing".into()),
+                ok("# Mod\nme\n"),
+                ok("# Base\nthem\n"),
+            ],
+        );
         assert_eq!(joined.as_deref(), Some("# Mod\nme\n\n\n# Base\nthem"));
-        // The same file twice (an overlay copy) once; empty and non-UTF-8 files are skipped.
-        let joined = join_credits(vec![
-            ok("# Base\n"),
-            Ok(vec![0xff]),
-            ok("  \n"),
-            ok("# Base\n"),
-        ]);
-        assert_eq!(joined.as_deref(), Some("# Base"));
-        assert_eq!(join_credits(vec![Err("missing".into())]), None);
+        // The same text twice (an overlay copy, other line ends, a BOM) once; empty and
+        // non-UTF-8 files are skipped.
+        let joined = join_credits(
+            &paths(5),
+            vec![
+                ok("\u{feff}# Base\r\nthem\r\n"),
+                Ok(vec![0xff]),
+                ok("  \n"),
+                ok("# Base\nthem\n\n"),
+                ok("# Base\nthem"),
+            ],
+        );
+        assert_eq!(joined.as_deref(), Some("# Base\nthem"));
+        assert_eq!(join_credits(&paths(1), vec![Err("missing".into())]), None);
     }
 
     #[test]

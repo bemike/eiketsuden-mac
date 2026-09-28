@@ -4,9 +4,9 @@
 //!   the URL hash (`#gallery`) on the web.
 //! * [`DataRoot`] — where the data pack lives. Natively it is resolved from `--data`, the
 //!   `EIKETSUDEN_DATA` environment variable, `<exe dir>/data/base` and `./data/base` (first match
-//!   wins); on the web it is the relative URL `data/base/` next to `index.html`. All pack files are
-//!   read through [`DataRoot::path`] + `macroquad::file::load_file`, which is a file read natively
-//!   and an HTTP fetch on the web.
+//!   wins); on the web it is the relative URL `data/base/` next to `index.html`. Text files of the
+//!   pack are read through [`DataRoot::path`], media files through [`DataRoot::media_paths`], both
+//!   with `macroquad::file::load_file`, which is a file read natively and an HTTP fetch on the web.
 //! * **Layered packs**: a pack whose `pack.toml` says `extends = "../base"` is built on the packs
 //!   of its chain (`hero_core::pack::PackChain`). Once the loading screen has read the chain it
 //!   records the parent directories ([`DataRoot::with_parent_packs`]); media files are then looked
@@ -257,9 +257,8 @@ impl DataRoot {
         self
     }
 
-    /// The same root without the packs the top pack extends: [`DataRoot::path`] then names
-    /// exactly the file below the top pack directory. The loader reads pack text files this
-    /// way, by their path relative to the top pack (`../base/rules/game.toml` for a parent's).
+    /// The same root without the packs the top pack extends (the loader reads the chain again
+    /// before it records them with [`DataRoot::with_parent_packs`]).
     pub fn top_pack(&self) -> DataRoot {
         self.clone().with_parent_packs(Vec::<String>::new())
     }

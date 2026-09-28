@@ -145,11 +145,12 @@ impl AllOf {
 
     /// Advance the reads; `Some` with every result, in the order of the paths, once all are in.
     pub fn poll(&mut self) -> Option<Vec<Result<Vec<u8>, String>>> {
-        let mut done = true;
+        // Poll every request each frame (not only up to the first unfinished one).
+        let mut ready = true;
         for r in &mut self.requests {
-            done &= r.poll().is_some();
+            ready &= r.poll().is_some();
         }
-        done.then(|| {
+        ready.then(|| {
             self.requests
                 .iter_mut()
                 .filter_map(|r| r.poll().cloned())
