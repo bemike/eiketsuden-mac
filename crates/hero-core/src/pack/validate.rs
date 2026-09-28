@@ -773,6 +773,9 @@ impl<'a> Validator<'a> {
         let mut occupied: BTreeSet<Pos> = BTreeSet::new();
         self.deploy(&ctx, b, map, &mut occupied);
         self.units(&ctx, b, map, &names, &mut occupied);
+        if let (Some(map), true) = (map, b.victory.contains(&Condition::DefeatAll)) {
+            self.reachability(&ctx, b, map);
+        }
 
         for c in &b.victory {
             self.condition(&ctx, "victory", c, b, map, &names);
@@ -1235,6 +1238,90 @@ impl<'a> Validator<'a> {
                         ),
                     );
                 }
+            }
+        }
+    }
+
+    /// In a `defeat_all` battle, every enemy on the map from the start must be attackable from
+    /// somewhere the player's units can walk to from the deployment slots (or their own start
+    /// tiles), or the battle cannot be won. Generous on purpose: a tile counts as walkable when
+    /// any class of the pack can enter it, before or after a `set_terrain` event changes it,
+    /// and an enemy counts as reached when any class's attack range touches it.
+    fn reachability(&mut self, ctx: &str, b: &BattleDef, map: &BattleMap) {
+        let pack = self.pack;
+        let move_types: BTreeSet<&str> = pack
+            .classes
+            .values()
+            .map(|c| c.move_type.as_str())
+            .collect();
+        let walkable = |terrain: &str| {
+            pack.terrain(terrain)
+                .is_some_and(|t| move_types.iter().any(|m| t.move_cost(m).is_some()))
+        };
+        let changed: Vec<(Pos, &str)> = b
+            .events
+            .iter()
+            .flat_map(|e| &e.actions)
+            .filter_map(|a| match a {
+                EventAction::SetTerrain { pos, terrain, .. } => Some((*pos, terrain.as_str())),
+                _ => None,
+            })
+            .collect();
+        let open = |p: Pos| {
+            map.terrain_at(p).is_some_and(&walkable)
+                || changed.iter().any(|&(q, t)| q == p && walkable(t))
+        };
+        let mut reached: BTreeSet<Pos> = BTreeSet::new();
+        let mut queue: Vec<Pos> = b
+            .deploy
+            .slots
+            .iter()
+            .copied()
+            .chain(
+                b.units
+                    .iter()
+                    .filter(|u| u.side == Side::Player && u.group.is_none())
+                    .map(|u| u.pos),
+            )
+            .filter(|&p| map.in_bounds(p))
+            .collect();
+        reached.extend(queue.iter().copied());
+        while let Some(p) = queue.pop() {
+            for n in p.neighbors4() {
+                if map.in_bounds(n) && open(n) && reached.insert(n) {
+                    queue.push(n);
+                }
+            }
+        }
+        if reached.is_empty() {
+            return; // no deployment: reported elsewhere
+        }
+        let mut offsets: BTreeSet<Pos> = BTreeSet::new();
+        for c in pack.classes.values() {
+            offsets.extend(c.range.offsets().unwrap_or_default());
+        }
+        for u in b
+            .units
+            .iter()
+            .filter(|u| u.side == Side::Enemy && u.group.is_none())
+        {
+            let attackable = offsets
+                .iter()
+                .any(|o| reached.contains(&u.pos.offset(-o.x, -o.y)));
+            if !attackable {
+                let who = u
+                    .officer
+                    .as_deref()
+                    .or(u.tag.as_deref())
+                    .or(u.name.as_deref())
+                    .unwrap_or("enemy");
+                self.warn(
+                    ctx,
+                    format!(
+                        "defeat_all, but {who} at ({}, {}) cannot be attacked from anywhere the player's units can walk to from the deployment slots: the battle may be unwinnable",
+                        u.pos.x, u.pos.y
+                    ),
+                );
             }
         }
     }

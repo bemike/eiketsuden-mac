@@ -361,6 +361,28 @@ fn unit_sheets_match_their_frame_size() {
 }
 
 #[test]
+fn big_tileset_caches_are_reported() {
+    let dir = TempDir::new("media-cache");
+    complete_media(&dir.0);
+    let tiles = std::fs::read_to_string(dir.0.join("gfx/tiles/terrain.toml")).unwrap();
+    // 16-pixel tiles: every fixture map is small.
+    assert!(load_fixture().missing_media(&dir.0).is_empty());
+    // 1024-pixel tiles: the 9×7 castle map of b02 takes 11 × 9 tiles of cache, 396 MB.
+    write(
+        &dir.0,
+        "gfx/tiles/terrain.toml",
+        tiles.replacen("tile_size = 16", "tile_size = 1024", 1),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "battle b02",
+        "this 9×7 map with 1024-pixel tiles takes 396 MB of texture memory in battle (more than 64 MB)",
+    );
+}
+
+#[test]
 fn index_files_are_read_with_the_games_schema() {
     let dir = TempDir::new("media-schema");
     // Entries the game cannot read: a sprite without its anchor, an effect without its frame

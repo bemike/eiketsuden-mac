@@ -772,6 +772,41 @@ fn battle_logic_checks() {
 }
 
 #[test]
+fn defeat_all_enemies_must_be_reachable() {
+    // Wall the castle off: the archers on its back row are out of reach of every unit that can
+    // walk from the deployment slots (the chief is still within an archer's range).
+    let mut files = fixture_files();
+    edit(&mut files, B02, "#cc...cc#\n", "#########\n");
+    let issues = load(&files).validate();
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "battle b02",
+        "defeat_all, but 성벽 궁병 at (2, 1) cannot be attacked",
+    );
+    assert!(
+        !issues
+            .iter()
+            .any(|i| i.msg.contains("황건") || i.msg.contains("chief")),
+        "{}",
+        format_issues(&issues)
+    );
+    // A wall tile that an event turns into castle floor opens the way.
+    edit(
+        &mut files,
+        B02,
+        "{ type = \"give_gold\", amount = 100 }",
+        "{ type = \"give_gold\", amount = 100 }, { type = \"set_terrain\", pos = [4, 3], terrain = \"castle\" }",
+    );
+    let issues = load(&files).validate();
+    assert!(
+        !issues.iter().any(|i| i.msg.contains("cannot be attacked")),
+        "{}",
+        format_issues(&issues)
+    );
+}
+
+#[test]
 fn defeat_all_needs_enemies_on_the_map() {
     let mut files = fixture_files();
     let b02 = files.get_mut(B02).unwrap();

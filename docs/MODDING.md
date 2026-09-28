@@ -1104,7 +1104,9 @@ commander, `survive_turns`/`turn_start` with turn 0, `hp_below` outside 1..=100,
 `give_item` items, `set_flag` without a name, `set_terrain` to an unknown terrain or with an image that
 is not a media key. W: `survive_turns` or `turn_start` after `turn_limit`, events without actions,
 `adjacent` naming the same unit twice, `set_ai` to `advance` without `ai_pos`, `level_up` by 0, an event
-`stage` that no `set_stage` reaches, a `when` flag that nothing sets.
+`stage` that no `set_stage` reaches, a `when` flag that nothing sets, a `defeat_all` battle with an enemy
+on the map that no attack range touches from anywhere walkable from the deployment slots (walkable: any
+class of the pack can enter the tile, before or after a `set_terrain` changes it).
 
 **Dramas** — E: `@join`/`@leave` of unknown officers, `@item` of unknown items, speakers that look like
 ids but name no officer. W: scenes of the pack itself that no campaign node or battle plays (in a
@@ -1135,7 +1137,8 @@ branch loops, battles no campaign node uses.
   `terrain.png`), terrain without a `[tiles.<key>]` entry, a `tile_size` of 0, strategy effects without an
   `fx.toml` entry or strip, a map picture (`image`) that is missing, is not a PNG or is not exactly the
   map's size in tiles times `tile_size`. W for a map picture over 4096 pixels a side (many phones
-  cannot load it), missing portraits (the `_unknown` portrait is shown), a
+  cannot load it), a map drawn from the tileset whose battle cache ((map + 2 tiles of padding) ×
+  `tile_size`) is over 4096² pixels (64 MB), missing portraits (the `_unknown` portrait is shown), a
   missing `icons.toml` or unknown icon keys. `icons.toml` is checked for TOML syntax and its keys only.
   In all index files, values that are legal but odd (a zero frame size, `fps = 0`) are not reported, so
   check a new index in the game.
