@@ -638,7 +638,7 @@ mod tests {
         // code 255 of map 32 (§10.4). Their pictures passed the size check of `run_pack`.
         let maps = json["maps"].as_array().unwrap();
         assert_eq!(maps.len(), 58);
-        let stand_ins: Vec<(u64, u64)> = maps
+        let stand_ins: Vec<(u64, u64, u64)> = maps
             .iter()
             .flat_map(|m| {
                 let number = m["number"].as_u64().unwrap();
@@ -646,10 +646,17 @@ mod tests {
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .map(move |s| (number, s["code"].as_u64().unwrap()))
+                    .map(move |s| {
+                        (
+                            number,
+                            s["code"].as_u64().unwrap(),
+                            s["used"].as_u64().unwrap(),
+                        )
+                    })
             })
             .collect();
-        assert_eq!(stand_ins, [(32, 255)]);
+        // Off the map in the original: cliff.
+        assert_eq!(stand_ins, [(32, 255, 9)]);
         let pack = crate::load_pack(&out).unwrap();
         assert_eq!(pack.maps.len(), 58);
         // Map 0 is 56×32 chips, 28×16 cells.

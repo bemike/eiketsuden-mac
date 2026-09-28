@@ -1793,8 +1793,8 @@ pub fn code_glyph(code: u8) -> Option<char> {
     char::from_digit(u32::from(code), 36)
 }
 
-/// A cell whose terrain code names no pack terrain (fire, flood, or a code the documentation
-/// does not know), and the code whose terrain it gets instead.
+/// A cell whose terrain code names no pack terrain (fire, flood, [`OFF_MAP`] or a code the
+/// documentation does not know), and the code whose terrain it gets instead.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StandIn {
     /// `[x, y]` in cells (32-px tiles), `[0, 0]` top left.
@@ -1872,7 +1872,8 @@ impl ChipTerrain {
 pub type MapRows = (String, BTreeMap<char, &'static str>, Vec<StandIn>);
 
 /// Terrain code the original returns for a cell off the map (`0x1cb6:0xBDBC`); one cell of map 32
-/// stores it. No original unit can enter it (FORMATS §10.4), so it becomes [`OFF_MAP_STAND_IN`].
+/// stores it. No original unit can move onto it (FORMATS §10.4; placement and some AI searches
+/// still treat it as open), so it becomes [`OFF_MAP_STAND_IN`].
 pub const OFF_MAP: u8 = 255;
 
 /// Terrain code (cliff, impassable for every movement type) used for [`OFF_MAP`] cells.
@@ -1960,9 +1961,14 @@ fn map_entry_toml(
         record.number, record.chip_set
     );
     for st in &record.stand_ins {
+        let why = if st.code == OFF_MAP {
+            "the off-map code, impassable in the original"
+        } else {
+            "what its chips show"
+        };
         let _ = write!(
             s,
-            "\n# cell [{}, {}]: terrain code {} has no pack terrain; code {} (what its chips show) is used",
+            "\n# cell [{}, {}]: terrain code {} has no pack terrain; code {} ({why}) is used",
             st.cell[0], st.cell[1], st.code, st.used
         );
     }
@@ -2127,7 +2133,8 @@ fn convert_maps(
     if stand_ins > 0 {
         report.notes.push(format!(
             "{stand_ins} cells have a terrain code without pack terrain; they get the terrain \
-             their chips are drawn with elsewhere (listed per map in {PACK_INDEX} and {MAPS_FILE})"
+             their chips are drawn with elsewhere, or cliff for the off-map code {OFF_MAP} \
+             (listed per map in {PACK_INDEX} and {MAPS_FILE})"
         ));
     }
     report.notes.push(
@@ -2516,6 +2523,9 @@ mod tests {
                 used: OFF_MAP_STAND_IN
             }]
         );
+        // Without cliff in the pack chain the map fails like any missing terrain.
+        let e = map_rows(&odd, 1, &chips, &known).unwrap_err();
+        assert!(e.contains("code 9 is `cliff`"), "{e}");
         // Chips never drawn with pack terrain fail.
         let mut fire = map(&[&[0, 18]]);
         fire.chips[2] = 70;
