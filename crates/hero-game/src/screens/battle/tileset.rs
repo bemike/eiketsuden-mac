@@ -195,9 +195,9 @@ pub struct MapRenderer {
 const PAD: f32 = 1.0;
 
 /// Largest side of one cache render target: a big map with big tiles is cached in pieces, so it
-/// stays within the texture size every WebGL device supports (2048; many mobile GPUs stop at
-/// 4096, and a bigger target comes out black).
-pub const CHUNK: u32 = 2048;
+/// stays within the texture size practically every device loads (2048, the WebGL 2 minimum; many
+/// mobile GPUs stop at 4096, and a bigger target comes out black).
+const CHUNK: u32 = 2048;
 
 /// The pieces a `w`×`h` cache is split into: `(x, y, width, height)` in cache pixels.
 fn chunks(w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
@@ -350,13 +350,14 @@ impl MapRenderer {
                 return;
             }
             Some(StaticMap::Cache(pieces)) => {
-                let pad = vec2(PAD, PAD) * self.tile;
+                // Round once: whole-pixel piece offsets keep the pieces edge to edge.
+                let base = (origin - vec2(PAD, PAD) * self.tile).round();
                 for (at, piece) in pieces {
                     let tex = &piece.texture;
                     draw_texture_ex(
                         tex,
-                        (origin.x - pad.x + at.x).round(),
-                        (origin.y - pad.y + at.y).round(),
+                        base.x + at.x,
+                        base.y + at.y,
                         WHITE,
                         DrawTextureParams {
                             dest_size: Some(vec2(tex.width(), tex.height())),
@@ -406,6 +407,7 @@ fn draw_cell(atlas: &Texture2D, size: f32, tile: f32, cell: [u32; 2], at: Vec2) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hero_core::data::TerrainDef;
 
     #[test]
     fn big_caches_are_split_into_pieces() {
@@ -427,7 +429,6 @@ mod tests {
         let area: u32 = pieces.iter().map(|&(_, _, w, h)| w * h).sum();
         assert_eq!(area, 5000 * 2100);
     }
-    use hero_core::data::TerrainDef;
 
     fn terrain(id: &str, glyph: char) -> TerrainDef {
         TerrainDef {

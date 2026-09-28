@@ -17,8 +17,8 @@ use std::path::{Path, PathBuf};
 /// Unit sheet colours; one sheet per sprite key and side.
 const SIDES: [&str; 3] = ["player", "ally", "enemy"];
 const ICONS_TOML: &str = "gfx/ui/icons.toml";
-/// Largest texture side many mobile GPUs load (WebGL guarantees only 2048); a bigger picture
-/// comes out black there. The tileset-drawn map cache is split into pieces instead.
+/// Largest texture side many mobile GPUs load (WebGL 2 guarantees 2048); a bigger picture comes
+/// out black there. The tileset-drawn map cache is split into pieces instead.
 const MOBILE_TEXTURE: u32 = 4096;
 const UNKNOWN_PORTRAIT: &str = "gfx/portraits/_unknown.png";
 
@@ -293,10 +293,14 @@ impl MediaCheck {
                 continue;
             };
             let tile = self.tile_size;
-            let want = (map.width as u32 * tile, map.height as u32 * tile);
+            // Computed wide: an absurd `tile_size` must not wrap around to a match.
+            let want = (
+                map.width as u64 * u64::from(tile),
+                map.height as u64 * u64::from(tile),
+            );
             match png_size(&path) {
-                Ok(size) if size == want => {
-                    if want.0.max(want.1) > MOBILE_TEXTURE {
+                Ok((w, h)) if (u64::from(w), u64::from(h)) == want => {
+                    if want.0.max(want.1) > u64::from(MOBILE_TEXTURE) {
                         self.push(
                             Severity::Warning,
                             &ctx,

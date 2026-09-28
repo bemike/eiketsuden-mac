@@ -302,7 +302,15 @@ fn the_picture_must_exist_and_fit_the_map() {
     write(root, "gfx/maps/field.png", &png_head(320, 256));
     assert!(picture_issues(&pack, root).is_empty());
 
-    // A right-sized picture over 4096 pixels a side: a warning (phones draw it black).
+    // Up to 4096 pixels a side is fine (10×8 tiles of 409 px: 4090×3272); over that, a
+    // warning (phones draw it black).
+    write(
+        root,
+        "gfx/tiles/terrain.toml",
+        b"tile_size = 409\nimage = \"terrain.png\"\n",
+    );
+    write(root, "gfx/maps/field.png", &png_head(4090, 3272));
+    assert!(picture_issues(&pack, root).is_empty());
     write(
         root,
         "gfx/tiles/terrain.toml",
