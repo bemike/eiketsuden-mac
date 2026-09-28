@@ -407,6 +407,37 @@ fn hurt_careful_units_ignore_villages_they_cannot_walk_to() {
 }
 
 #[test]
+fn hurt_careful_units_ignore_healing_tiles_they_cannot_enter() {
+    // Horses do not enter forest, which heals in this pack: next to it would be a dead end.
+    let mut pack = pack(
+        "
+........
+........
+........
+........
+........
+........
+........
+.......T",
+    );
+    pack.terrain
+        .iter_mut()
+        .find(|t| t.id == "forest")
+        .unwrap()
+        .heal_hp = 10;
+    let mut st = state(&pack);
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(0, 0));
+    st.units[foe].ai = AiMode::Hold;
+    let rider = add(&mut st, &pack, Side::Player, "cavalry", 1, p(2, 0));
+    st.units[rider].mp = 0;
+    st.units[rider].hp = st.units[rider].max_hp / 10;
+    assert_eq!(
+        st.ai_actions(&pack, rider),
+        vec![Action::Wait { unit: rider }]
+    );
+}
+
+#[test]
 fn player_side_simulation_uses_healing_items() {
     let pack = pack(OPEN_MAP);
     let mut st = state(&pack);

@@ -662,9 +662,17 @@ impl<'a> Planner<'a> {
         {
             return Some(tile);
         }
+        // Tiles this unit can stand on: entering a goal costs nothing in `goal_distance`, so an
+        // impassable one would look reachable from next to it.
+        let move_type = &self.st.class_of(self.pack, self.id).move_type;
+        let enterable = |p: Pos| {
+            self.board
+                .terrain(p)
+                .is_some_and(|t| t.move_cost(move_type).is_some())
+        };
         let goals: Vec<Pos> = (0..self.board.len())
             .map(|i| self.board.pos_of(i))
-            .filter(|&p| safe_heal(p) && self.occupant(p, origin).is_none())
+            .filter(|&p| safe_heal(p) && enterable(p) && self.occupant(p, origin).is_none())
             .collect();
         // Only a healing tile it can walk to: `approach` falls back to straight-line distance.
         let dist = self.goal_distance(&goals);
