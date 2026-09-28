@@ -107,6 +107,33 @@ pub struct BaseTerrain {
     pub tile: String,
 }
 
+/// An item of the base pack, matched to the release's items by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseItem {
+    pub id: String,
+    /// Korean name.
+    pub name: String,
+    /// Hanja name (empty when the pack gives none).
+    pub hanja: String,
+}
+
+/// The base items as `(id, name)` in the language of an `edition`'s `BAKDATA` names: the hanja
+/// for the Traditional-Chinese release, the Korean name otherwise (items without a name in that
+/// language are left out).
+pub fn item_names(items: &[BaseItem], edition: EditionId) -> Vec<(String, String)> {
+    items
+        .iter()
+        .map(|i| {
+            let name = match edition {
+                EditionId::ChineseDos => &i.hanja,
+                _ => &i.name,
+            };
+            (i.id.clone(), name.clone())
+        })
+        .filter(|(_, name)| !name.is_empty())
+        .collect()
+}
+
 /// What the pack is built on.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PackOptions {
@@ -122,8 +149,8 @@ pub struct PackOptions {
     pub sprites: Vec<String>,
     /// Classes of the pack chain: `(id, sprite key)`.
     pub classes: Vec<(String, String)>,
-    /// Items of the pack chain: `(id, name)`.
-    pub items: Vec<(String, String)>,
+    /// Items of the pack chain.
+    pub items: Vec<BaseItem>,
     /// Battles of the pack chain; those that follow an original battle are re-staged
     /// ([`crate::battles`]).
     pub battles: Vec<hero_core::battledef::BattleDef>,
@@ -168,7 +195,11 @@ impl PackOptions {
             items: parent
                 .items
                 .values()
-                .map(|i| (i.id.to_string(), i.name.clone()))
+                .map(|i| BaseItem {
+                    id: i.id.to_string(),
+                    name: i.name.clone(),
+                    hanja: i.hanja.clone(),
+                })
                 .collect(),
             battles: parent.battles.values().cloned().collect(),
         }
@@ -549,7 +580,7 @@ fn convert_battles(
         },
         &CLASS_SPRITES,
         &options.classes,
-        &options.items,
+        &item_names(&options.items, edition),
     );
 
     // Scenario files, read once.
@@ -2121,6 +2152,33 @@ mod tests {
         // Without any plain cell a missing terrain cannot be drawn.
         let only_river = learn_tiles(&[(&map(&[&[3]]), 1)]);
         assert!(tileset(&only_river, &terrain).is_err());
+    }
+
+    #[test]
+    fn items_match_in_the_release_language() {
+        let items = [
+            BaseItem {
+                id: "bean".into(),
+                name: "콩".into(),
+                hanja: "豆".into(),
+            },
+            BaseItem {
+                id: "new".into(),
+                name: "새 아이템".into(),
+                hanja: String::new(),
+            },
+        ];
+        assert_eq!(
+            item_names(&items, EditionId::KoreanDos),
+            [
+                ("bean".to_string(), "콩".to_string()),
+                ("new".to_string(), "새 아이템".to_string())
+            ]
+        );
+        assert_eq!(
+            item_names(&items, EditionId::ChineseDos),
+            [("bean".to_string(), "豆".to_string())]
+        );
     }
 
     #[test]

@@ -229,13 +229,6 @@ impl Place {
             Place::Near { pos, radius, to } => in_reach(*pos, *radius, *to, tile),
         }
     }
-
-    fn goals(&self) -> Vec<Pos> {
-        match self {
-            Place::NextTo(partners) => partners.clone(),
-            Place::Near { pos, .. } => vec![*pos],
-        }
-    }
 }
 
 /// A battle ending this unit brings about by standing somewhere: an `adjacent` or `reach`
@@ -528,12 +521,42 @@ impl<'a> Planner<'a> {
     /// bring about, otherwise towards the nearest hostile unit. A lord stays with its army
     /// rather than leading the charge, and without an army it keeps to the best position it
     /// can reach.
+    /// Tiles to head for to bring about `place`: the partners' tiles for an `adjacent` trigger
+    /// (standing next to one is enough), every tile of a `reach` area this unit can stand on
+    /// (an impassable tile of the area must not look like an arrival).
+    fn place_goals(&self, place: &Place) -> Vec<Pos> {
+        match place {
+            Place::NextTo(partners) => partners.clone(),
+            &Place::Near { pos, radius, to } => {
+                let (lo, hi) = match to {
+                    Some(to) => (
+                        Pos::new(pos.x.min(to.x), pos.y.min(to.y)),
+                        Pos::new(pos.x.max(to.x), pos.y.max(to.y)),
+                    ),
+                    None => (pos.offset(-radius, -radius), pos.offset(radius, radius)),
+                };
+                let move_type = &self.st.class_of(self.pack, self.id).move_type;
+                (lo.y..=hi.y)
+                    .flat_map(|y| (lo.x..=hi.x).map(move |x| Pos::new(x, y)))
+                    .filter(|&t| in_reach(pos, radius, to, t))
+                    .filter(|&t| {
+                        self.board
+                            .index(t)
+                            .and_then(|i| self.board.terrain_at_index(i))
+                            .and_then(|terrain| terrain.move_cost(move_type))
+                            .is_some()
+                    })
+                    .collect()
+            }
+        }
+    }
+
     fn idle_tile(&self, reach: &[Pos]) -> Pos {
         let objective: Vec<Pos> = self
             .script
             .iter()
             .filter(|s| s.wins)
-            .flat_map(|s| s.place.goals())
+            .flat_map(|s| self.place_goals(&s.place))
             .collect();
         if !objective.is_empty() {
             return self.approach(&objective, reach);
