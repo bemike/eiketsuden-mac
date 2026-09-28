@@ -8,7 +8,7 @@ use super::storage::{validate_key, KeyValueStore, StorageError};
 use sapp_jsutils::JsObject;
 
 /// Version of the `hero_web` JS plugin this build expects.
-pub const HERO_WEB_VERSION: u32 = 3;
+pub const HERO_WEB_VERSION: u32 = 4;
 
 /// Prefix of every `localStorage` item written by the game.
 const KEY_PREFIX: &str = "eiketsuden.";
@@ -24,6 +24,7 @@ extern "C" {
     fn hero_storage_remove(key: JsObject) -> i32;
     fn hero_now_seconds() -> f64;
     fn hero_location_hash() -> JsObject;
+    fn hero_pointer_inside() -> i32;
 }
 
 /// Checked by the miniquad JS loader against the plugin's `version` field.
@@ -43,6 +44,11 @@ pub fn show_panic(message: &str) {
 
 pub fn now_seconds() -> f64 {
     unsafe { hero_now_seconds() }
+}
+
+/// Whether the pointer is over the canvas and the page has focus.
+pub fn pointer_inside() -> bool {
+    unsafe { hero_pointer_inside() != 0 }
 }
 
 pub fn location_hash() -> String {

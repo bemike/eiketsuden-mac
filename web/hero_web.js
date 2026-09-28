@@ -1,8 +1,8 @@
 // Eiketsuden Reloaded — browser glue for the WebAssembly build.
 // Registers a miniquad plugin that gives the game localStorage-backed save
-// slots, the wall clock, the URL hash (launch options such as #gallery), lets
-// it dismiss the HTML loading overlay once the first frame is up and show a
-// crash message if it panics.
+// slots, the wall clock, the URL hash (launch options such as #gallery),
+// whether the pointer is over the canvas, lets it dismiss the HTML loading
+// overlay once the first frame is up and show a crash message if it panics.
 // Requires mq_js_bundle.js (sapp_jsutils helpers js_object/consume_js_object).
 //
 // Keep in sync with crates/hero-game/src/platform/web.rs. Bump `version`
@@ -17,7 +17,23 @@
     }
   }
 
+  // Whether the pointer is over the game canvas and the page has focus: miniquad reports no
+  // "pointer left" event, so edge scrolling would go on with the last position inside.
+  var pointerInside = true;
+  function trackPointer() {
+    var canvas = document.getElementById("glcanvas");
+    if (!canvas) return;
+    canvas.addEventListener("mouseleave", function () { pointerInside = false; });
+    canvas.addEventListener("mouseenter", function () { pointerInside = true; });
+    window.addEventListener("blur", function () { pointerInside = false; });
+  }
+
   function register_plugin(importObject) {
+    trackPointer();
+    // 1 while the pointer is over the canvas and the page has focus, else 0.
+    importObject.env.hero_pointer_inside = function () {
+      return pointerInside ? 1 : 0;
+    };
     importObject.env.hero_web_ready = function () {
       var el = document.getElementById("loading");
       if (el) el.remove();
@@ -105,5 +121,5 @@
     };
   }
 
-  miniquad_add_plugin({ register_plugin: register_plugin, name: "hero_web", version: 3 });
+  miniquad_add_plugin({ register_plugin: register_plugin, name: "hero_web", version: 4 });
 })();
