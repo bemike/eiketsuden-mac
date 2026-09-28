@@ -194,6 +194,49 @@ fn officers_own_sprites_are_checked() {
 }
 
 #[test]
+fn status_sprites_are_checked() {
+    let dir = TempDir::new("media-statuses");
+    complete_media(&dir.0);
+    let units = std::fs::read_to_string(dir.0.join("gfx/units/units.toml")).unwrap();
+    for side in ["player", "ally", "enemy"] {
+        write(
+            &dir.0,
+            &format!("gfx/units/dizzy_{side}.png"),
+            png_head(64, 96),
+        );
+    }
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        format!(
+            "{units}[sprites.dizzy]\nframe = [16, 16]\nanchor = [8, 15]\n\n\
+             [statuses]\nconfused = \"dizzy\"\n"
+        ),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+    // An unknown status and a sprite without sheets.
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        format!("{units}[statuses]\nasleep = \"zzz\"\n"),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "gfx/units/units.toml status asleep",
+        "names no status of the game",
+    );
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "gfx/units/units.toml status asleep",
+        "missing gfx/units/zzz_player.png",
+    );
+}
+
+#[test]
 fn complete_media_has_no_issues() {
     let dir = TempDir::new("media-complete");
     complete_media(&dir.0);

@@ -1198,6 +1198,11 @@ pub fn unit_sheet(icon: &IndexedImage) -> Result<IndexedImage, String> {
 /// `HEXZCHR` entry.
 pub type OfficerIcon = (Option<usize>, usize);
 
+/// Units under a status the original draws with one icon, whoever they are: the status id and
+/// the `HEXZCHR` entries for the player's and the enemy's side. Bit 0x02 of a unit's status
+/// byte is confusion (`MAIN.EXE` announces setting it with "…은(는) 혼란해 졌다!", FORMATS §8.2).
+pub const STATUS_ICONS: &[(&str, usize, usize)] = &[("confused", 43, 44)];
+
 /// Officers the original draws with their own battle-map icon, whatever side they are on
 /// (`MAIN.EXE`, FORMATS §8.2): the base-pack officer id and, per class (an index into
 /// [`CLASS_SPRITES`], `None` for any class), the `HEXZCHR` entry. Liu Bei (officer 0) takes
@@ -1220,22 +1225,20 @@ fn officer_sprite(officer: &str, class: Option<usize>) -> String {
 
 /// `units.toml` for the class sheets and the officer icons `officers` that were built:
 /// (officer, class, sprite key).
-fn units_toml(officers: &[(&str, Option<usize>, String)]) -> String {
+fn units_toml(officers: &[(&str, Option<usize>, String)], statuses: &[(&str, String)]) -> String {
     let mut s = String::from(
         "# Unit sprites of the original mode: the battle-map icons of HEXZCHR.R3, written by\n\
          # `hero-tools original pack` (do not edit; run the importer again). 32×32 frames stand on\n\
          # the 32-px tiles of gfx/tiles/terrain.toml. Layout and side colours: crates/hero-import/\n\
          # src/pack.rs (`unit_sheet`, `PLAYER_ICON`).\n",
     );
-    let officer_keys = OFFICER_ICONS.iter().flat_map(|(officer, icons)| {
-        icons
-            .iter()
-            .map(move |&(class, _)| officer_sprite(officer, class))
-    });
+    let officer_keys = officers.iter().map(|(_, _, key)| key.clone());
+    let status_keys = statuses.iter().map(|(_, key)| key.clone());
     for key in CLASS_SPRITES
         .iter()
         .map(|k| k.to_string())
         .chain(officer_keys)
+        .chain(status_keys)
     {
         let _ = write!(
             s,
@@ -1252,6 +1255,12 @@ fn units_toml(officers: &[(&str, Option<usize>, String)]) -> String {
         }
         let class_key = class.map_or("\"*\"", |k| CLASS_SPRITES[k]);
         let _ = writeln!(s, "{class_key} = \"{key}\"");
+    }
+    if !statuses.is_empty() {
+        s.push_str("\n[statuses]\n");
+        for (status, key) in statuses {
+            let _ = writeln!(s, "{status} = \"{key}\"");
+        }
     }
     s
 }
@@ -1355,6 +1364,29 @@ fn convert_units(
             }
         }
     }
+    // Status icons: `MAIN.EXE` draws a confused unit (status byte bit 0x02) with entry 43 on
+    // the player's side and 44 on the enemy's, whoever it is (FORMATS §8.2).
+    let mut status_sheets = Vec::new();
+    for &(status, player, enemy) in STATUS_ICONS {
+        let key = format!("status_{status}");
+        let png = |entry: usize| {
+            icon(entry)
+                .and_then(|i| unit_sheet(&i))
+                .and_then(|sheet| encode_png(&sheet, &pal, true).map_err(|e| e.to_string()))
+        };
+        match png(player).and_then(|p| Ok((p, png(enemy)?))) {
+            Ok(pair) => status_sheets.push((status, key, pair)),
+            Err(e) => report.notes.push(format!(
+                "{key}: {e}; {status} units are drawn with their usual icon instead"
+            )),
+        }
+    }
+    for (_, key, (player, enemy)) in &status_sheets {
+        out.write(&format!("gfx/units/{key}_player.png"), player)?;
+        out.write(&format!("gfx/units/{key}_ally.png"), player)?;
+        out.write(&format!("gfx/units/{key}_enemy.png"), enemy)?;
+        report.outputs += 3;
+    }
     for (key, (player, enemy)) in &sheets {
         out.write(&format!("gfx/units/{key}_player.png"), player)?;
         out.write(&format!("gfx/units/{key}_ally.png"), player)?;
@@ -1371,18 +1403,21 @@ fn convert_units(
         .iter()
         .map(|(officer, class, key, _)| (*officer, *class, key.clone()))
         .collect();
-    out.write("gfx/units/units.toml", units_toml(&officers).as_bytes())?;
+    let statuses: Vec<(&str, String)> = status_sheets
+        .iter()
+        .map(|(status, key, _)| (*status, key.clone()))
+        .collect();
+    out.write(
+        "gfx/units/units.toml",
+        units_toml(&officers, &statuses).as_bytes(),
+    )?;
     report.outputs += 1;
     report.status = Status::Extracted;
     report.summary = format!(
-        "{} classes and {} officer icons, 32×32 frames",
+        "{} classes, {} officer icons and {} status icon(s), 32×32 frames",
         sheets.len(),
-        owned.len()
-    );
-    report.notes.push(
-        "the status icons (HEXZCHR 43-44, units whose status byte has 0x02) are not used: \
-         what that status is is not known"
-            .into(),
+        owned.len(),
+        status_sheets.len()
     );
     Ok(report)
 }
@@ -2793,19 +2828,32 @@ mod tests {
         let text = |f: &str| std::fs::read_to_string(pack.join(f)).unwrap();
         let units = hero_core::media_index::parse_units(&text("gfx/units/units.toml")).unwrap();
         let officer_icons: usize = OFFICER_ICONS.iter().map(|(_, icons)| icons.len()).sum();
-        assert_eq!(units.sprites.len(), CLASS_SPRITES.len() + officer_icons);
+        assert_eq!(
+            units.sprites.len(),
+            CLASS_SPRITES.len() + officer_icons + STATUS_ICONS.len()
+        );
+        // A confused unit is drawn with the status icon, whoever it is.
+        assert_eq!(
+            units.sprite_for(Some("lu_bu"), "light_cavalry", &["confused"]),
+            "status_confused"
+        );
+        for side in ["player", "ally", "enemy"] {
+            assert!(pack
+                .join(format!("gfx/units/status_confused_{side}.png"))
+                .is_file());
+        }
         // Liu Bei draws his own icon in his first three classes, Lü Bu and Cao Cao in any.
         assert_eq!(
-            units.sprite_for(Some("liu_bei"), "long_infantry"),
+            units.sprite_for(Some("liu_bei"), "long_infantry", &[]),
             "officer_liu_bei_long_infantry"
         );
-        assert_eq!(units.sprite_for(Some("liu_bei"), "archer"), "archer");
+        assert_eq!(units.sprite_for(Some("liu_bei"), "archer", &[]), "archer");
         assert_eq!(
-            units.sprite_for(Some("lu_bu"), "light_cavalry"),
+            units.sprite_for(Some("lu_bu"), "light_cavalry", &[]),
             "officer_lu_bu"
         );
         assert_eq!(
-            units.sprite_for(Some("cao_cao"), "archer"),
+            units.sprite_for(Some("cao_cao"), "archer", &[]),
             "officer_cao_cao"
         );
         for side in ["player", "ally", "enemy"] {

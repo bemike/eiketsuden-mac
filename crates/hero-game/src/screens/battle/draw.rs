@@ -141,7 +141,7 @@ impl BattleScreen {
             {
                 continue;
             }
-            let sprite = self.unit_sprite(u.officer.as_deref(), &v.class);
+            let sprite = self.unit_sprite(u.officer.as_deref(), &v.class, v.confused);
             let def = self
                 .meta
                 .units
@@ -201,7 +201,8 @@ impl BattleScreen {
                 if u.lord {
                     hud::draw_crown(screen + vec2(0.0, head), v.alpha);
                 }
-                if v.confused {
+                // A confusion sprite of its own (the original mode's) shows it already.
+                if v.confused && !self.meta.units.statuses.contains_key("confused") {
                     hud::draw_confusion(screen + vec2(tile / 2.0, head - 1.0), ctx.time, v.alpha);
                 }
                 if v.knocked.is_none() {

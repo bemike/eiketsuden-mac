@@ -265,6 +265,17 @@ pub enum StatusKind {
     Confused,
 }
 
+impl StatusKind {
+    pub const ALL: [StatusKind; 1] = [StatusKind::Confused];
+
+    /// The id data files name the status by (`confused`).
+    pub const fn id(self) -> &'static str {
+        match self {
+            StatusKind::Confused => "confused",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Effect {
