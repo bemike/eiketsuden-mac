@@ -84,7 +84,8 @@ Windows PowerShell에서는 `pwsh tools/web/build.ps1 -Serve 8080`. 자세한 �
 cargo run --release -p hero-tools -- validate data/base
 ```
 
-`simulate data/base`는 모든 전투를 AI 대 AI로 돌려 봅니다.
+`simulate data/base`는 모든 전투를 AI 대 AI로 돌려 봅니다. `--campaign`을 붙이면 캠페인을 처음부터 따라가며
+앞 전투의 군대를 이어받습니다.
 
 ## 구조
 

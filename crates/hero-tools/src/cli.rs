@@ -19,6 +19,15 @@ USAGE:
         does not finish or cannot be set up. A --battle ID the pack does not have is a
         command line error (exit 2).
 
+    hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N]...
+        Play the whole campaign from a new game N times (default 4), AI against AI, carrying
+        levels, recruits, items and flags from battle to battle: dramas run with their side
+        effects, camps buy nothing and deploy the default army, a lost battle follows its
+        on_defeat or ends the run. --choose takes option N (1 = first) at the choices of
+        scene SCENE (default: the first option). Reports each run's end and, per battle, how
+        often it was won, its average turns and the army's average level; exits with 1 when a
+        run panics, gets stuck or cannot go on.
+
     hero-tools info <pack_dir>
         Print a summary of the pack's content.
 
@@ -65,6 +74,12 @@ pub enum Command {
         pack: PathBuf,
         seeds: u32,
         battle: Option<String>,
+    },
+    SimulateCampaign {
+        pack: PathBuf,
+        seeds: u32,
+        /// Scene id -> option index (0-based).
+        choose: std::collections::BTreeMap<String, usize>,
     },
     Info {
         pack: PathBuf,
@@ -211,6 +226,8 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
     let mut pack = None;
     let mut seeds = DEFAULT_SEEDS;
     let mut battle = None;
+    let mut campaign = false;
+    let mut choose = std::collections::BTreeMap::new();
     let mut args = rest.iter();
     while let Some(arg) = args.next() {
         // Accept both `--seeds 8` and `--seeds=8`.
@@ -234,6 +251,17 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
                 };
             }
             "--battle" => battle = Some(value("a battle id")?),
+            "--campaign" if inline.is_none() => campaign = true,
+            "--choose" => {
+                let v = value("SCENE=N")?;
+                let bad = || format!("`--choose` needs SCENE=N with N from 1, got `{v}`");
+                let (scene, n) = v.rsplit_once('=').ok_or_else(bad)?;
+                let n = n.parse::<usize>().ok().filter(|&n| n > 0).ok_or_else(bad)?;
+                if scene.is_empty() {
+                    return Err(bad());
+                }
+                choose.insert(scene.to_string(), n - 1);
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option `{flag}` for `simulate`"))
             }
@@ -241,8 +269,22 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
             _ => return Err("`simulate` takes exactly one pack directory".into()),
         }
     }
+    let pack = pack.ok_or("`simulate` needs a pack directory")?;
+    if campaign {
+        if battle.is_some() {
+            return Err("`--battle` and `--campaign` cannot be combined".into());
+        }
+        return Ok(Command::SimulateCampaign {
+            pack,
+            seeds,
+            choose,
+        });
+    }
+    if !choose.is_empty() {
+        return Err("`--choose` needs `--campaign`".into());
+    }
     Ok(Command::Simulate {
-        pack: pack.ok_or("`simulate` needs a pack directory")?,
+        pack,
         seeds,
         battle,
     })
@@ -299,6 +341,47 @@ mod tests {
             parse_str(&["simulate", "--battle=b03", "--seeds=8", "p"]),
             expected
         );
+        assert_eq!(
+            parse_str(&[
+                "simulate",
+                "p",
+                "--campaign",
+                "--choose",
+                "oath=2",
+                "--choose=a=b=1"
+            ]),
+            Ok(Command::SimulateCampaign {
+                pack: "p".into(),
+                seeds: DEFAULT_SEEDS,
+                choose: [("oath".to_string(), 1), ("a=b".to_string(), 0)].into(),
+            })
+        );
+        for (args, msg) in [
+            (
+                &["simulate", "p", "--campaign", "--battle", "b"][..],
+                "cannot be combined",
+            ),
+            (
+                &["simulate", "p", "--choose", "s=1"][..],
+                "needs `--campaign`",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--choose", "s=0"][..],
+                "N from 1",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--choose", "s"][..],
+                "SCENE=N",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--choose", "=2"][..],
+                "SCENE=N",
+            ),
+            (&["simulate", "p", "--campaign=yes"][..], "unknown option"),
+        ] {
+            let err = parse_str(args).unwrap_err();
+            assert!(err.contains(msg), "{args:?}: {err}");
+        }
     }
 
     #[test]
