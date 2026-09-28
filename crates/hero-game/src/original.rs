@@ -200,15 +200,105 @@ impl Conversion {
         }
         Some(match handle.join() {
             Ok(result) => result,
-            Err(panic) => {
-                let why = panic
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| panic.downcast_ref::<&str>().copied())
-                    .unwrap_or("unknown panic");
-                Err(format!("the conversion crashed: {why}"))
-            }
+            Err(panic) => Err(format!(
+                "the conversion crashed: {}",
+                panic_message(&*panic)
+            )),
         })
+    }
+}
+
+/// The message a worker thread panicked with.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> &str {
+    panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&str>().copied())
+        .unwrap_or("unknown panic")
+}
+
+// ----- background reads ----------------------------------------------------------------------
+
+/// A folder read on a worker thread. Listing, identifying or even testing a path can stall for
+/// as long as the file system does (an unresponsive network share, `\\server\share`, only
+/// gives up after its timeout), so the folder browser reads through this, keeps drawing and
+/// lets the player cancel. A cancelled read is dropped: its thread ends on its own once the
+/// file system answers, and its result is thrown away. (So each read cancelled on a stalled
+/// share leaves one thread waiting out the share's timeout; the player has to cancel again
+/// and again for that to add up.) The errors are the player-facing messages.
+pub struct Background<T> {
+    running: Option<JoinHandle<T>>,
+    /// The error when the thread could not be started.
+    failed: Option<String>,
+}
+
+impl<T: Send + 'static> Background<T> {
+    pub fn spawn(work: impl FnOnce() -> T + Send + 'static) -> Background<T> {
+        match std::thread::Builder::new()
+            .name("folder-read".into())
+            .spawn(work)
+        {
+            Ok(handle) => Background {
+                running: Some(handle),
+                failed: None,
+            },
+            Err(e) => Background {
+                running: None,
+                failed: Some(format!("폴더를 읽을 스레드를 시작하지 못했습니다: {e}")),
+            },
+        }
+    }
+
+    /// The result once the read has finished (returned once); `Err` when the worker could not
+    /// start or panicked.
+    pub fn poll(&mut self) -> Option<Result<T, String>> {
+        if let Some(e) = self.failed.take() {
+            return Some(Err(e));
+        }
+        let handle = self.running.take()?;
+        if !handle.is_finished() {
+            self.running = Some(handle);
+            return None;
+        }
+        Some(
+            handle.join().map_err(|panic| {
+                format!("폴더를 읽다가 오류가 났습니다: {}", panic_message(&*panic))
+            }),
+        )
+    }
+}
+
+/// What the folder browser shows at a place, read by [`look`].
+#[derive(Debug, Clone)]
+pub struct Listing {
+    pub place: Place,
+    /// The folders, or why the place cannot be read.
+    pub folders: Result<Vec<Folder>, String>,
+    /// The place's own edition, when it looks like an install.
+    pub check: Option<FolderCheck>,
+    /// Not an install itself, but the one subfolder that is one the original mode can play
+    /// (a DOSBox package's `GAME`).
+    pub child: Option<Folder>,
+}
+
+/// Read everything the browser shows at `place` (blocking: run it through [`Background`]).
+pub fn look(place: Place) -> Listing {
+    let folders = list(&place);
+    let check = match &place {
+        Place::Dir(dir) if looks_like_install(dir) => Some(check_folder(dir)),
+        _ => None,
+    };
+    let child = match (&place, &check, &folders) {
+        (Place::Dir(_), None, Ok(folders)) => sole_install(folders)
+            .filter(|f| check_folder(&f.path).is_supported())
+            .cloned(),
+        _ => None,
+    };
+    Listing {
+        place,
+        folders,
+        check,
+        child,
     }
 }
 
@@ -415,6 +505,60 @@ mod tests {
         }
     }
 
+    /// Poll a background read until it finishes.
+    fn wait<T: Send + 'static>(mut job: Background<T>) -> Result<T, String> {
+        loop {
+            if let Some(done) = job.poll() {
+                assert!(job.poll().is_none(), "a result is returned once");
+                return done;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn background_reads_report_their_result_or_crash() {
+        assert_eq!(wait(Background::spawn(|| 7)), Ok(7));
+        let crashed: Result<(), String> = wait(Background::spawn(|| panic!("disk on fire")));
+        assert_eq!(
+            crashed,
+            Err("폴더를 읽다가 오류가 났습니다: disk on fire".to_string())
+        );
+    }
+
+    #[test]
+    fn a_look_reads_what_the_browser_shows() {
+        let tmp = TempDir::new("look");
+        std::fs::create_dir_all(tmp.0.join("game")).unwrap();
+        std::fs::create_dir_all(tmp.0.join("other")).unwrap();
+        std::fs::write(tmp.0.join("game/disk1.r3i"), b"x").unwrap();
+        let listing = wait(Background::spawn({
+            let dir = tmp.0.clone();
+            move || look(Place::Dir(dir))
+        }))
+        .unwrap();
+        assert_eq!(listing.place, Place::Dir(tmp.0.clone()));
+        let names: Vec<_> = listing
+            .folders
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|f| (f.name.as_str(), f.install))
+            .collect();
+        assert_eq!(names, [("game", true), ("other", false)]);
+        // Not an install itself; the one install-looking subfolder is not a playable edition,
+        // so it is not offered.
+        assert!(listing.check.is_none());
+        assert!(listing.child.is_none());
+        // Inside it: its own (unplayable) edition, nothing listed.
+        let inner = look(Place::Dir(tmp.0.join("game")));
+        assert!(matches!(inner.check, Some(FolderCheck::Unsupported(_))));
+        assert_eq!(inner.folders.as_deref(), Ok(&[][..]));
+        // A folder that is gone: the error, no check.
+        let gone = look(Place::Dir(tmp.0.join("missing")));
+        assert!(gone.folders.is_err() && gone.check.is_none() && gone.child.is_none());
+    }
+
     #[test]
     fn lists_folders_and_marks_installs() {
         let tmp = TempDir::new("list");
@@ -577,6 +721,24 @@ mod tests {
             return;
         };
         assert!(check_folder(Path::new(&install)).is_supported());
+        // Its folder in the browser: the install is marked, and above it (a DOSBox package's
+        // `GAME`) offered when it is the only one.
+        let install_dir = PathBuf::from(&install);
+        let at = look(Place::Dir(install_dir.clone()));
+        assert!(matches!(at.check, Some(FolderCheck::Supported(_))));
+        if let Some(parent) = install_dir.parent() {
+            let above = look(Place::Dir(parent.to_path_buf()));
+            let installs = above
+                .folders
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|f| f.install)
+                .count();
+            if installs == 1 && above.check.is_none() {
+                assert_eq!(above.child.map(|f| f.path), Some(install_dir.clone()));
+            }
+        }
         let base_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
         let base = Pack::load(&DirSource {
             root: base_dir.clone(),

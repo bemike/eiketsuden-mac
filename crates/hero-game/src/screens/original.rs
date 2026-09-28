@@ -12,6 +12,11 @@
 //!   folder is not an install but exactly one subfolder is (a DOSBox package), that subfolder is
 //!   offered. "경로 입력…" (or Ctrl+V) takes a typed or pasted path.
 //!
+//! Every file system read (listing a folder, identifying an edition, testing a typed path) runs
+//! on a worker thread ([`original::Background`]): an unresponsive network share can stall it
+//! for a long time, and meanwhile the screen keeps drawing, shows "읽는 중…" after a moment and
+//! lets Esc or a right click cancel the read.
+//!
 //! Choosing a folder or switching the mode saves the settings and reloads the data pack
 //! ([`Flow::Reload`]): the loading screen converts the install in memory.
 
@@ -19,12 +24,13 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::audio::sfx;
 use crate::flow::Flow;
 use crate::gfx::{FontId, Gfx, TextStyle};
-use crate::original::{self, Folder, FolderCheck, Place};
+use crate::original::{self, Folder, FolderCheck, Listing, Place};
 use crate::platform::memfs;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
 use crate::ui::window::draw_window;
 use macroquad::prelude::*;
+use std::path::{Path, PathBuf};
 
 /// Left and right margin of the text and the menu.
 const MARGIN: f32 = 24.0;
@@ -57,6 +63,37 @@ enum View {
     Browse { place: Place, rows: Vec<Row> },
 }
 
+/// A finished read, with what it was for.
+enum Done {
+    /// The saved folder's edition, for the overview.
+    Saved(FolderCheck),
+    /// Show a place, the cursor on the folder `focus` (the folder just left).
+    Show(Listing, Option<PathBuf>),
+    /// The folder of the typed path line.
+    Typed(Result<Listing, String>),
+    /// Use `dir` if it (still) holds a playable install.
+    Use(PathBuf, FolderCheck),
+}
+
+/// A read on a worker thread ([`original::Background`]): the file system can stall (a network
+/// share), so the screen keeps drawing, and the player can cancel a read the browser waits for.
+struct Busy {
+    job: original::Background<Done>,
+    /// The browser waits for it (input goes to cancelling it); the overview's check of the
+    /// saved folder does not hold up the menu.
+    blocking: bool,
+    /// When it started (`ctx.time`): the note shows only for a slow read.
+    since: f64,
+    /// What is being read, for the note.
+    what: String,
+    /// Opening the browser at the saved folder: cancelling opens it without that folder (an
+    /// unresponsive network share would otherwise keep the browser out of reach).
+    skips_saved: bool,
+}
+
+/// Seconds a read may take before the "reading" note shows.
+const BUSY_NOTE_AFTER: f64 = 0.3;
+
 pub struct OriginalScreen {
     view: View,
     menu: Menu,
@@ -68,6 +105,7 @@ pub struct OriginalScreen {
     saved: Option<FolderCheck>,
     /// The path being typed ("경로 입력…"), while the browser takes text instead of commands.
     typing: Option<String>,
+    busy: Option<Busy>,
 }
 
 /// `text` shortened with `…` to fit `width` pixels of the main font.
@@ -161,6 +199,14 @@ fn next_starting_with(rows: &[Row], cursor: usize, c: char) -> Option<usize> {
     })
 }
 
+/// How the browser names a place.
+fn place_name(place: &Place) -> String {
+    match place {
+        Place::Roots => "드라이브".to_string(),
+        Place::Dir(dir) => dir.display().to_string(),
+    }
+}
+
 impl OriginalScreen {
     /// The overview.
     pub fn new() -> OriginalScreen {
@@ -173,6 +219,7 @@ impl OriginalScreen {
             browse_only: false,
             saved: None,
             typing: None,
+            busy: None,
         }
     }
 
@@ -205,12 +252,69 @@ impl OriginalScreen {
         self.menu = menu;
     }
 
+    /// Start `work` on a worker thread; its result comes back through [`Self::finish`]. A read
+    /// started while another runs replaces it (the old one is dropped).
+    fn start(
+        &mut self,
+        ctx: &Ctx,
+        blocking: bool,
+        what: String,
+        work: impl FnOnce() -> Done + Send + 'static,
+    ) {
+        self.busy = Some(Busy {
+            job: original::Background::spawn(work),
+            blocking,
+            since: ctx.time,
+            what,
+            skips_saved: false,
+        });
+    }
+
+    /// Read `place` and show it, the cursor on `focus` when it is listed.
+    fn open_place(&mut self, ctx: &Ctx, place: Place, focus: Option<&Path>) {
+        let what = place_name(&place);
+        let focus = focus.map(Path::to_path_buf);
+        self.start(ctx, true, what, move || {
+            Done::Show(original::look(place), focus)
+        });
+    }
+
+    /// Open the browser where [`original::start_place`] says (it tests the saved path too).
+    /// With `use_saved` it starts at the saved folder (or its nearest existing parent);
+    /// without, at the home folder.
+    fn open_browser(&mut self, ctx: &Ctx, use_saved: bool) {
+        // Letters typed on earlier screens would jump through the list.
+        drain_chars();
+        let saved = ctx.settings.original_dir.clone().filter(|_| use_saved);
+        let skips_saved = saved.is_some();
+        let what = saved.clone().unwrap_or_else(|| "시작 위치".to_string());
+        self.start(ctx, true, what, move || {
+            Done::Show(
+                original::look(original::start_place(saved.as_deref())),
+                None,
+            )
+        });
+        if let Some(busy) = &mut self.busy {
+            busy.skips_saved = skips_saved;
+        }
+    }
+
+    /// The overview; the saved folder's edition is read in the background.
     fn show_overview(&mut self, ctx: &Ctx) {
+        self.saved = None;
+        self.busy = None;
+        if let Some(dir) = ctx.settings.original_dir.clone() {
+            let what = dir.clone();
+            self.start(ctx, false, what, move || {
+                Done::Saved(original::check_folder(Path::new(&dir)))
+            });
+        }
+        self.render_overview(ctx);
+    }
+
+    fn render_overview(&mut self, ctx: &Ctx) {
         let gfx = &ctx.gfx;
         let saved_dir = ctx.settings.original_dir.clone();
-        self.saved = saved_dir
-            .as_deref()
-            .map(|d| original::check_folder(std::path::Path::new(d)));
         let playing = memfs::mounted().is_some();
         self.lines.clear();
         self.wrap_into(
@@ -231,7 +335,16 @@ impl OriginalScreen {
                 };
                 self.wrap_into(gfx, &check.summary(), color);
             }
-            _ => self.wrap_into(gfx, "원작 폴더: 아직 고르지 않았습니다", theme::TEXT),
+            (Some(dir), None) => {
+                self.wrap_into(gfx, &format!("원작 폴더: {dir}"), theme::TEXT);
+                let note = if self.busy.is_some() {
+                    "판본을 확인하는 중…"
+                } else {
+                    "판본을 확인하지 못했습니다"
+                };
+                self.wrap_into(gfx, note, theme::TEXT_DIM);
+            }
+            (None, _) => self.wrap_into(gfx, "원작 폴더: 아직 고르지 않았습니다", theme::TEXT),
         }
         let now = if playing {
             "지금: 원작 모드로 플레이하고 있습니다"
@@ -264,35 +377,23 @@ impl OriginalScreen {
         self.place_menu(gfx, Menu::new(items));
     }
 
-    /// Show the folders at `place`, the cursor on the folder `focus` when it is listed (the
-    /// folder just left when going up).
-    fn show_place(&mut self, ctx: &Ctx, place: Place, focus: Option<&std::path::Path>) {
+    /// Show a read place, the cursor on the folder `focus` when it is listed (the folder just
+    /// left when going up).
+    fn show_place(&mut self, ctx: &Ctx, listing: Listing, focus: Option<&Path>) {
         let gfx = &ctx.gfx;
-        let (folders, error) = match original::list(&place) {
+        let Listing {
+            place,
+            folders,
+            check,
+            child,
+        } = listing;
+        let (folders, error) = match folders {
             Ok(f) => (f, None),
             Err(e) => (Vec::new(), Some(e)),
         };
-        let check = match &place {
-            Place::Roots => None,
-            Place::Dir(dir) if original::looks_like_install(dir) => {
-                Some(original::check_folder(dir))
-            }
-            Place::Dir(_) => None,
-        };
         let all_checked = original::all_checked(&folders);
-        // Not an install itself, but one subfolder is one the original mode can play.
-        let child = match (&place, &check) {
-            (Place::Dir(_), None) => original::sole_install(&folders)
-                .filter(|f| original::check_folder(&f.path).is_supported())
-                .cloned(),
-            _ => None,
-        };
         self.lines.clear();
-        let here = match &place {
-            Place::Roots => "드라이브".to_string(),
-            Place::Dir(dir) => dir.display().to_string(),
-        };
-        self.wrap_into(gfx, &format!("위치: {here}"), theme::TEXT);
+        self.wrap_into(gfx, &format!("위치: {}", place_name(&place)), theme::TEXT);
         match (&check, &error) {
             (_, Some(e)) => self.wrap_into(gfx, &format!("이 폴더를 읽을 수 없습니다: {e}"), theme::TEXT_BAD),
             (Some(c), None) => {
@@ -421,10 +522,7 @@ impl OriginalScreen {
                 Command::PlayOriginal => OriginalScreen::apply(ctx, None, true),
                 Command::PlayBase => OriginalScreen::apply(ctx, None, false),
                 Command::Browse => {
-                    // Letters typed on earlier screens would jump through the list.
-                    drain_chars();
-                    let place = original::start_place(ctx.settings.original_dir.as_deref());
-                    self.show_place(ctx, place, None);
+                    self.open_browser(ctx, true);
                     Transition::None
                 }
                 Command::Back => Transition::Pop,
@@ -434,28 +532,124 @@ impl OriginalScreen {
         }
     }
 
-    /// Use `dir` as the original folder if it (still) holds a playable install.
-    fn use_folder(&mut self, ctx: &mut Ctx, dir: &std::path::Path, place: &Place) -> Transition {
-        // Identify again: the folder may have changed since it was listed.
-        match original::check_folder(dir) {
-            FolderCheck::Supported(_) => match original::storable_path(dir) {
-                Some(path) => OriginalScreen::apply(ctx, Some(path), true),
-                None => {
-                    ctx.sfx(sfx::ERROR);
-                    ctx.toast(
-                        "폴더 경로에 저장할 수 없는 문자가 있습니다(유니코드가 아닌 이름). \
-                         폴더 이름을 바꾸거나 다른 곳으로 옮겨 주세요.",
-                    );
-                    Transition::None
+    /// Use `dir` as the original folder if it (still) holds a playable install: it is
+    /// identified again, the folder may have changed since it was listed.
+    fn use_folder(&mut self, ctx: &Ctx, dir: &Path) {
+        let dir = dir.to_path_buf();
+        let what = dir.display().to_string();
+        self.start(ctx, true, what, move || {
+            let check = original::check_folder(&dir);
+            Done::Use(dir, check)
+        });
+    }
+
+    /// Act on a finished read.
+    fn finish(&mut self, ctx: &mut Ctx, done: Result<Done, String>) -> Transition {
+        let done = match done {
+            Ok(done) => done,
+            Err(e) => {
+                ctx.sfx(sfx::ERROR);
+                ctx.toast(e);
+                return self.after_cancel(ctx);
+            }
+        };
+        match done {
+            Done::Saved(check) => {
+                self.saved = Some(check);
+                if let View::Overview { commands } = &self.view {
+                    // Keep the cursor on its command: the menu is rebuilt (and may move).
+                    let on = commands.get(self.menu.cursor()).copied();
+                    self.render_overview(ctx);
+                    if let (Some(on), View::Overview { commands }) = (on, &self.view) {
+                        if let Some(i) = commands.iter().position(|c| *c == on) {
+                            self.menu.set_cursor(i);
+                        }
+                    }
                 }
-            },
-            other => {
+            }
+            Done::Show(listing, focus) => self.show_place(ctx, listing, focus.as_deref()),
+            Done::Typed(Ok(listing)) => {
+                ctx.sfx(sfx::CONFIRM);
+                self.typing = None;
+                self.show_place(ctx, listing, None);
+            }
+            Done::Typed(Err(e)) => {
+                ctx.sfx(sfx::ERROR);
+                ctx.toast(e);
+            }
+            Done::Use(dir, FolderCheck::Supported(_)) => {
+                return match original::storable_path(&dir) {
+                    Some(path) => OriginalScreen::apply(ctx, Some(path), true),
+                    None => {
+                        ctx.sfx(sfx::ERROR);
+                        ctx.toast(
+                            "폴더 경로에 저장할 수 없는 문자가 있습니다(유니코드가 아닌 이름). \
+                             폴더 이름을 바꾸거나 다른 곳으로 옮겨 주세요.",
+                        );
+                        Transition::None
+                    }
+                };
+            }
+            Done::Use(_, other) => {
                 ctx.sfx(sfx::ERROR);
                 ctx.toast(other.summary());
-                self.show_place(ctx, place.clone(), None);
-                Transition::None
+                // Read the place again: what it holds has changed.
+                if let View::Browse { place, .. } = &self.view {
+                    let place = place.clone();
+                    self.open_place(ctx, place, None);
+                }
             }
         }
+        Transition::None
+    }
+
+    /// Where a cancelled (or failed) read leaves the screen: the view it was started from (the
+    /// overview checks the saved folder again, the cancelled read may have replaced that
+    /// check), or out of the screen when the browser was opened directly and has shown
+    /// nothing yet.
+    fn after_cancel(&mut self, ctx: &Ctx) -> Transition {
+        match self.view {
+            View::Overview { .. } if self.browse_only => Transition::Pop,
+            View::Overview { .. } => {
+                self.show_overview(ctx);
+                Transition::None
+            }
+            View::Browse { .. } => Transition::None,
+        }
+    }
+
+    /// While a read runs: its result, or Esc / a right click to cancel a read the browser waits
+    /// for (its input is ignored meanwhile). The overview's check of the saved folder runs
+    /// alongside the menu (`None`: go on with the view's update).
+    fn update_busy(&mut self, ctx: &mut Ctx) -> Option<Transition> {
+        let busy = self.busy.as_mut()?;
+        if !busy.blocking {
+            if let Some(done) = busy.job.poll() {
+                self.busy = None;
+                self.finish(ctx, done);
+            }
+            return None;
+        }
+        // Keys pressed meanwhile (or in the frame the result arrives) must not act on the view
+        // that the result brings.
+        let cancel = ctx.input.key_pressed(KeyCode::Escape) || ctx.input.right_click();
+        ctx.input.consume();
+        drain_chars();
+        if let Some(done) = busy.job.poll() {
+            self.busy = None;
+            return Some(self.finish(ctx, done));
+        }
+        if cancel {
+            ctx.sfx(sfx::CANCEL);
+            let skips_saved = busy.skips_saved;
+            self.busy = None;
+            if skips_saved {
+                self.open_browser(ctx, false);
+                return Some(Transition::None);
+            }
+            return Some(self.after_cancel(ctx));
+        }
+        Some(Transition::None)
     }
 
     /// The path line: text keys type, Ctrl/Cmd+V pastes, Backspace deletes (held: repeats;
@@ -504,20 +698,17 @@ impl OriginalScreen {
         }
         if enter {
             let base = match place {
-                Place::Dir(dir) => Some(dir.as_path()),
+                Place::Dir(dir) => Some(dir.clone()),
                 Place::Roots => None,
             };
-            match original::typed_folder(&text, base) {
-                Ok(dir) => {
-                    ctx.sfx(sfx::CONFIRM);
-                    self.show_place(ctx, Place::Dir(dir), None);
-                    return Transition::None;
-                }
-                Err(e) => {
-                    ctx.sfx(sfx::ERROR);
-                    ctx.toast(e);
-                }
-            }
+            let typed = text.clone();
+            // Testing the path reads the file system too: in the background.
+            self.start(ctx, true, text.clone(), move || {
+                Done::Typed(
+                    original::typed_folder(&typed, base.as_deref())
+                        .map(|dir| original::look(Place::Dir(dir))),
+                )
+            });
         }
         self.typing = Some(text);
         Transition::None
@@ -552,7 +743,7 @@ impl OriginalScreen {
         if ctx.input.key_pressed(KeyCode::Backspace) {
             if let Some(p) = up.clone() {
                 ctx.sfx(sfx::CANCEL);
-                self.show_place(ctx, p, here);
+                self.open_place(ctx, p, here);
                 ctx.input.consume();
                 return Transition::None;
             }
@@ -577,12 +768,15 @@ impl OriginalScreen {
         match self.menu.update(ctx) {
             MenuEvent::Selected(i) => match &rows[i] {
                 Row::UseThis => {
-                    let Place::Dir(dir) = place else {
-                        return Transition::None;
-                    };
-                    self.use_folder(ctx, dir, place)
+                    if let Place::Dir(dir) = place {
+                        self.use_folder(ctx, dir);
+                    }
+                    Transition::None
                 }
-                Row::UseChild(folder) => self.use_folder(ctx, &folder.path, place),
+                Row::UseChild(folder) => {
+                    self.use_folder(ctx, &folder.path);
+                    Transition::None
+                }
                 Row::Type => {
                     // Start from the folder shown, to edit or replace.
                     self.typing = Some(match place {
@@ -593,12 +787,12 @@ impl OriginalScreen {
                 }
                 Row::Up => {
                     if let Some(p) = up {
-                        self.show_place(ctx, p, here);
+                        self.open_place(ctx, p, here);
                     }
                     Transition::None
                 }
                 Row::Open(folder) => {
-                    self.show_place(ctx, Place::Dir(folder.path.clone()), None);
+                    self.open_place(ctx, Place::Dir(folder.path.clone()), None);
                     Transition::None
                 }
             },
@@ -624,15 +818,16 @@ impl Screen for OriginalScreen {
             return;
         }
         if self.browse_only {
-            drain_chars();
-            let place = original::start_place(ctx.settings.original_dir.as_deref());
-            self.show_place(ctx, place, None);
+            self.open_browser(ctx, true);
         } else {
             self.show_overview(ctx);
         }
     }
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
+        if let Some(t) = self.update_busy(ctx) {
+            return t;
+        }
         // The views are rebuilt by the handlers, so work on a copy of the rows.
         match &self.view {
             View::Overview { commands } => {
@@ -682,6 +877,11 @@ impl Screen for OriginalScreen {
             Some(text) => self.draw_typing(ctx, text),
             None => self.menu.draw(ctx),
         }
+        if let Some(busy) = &self.busy {
+            if busy.blocking && ctx.time - busy.since >= BUSY_NOTE_AFTER {
+                self.draw_busy(ctx, busy);
+            }
+        }
     }
 }
 
@@ -695,6 +895,40 @@ impl OriginalScreen {
             gfx.size().x - 2.0 * MARGIN,
             2.0 * theme::ROW_HEIGHT + 2.0 * theme::PADDING,
         )
+    }
+
+    /// The note over a slow read: what is being read and how to cancel it.
+    fn draw_busy(&self, ctx: &Ctx, busy: &Busy) {
+        let gfx = &ctx.gfx;
+        let canvas = gfx.size();
+        let height = 2.0 * theme::ROW_HEIGHT + 2.0 * theme::PADDING;
+        let frame = Rect::new(
+            MARGIN,
+            canvas.y - height - 8.0,
+            canvas.x - 2.0 * MARGIN,
+            height,
+        );
+        draw_window(frame);
+        let x = MARGIN + theme::PADDING;
+        let dots = ".".repeat(1 + (ctx.time * 2.0) as usize % 3);
+        let cancel = if busy.skips_saved {
+            "저장된 폴더를 건너뛰고 홈 폴더에서 열기"
+        } else {
+            "취소"
+        };
+        gfx.text(
+            &format!("읽는 중{dots} — Esc·우클릭: {cancel}"),
+            x,
+            frame.y + theme::PADDING,
+            TextStyle::small(theme::TEXT_DIM),
+        );
+        let shown = fit_tail(gfx, &busy.what, frame.w - 2.0 * theme::PADDING);
+        gfx.text(
+            &shown,
+            x,
+            frame.y + theme::PADDING + theme::ROW_HEIGHT,
+            TextStyle::main(theme::TEXT),
+        );
     }
 
     /// The path line.

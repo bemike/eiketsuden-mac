@@ -32,10 +32,10 @@
 
 ## 견고성 · 회귀 방지
 
-- [ ] **원작 폴더 탐색기의 막힐 수 있는 I/O를 작업 스레드로**
-  - 무엇을: 입력한 경로의 `is_dir`/`read_dir`(응답 없는 UNC 경로는 SMB 시간 초과 동안 멈춤)와 X11 `clipboard_get`(클립보드 소유자가 응답하지 않으면 기다림)을 메인 스레드 밖에서 하거나 시간 제한을 둔다.
-  - 왜: 드물지만 그동안 게임 창이 멈춘다. 목록 탐색으로는 UNC에 갈 수 없었고 경로 입력(PR #17)으로 생긴 경로다.
-  - 영향 범위: hero-game `original.rs`(`typed_folder`, `list`), `screens/original.rs`
+- [ ] **X11 붙여 넣기(`clipboard_get`)가 응답 없는 클립보드 소유자를 무한정 기다림**
+  - 무엇을: 원작 폴더 탐색기의 Ctrl+V를 시간 제한이 있는 클립보드 읽기로 바꾼다(miniquad에 시간 제한을 넣는 패치를 올리거나, 자체 X11 연결로 읽는 클립보드 크레이트를 쓴다. 후자는 주요 의존성 추가라 DECISIONS 기록이 필요하다).
+  - 왜: miniquad 0.4의 X11 `get_clipboard`는 `SelectionNotify`가 올 때까지 `XNextEvent`로 기다려서, 소유자가 답하지 않으면 게임이 멈춘다. 이 호출은 X11 연결 때문에 메인 스레드 밖으로 옮길 수 없다. 파일 시스템 읽기는 PR #36에서 작업 스레드로 옮겼다.
+  - 영향 범위: hero-game `screens/original.rs`(`pasted`), 의존성(miniquad 또는 클립보드 크레이트)
 
 ## 게임 · 콘텐츠
 
