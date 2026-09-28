@@ -529,8 +529,8 @@ mod tests {
         };
         let a = map(&[&[0, 1, 2, 0], &[3, 4, 3, 3], &[6, 5, 8, 0]]);
         let mut b = map(&[&[0, 6], &[0, 6]]);
-        // Unknown code on castle chips: the stand-in is castle.
-        b.terrain[1] = 255;
+        // A code without pack terrain (18, fire) on castle chips: the stand-in is castle.
+        b.terrain[1] = 18;
         b.chips[2..4].copy_from_slice(&[24, 25]);
         b.chips[6..8].copy_from_slice(&[26, 27]);
         let enc = |s: &str| TextEncoding::EucKr.encode(s).unwrap();
