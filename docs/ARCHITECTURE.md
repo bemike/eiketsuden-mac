@@ -64,7 +64,7 @@ directory its parent, and the chain of packs (at most four) is loaded as one `Pa
 rules files, officer list and campaign replace the parent's when it lists them; battles and drama
 scenes are the union of all packs, a nearer pack overriding ids of a farther one; media files are
 looked up in the top pack first, then in each parent; `[presentation]` (the canvas size) is inherited
-from the nearest pack that declares it. Paths are resolved lexically relative to the top pack
+field by field from the nearest pack that sets each field. Paths are resolved lexically relative to the top pack
 (`../base/rules/game.toml`), so the same `FileSource` keys work for a directory (`DirSource`) and for
 the web build's fetched file map. The exact rules are in [MODDING.md](MODDING.md#layered-packs-extends)
 and the reasoning in [DECISIONS.md](DECISIONS.md) (D8).
