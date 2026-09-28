@@ -39,8 +39,8 @@ canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 
 ```
 
 * **Canvas.** A pack whose canvas lies outside 320×200 ..= 1280×800 (each side on its own) does not load.
-  Before a pack is loaded (loading, error and gallery screens) and for packs without
-  `[presentation]` the canvas is 480×270. Every screen is laid out relative to the canvas: windows
+  Before a pack is loaded (loading, error and gallery screens) and when no pack of the chain sets
+  `canvas` the canvas is 480×270. Every screen is laid out relative to the canvas: windows
   are centred or anchored to its edges, lists and panels grow with it, fonts keep their pixel size
   (so a bigger canvas shows more, not bigger, text). The camp and battle screens are laid out for at
   least **480×270**; smaller canvases are accepted, but those screens overlap and `Pack::validate`
@@ -56,15 +56,23 @@ canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 
   tile; the commander flag, lord crown and confusion stars sit above the top of the unit's frame.
   In the camp, unit icons taller than 32 pixels are drawn at 1/2 (1/3, ...) so the officer rows keep
   their spacing.
-* **Portraits and backgrounds** are drawn into boxes in virtual pixels (64×80 portrait boxes, the
-  whole canvas for backgrounds with `Cover` fitting), independent of their file resolution.
-* **Fixed UI sizes (not data).** Icons (`icons.png`, always drawn 16×16), banners (16×16), portrait
-  boxes (64×80) and the fonts' pixel sizes are set by the engine, not by the pack. A pack made for
-  another resolution changes the canvas and the tile size; the UI keeps these sizes, so a bigger
-  canvas shows more, not bigger, UI (like the fonts). Larger portrait files still help: they are
-  scaled into their box, so they keep detail at window scales above 1. These sizes
-  would become `[presentation]` fields (inherited field by field, `docs/DECISIONS.md` D8) only when
-  a pack needs a different one; none does yet.
+* **Portraits and backgrounds** are drawn into boxes in virtual pixels (4:5 portrait boxes whose size
+  depends on the screen, see below; the whole canvas for backgrounds with `Cover` fitting),
+  independent of their file resolution.
+* **Fixed UI sizes (not data).** These are set by the engine, not by the pack:
+  * icons (`icons.png`): drawn 16×16 whatever the atlas cell size in `icons.toml`;
+  * banners (`flags.png`): cells and drawn size 16×16 (larger cells are cut off);
+  * portrait boxes per screen: 64×80 in the dialogue and message boxes and the camp's deploy and
+    equipment screens, 96×120 on the officer page, 44×55 in drama notices, 38×47 and 36×45 in the
+    battle HUD; drama stage portraits are up to 104×130 and shrink (keeping 4:5) on low or narrow
+    canvases;
+  * the fonts' pixel sizes.
+
+  A pack made for another resolution changes the canvas and the tile size; the UI keeps these
+  sizes, so a bigger canvas shows more, not bigger, UI (like the fonts). Larger portrait files
+  still help: they are scaled into their box, so they keep detail at window scales above 1. These
+  sizes would become `[presentation]` fields (inherited field by field, `docs/DECISIONS.md` D8)
+  only when a pack needs a different one; none does yet.
 
 ## Canonical terrain ids
 

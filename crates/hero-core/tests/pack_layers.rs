@@ -288,7 +288,7 @@ fn a_replaced_parent_battle_never_meets_the_child_terrain() {
 }
 
 #[test]
-fn presentation_is_inherited_from_the_nearest_declaring_pack() {
+fn presentation_is_inherited_field_by_field() {
     // A grandchild of `mini` through `mini_ext`, which declares 640x480.
     let mut files = Files::new();
     for (key, text) in fixture_files_at("mini_ext", "../mini_ext") {
@@ -330,6 +330,16 @@ fn presentation_is_inherited_from_the_nearest_declaring_pack() {
         [640, 480],
         "field-level inheritance"
     );
+    // Only the fields a child sets count: a table with just an unknown key (a typo, which the
+    // unknown-field lint reports) inherits the canvas too.
+    files.insert(
+        "pack.toml".into(),
+        manifest(
+            "balance",
+            "extends = \"../mini_ext\"\n[presentation]\ncanvs = [800, 600]",
+        ),
+    );
+    assert_eq!(load(&files).manifest.presentation.canvas, [640, 480]);
 
     // Without any declaration: the default.
     assert_eq!(load_fixture().manifest.presentation.canvas, [480, 270]);
