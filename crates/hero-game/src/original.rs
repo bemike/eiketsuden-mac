@@ -217,7 +217,7 @@ impl Conversion {
 /// Most subfolders listed in one folder.
 pub const MAX_LISTED: usize = 1000;
 /// Most subfolders checked for [`looks_like_install`] in one folder (each check lists a folder).
-const MAX_CHECKED: usize = 300;
+pub const MAX_CHECKED: usize = 300;
 
 /// A place in the folder browser.
 #[derive(Debug, Clone, PartialEq, Eq)]

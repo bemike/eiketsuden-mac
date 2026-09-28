@@ -279,6 +279,7 @@ impl OriginalScreen {
             }
             Place::Dir(_) => None,
         };
+        let folder_count = folders.len();
         // Not an install itself, but one subfolder is one the original mode can play.
         let child = match (&place, &check) {
             (Place::Dir(_), None) => original::sole_install(&folders)
@@ -319,8 +320,13 @@ impl OriginalScreen {
                     gfx,
                     &format!(
                         "원작 파일(DISK1.R3I, HEXZMAP.R3 등)이 있는 폴더로 들어가세요. ★는 원작 파일이 \
-                         있는 폴더입니다. 경로를 알면 \"경로 입력…\"이나 {PASTE_KEY}로 붙여 넣을 수 \
-                         있습니다."
+                         있는 폴더입니다{}. 경로를 알면 \"경로 입력…\"이나 {PASTE_KEY}로 붙여 넣을 \
+                         수 있습니다.",
+                        if folder_count > original::MAX_CHECKED {
+                            format!("(폴더가 많아 앞 {}개만 확인합니다)", original::MAX_CHECKED)
+                        } else {
+                            String::new()
+                        }
                     ),
                     theme::TEXT_DIM,
                 ),

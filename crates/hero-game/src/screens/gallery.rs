@@ -803,10 +803,14 @@ impl GalleryScreen {
         .enumerate()
         {
             let facing = (i as u32) % 4;
+            // The frame size of the pack's sheets (24×24 in the base pack), as the camp cuts it.
+            let frame = ctx.media.texture(key).map_or(vec2(16.0, 16.0), |t| {
+                crate::ui::art::unit_frame_size(t.width(), t.height())
+            });
             draw_sprite(
                 ctx,
                 key,
-                vec2(16.0, 16.0),
+                frame,
                 (facing, walk),
                 vec2(s.x + 12.0 + i as f32 * 34.0, s.y + 24.0),
                 false,
