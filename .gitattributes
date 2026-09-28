@@ -7,3 +7,5 @@
 *.otf binary
 *.zip binary
 *.wasm binary
+*.ico binary
+*.rgba binary

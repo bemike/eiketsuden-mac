@@ -70,6 +70,7 @@ helpers) run without the cache: `python -m unittest discover -s tools/assets -p 
 | `build_fonts.py` | `fonts/`: Galmuri completed with the Hanja of the pack's text |
 | `build_portraits.py` + `portraits.toml` | `gfx/portraits/<officer>.png`, `_unknown.png` |
 | `build_backgrounds.py` | `gfx/bg/<key>.png` |
+| `build_icon.py` | the application icon in `crates/hero-game/icon/` (the executable's resource and the window icon; outside the pack, so it runs on its own: `python tools/assets/build_icon.py [--check]`) |
 | `build_music.py` | `bgm/<key>.ogg` |
 | `tilemap.py` | reference renderer of `terrain.toml` (used by the title and the previews) |
 | `preview.py` | review sheets: sample map with every unit, tile catalogue, unit sheets |

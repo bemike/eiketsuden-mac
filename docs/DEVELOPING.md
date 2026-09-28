@@ -7,6 +7,9 @@ formats are described in [ARCHITECTURE.md](ARCHITECTURE.md), [RULES.md](RULES.md
 
 * Rust stable (1.85 or newer) with the WebAssembly target: `rustup target add wasm32-unknown-unknown`
 * Linux only: `libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev` (as in CI)
+* Windows only: the resource compiler that embeds the application icon (`rc.exe` of the Windows SDK,
+  installed with the MSVC build tools; `windres` and `ar` of binutils for the GNU toolchain). The icon is drawn by
+  `tools/assets/build_icon.py` (`crates/hero-game/icon/`)
 * Python 3 to serve the web build locally; PowerShell 7 (`pwsh`) for the `.ps1` scripts
 
 Before committing, run what CI runs for the crates you touched:
