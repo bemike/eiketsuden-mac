@@ -486,6 +486,9 @@ impl<'a> Planner<'a> {
             AiMode::Advance => match self.me.ai_pos {
                 None => self.aggressive(&reach),
                 Some(p) if p == origin => self.defensive(&reach),
+                // A destination in reach is entered (`approach` stops next to it), then the unit
+                // acts from there.
+                Some(p) if reach.contains(&p) => self.act_at(p),
                 Some(p) => self.approach_and_act(&[p], &reach),
             },
             AiMode::Flee => {
