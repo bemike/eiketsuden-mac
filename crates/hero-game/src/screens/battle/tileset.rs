@@ -25,55 +25,11 @@ use hero_core::geom::Pos;
 use hero_core::map::BattleMap;
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
-use serde::Deserialize;
 use std::collections::BTreeMap;
 
-/// Pack-relative path of the tileset description.
-pub const TILESET_FILE: &str = "gfx/tiles/terrain.toml";
-/// Tile size in virtual pixels when `terrain.toml` does not set `tile_size`, and of the flat
-/// colour map drawn without a tileset.
-pub const DEFAULT_TILE: u32 = 16;
-
-fn default_tile_size() -> u32 {
-    DEFAULT_TILE
-}
-
-fn default_image() -> String {
-    "terrain.png".into()
-}
-
-/// `terrain.toml` as written by the asset pipeline.
-#[derive(Debug, Clone, Deserialize)]
-pub struct TilesetFile {
-    #[serde(default = "default_tile_size")]
-    pub tile_size: u32,
-    #[serde(default = "default_image")]
-    pub image: String,
-    #[serde(default)]
-    pub tiles: BTreeMap<String, TileFile>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct TileFile {
-    #[serde(default)]
-    pub layers: Vec<LayerFile>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LayerFile {
-    #[serde(default)]
-    pub cells: Vec<[u32; 2]>,
-    #[serde(default)]
-    pub auto: Vec<[u32; 2]>,
-    #[serde(default)]
-    pub connect: Vec<String>,
-    #[serde(default)]
-    pub offset: [i32; 2],
-    #[serde(default)]
-    pub fps: f32,
-    #[serde(default)]
-    pub frames: Vec<Vec<[u32; 2]>>,
-}
+// The file's schema and layer checks are shared with the validator and the importer.
+use hero_core::media_index::{self as index, TilesetFile};
+pub use hero_core::media_index::{DEFAULT_TILE, TILESET_FILE};
 
 /// One validated layer.
 #[derive(Debug, Clone, PartialEq)]
@@ -115,23 +71,15 @@ pub struct Tileset {
 impl Tileset {
     /// Parse `terrain.toml`. Malformed layers are skipped with a warning in `warnings`.
     pub fn parse(src: &str) -> Result<(Tileset, Vec<String>), String> {
-        let file: TilesetFile = toml::from_str(src).map_err(|e| e.to_string())?;
-        let mut warnings = Vec::new();
-        let mut tiles = BTreeMap::new();
-        for (key, tile) in file.tiles {
-            let mut layers = Vec::new();
-            for (i, l) in tile.layers.into_iter().enumerate() {
-                match validate_layer(l) {
-                    Ok(layer) => layers.push(layer),
-                    Err(e) => warnings.push(format!("tile `{key}` layer {i}: {e}")),
-                }
-            }
-            tiles.insert(key, layers);
-        }
-        let image = file.image.trim_end_matches(".png");
+        let file = TilesetFile::parse(src)?;
+        let (tiles, warnings) = file.layers();
+        let tiles = tiles
+            .into_iter()
+            .map(|(key, layers)| (key, layers.into_iter().map(Layer::from).collect()))
+            .collect();
         Ok((
             Tileset {
-                texture: format!("tiles/{image}"),
+                texture: file.texture_key(),
                 tile_size: file.tile_size.max(1) as f32,
                 tiles,
             },
@@ -140,28 +88,16 @@ impl Tileset {
     }
 }
 
-fn validate_layer(l: LayerFile) -> Result<Layer, String> {
-    let auto = !l.auto.is_empty() || (!l.connect.is_empty() && !l.frames.is_empty());
-    let frames = if !l.frames.is_empty() {
-        l.frames
-    } else if !l.auto.is_empty() {
-        vec![l.auto]
-    } else {
-        vec![l.cells]
-    };
-    if frames.iter().any(|f| f.is_empty()) {
-        return Err("a layer needs `cells`, `auto` or `frames`".into());
+impl From<index::Layer> for Layer {
+    fn from(l: index::Layer) -> Layer {
+        Layer {
+            frames: l.frames,
+            auto: l.auto,
+            connect: l.connect,
+            offset: vec2(l.offset[0] as f32, l.offset[1] as f32),
+            fps: l.fps,
+        }
     }
-    if auto && frames.iter().any(|f| f.len() != 16) {
-        return Err("autotile layers need exactly 16 cells per frame".into());
-    }
-    Ok(Layer {
-        frames,
-        auto,
-        connect: l.connect,
-        offset: vec2(l.offset[0] as f32, l.offset[1] as f32),
-        fps: l.fps.max(0.0),
-    })
 }
 
 /// 4-bit mask of the orthogonal neighbours of `p` whose terrain id is in `connect`

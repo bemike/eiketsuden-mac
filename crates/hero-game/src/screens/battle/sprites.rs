@@ -9,81 +9,9 @@
 use hero_core::battledef::Side;
 use hero_core::geom::Dir;
 use macroquad::prelude::*;
-use serde::Deserialize;
-use std::collections::BTreeMap;
 
-pub const UNITS_FILE: &str = "gfx/units/units.toml";
-pub const FX_FILE: &str = "gfx/fx/fx.toml";
-
-/// Frame size and anchor of one sprite key.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-pub struct SpriteDef {
-    pub frame: [u32; 2],
-    pub anchor: [i32; 2],
-}
-
-impl Default for SpriteDef {
-    /// The documented default: a 16×16 frame whose bottom-centre pixel stands on the tile's
-    /// bottom-centre pixel.
-    fn default() -> SpriteDef {
-        SpriteDef {
-            frame: [16, 16],
-            anchor: [8, 15],
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct UnitsFile {
-    #[serde(default)]
-    sprites: BTreeMap<String, SpriteDef>,
-}
-
-/// Parse `units.toml`.
-pub fn parse_units(src: &str) -> Result<BTreeMap<String, SpriteDef>, String> {
-    let file: UnitsFile = toml::from_str(src).map_err(|e| e.to_string())?;
-    Ok(file.sprites)
-}
-
-/// One effect strip.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-pub struct FxDef {
-    pub frame: [u32; 2],
-    pub frames: u32,
-    pub fps: f32,
-}
-
-impl FxDef {
-    /// Seconds the strip takes to play once.
-    pub fn duration(&self) -> f32 {
-        if self.fps > 0.0 {
-            self.frames.max(1) as f32 / self.fps
-        } else {
-            0.0
-        }
-    }
-
-    /// Frame shown `t` seconds after the start, `None` once the strip has finished.
-    pub fn frame_at(&self, t: f32) -> Option<u32> {
-        if t < 0.0 || self.fps <= 0.0 {
-            return None;
-        }
-        let f = (t * self.fps) as u32;
-        (f < self.frames).then_some(f)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct FxFile {
-    #[serde(default)]
-    fx: BTreeMap<String, FxDef>,
-}
-
-/// Parse `fx.toml`.
-pub fn parse_fx(src: &str) -> Result<BTreeMap<String, FxDef>, String> {
-    let file: FxFile = toml::from_str(src).map_err(|e| e.to_string())?;
-    Ok(file.fx)
-}
+// The index files' schema is shared with the validator and the importer.
+pub use hero_core::media_index::{parse_fx, parse_units, FxDef, SpriteDef, FX_FILE, UNITS_FILE};
 
 /// Sheet colour suffix of a side (`<sprite>_<side>.png`).
 pub fn side_suffix(side: Side) -> &'static str {

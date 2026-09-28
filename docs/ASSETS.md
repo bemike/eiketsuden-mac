@@ -29,7 +29,7 @@ laid out without engine changes:
 | virtual canvas `[width, height]` | `pack.toml`: `[presentation] canvas = [640, 480]` | `[480, 270]` |
 | map tile size (virtual pixels) | `gfx/tiles/terrain.toml`: `tile_size` | `16` |
 | map picture size | `gfx/maps/<key>.png`: map tiles × `tile_size` | — |
-| unit frame size and anchor | `gfx/units/units.toml`: `frame`, `anchor` per sprite | 16×16, anchor `[8, 15]` |
+| unit frame size and anchor | `gfx/units/units.toml`: `frame`, `anchor` per sprite (both required in an entry) | 16×16, anchor `[8, 15]` for a sprite without an entry |
 | effect frame size | `gfx/fx/fx.toml`: `frame` per effect | — |
 
 ```toml
@@ -108,8 +108,8 @@ of a map tile on screen, see [Presentation profile](#presentation-profile)). `te
 its id) to a stack of layers drawn bottom to top:
 
 ```toml
-tile_size = 16
-image = "terrain.png"
+tile_size = 16          # default 16
+image = "terrain.png"   # the atlas in gfx/tiles/, default terrain.png
 
 [tiles.grass]
 layers = [

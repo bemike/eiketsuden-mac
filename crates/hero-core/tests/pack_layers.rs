@@ -646,6 +646,20 @@ fn unknown_fields_are_reported_across_the_chain() {
         "mp_cap = 200",
         "mp_cap = 200\nmp_kap = 1",
     );
+    // Battle media indexes are linted in the first layer that has them, like the game reads
+    // them: the parent's units.toml, the child's fx.toml (the parent's is not used).
+    files.insert(
+        "../mini/gfx/units/units.toml".into(),
+        "[sprites.archer]\nframe = [16, 16]\nanchor = [8, 15]\nanchr = [8, 15]\n".into(),
+    );
+    files.insert(
+        "gfx/fx/fx.toml".into(),
+        "[fx.fire]\nframe = [32, 32]\nframes = 4\nfps = 8\nloop = true\n".into(),
+    );
+    files.insert(
+        "../mini/gfx/fx/fx.toml".into(),
+        "[fx.fire]\nframe = [32, 32]\nframes = 4\nfps = 8\nspeed = 2\n".into(),
+    );
     let issues = Pack::unknown_fields(&files).unwrap();
     assert_issue(
         &issues,
@@ -660,7 +674,14 @@ fn unknown_fields_are_reported_across_the_chain() {
         "../mini/rules/classes.toml",
         "hp_grwth",
     );
-    assert_eq!(issues.len(), 3, "{}", format_issues(&issues));
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "../mini/gfx/units/units.toml",
+        "anchr",
+    );
+    assert_issue(&issues, Severity::Warning, "gfx/fx/fx.toml", "loop");
+    assert_eq!(issues.len(), 5, "{}", format_issues(&issues));
 }
 
 #[test]

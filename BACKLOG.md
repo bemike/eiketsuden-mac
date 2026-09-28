@@ -3,13 +3,6 @@
 리뷰 2차(2026-09-26)에서 확인됐지만 이번 범위에서 고치지 않은 비차단 항목입니다. 형식은 **무엇을 · 왜 · 영향 범위**입니다.
 이미 처리된 항목은 넣지 않았습니다. 처리된 것은 세이브 슬롯 팩별 분리, 세이브 문서, 레이어드 팩의 웹 배포 안내, JS 번들 버전 CI 검사, wasm clippy CI입니다.
 
-## 원작 모드 착수 전에 할 것
-
-- [ ] **미디어 색인 스키마를 hero-core로 이전**
-  - 무엇을: `units.toml`·`terrain.toml`·`fx.toml`의 serde 타입(SpriteDef/FxDef/Tileset)과 `validate_layer`를 hero-game에서 hero-core로 옮긴다. `Pack::missing_media`가 타입 오류를 Error로 보고하게 하고, 색인 파일을 `unknown_fields` 린트에 넣는다.
-  - 왜: 지금은 검증기가 키 존재만 봐서 `anchor` 하나가 빠져도 validate는 통과하고, 게임에서는 스프라이트가 조용히 깨진다. 임포터도 같은 스키마를 써야 한다.
-  - 영향 범위: hero-core `pack/media.rs`, hero-game `screens/battle/{sprites,tileset}.rs`, `docs/ASSETS.md`
-
 ## 원작 모드 팩 (2026-09-26 `original pack` 도입 후)
 
 - [ ] **학습 타일셋의 경계 개선**
@@ -43,7 +36,6 @@
 
 ## 견고성 · 회귀 방지
 
-<<<<<<< HEAD
 - [ ] **자식 팩의 `credits.txt`가 부모 팩의 저작자 표시를 가림**
   - 무엇을: 레이어드 팩의 제작진 화면이 체인의 모든 `credits.txt`를 이어 보이거나(가까운 팩부터), 자식 팩이 부모 표시를 포함하도록 validate가 경고한다.
   - 왜: 지금은 가장 가까운 팩의 파일 하나만 보여, 부모(기본 팩)의 CC BY·CC BY-SA 저작자 표시가 게임 안에서 사라질 수 있다(원작 모드 팩은 `credits.txt`가 없어 해당 없음).
@@ -52,12 +44,10 @@
   - 무엇을: 미디어가 모두 `media_paths`로 옮겨 가 `path()`의 체인 탐색(`memfs::is_file`)은 테스트만 쓴다. 최상위 팩 경로만 돌려주게 하고 테스트·ARCHITECTURE·DECISIONS·memfs 설명을 정리한다.
   - 왜: 쓰이지 않는 경로가 문서에 살아 있는 것처럼 남는다.
   - 영향 범위: hero-game `platform/mod.rs`, `platform/memfs.rs`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
-=======
 - [ ] **원작 폴더 탐색기의 막힐 수 있는 I/O를 작업 스레드로**
   - 무엇을: 입력한 경로의 `is_dir`/`read_dir`(응답 없는 UNC 경로는 SMB 시간 초과 동안 멈춤)와 X11 `clipboard_get`(클립보드 소유자가 응답하지 않으면 기다림)을 메인 스레드 밖에서 하거나 시간 제한을 둔다.
   - 왜: 드물지만 그동안 게임 창이 멈춘다. 목록 탐색으로는 UNC에 갈 수 없었고 경로 입력(PR #17)으로 생긴 경로다.
   - 영향 범위: hero-game `original.rs`(`typed_folder`, `list`), `screens/original.rs`
->>>>>>> origin/main
 - [ ] **유닛 프레임 크기의 단일 출처화**
   - 무엇을: 캠프·갤러리 화면(`ui/art.rs unit_frame_size`)이 프레임을 시트 크기÷(4×6)로 추정하는 방식을 `units.toml`의 `frame`으로 통일하거나, 시트 크기를 validate에서 대조한다.
   - 왜: 시트에 여백이 있으면 전투와 캠프의 결과가 어긋난다.

@@ -191,8 +191,9 @@ fetch).
 
 `hero-tools validate`, `info` and `simulate` take the top pack directory and work on the whole chain.
 `validate` checks unknown keys in every `pack.toml`, in the rules, officer and campaign files in use (a
-parent's file that the child replaces is not checked) and in every battle and map file of the chain,
-and it looks for media in every pack of the chain.
+parent's file that the child replaces is not checked), in every battle and map file of the chain and in
+the battle media indexes (`units.toml`, `terrain.toml`, `fx.toml`) the game uses, and it looks for media
+in every pack of the chain.
 
 ## rules/game.toml
 
@@ -1120,19 +1121,20 @@ branch loops, battles no campaign node uses.
 
 * **Unknown keys** (W): every TOML key the schema does not know, reported with its file and path, e.g.
   a misspelt `rnage` in the archer class of `rules/classes.toml` is reported as field `class[archer].rnage`.
+  This covers the battle media indexes `units.toml`, `terrain.toml` and `fx.toml` too (in the first pack
+  of the chain that has each).
 * **Media** (natively, below the pack directory; for a layered pack in every pack of the chain, top pack
   first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries,
   `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing
-  `terrain.toml`/`fx.toml` or one that is not valid TOML, a missing terrain atlas image, terrain without a
-  `[tiles.<key>]` entry, a `tile_size` that is not a positive whole number, strategy effects without an
+  `units.toml`/`terrain.toml`/`fx.toml` or one the game cannot read (not valid TOML, or a field missing or
+  of the wrong type: `units.toml`, `terrain.toml` and `fx.toml` are read with the game's own schema, so a
+  sprite without `anchor` or `frame = "48"` is an error), a tile layer the game would leave out (no
+  cells, or an autotile frame without exactly 16 cells), a missing terrain atlas image (`image`, default
+  `terrain.png`), terrain without a `[tiles.<key>]` entry, a `tile_size` of 0, strategy effects without an
   `fx.toml` entry or strip, a map picture (`image`) that is missing, is not a PNG or is not exactly the
-  map's size in tiles times `tile_size`. W for missing portraits (the
-  `_unknown` portrait is shown), a missing `icons.toml` or unknown icon keys. For the media index files
-  (`units.toml`, `terrain.toml`, `fx.toml`, `icons.toml`) this checks only the TOML syntax, the files
-  they name, `tile_size` and that the entries the pack needs exist; it does not check the other fields'
-  types or values (`frame`, `anchor`, `frames`, `fps`, …). An index with such a mistake (say
-  `frame = "48"`) passes validation; the game then logs a warning (stderr natively, the browser
-  console on the web) and falls back to defaults or placeholders (16×16 unit frames, for example), so
+  map's size in tiles times `tile_size`. W for missing portraits (the `_unknown` portrait is shown), a
+  missing `icons.toml` or unknown icon keys. `icons.toml` is checked for TOML syntax and its keys only.
+  In all index files, values that are legal but odd (a zero frame size, `fps = 0`) are not reported, so
   check a new index in the game.
 
 ## hero-tools
