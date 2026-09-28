@@ -474,6 +474,8 @@ impl LoadingScreen {
             #[cfg(not(target_arch = "wasm32"))]
             Stage::Convert(mut convert) => {
                 let Some(result) = convert.0.poll() else {
+                    // The bar shows the conversion alone; loading the converted pack starts over.
+                    self.progress = convert.0.fraction();
                     self.stage = Stage::Convert(convert);
                     return Transition::None;
                 };
@@ -529,7 +531,7 @@ impl LoadingScreen {
         );
         let options = PackOptions::for_pack(base, extends, None);
         self.status = "원작 변환".into();
-        self.progress = 0.9;
+        self.progress = 0.0;
         self.stage = Stage::Convert(Box::new((Conversion::start(dir, options), root)));
         Transition::None
     }

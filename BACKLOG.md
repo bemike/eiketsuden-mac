@@ -9,14 +9,6 @@
   - 무엇을: `units.toml`·`terrain.toml`·`fx.toml`의 serde 타입(SpriteDef/FxDef/Tileset)과 `validate_layer`를 hero-game에서 hero-core로 옮긴다. `Pack::missing_media`가 타입 오류를 Error로 보고하게 하고, 색인 파일을 `unknown_fields` 린트에 넣는다.
   - 왜: 지금은 검증기가 키 존재만 봐서 `anchor` 하나가 빠져도 validate는 통과하고, 게임에서는 스프라이트가 조용히 깨진다. 임포터도 같은 스키마를 써야 한다.
   - 영향 범위: hero-core `pack/media.rs`, hero-game `screens/battle/{sprites,tileset}.rs`, `docs/ASSETS.md`
-- [ ] **`[presentation]` 상속 규칙 확정**
-  - 무엇을: 테이블 단위 상속을 유지할지, 필드 단위로 병합할지 정해 DECISIONS D8에 기록한다. MODDING에 "빈 `[presentation]`도 부모 값을 기본값으로 되돌린다"를 명시한다.
-  - 왜: 필드를 하나 추가하는 순간 호환성을 깨는 변경이 된다.
-  - 영향 범위: `docs`, `pack/chain.rs`
-- [ ] **UI 표시 크기의 데이터화 여부 결정**
-  - 무엇을: 아이콘(항상 16×16 표시), 깃발 16×16, 초상 64×80, 글꼴 크기를 데이터로 조정할지 결정하고 ASSETS.md에 적는다.
-  - 왜: 원작 해상도 팩 제작자가 무엇을 조정할 수 있는지 알 수 없다.
-  - 영향 범위: `docs/ASSETS.md`, hero-game `ui/`
 
 ## 원작 모드 팩 (2026-09-26 `original pack` 도입 후)
 
@@ -49,23 +41,9 @@
   - 왜: 원작은 이동으로는 그 칸에 못 들어가지만 배치 탐색·AI 목표·먼 거리 탐색은 들어갈 수 있는 칸으로 친다(FORMATS §10.4). 변환기는 절벽으로 근사한다.
   - 영향 범위: hero-import `pack.rs`(`OFF_MAP`), 원작 전투 변환
 
-## 원작 모드 게임 연결 (2026-09-28 이슈 #5 이후)
-
-- [ ] **폴더 탐색기에 경로 직접 입력·붙여넣기**
-  - 무엇을: 원작 폴더 고르기 화면에 경로 입력 줄(붙여넣기, 한글 경로)을 추가한다.
-  - 왜: 폴더가 수백 개인 곳(예: `D:\Project`)은 글자 이동·휠로도 여러 번 눌러야 한다.
-  - 영향 범위: hero-game `screens/original.rs`, 텍스트 입력 위젯(현재 없음)
-- [ ] **DOSBox 패키지 상위 폴더를 골라도 설치 폴더 찾기**
-  - 무엇을: 고른 폴더에 원작 파일이 없고 바로 아래 한 폴더에만 있으면(`res/hero` → `GAME`) 그 폴더를 제안한다.
-  - 왜: 지금은 ★ 표시로 안내만 하고, 상위 폴더에서 "이 폴더 사용"은 꺼져 있다.
-  - 영향 범위: hero-game `original.rs`(`check_folder`), `screens/original.rs`
-- [ ] **변환 진행률 표시**
-  - 무엇을: `build_pack`이 종류별 진행을 알리게 해 로딩 막대에 반영한다.
-  - 왜: release에서는 0.1초라 필요 없지만 느린 PC·debug 빌드(약 1.2초)에서 막대가 멈춰 보인다.
-  - 영향 범위: hero-import `pack.rs`, hero-game `screens/loading.rs`
-
 ## 견고성 · 회귀 방지
 
+<<<<<<< HEAD
 - [ ] **자식 팩의 `credits.txt`가 부모 팩의 저작자 표시를 가림**
   - 무엇을: 레이어드 팩의 제작진 화면이 체인의 모든 `credits.txt`를 이어 보이거나(가까운 팩부터), 자식 팩이 부모 표시를 포함하도록 validate가 경고한다.
   - 왜: 지금은 가장 가까운 팩의 파일 하나만 보여, 부모(기본 팩)의 CC BY·CC BY-SA 저작자 표시가 게임 안에서 사라질 수 있다(원작 모드 팩은 `credits.txt`가 없어 해당 없음).
@@ -74,6 +52,12 @@
   - 무엇을: 미디어가 모두 `media_paths`로 옮겨 가 `path()`의 체인 탐색(`memfs::is_file`)은 테스트만 쓴다. 최상위 팩 경로만 돌려주게 하고 테스트·ARCHITECTURE·DECISIONS·memfs 설명을 정리한다.
   - 왜: 쓰이지 않는 경로가 문서에 살아 있는 것처럼 남는다.
   - 영향 범위: hero-game `platform/mod.rs`, `platform/memfs.rs`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
+=======
+- [ ] **원작 폴더 탐색기의 막힐 수 있는 I/O를 작업 스레드로**
+  - 무엇을: 입력한 경로의 `is_dir`/`read_dir`(응답 없는 UNC 경로는 SMB 시간 초과 동안 멈춤)와 X11 `clipboard_get`(클립보드 소유자가 응답하지 않으면 기다림)을 메인 스레드 밖에서 하거나 시간 제한을 둔다.
+  - 왜: 드물지만 그동안 게임 창이 멈춘다. 목록 탐색으로는 UNC에 갈 수 없었고 경로 입력(PR #17)으로 생긴 경로다.
+  - 영향 범위: hero-game `original.rs`(`typed_folder`, `list`), `screens/original.rs`
+>>>>>>> origin/main
 - [ ] **유닛 프레임 크기의 단일 출처화**
   - 무엇을: 캠프·갤러리 화면(`ui/art.rs unit_frame_size`)이 프레임을 시트 크기÷(4×6)로 추정하는 방식을 `units.toml`의 `frame`으로 통일하거나, 시트 크기를 validate에서 대조한다.
   - 왜: 시트에 여백이 있으면 전투와 캠프의 결과가 어긋난다.

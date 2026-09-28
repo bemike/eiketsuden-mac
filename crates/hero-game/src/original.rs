@@ -14,8 +14,10 @@
 
 use hero_import::edition::{identify, Edition, EditionId};
 use hero_import::install::InstallDir;
-use hero_import::pack::{build_pack, MemoryPack, PackOptions};
+use hero_import::pack::{build_pack_with_progress, MemoryPack, PackOptions, BUILD_STEPS};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 /// Directory name the converted pack is mounted under, next to the base pack.
@@ -141,10 +143,13 @@ pub struct Conversion {
     running: Option<JoinHandle<Outcome>>,
     /// The result when it was produced without a worker thread.
     done: Option<Outcome>,
+    /// Finished steps of the worker (of `BUILD_STEPS`).
+    steps: Arc<AtomicUsize>,
 }
 
-fn convert(install: &Path, options: &PackOptions) -> Outcome {
-    build_pack(install, options).map_err(|e| e.to_string())
+fn convert(install: &Path, options: &PackOptions, steps: &AtomicUsize) -> Outcome {
+    build_pack_with_progress(install, options, &mut |n| steps.store(n, Ordering::Relaxed))
+        .map_err(|e| e.to_string())
 }
 
 impl Conversion {
@@ -152,21 +157,30 @@ impl Conversion {
     /// `PackOptions::for_pack`).
     pub fn start(install: PathBuf, options: PackOptions) -> Conversion {
         let source = install.clone();
+        let steps = Arc::new(AtomicUsize::new(0));
+        let worker_steps = Arc::clone(&steps);
         let spawned = std::thread::Builder::new()
             .name("original-mode".into())
-            .spawn(move || convert(&source, &options));
+            .spawn(move || convert(&source, &options, &worker_steps));
         match spawned {
             Ok(handle) => Conversion {
                 install,
                 running: Some(handle),
                 done: None,
+                steps,
             },
             Err(e) => Conversion {
                 done: Some(Err(format!("cannot start the conversion: {e}"))),
                 install,
                 running: None,
+                steps,
             },
         }
+    }
+
+    /// How far the conversion is, 0..=1 (by finished steps).
+    pub fn fraction(&self) -> f32 {
+        self.steps.load(Ordering::Relaxed).min(BUILD_STEPS) as f32 / BUILD_STEPS as f32
     }
 
     /// The install being converted.
@@ -285,6 +299,57 @@ pub fn list(place: &Place) -> Result<Vec<Folder>, String> {
     Ok(folders)
 }
 
+/// The only listed folder that looks like an install: offered when the folder shown is not one
+/// itself, e.g. a DOSBox package's `res/hero` holding the game in `GAME`.
+pub fn sole_install(folders: &[Folder]) -> Option<&Folder> {
+    let mut installs = folders.iter().filter(|f| f.install);
+    let first = installs.next()?;
+    installs.next().is_none().then_some(first)
+}
+
+/// Most characters of a typed or pasted path.
+pub const MAX_TYPED: usize = 1024;
+
+/// The folder a typed or pasted path names, as an absolute path (it is stored in the settings).
+/// Surrounding blanks and quotes (Explorer's "Copy as path" adds them) are dropped, a relative
+/// path is taken from `base` (the folder shown), a bare Windows drive (`D:`) is its root, and a
+/// file's path (a pasted `MAIN.EXE`) names its folder.
+pub fn typed_folder(text: &str, base: Option<&Path>) -> Result<PathBuf, String> {
+    let mut text = text.trim();
+    for q in ['"', '\''] {
+        if let Some(inner) = text.strip_prefix(q).and_then(|t| t.strip_suffix(q)) {
+            text = inner.trim();
+        }
+    }
+    if text.is_empty() {
+        return Err("경로를 입력해 주세요".to_string());
+    }
+    let bare_drive = cfg!(windows)
+        && text.len() == 2
+        && text.as_bytes()[0].is_ascii_alphabetic()
+        && text.as_bytes()[1] == b':';
+    let mut path = if bare_drive {
+        PathBuf::from(format!("{text}\\"))
+    } else {
+        PathBuf::from(text)
+    };
+    if path.is_relative() {
+        if let Some(base) = base {
+            path = base.join(path);
+        }
+    }
+    // Still relative without a base (or drive-relative, `D:game`): resolved against the current
+    // folder, so what is stored does not depend on where the game is started next time.
+    let path = std::path::absolute(&path).map_err(|e| format!("{text}: {e}"))?;
+    if path.is_dir() {
+        return Ok(path);
+    }
+    match path.parent() {
+        Some(p) if path.is_file() && !p.as_os_str().is_empty() => Ok(p.to_path_buf()),
+        _ => Err(format!("폴더를 찾을 수 없습니다: {text}")),
+    }
+}
+
 /// Where the browser opens: the saved folder, else its nearest existing parent, else the home
 /// folder, else the current folder, else the roots.
 pub fn start_place(saved: Option<&str>) -> Place {
@@ -383,6 +448,48 @@ mod tests {
             check_folder(&tmp.0.join("missing")),
             FolderCheck::Unreadable(_)
         ));
+
+        // Two install-looking folders: none is offered; one: that one.
+        assert_eq!(sole_install(&folders), None);
+        let one: Vec<Folder> = folders.into_iter().filter(|f| f.name != "zh").collect();
+        assert_eq!(sole_install(&one).map(|f| f.name.as_str()), Some("game"));
+        assert_eq!(sole_install(&[]), None);
+
+        // Typed paths: blanks and quotes dropped, a file names its folder, relative paths are
+        // taken from the folder shown; the result is absolute.
+        let root = std::path::absolute(&tmp.0).unwrap();
+        let game = root.join("game");
+        let shown = game.display().to_string();
+        assert_eq!(typed_folder(&shown, None), Ok(game.clone()));
+        assert_eq!(
+            typed_folder(&format!("  \"{shown}\" "), None),
+            Ok(game.clone())
+        );
+        assert_eq!(typed_folder(&format!("'{shown}'"), None), Ok(game.clone()));
+        assert_eq!(
+            typed_folder(&game.join("disk1.r3i").display().to_string(), None),
+            Ok(game.clone())
+        );
+        let relative = typed_folder("game", Some(&root)).unwrap();
+        assert!(relative.is_absolute(), "{relative:?}");
+        assert!(
+            relative.ends_with("game") && relative.is_dir(),
+            "{relative:?}"
+        );
+        let dotted = typed_folder("./game/", Some(&root)).unwrap();
+        assert!(dotted.is_absolute() && dotted.is_dir(), "{dotted:?}");
+        assert!(typed_folder("game", Some(&root.join("b"))).is_err());
+        assert!(typed_folder("", None).is_err());
+        assert!(typed_folder(" \"\" ", None).is_err());
+        assert!(typed_folder(&root.join("missing").display().to_string(), None).is_err());
+        if cfg!(windows) {
+            // A bare drive is its root, not the drive's current folder.
+            let drive = &shown[..2];
+            assert_eq!(
+                typed_folder(drive, Some(&root)),
+                Ok(PathBuf::from(format!("{drive}\\")))
+            );
+        }
     }
 
     #[test]
@@ -464,6 +571,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         };
+        assert_eq!(job.fraction(), 1.0, "every step reported");
         eprintln!("converted in {:?}", started.elapsed());
         assert!(built.index.success(), "{:#?}", built.index.assets);
 

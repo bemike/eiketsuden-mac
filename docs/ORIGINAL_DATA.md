@@ -88,9 +88,14 @@ EUC-KR 한글입니다. 그래서 헤더만으로는 언어를 정하지 않고 
 1. 게임(네이티브 빌드)을 실행하고 타이틀에서 **원작 데이터**를 고릅니다.
 2. **원작 폴더 고르기…** → 게임 안의 폴더 탐색기에서 원작 파일이 든 폴더(`DISK1.R3I`, `MAIN.EXE`, `HEXZMAP.R3`
    등이 바로 들어 있는 폴더, DOSBox 패키지라면 그 안의 `GAME` 같은 폴더)로 들어갑니다. 원작 파일이 있는 폴더는
-   ★로 표시되고, 폴더에 들어가면 `hero-tools original probe`와 같은 판정과 근거가 보입니다.
+   ★로 표시되고, 폴더에 들어가면 `hero-tools original probe`와 같은 판정과 근거가 보입니다. 들어간 폴더가 원작
+   폴더가 아니고 바로 아래 한 폴더에만 원작 파일이 있으면(DOSBox 패키지의 `res/hero` → `GAME`) **"GAME 폴더
+   사용"**이 함께 나옵니다.
    - 조작: 확인(Enter·Z·클릭)으로 폴더에 들어가고, Backspace·`..`로 상위 폴더, 글자 키로 그 글자로 시작하는 폴더로
      이동(Z·X 제외), Page Up/Down, 휠. Windows에서는 드라이브 최상위에서 한 번 더 올라가면 드라이브 목록입니다.
+   - 경로를 알면 **경로 입력…**이나 **Ctrl+V**(macOS는 Cmd+V)로 경로 줄을 열어 입력·붙여넣기하고 Enter로 그
+     폴더로 갑니다(Esc·우클릭: 목록으로, Ctrl+Backspace: 지우기). 탐색기의 "경로로 복사"처럼 따옴표가 붙은 경로와
+     원작 파일(`MAIN.EXE` 등)의 경로도 받고, 상대 경로는 보고 있는 폴더 기준, `D:`는 그 드라이브의 최상위입니다.
 3. 지원하는 판본(한국어 DOS/V, 중국어 DOS)이면 **이 폴더 사용**이 켜집니다. 고르면 설정에 경로와 "원작 모드 켬"을
    저장하고 데이터를 다시 불러옵니다.
 4. 로딩 화면이 기본 팩을 읽은 뒤 원작을 **메모리에서** 원작 모드 팩(4.5절과 같은 파일)으로 변환해 기본 팩 위에
@@ -401,7 +406,9 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   game's event format open); P7 OPL2 music and P8 Steam/PC-98 open.
 * **Original mode in the game (no command line)**: on native builds the title menu's "원작 데이터" (original data)
   opens an in-game folder browser (★ marks folders holding original files; entering one shows the same verdict and
-  evidence as `probe`). "이 폴더 사용" (use this folder) stores the folder in the settings and reloads: the loading
+  evidence as `probe`; a folder whose only install is one subfolder, like a DOSBox package, offers that subfolder;
+  "경로 입력…" or Ctrl/Cmd+V takes a typed or pasted path). "이 폴더 사용" (use this folder) stores the folder in
+  the settings and reloads: the loading
   screen loads the base pack, converts the install **in memory** on a worker thread (about 0.1 s in a release build
   on the Korean copy), mounts the result next to the base pack and plays it; nothing is written and the install is
   only read. Later launches start in the original mode directly; the same screen switches back to the base pack.

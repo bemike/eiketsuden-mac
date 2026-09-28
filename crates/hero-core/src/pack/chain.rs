@@ -12,11 +12,10 @@
 //! * Battles, drama scenes and maps (map files) are the **union** of every layer's files; a
 //!   battle, scene or map id that a nearer layer defines again **overrides** the one of the
 //!   farther layer. Within one pack an id must still be unique.
-//! * `[presentation]` is inherited: the nearest layer that declares it wins, otherwise
-//!   [`Presentation::default`]. The rule works on the **whole table**, not field by field: a
-//!   declared table replaces the parent's completely, and a field it omits (even every field, in
-//!   an empty `[presentation]`) takes the default, not the parent's value. Decide whether to
-//!   switch to per-field merging before adding a second field to [`Presentation`].
+//! * `[presentation]` is inherited **field by field**: each field comes from the nearest layer
+//!   that sets it, otherwise from [`Presentation::default`]. A field a child leaves out (every
+//!   field, in an empty `[presentation]`) keeps the parent's value, so adding a field to
+//!   [`Presentation`] never changes what existing packs inherit (`docs/DECISIONS.md` D8).
 //! * A chain holds at most [`MAX_CHAIN_DEPTH`] packs, every pack in it needs its own `id`, and a
 //!   pack cannot extend itself, directly or through others; a parent that does not exist is an
 //!   error.
@@ -154,8 +153,8 @@ impl PackFiles {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackChain {
     layers: Vec<PackLayer>,
-    /// `[presentation]` of the nearest layer that declares one.
-    presentation: Option<Presentation>,
+    /// `[presentation]` fields, each from the nearest layer that sets it.
+    canvas: Option<[u32; 2]>,
     /// Directory of the parent still to be read, relative to the top pack.
     next: Option<String>,
 }
@@ -166,7 +165,7 @@ impl PackChain {
     pub fn new(top_manifest: &str) -> Result<PackChain, PackError> {
         let mut chain = PackChain {
             layers: Vec::new(),
-            presentation: None,
+            canvas: None,
             next: None,
         };
         chain.add(String::new(), top_manifest)?;
@@ -239,9 +238,13 @@ impl PackChain {
         self.next.is_none()
     }
 
-    /// The `[presentation]` of the nearest layer that declares one, otherwise the default.
+    /// The inherited `[presentation]`: each field from the nearest layer that sets it, otherwise
+    /// the default.
     pub fn presentation(&self) -> Presentation {
-        self.presentation.unwrap_or_default()
+        let default = Presentation::default();
+        Presentation {
+            canvas: self.canvas.unwrap_or(default.canvas),
+        }
     }
 
     /// Decide which layer provides each file (see the module docs). Fails when the chain is not
@@ -363,8 +366,9 @@ impl PackChain {
                 ));
             }
         }
-        if self.presentation.is_none() && declares_presentation(text) {
-            self.presentation = Some(manifest.presentation);
+        let declared = presentation_fields(text);
+        if self.canvas.is_none() && declared.iter().any(|f| f == "canvas") {
+            self.canvas = Some(manifest.presentation.canvas);
         }
         self.layers.push(PackLayer { dir, manifest });
         self.next = parent;
@@ -381,11 +385,14 @@ fn describe_dir(dir: &str) -> String {
     }
 }
 
-/// Whether a `pack.toml` has a `[presentation]` table (only then does it override the parent's).
-/// The text has already been parsed as a [`PackManifest`], so it is valid TOML.
-fn declares_presentation(text: &str) -> bool {
+/// The fields a `pack.toml` sets in `[presentation]` (only those override the parent's). The
+/// text has already been parsed as a [`PackManifest`], so it is valid TOML.
+fn presentation_fields(text: &str) -> Vec<String> {
     toml::from_str::<toml::Table>(text.strip_prefix('\u{feff}').unwrap_or(text))
-        .is_ok_and(|t| t.contains_key("presentation"))
+        .ok()
+        .and_then(|t| t.get("presentation").and_then(|p| p.as_table()).cloned())
+        .map(|p| p.keys().cloned().collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

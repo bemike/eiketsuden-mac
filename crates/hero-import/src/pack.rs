@@ -319,7 +319,14 @@ pub fn write_pack(
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
     let mut output = Output::dir(out);
-    convert(&install, edition, encoding, options, &mut output)
+    convert(
+        &install,
+        edition,
+        encoding,
+        options,
+        &mut output,
+        &mut |_| {},
+    )
 }
 
 /// An original-mode pack converted in memory ([`build_pack`]).
@@ -335,12 +342,26 @@ pub struct MemoryPack {
 /// [`write_pack`] writes, for the game to play without writing anything (it converts at every
 /// launch, like OpenRCT2 reading the RCT2 install). The install is only read.
 pub fn build_pack(source: &Path, options: &PackOptions) -> Result<MemoryPack, ExtractError> {
+    build_pack_with_progress(source, options, &mut |_| {})
+}
+
+/// Steps of a conversion that [`build_pack_with_progress`] reports: `MAIN.EXE`, portraits,
+/// terrain tiles, unit sheets, battle maps, battles.
+pub const BUILD_STEPS: usize = 6;
+
+/// [`build_pack`], calling `progress` with the number of finished steps (up to [`BUILD_STEPS`])
+/// after each one, for a progress bar.
+pub fn build_pack_with_progress(
+    source: &Path,
+    options: &PackOptions,
+    progress: &mut dyn FnMut(usize),
+) -> Result<MemoryPack, ExtractError> {
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
     pack_toml(&options.extends, edition.id, false, &[], false)
         .map_err(|e| output_error(Path::new("pack.toml"), e))?;
     let mut output = Output::in_memory(PACK_ID);
-    let index = convert(&install, edition, encoding, options, &mut output)?;
+    let index = convert(&install, edition, encoding, options, &mut output, progress)?;
     let files = output.memory.take().unwrap_or_default();
     Ok(MemoryPack { index, files })
 }
@@ -363,17 +384,20 @@ fn pack_edition(
     }
 }
 
-/// Convert every asset kind into `output` and write `pack.toml` and [`PACK_INDEX`].
+/// Convert every asset kind into `output` and write `pack.toml` and [`PACK_INDEX`], calling
+/// `progress` after each of the [`BUILD_STEPS`].
 fn convert(
     install: &InstallDir,
     edition: Edition,
     encoding: TextEncoding,
     options: &PackOptions,
     output: &mut Output,
+    progress: &mut dyn FnMut(usize),
 ) -> Result<PackIndex, ExtractError> {
     // MAIN.EXE is listed as a source of every kind that uses it.
     let mut exe_report = KindReport::new(Status::Extracted, true, "");
     let exe = Exe::read(install, &mut exe_report)?;
+    progress(1);
     let with_exe = |mut r: KindReport| {
         r.sources.extend(exe_report.sources.iter().cloned());
         r
@@ -388,6 +412,7 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
+    progress(2);
     let tiles = convert_tiles(
         install,
         &exe,
@@ -395,6 +420,7 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
+    progress(3);
     let tiles_ok = matches!(tiles.status, Status::Extracted | Status::Partial);
     let units = convert_units(
         install,
@@ -404,6 +430,7 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
+    progress(4);
     let (maps, map_records, map_store) = convert_maps(
         install,
         encoding,
@@ -413,6 +440,7 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
+    progress(5);
 
     let (battles, battle_records, drama) = convert_battles(
         install,
@@ -425,6 +453,7 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, false, "")),
     )?;
+    progress(BUILD_STEPS);
 
     let battle_files: Vec<String> = battle_records.iter().map(|b| b.file.clone()).collect();
     let manifest = pack_toml(
@@ -2613,7 +2642,10 @@ mod tests {
             names
         };
         let (install_before, out_before) = (listing(src.path()), listing(out.path()));
-        let built = build_pack(src.path(), &options()).unwrap();
+        let mut steps = Vec::new();
+        let built =
+            build_pack_with_progress(src.path(), &options(), &mut |n| steps.push(n)).unwrap();
+        assert_eq!(steps, (1..=BUILD_STEPS).collect::<Vec<_>>());
         // Nothing is written anywhere.
         assert_eq!(listing(src.path()), install_before);
         assert_eq!(listing(out.path()), out_before);
