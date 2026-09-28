@@ -8,7 +8,9 @@
 //!   commands: play the original mode / the base pack, pick a folder, back.
 //! * **Folder browser** — the drives (Windows) and folders, one level at a time. Folders that
 //!   directly hold original files are marked ★; the current folder's edition is shown above the
-//!   list, and "이 폴더 사용" is enabled only for an edition the original mode can play.
+//!   list, and "이 폴더 사용" is enabled only for an edition the original mode can play. When the
+//!   folder is not an install but exactly one subfolder is (a DOSBox package), that subfolder is
+//!   offered. "경로 입력…" (or Ctrl+V) takes a typed or pasted path.
 //!
 //! Choosing a folder or switching the mode saves the settings and reloads the data pack
 //! ([`Flow::Reload`]): the loading screen converts the install in memory.
@@ -43,6 +45,9 @@ enum Command {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Row {
     UseThis,
+    /// The one subfolder holding a playable install.
+    UseChild(Folder),
+    Type,
     Up,
     Open(Folder),
 }
@@ -61,6 +66,8 @@ pub struct OriginalScreen {
     browse_only: bool,
     /// The saved folder's edition, for the overview.
     saved: Option<FolderCheck>,
+    /// The path being typed ("경로 입력…"), while the browser takes text instead of commands.
+    typing: Option<String>,
 }
 
 /// `text` shortened with `…` to fit `width` pixels of the main font.
@@ -73,6 +80,41 @@ fn fit(gfx: &Gfx, text: &str, width: f32) -> String {
         out.pop();
     }
     format!("{out}…")
+}
+
+/// `text` with its start cut off (`…`) to fit `width` pixels of the main font: the end of a path
+/// is the part being typed.
+fn fit_tail(gfx: &Gfx, text: &str, width: f32) -> String {
+    if gfx.text_width(text, FontId::Main, 1) <= width {
+        return text.to_string();
+    }
+    let mut chars: std::collections::VecDeque<char> = text.chars().collect();
+    loop {
+        chars.pop_front();
+        let out: String = std::iter::once('…').chain(chars.iter().copied()).collect();
+        if chars.is_empty() || gfx.text_width(&out, FontId::Main, 1) <= width {
+            return out;
+        }
+    }
+}
+
+/// Ctrl (Cmd on macOS) is held.
+fn ctrl_down(ctx: &Ctx) -> bool {
+    [
+        KeyCode::LeftControl,
+        KeyCode::RightControl,
+        KeyCode::LeftSuper,
+        KeyCode::RightSuper,
+    ]
+    .iter()
+    .any(|&k| ctx.input.key_down(k))
+}
+
+/// The first line of the clipboard.
+fn pasted() -> String {
+    macroquad::miniquad::window::clipboard_get()
+        .and_then(|s| s.lines().next().map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// The first folder row after `cursor` (wrapping around) whose name starts with `c`, ignoring
@@ -101,6 +143,7 @@ impl OriginalScreen {
             lines: Vec::new(),
             browse_only: false,
             saved: None,
+            typing: None,
         }
     }
 
@@ -207,6 +250,13 @@ impl OriginalScreen {
             }
             Place::Dir(_) => None,
         };
+        // Not an install itself, but one subfolder is one the original mode can play.
+        let child = match (&place, &check) {
+            (Place::Dir(_), None) => original::sole_install(&folders)
+                .filter(|f| original::check_folder(&f.path).is_supported())
+                .cloned(),
+            _ => None,
+        };
         self.lines.clear();
         let here = match &place {
             Place::Roots => "드라이브".to_string(),
@@ -227,17 +277,32 @@ impl OriginalScreen {
                     self.wrap_into(gfx, &format!("· {e}"), theme::TEXT_DIM);
                 }
             }
-            (None, None) => self.wrap_into(
-                gfx,
-                "원작 파일(DISK1.R3I, HEXZMAP.R3 등)이 있는 폴더로 들어가세요. ★는 원작 파일이 있는 폴더입니다.",
-                theme::TEXT_DIM,
-            ),
+            (None, None) => match &child {
+                Some(f) => self.wrap_into(
+                    gfx,
+                    &format!(
+                        "원작 파일은 {0} 폴더 안에 있습니다. \"{0} 폴더 사용\"을 고르세요.",
+                        f.name
+                    ),
+                    theme::TEXT_GOOD,
+                ),
+                None => self.wrap_into(
+                    gfx,
+                    "원작 파일(DISK1.R3I, HEXZMAP.R3 등)이 있는 폴더로 들어가세요. ★는 원작 파일이 있는 \
+                     폴더입니다. 경로를 알면 \"경로 입력…\"이나 Ctrl+V로 붙여 넣을 수 있습니다.",
+                    theme::TEXT_DIM,
+                ),
+            },
         }
 
         let mut rows = Vec::new();
         if matches!(place, Place::Dir(_)) {
             rows.push(Row::UseThis);
         }
+        if let Some(f) = &child {
+            rows.push(Row::UseChild(f.clone()));
+        }
+        rows.push(Row::Type);
         if original::parent(&place).is_some() {
             rows.push(Row::Up);
         }
@@ -248,6 +313,10 @@ impl OriginalScreen {
             .iter()
             .map(|r| match r {
                 Row::UseThis => MenuItem::new("이 폴더 사용").enabled(supported),
+                Row::UseChild(f) => {
+                    MenuItem::new(fit(gfx, &format!("{} 폴더 사용", f.name), width)).tag("★")
+                }
+                Row::Type => MenuItem::new("경로 입력…").detail("Ctrl+V"),
                 Row::Up => MenuItem::new("..").detail("상위 폴더"),
                 Row::Open(f) => {
                     let item = MenuItem::new(fit(gfx, &f.name, width));
@@ -262,16 +331,19 @@ impl OriginalScreen {
         let mut menu = Menu::new(items);
         menu.tag_width = 16.0;
         menu.wrap = false;
-        // Land on the folder just left, on "use this folder" when it can be used, else on the
-        // first subfolder.
+        // Land on the folder just left, on "use this folder" (or the offered subfolder) when it
+        // can be used, else on the first subfolder.
         let focused = focus.and_then(|focus| {
             rows.iter()
                 .position(|r| matches!(r, Row::Open(f) if f.path == focus))
         });
+        let offered = rows.iter().position(|r| matches!(r, Row::UseChild(_)));
         let first = if let Some(i) = focused {
             i
         } else if supported {
             0
+        } else if let Some(i) = offered {
+            i
         } else {
             rows.iter()
                 .position(|r| matches!(r, Row::Open(_)))
@@ -319,7 +391,86 @@ impl OriginalScreen {
         }
     }
 
+    /// Use `dir` as the original folder if it (still) holds a playable install.
+    fn use_folder(&mut self, ctx: &mut Ctx, dir: &std::path::Path, place: &Place) -> Transition {
+        // Identify again: the folder may have changed since it was listed.
+        match original::check_folder(dir) {
+            FolderCheck::Supported(_) => match original::storable_path(dir) {
+                Some(path) => OriginalScreen::apply(ctx, Some(path), true),
+                None => {
+                    ctx.sfx(sfx::ERROR);
+                    ctx.toast(
+                        "폴더 경로에 저장할 수 없는 문자가 있습니다(유니코드가 아닌 이름). \
+                         폴더 이름을 바꾸거나 다른 곳으로 옮겨 주세요.",
+                    );
+                    Transition::None
+                }
+            },
+            other => {
+                ctx.sfx(sfx::ERROR);
+                ctx.toast(other.summary());
+                self.show_place(ctx, place.clone(), None);
+                Transition::None
+            }
+        }
+    }
+
+    /// The path line: text keys type, Ctrl+V pastes, Backspace deletes (Ctrl+Backspace clears),
+    /// Enter opens the folder, Esc goes back to the list.
+    fn update_typing(&mut self, ctx: &mut Ctx, mut text: String) -> Transition {
+        let ctrl = ctrl_down(ctx);
+        while let Some(c) = get_char_pressed() {
+            if !c.is_control() && !ctrl {
+                text.push(c);
+            }
+        }
+        if ctrl && ctx.input.key_pressed(KeyCode::V) {
+            text.push_str(&pasted());
+        }
+        if ctx.input.key_pressed(KeyCode::Backspace) {
+            if ctrl {
+                text.clear();
+            } else {
+                text.pop();
+            }
+        }
+        let escape = ctx.input.key_pressed(KeyCode::Escape);
+        let enter =
+            ctx.input.key_pressed(KeyCode::Enter) || ctx.input.key_pressed(KeyCode::KpEnter);
+        ctx.input.consume();
+        if escape {
+            ctx.sfx(sfx::CANCEL);
+            return Transition::None;
+        }
+        if enter {
+            match original::typed_folder(&text) {
+                Ok(dir) => {
+                    ctx.sfx(sfx::CONFIRM);
+                    self.show_place(ctx, Place::Dir(dir), None);
+                    return Transition::None;
+                }
+                Err(e) => {
+                    ctx.sfx(sfx::ERROR);
+                    ctx.toast(e);
+                }
+            }
+        }
+        self.typing = Some(text);
+        Transition::None
+    }
+
     fn update_browser(&mut self, ctx: &mut Ctx, place: &Place, rows: &[Row]) -> Transition {
+        if let Some(text) = self.typing.take() {
+            return self.update_typing(ctx, text);
+        }
+        let ctrl = ctrl_down(ctx);
+        if ctrl && ctx.input.key_pressed(KeyCode::V) {
+            // Paste straight into a new path line.
+            while get_char_pressed().is_some() {}
+            self.typing = Some(pasted());
+            ctx.input.consume();
+            return Transition::None;
+        }
         let up = original::parent(place);
         let here = match place {
             Place::Dir(dir) => Some(dir.as_path()),
@@ -337,6 +488,9 @@ impl OriginalScreen {
             }
         }
         while let Some(c) = get_char_pressed() {
+            if ctrl {
+                continue;
+            }
             if let Some(i) = next_starting_with(rows, self.menu.cursor(), c) {
                 self.menu.set_cursor(i);
                 ctx.sfx(sfx::CURSOR);
@@ -355,26 +509,16 @@ impl OriginalScreen {
                     let Place::Dir(dir) = place else {
                         return Transition::None;
                     };
-                    // Identify again: the folder may have changed since it was listed.
-                    match original::check_folder(dir) {
-                        FolderCheck::Supported(_) => match original::storable_path(dir) {
-                            Some(path) => OriginalScreen::apply(ctx, Some(path), true),
-                            None => {
-                                ctx.sfx(sfx::ERROR);
-                                ctx.toast(
-                                    "폴더 경로에 저장할 수 없는 문자가 있습니다(유니코드가 아닌 이름). \
-                                     폴더 이름을 바꾸거나 다른 곳으로 옮겨 주세요.",
-                                );
-                                Transition::None
-                            }
-                        },
-                        other => {
-                            ctx.sfx(sfx::ERROR);
-                            ctx.toast(other.summary());
-                            self.show_place(ctx, place.clone(), None);
-                            Transition::None
-                        }
-                    }
+                    self.use_folder(ctx, dir, place)
+                }
+                Row::UseChild(folder) => self.use_folder(ctx, &folder.path, place),
+                Row::Type => {
+                    // Start from the folder shown, to edit or replace.
+                    self.typing = Some(match place {
+                        Place::Dir(dir) => dir.display().to_string(),
+                        Place::Roots => String::new(),
+                    });
+                    Transition::None
                 }
                 Row::Up => {
                     if let Some(p) = up {
@@ -462,7 +606,46 @@ impl Screen for OriginalScreen {
                 TextStyle::small(*color),
             );
         }
-        self.menu.draw(ctx);
+        match &self.typing {
+            Some(text) => self.draw_typing(ctx, text),
+            None => self.menu.draw(ctx),
+        }
+    }
+}
+
+impl OriginalScreen {
+    /// The path line, where the menu is.
+    fn draw_typing(&self, ctx: &Ctx, text: &str) {
+        let gfx = &ctx.gfx;
+        let top = TEXT_TOP + self.lines.len() as f32 * LINE + 12.0;
+        let width = gfx.size().x - 2.0 * MARGIN;
+        let frame = Rect::new(
+            MARGIN,
+            top,
+            width,
+            2.0 * theme::ROW_HEIGHT + 2.0 * theme::PADDING,
+        );
+        draw_window(frame);
+        let x = MARGIN + theme::PADDING;
+        gfx.text(
+            "경로를 입력하거나 붙여 넣고(Ctrl+V) Enter — Esc: 목록으로",
+            x,
+            top + theme::PADDING,
+            TextStyle::small(theme::TEXT_DIM),
+        );
+        // A blinking caret after the text.
+        let caret = if (ctx.time * 2.0) as i64 % 2 == 0 {
+            "_"
+        } else {
+            " "
+        };
+        let shown = fit_tail(gfx, text, width - 2.0 * theme::PADDING - 12.0);
+        gfx.text(
+            &format!("{shown}{caret}"),
+            x,
+            top + theme::PADDING + theme::ROW_HEIGHT,
+            TextStyle::main(theme::TEXT),
+        );
     }
 }
 

@@ -14,8 +14,10 @@
 
 use hero_import::edition::{identify, Edition, EditionId};
 use hero_import::install::InstallDir;
-use hero_import::pack::{build_pack, MemoryPack, PackOptions};
+use hero_import::pack::{build_pack_with_progress, MemoryPack, PackOptions, BUILD_STEPS};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 /// Directory name the converted pack is mounted under, next to the base pack.
@@ -141,10 +143,13 @@ pub struct Conversion {
     running: Option<JoinHandle<Outcome>>,
     /// The result when it was produced without a worker thread.
     done: Option<Outcome>,
+    /// Finished steps of the worker (of `BUILD_STEPS`).
+    steps: Arc<AtomicUsize>,
 }
 
-fn convert(install: &Path, options: &PackOptions) -> Outcome {
-    build_pack(install, options).map_err(|e| e.to_string())
+fn convert(install: &Path, options: &PackOptions, steps: &AtomicUsize) -> Outcome {
+    build_pack_with_progress(install, options, &mut |n| steps.store(n, Ordering::Relaxed))
+        .map_err(|e| e.to_string())
 }
 
 impl Conversion {
@@ -152,21 +157,30 @@ impl Conversion {
     /// `PackOptions::for_pack`).
     pub fn start(install: PathBuf, options: PackOptions) -> Conversion {
         let source = install.clone();
+        let steps = Arc::new(AtomicUsize::new(0));
+        let worker_steps = Arc::clone(&steps);
         let spawned = std::thread::Builder::new()
             .name("original-mode".into())
-            .spawn(move || convert(&source, &options));
+            .spawn(move || convert(&source, &options, &worker_steps));
         match spawned {
             Ok(handle) => Conversion {
                 install,
                 running: Some(handle),
                 done: None,
+                steps,
             },
             Err(e) => Conversion {
                 done: Some(Err(format!("cannot start the conversion: {e}"))),
                 install,
                 running: None,
+                steps,
             },
         }
+    }
+
+    /// How far the conversion is, 0..=1 (by finished steps).
+    pub fn fraction(&self) -> f32 {
+        self.steps.load(Ordering::Relaxed).min(BUILD_STEPS) as f32 / BUILD_STEPS as f32
     }
 
     /// The install being converted.
@@ -285,6 +299,36 @@ pub fn list(place: &Place) -> Result<Vec<Folder>, String> {
     Ok(folders)
 }
 
+/// The only listed folder that looks like an install: offered when the folder shown is not one
+/// itself, e.g. a DOSBox package's `res/hero` holding the game in `GAME`.
+pub fn sole_install(folders: &[Folder]) -> Option<&Folder> {
+    let mut installs = folders.iter().filter(|f| f.install);
+    let first = installs.next()?;
+    installs.next().is_none().then_some(first)
+}
+
+/// The folder a typed or pasted path names. Surrounding blanks and quotes (Explorer's "Copy as
+/// path" adds them) are dropped, and a file's path (a pasted `MAIN.EXE`) names its folder.
+pub fn typed_folder(text: &str) -> Result<PathBuf, String> {
+    let mut text = text.trim();
+    for q in ['"', '\''] {
+        if let Some(inner) = text.strip_prefix(q).and_then(|t| t.strip_suffix(q)) {
+            text = inner.trim();
+        }
+    }
+    if text.is_empty() {
+        return Err("경로를 입력해 주세요".to_string());
+    }
+    let path = PathBuf::from(text);
+    if path.is_dir() {
+        return Ok(path);
+    }
+    match path.parent() {
+        Some(p) if path.is_file() && !p.as_os_str().is_empty() => Ok(p.to_path_buf()),
+        _ => Err(format!("폴더를 찾을 수 없습니다: {text}")),
+    }
+}
+
 /// Where the browser opens: the saved folder, else its nearest existing parent, else the home
 /// folder, else the current folder, else the roots.
 pub fn start_place(saved: Option<&str>) -> Place {
@@ -383,6 +427,26 @@ mod tests {
             check_folder(&tmp.0.join("missing")),
             FolderCheck::Unreadable(_)
         ));
+
+        // Two install-looking folders: none is offered; one: that one.
+        assert_eq!(sole_install(&folders), None);
+        let one: Vec<Folder> = folders.into_iter().filter(|f| f.name != "zh").collect();
+        assert_eq!(sole_install(&one).map(|f| f.name.as_str()), Some("game"));
+        assert_eq!(sole_install(&[]), None);
+
+        // Typed paths: blanks and quotes dropped, a file names its folder.
+        let game = tmp.0.join("game");
+        let shown = game.display().to_string();
+        assert_eq!(typed_folder(&shown), Ok(game.clone()));
+        assert_eq!(typed_folder(&format!("  \"{shown}\" ")), Ok(game.clone()));
+        assert_eq!(typed_folder(&format!("'{shown}'")), Ok(game.clone()));
+        assert_eq!(
+            typed_folder(&game.join("disk1.r3i").display().to_string()),
+            Ok(game.clone())
+        );
+        assert!(typed_folder("").is_err());
+        assert!(typed_folder(" \"\" ").is_err());
+        assert!(typed_folder(&tmp.0.join("missing").display().to_string()).is_err());
     }
 
     #[test]
