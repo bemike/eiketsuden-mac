@@ -21,7 +21,7 @@
 use super::error::ErrorScreen;
 use super::gallery::GalleryScreen;
 use crate::app::{Ctx, Screen, Transition};
-use crate::assets::{FileBatch, FileRequest, Media};
+use crate::assets::{FileBatch, FileRequest, FirstOf, Media};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
 use crate::gfx::{canvas_size, fill_rect, stroke_rect, Align, FontId, TextStyle};
@@ -46,45 +46,6 @@ pub enum Target {
     Game,
     /// The UI gallery dev screen.
     Gallery,
-}
-
-/// One file read from the first of several candidate paths that can be read (a media file
-/// looked up in the top pack, then in the packs it extends).
-struct FirstOf {
-    /// The candidate being read; `None` once every candidate failed.
-    request: Option<FileRequest>,
-    /// Candidates still to try, in lookup order.
-    rest: std::vec::IntoIter<String>,
-    /// Why the earlier candidates failed.
-    errors: Vec<String>,
-}
-
-impl FirstOf {
-    /// `paths` in lookup order.
-    fn new(paths: Vec<String>) -> FirstOf {
-        let mut rest = paths.into_iter();
-        FirstOf {
-            request: rest.next().map(FileRequest::new),
-            rest,
-            errors: Vec::new(),
-        }
-    }
-
-    /// Advance the reads; `Some` with the bytes of the first readable candidate, or with the
-    /// errors of every candidate once all failed.
-    fn poll(&mut self) -> Option<Result<Vec<u8>, String>> {
-        while let Some(request) = self.request.as_mut() {
-            match request.poll()? {
-                Ok(bytes) => return Some(Ok(bytes.clone())),
-                Err(e) => self.errors.push(e.clone()),
-            }
-            self.request = self.rest.next().map(FileRequest::new);
-        }
-        if self.errors.is_empty() {
-            self.errors.push("no location to read the file from".into());
-        }
-        Some(Err(self.errors.join("; ")))
-    }
 }
 
 /// What follows the fonts.

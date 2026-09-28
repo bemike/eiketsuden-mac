@@ -184,10 +184,10 @@ web:
 
 Natively the same child works from any directory whose `extends` path reaches the parent, so a mod
 meant for both keeps its parent at a name other than `base` in both layouts (for example
-`data/vanilla/` next to `data/balance/`). One further limit of the web build: the battle screen's media index files
-(`units.toml`, `terrain.toml`, `fx.toml`) and `credits.txt` are read from the top pack only, because the
-browser cannot check whether a file exists without fetching it; natively they come from the first
-pack that has them. A child pack meant for the web ships its own copies of those files.
+`data/vanilla/` next to `data/balance/`). The battle screen's media index files (`units.toml`,
+`terrain.toml`, `fx.toml`) and `credits.txt` are looked up like every media file, natively and on the
+web: the first pack of the chain that has the file (on the web each missing candidate costs one failed
+fetch).
 
 `hero-tools validate`, `info` and `simulate` take the top pack directory and work on the whole chain.
 `validate` checks unknown keys in every `pack.toml`, in the rules, officer and campaign files in use (a

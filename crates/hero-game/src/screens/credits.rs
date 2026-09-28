@@ -12,7 +12,7 @@
 
 use super::backdrop::draw_backdrop;
 use crate::app::{Ctx, Enter, Screen, Transition};
-use crate::assets::FileRequest;
+use crate::assets::FirstOf;
 use crate::audio::bgm;
 use crate::flow::Flow;
 use crate::gfx::{fill_rect, Align, FontId, TextStyle};
@@ -88,7 +88,7 @@ fn layout(text: &str, mut wrap: impl FnMut(&str) -> Vec<String>) -> Vec<Line> {
 
 pub struct CreditsScreen {
     ending: Option<String>,
-    request: Option<FileRequest>,
+    request: Option<FirstOf>,
     lines: Vec<Line>,
     total_height: f32,
     scroll: f32,
@@ -160,7 +160,7 @@ impl Screen for CreditsScreen {
 
     fn on_enter(&mut self, ctx: &mut Ctx, how: Enter) {
         if how == Enter::Fresh {
-            self.request = Some(FileRequest::new(ctx.data_root.path("credits.txt")));
+            self.request = Some(FirstOf::new(ctx.data_root.media_paths("credits.txt")));
             if self.ending.is_some() {
                 ctx.audio.play_bgm(bgm::ENDING);
             }
@@ -173,7 +173,7 @@ impl Screen for CreditsScreen {
                 return Transition::None;
             };
             let pack_credits = match result {
-                Ok(bytes) => match String::from_utf8(bytes.clone()) {
+                Ok(bytes) => match String::from_utf8(bytes) {
                     Ok(s) => Some(s),
                     Err(_) => {
                         macroquad::logging::warn!("credits.txt is not valid UTF-8; skipped");
