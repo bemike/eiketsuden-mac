@@ -448,6 +448,14 @@ impl BattleScreen {
                             textures.extend(keys.iter().cloned());
                         }
                     }
+                    // Any unit may come under a status.
+                    for key in units.statuses.values() {
+                        let keys = self.sheets.entry(key.clone()).or_insert_with(|| {
+                            [Side::Player, Side::Ally, Side::Enemy]
+                                .map(|side| sprites::sheet_key(key, side))
+                        });
+                        textures.extend(keys.iter().cloned());
+                    }
                     textures.sort();
                     textures.dedup();
                     ctx.media.preload_textures(&textures);
@@ -554,11 +562,17 @@ impl BattleScreen {
         self.camera.snap_to(self.cursor);
     }
 
-    /// Sprite key a unit of `officer` (if any) and `class` is drawn with: the officer's own
-    /// (`units.toml` `[officers]`), else the class's.
-    fn unit_sprite<'a>(&'a self, officer: Option<&str>, class: &'a str) -> &'a str {
+    /// Sprite key a unit of `officer` (if any) and `class`, `confused` or not, is drawn with:
+    /// the status's (`units.toml` `[statuses]`), else the officer's own (`[officers]`), else
+    /// the class's.
+    fn unit_sprite<'a>(&'a self, officer: Option<&str>, class: &'a str, confused: bool) -> &'a str {
         let class_sprite = self.sprite_of.get(class).map_or(class, |s| s.as_str());
-        self.meta.units.sprite_for(officer, class_sprite)
+        let statuses: &[&str] = if confused {
+            &[hero_core::data::StatusKind::Confused.id()]
+        } else {
+            &[]
+        };
+        self.meta.units.sprite_for(officer, class_sprite, statuses)
     }
 
     /// Texture key of a unit sheet.

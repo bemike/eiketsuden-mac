@@ -171,6 +171,22 @@ impl MediaCheck {
                 }
             }
         }
+        for (status, key) in &index.statuses {
+            let ctx = format!("{UNITS_TOML} status {status}");
+            if !crate::data::StatusKind::ALL
+                .iter()
+                .any(|s| s.id() == status)
+            {
+                self.push(
+                    Severity::Warning,
+                    &ctx,
+                    "names no status of the game (`confused`): never drawn".to_string(),
+                );
+            }
+            if keys_seen.insert(key.as_str()) {
+                self.sprite_sheets(&ctx, key, Some(index));
+            }
+        }
     }
 
     /// The three side sheets of sprite `key` and its `[sprites.key]` entry, sized alike.

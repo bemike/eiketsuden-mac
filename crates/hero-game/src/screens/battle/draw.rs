@@ -141,7 +141,7 @@ impl BattleScreen {
             {
                 continue;
             }
-            let sprite = self.unit_sprite(u.officer.as_deref(), &v.class);
+            let sprite = self.unit_sprite(u.officer.as_deref(), &v.class, v.confused);
             let def = self
                 .meta
                 .units

@@ -60,12 +60,25 @@ pub struct UnitsFile {
     /// Bei, Lü Bu and Cao Cao with their own icons).
     #[serde(default)]
     pub officers: BTreeMap<String, BTreeMap<String, String>>,
+    /// Sprites of units under a status, whoever they are: status id (`confused`) -> sprite key
+    /// (the original draws every confused unit with one icon).
+    #[serde(default)]
+    pub statuses: BTreeMap<String, String>,
 }
 
 impl UnitsFile {
-    /// The sprite key a unit of `officer` (if any) whose class draws with `class_sprite` is
-    /// drawn with: the officer's own for that class, else for any class, else the class's.
-    pub fn sprite_for<'a>(&'a self, officer: Option<&str>, class_sprite: &'a str) -> &'a str {
+    /// The sprite key a unit is drawn with: the sprite of the first of its `statuses` that has
+    /// one, else the own sprite of its `officer` (if any) for the class sprite `class_sprite`
+    /// or for any class, else the class's.
+    pub fn sprite_for<'a>(
+        &'a self,
+        officer: Option<&str>,
+        class_sprite: &'a str,
+        statuses: &[&str],
+    ) -> &'a str {
+        if let Some(key) = statuses.iter().find_map(|s| self.statuses.get(*s)) {
+            return key;
+        }
         officer
             .and_then(|o| self.officers.get(o))
             .and_then(|m| m.get(class_sprite).or_else(|| m.get(ANY_CLASS)))
@@ -259,14 +272,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            units.sprite_for(Some("liu_bei"), "infantry"),
+            units.sprite_for(Some("liu_bei"), "infantry", &[]),
             "liu_bei_flag"
         );
         // Another class of his has no own sprite.
-        assert_eq!(units.sprite_for(Some("liu_bei"), "cavalry"), "cavalry");
-        assert_eq!(units.sprite_for(Some("lu_bu"), "cavalry"), "red_hare");
-        assert_eq!(units.sprite_for(Some("cao_cao"), "cavalry"), "cavalry");
-        assert_eq!(units.sprite_for(None, "cavalry"), "cavalry");
+        assert_eq!(units.sprite_for(Some("liu_bei"), "cavalry", &[]), "cavalry");
+        assert_eq!(units.sprite_for(Some("lu_bu"), "cavalry", &[]), "red_hare");
+        assert_eq!(units.sprite_for(Some("cao_cao"), "cavalry", &[]), "cavalry");
+        assert_eq!(units.sprite_for(None, "cavalry", &[]), "cavalry");
+        // A status sprite comes first, officers' own included.
+        let units = parse_units(
+            "[officers.lu_bu]\n\"*\" = \"red_hare\"\n\n[statuses]\nconfused = \"dizzy\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            units.sprite_for(Some("lu_bu"), "cavalry", &["confused"]),
+            "dizzy"
+        );
+        assert_eq!(units.sprite_for(None, "cavalry", &["confused"]), "dizzy");
+        assert_eq!(
+            units.sprite_for(Some("lu_bu"), "cavalry", &["other"]),
+            "red_hare"
+        );
     }
 
     #[test]
