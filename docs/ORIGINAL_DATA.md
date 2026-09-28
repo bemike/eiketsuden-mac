@@ -218,11 +218,11 @@ eiketsuden --data data/original
   | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3 + `units.toml`(32×32 프레임) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **주황 = 아군·우군, 초록 = 적군**은 원작 코드가 고르는 대로입니다([FORMATS §8.2](reverse-engineering/FORMATS.md#planar)). 무장 전용·상태 아이콘(38–40, 43–46)은 쓰지 않습니다 |
   | 지형 타일 | `HEXZMAP` + `HEXZCHP` | `gfx/tiles/terrain.png`·`terrain.toml`(`tile_size = 32`) | 원작 맵의 2×2 칩 칸(32 px, 유닛이 움직이는 격자) = 엔진 타일 하나. 지형마다, 이웃 마스크(`auto` 층의 4비트)마다 **원작 맵 58개에서 가장 자주 나오는 칸**을 고름. 맵에 없는 마스크는 가장 가까운 관찰 마스크를 빌리고, 이웃과 무관한 지형(평지·마을·병영 등)은 가장 흔한 칸 하나. 원작에 없는 `road`는 평지 칸 |
   | 전투 | `SNR0D`·`SNR1D` + `BAKDATA` | `battles/<전투>.toml` 21개(기본 팩 서장·1장의 전투 id를 대체) | 기본 팩 전투마다 원작의 같은 전투(`battles.rs`의 대응표)를 찾아 **원작 맵(`use = "hexz_NN"`), 턴 제한, 배치 칸, 적·우군 명단**(무장 = 얼굴과 같은 대응(별칭 포함)의 기본 팩 무장, 아니면 `BAKDATA` 이름의 일반 유닛; 병종·레벨·AI는 원작 값), **보물**(금·아이템 칸), 유비의 **목표 칸**, 나중에 합류하는 부대와 그 **합류 조건**(턴·칸·영역·격파·인접 → `spawn` 이벤트)을 원작대로 둔다. 이름·목표 문구·전후 대사 장면·음악·보상과, 남은 무장만 가리키는 기본 팩 이벤트(관우-화웅 일기토 등)는 기본 팩 것. 기본 팩이 원작 인물의 자리를 다른 인물로 바꾼 곳(산적 두목 창희·하곤·석맹)은 역할 대응표로 그 무장이 맡는다. 옮기지 못한 것(원작 명단에 없는 기본 팩 무장, 그 무장이나 기본 맵의 칸을 가리키는 이벤트·조건, 기본 팩의 증원 그룹)은 전투 파일 주석과 `original-pack.json`에 적는다 |
-  | 전투 중 이벤트 | `SNR0D`·`SNR1D` 트리거 레코드 + `SNR0M`·`SNR1M` + `MAIN.EXE`(칸 변경 표) | 전투 파일의 `[[events]]`, `dramas/original_battles.drama`(대사 장면 43개), `gfx/maps/hexz_NN_X_Y_OP.png`(바뀐 칸 7개) | 전투 블록의 그룹 3부터를 **단계**로 보고(FORMATS §13.2), 레코드마다 트리거(턴·인접·칸·영역·격파)와 동작을 옮긴다: 대사·안내문·일기토 → 대사 장면(화자 = 같은 이름의 기본 팩 무장, 아니면 원작 이름), 합류 → `spawn`, AI 변경 → `set_ai`, 레벨 → `level_up`, 퇴장 → `retreat`, 금·아이템, 성문·적교 → `set_terrain`(바뀐 칩으로 그린 칸 그림), `battle_end` → 승리, 단계 넘김 → `set_stage`. 경로 플래그(계교)와 한 번만 실행하는 플래그는 변환할 때 판정하고, 한 레코드가 켜고 다른 레코드가 검사하는 플래그(하비의 세 장수, 계교의 군량고)는 전투 플래그 `orig_<전투>_<번호>`와 `when` 조건이 된다. 기본 팩이 같은 계기의 이벤트를 유지하면(대부분의 일기토 등) 그 이벤트가 이야기를 맡고 원작의 나머지 동작(퇴장·단계 넘김)을 더한다(DECISIONS D12) |
+  | 전투 중 이벤트 | `SNR0D`·`SNR1D` 트리거 레코드 + `SNR0M`·`SNR1M` + `MAIN.EXE`(칸 변경 표) | 전투 파일의 `[[events]]`, `dramas/original_battles.drama`(대사 장면 45개), `gfx/maps/hexz_NN_X_Y_OP.png`(바뀐 칸 7개) | 전투 블록의 그룹 3부터를 **단계**로 보고(FORMATS §13.2), 레코드마다 트리거(턴·인접·칸·영역·격파)와 동작을 옮긴다: 대사·안내문·일기토 → 대사 장면(화자 = 같은 이름의 기본 팩 무장, 아니면 원작 이름), 합류 → `spawn`, AI 변경 → `set_ai`, 레벨 → `level_up`, 퇴장 → `retreat`, 금·아이템, 성문·적교 → `set_terrain`(바뀐 칩으로 그린 칸 그림), `battle_end` → 승리, 단계 넘김 → `set_stage`. 경로 플래그(계교)와 한 번만 실행하는 플래그는 변환할 때 판정하고, 한 레코드가 켜고 다른 레코드가 검사하는 플래그(하비의 세 장수, 계교의 군량고)는 전투 플래그 `orig_<전투>_<번호>`와 `when` 조건이 되고, 그 플래그가 성립하지 않을 때 스크립트가 하는 일은 `unless` 조건의 이벤트가 된다. 원작 목표 문구 변경은 `set_objective`가 된다. 기본 팩이 같은 계기의 이벤트를 유지하면(대부분의 일기토 등) 그 이벤트가 이야기를 맡고 원작의 나머지 동작(퇴장·단계 넘김)을 더한다(DECISIONS D12) |
   | 전투 맵 | `HEXZMAP` + `HEXZCHP` + `MAIN.EXE`(칩 뱅크 목록) | `maps/original.toml`의 `[[map]]` 58개(id `hexz_00`–`hexz_57`) + 맵마다 그림 층 `gfx/maps/hexz_NN.png` | **그림 층** = 맵의 칩 격자를 게임과 같은 뱅크(FORMATS §10.2)로 그대로 그린 것(16 px 칩, 32 px 타일 = 2×2 칩 칸). **규칙 층** = 칸마다의 지형 바이트(칩 통계가 아님). 행의 글자는 원작 지형 코드의 36진수(`0`–`9`, `a`–`h`, FORMATS §10.4 표 그대로)이고 `legend`가 기본 팩 지형 id를 정함. 팩 지형이 없는 코드(화염·탁류, 문서에 없는 코드)는 **그 칸의 칩이 다른 맵들에서 가장 많이 쓰인 지형**으로, 맵 밖을 뜻하는 코드 255(실물에서는 맵 32의 한 칸)는 원작에서 이동으로 들어갈 수 없으므로 절벽으로 대신하고 `original-pack.json`과 맵 파일 주석에 기록. id의 번호는 시나리오가 맵을 가리키는 번호. `name`은 이름 항목의 원문(`신야1`처럼 숫자 포함) |
 
 * **한계**: 소속 변경(`set_country`, 산적 두목 영입은 기본 팩 이벤트가 맡음)과 원작 음악은 옮기지 않고 전투 파일
-  주석에 적습니다. 조건이 맞지 않을 때의 분기(하비 적교 칸에서 세 장수를 만나기 전 여포의 대사)는 이벤트의 `unless`로,
+  주석에 적습니다. 조건이 맞지 않을 때의 분기(하비 적교 칸에서 세 장수를 만나기 전 유비의 대사)는 이벤트의 `unless`로,
   전투 중에 바뀌는 목표 문구는 `set_objective`로 옮깁니다(번호와 `[이름]` 표시를 떼어 한 줄로). 일기토는 원작 대사와 효과음으로 보여 줄 뿐 원작의 일기토 연출은 없습니다. 기본 팩 이벤트 가운데
   기본 맵의 칸이나 원작에 없는 무장·증원 그룹을 쓰는 것은 빠지고, 그 대사 장면은 원작 대사가 대신합니다. 원작 AI 방식은
   `MAIN.EXE`의 AI 코드 이름(대기·최단 적공격·부동·이동·무공격이동)대로 옮깁니다(FORMATS §13.4). 전투 앞뒤 장면·규칙·음악·전투 장면 연출은 아직 기본 팩 것이고, 서장·1장
@@ -430,14 +430,15 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   original battles (`battles/<id>.toml`, replacing the base battles): the original map, turn limit, deployment
   tiles, enemy and allied rosters (officers by name, otherwise generic units with the `BAKDATA` name; class,
   level and AI from the original), treasures, Liu Bei's objective tile and the units that join later with their
-  arrival triggers, while names, objective texts, scenes, music, rewards and the base events that still fit
-  stay the base pack's (DECISIONS D11). The original's mid-battle events are converted too (DECISIONS D12): the
+  arrival triggers, while names, the starting objective texts, scenes, music, rewards and the base events that
+  still fit stay the base pack's (DECISIONS D11). The original's mid-battle events are converted too (DECISIONS D12): the
   battle block's trigger groups from 3 on are phases (a flagged group is watched in parallel until a script leaves
   parallel control), and each trigger record becomes an event with its trigger and actions (joins, AI changes,
   levels, retreats, gold and items, a gate opening or the Xiapi drawbridge coming down as `set_terrain` with the
   new chips' picture, the end of the battle, `set_stage` into the next phase); its dialogue, narration and duels
   become drama scenes written from the player's copy (`dramas/original_battles.drama`). Flags that one record sets
-  and another tests become battle flags with `when` conditions; where the base battle keeps an event for the same
+  and another tests become battle flags with `when` conditions (and what a script does while they do not hold,
+  events with `unless`); objective texts a script changes become `set_objective`; where the base battle keeps an event for the same
   occasion (most duels), it keeps telling it and gains the original's other actions. Everything else (the rules,
   the scenes before and after battles, UI, music) still comes from the base pack. `extends` is relative only, so the pack lives next to the
   base pack; there is no original mode on the web. The remaining steps are listed in

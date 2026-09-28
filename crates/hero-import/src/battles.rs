@@ -934,6 +934,8 @@ impl EventWriter<'_, '_> {
     /// The part of a script past a flag-guarded part that ends it: it runs while `when` holds
     /// but not all of `tested`. A test of shared flags inside it would need both at once, so
     /// such a part is left out with a note.
+    /// The event is `once`: the original checks its records again and again (FORMATS §13.2),
+    /// but a trigger such as `reach` holds as long as the unit stands there.
     fn unless_part(
         &mut self,
         record: usize,
@@ -942,10 +944,22 @@ impl EventWriter<'_, '_> {
         when: &[FlagCond],
         tested: Vec<FlagCond>,
     ) {
+        // What converting the part writes besides its events, undone if it is left out.
+        let (drama_len, scenes, units) = (
+            self.drama.len(),
+            self.scenes.get(&record).copied(),
+            self.units.clone(),
+        );
         let taken = std::mem::take(&mut self.branches);
         let mut actions = Vec::new();
         let end = self.script_part(record, code, &mut actions, with_text, when);
         if !std::mem::replace(&mut self.branches, taken).is_empty() {
+            self.drama.truncate(drama_len);
+            match scenes {
+                Some(n) => self.scenes.insert(record, n),
+                None => self.scenes.remove(&record),
+            };
+            *self.units = units;
             self.notes.push(format!(
                 "record {record}: what its script does while its flags do not hold is left out \
                  (it tests shared flags again)"
@@ -1059,10 +1073,20 @@ impl EventWriter<'_, '_> {
                             skip = *n;
                             if branch_end != ScriptEnd::Done {
                                 // What follows runs only while the flags do not hold: a part
-                                // of its own that fires unless they all do.
+                                // of its own that fires unless they all do. (A test of flags
+                                // the part already runs under always holds: nothing follows.)
                                 let rest = &code[guarded_to..];
-                                if rest.iter().any(|c| c.mnemonic != "end") {
-                                    self.unless_part(record, rest, with_text, when, tested);
+                                if rest.iter().any(|c| c.mnemonic != "end") && !tested.is_empty() {
+                                    if branch_end == ScriptEnd::Branched {
+                                        // The guarded part ends only on some of its own flags:
+                                        // what follows would need those too.
+                                        self.notes.push(format!(
+                                            "record {record}: what its script does while its \
+                                             flags do not hold is left out (nested flag tests)"
+                                        ));
+                                    } else {
+                                        self.unless_part(record, rest, with_text, when, tested);
+                                    }
                                 }
                                 end = ScriptEnd::Branched;
                                 break;
@@ -1262,18 +1286,30 @@ impl EventWriter<'_, '_> {
 
 /// An original objective text as one line: the original lists its conditions numbered on lines
 /// of their own (`1,적의 전멸\r2,유비가 …`) and marks names in brackets (`[여포]`).
-pub fn objective_text(raw: &str) -> String {
+fn objective_text(raw: &str) -> String {
+    // A name in brackets followed by a space before its particle: `[여포] 의` is `여포의`.
+    const PARTICLES: [&str; 11] = [
+        "의", "을", "를", "이", "가", "은", "는", "와", "과", "에게", "에",
+    ];
     raw.split(['\r', '\n'])
         .map(|line| {
             let line = line.trim();
+            // `1,`, `10,` or `-1,` in front: the number of the condition.
             let line = match line.split_once(',') {
-                Some((n, rest))
-                    if !n.is_empty() && n.trim().chars().all(|c| c.is_ascii_digit()) =>
-                {
-                    rest.trim()
+                Some((n, rest)) => {
+                    let digits = n.trim().trim_start_matches('-');
+                    if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+                        rest.trim()
+                    } else {
+                        line
+                    }
                 }
-                _ => line,
+                None => line,
             };
+            let mut line = line.to_string();
+            for p in PARTICLES {
+                line = line.replace(&format!("] {p}"), &format!("]{p}"));
+            }
             line.replace(['[', ']'], "")
         })
         .filter(|line| !line.is_empty())
@@ -2536,6 +2572,8 @@ item = "wine"
             "성문을 열고, 들어가라"
         );
         assert_eq!(objective_text(" \r\n "), "");
+        assert_eq!(objective_text("-1, [여포]의 괴멸"), "여포의 괴멸");
+        assert_eq!(objective_text("10,[여포] 의 퇴각"), "여포의 퇴각");
     }
 
     fn text() -> Text {
@@ -3116,6 +3154,94 @@ item = "wine"
                 .any(|n| n.contains("do not hold is left out")),
             "{:?}",
             converted.notes
+        );
+    }
+
+    /// Convert scene 1 with `code` in front of record 7's script (the route of flag 133);
+    /// record 9, which sets flag 90, sets flag 91 too.
+    fn convert_record7(code: Vec<Instr>) -> Converted {
+        let mut scene = scene();
+        scene.blocks[1].records[7].code.splice(0..0, code);
+        scene.blocks[1].records[9]
+            .code
+            .insert(0, fields("set_flag", &[("flag", 91), ("clear", 0)]));
+        let text = text();
+        let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        let orig = find_battle(&scene, 2, &[]).unwrap();
+        convert(
+            &base_battle(),
+            &orig,
+            &names(),
+            &Pairing {
+                flags: &[133],
+                ..pair("b", 1, 0, 2)
+            },
+            "hexz_02",
+            &mut EventSources {
+                text: &text,
+                cell_change: &mut none,
+            },
+        )
+        .unwrap()
+    }
+
+    fn guard(skip: u8, all_set: Vec<u8>, all_clear: Vec<u8>) -> Instr {
+        instr(
+            "if_flags",
+            Operands::Condition {
+                skip,
+                all_set,
+                all_clear,
+            },
+        )
+    }
+
+    /// A guard on a clear flag negates to "unless it is clear"; a guarded part that ends only
+    /// on flags of its own leaves what follows out, with a note and no stray scene.
+    #[test]
+    fn unless_parts_negate_clear_flags_and_skip_nested_tests() {
+        let clear90 = FlagCond {
+            flag: "orig_b_90".into(),
+            cmp: Compare::Eq,
+            value: 0,
+        };
+        let converted = convert_record7(vec![
+            guard(2, vec![], vec![90]),
+            fields("narration", &[("text", 0x30)]),
+            op("leave_parallel"),
+            fields("narration", &[("text", 0x50)]),
+        ]);
+        assert!(
+            converted
+                .battle
+                .events
+                .iter()
+                .any(|e| e.unless == [clear90.clone()]),
+            "{:#?}",
+            converted.battle.events
+        );
+
+        // Nested: while 90 is set, a test of 91 ends the script; past the outer test a line.
+        let converted = convert_record7(vec![
+            guard(3, vec![90], vec![]),
+            guard(2, vec![91], vec![]),
+            fields("narration", &[("text", 0x30)]),
+            op("leave_parallel"),
+            fields("narration", &[("text", 0x50)]),
+        ]);
+        assert!(
+            converted
+                .notes
+                .iter()
+                .any(|n| n.contains("do not hold is left out")),
+            "{:?}",
+            converted.notes
+        );
+        assert!(converted.battle.events.iter().all(|e| e.unless.is_empty()));
+        assert!(
+            !converted.drama.contains("관우는 레벨이 올라갔다"),
+            "{}",
+            converted.drama
         );
     }
 }
