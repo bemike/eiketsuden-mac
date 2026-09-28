@@ -699,6 +699,19 @@ enum ScriptEnd {
     LeavesPhase,
     /// `battle_end` (the battle is won) or `goto_block` (the scenario moves on).
     EndsBattle,
+    /// A part guarded by flags other records set ended the script ([`Branch`]); what follows
+    /// it runs only while the flags do not hold.
+    Branched,
+}
+
+/// A part of a record's script that runs only while flags other records set hold (an `if_flags`
+/// on shared flags): it becomes an event of its own with the record's trigger and these
+/// conditions.
+#[derive(Debug, Clone, PartialEq)]
+struct Branch {
+    when: Vec<FlagCond>,
+    actions: Vec<EventAction>,
+    end: ScriptEnd,
 }
 
 /// The converter of one battle's records into events and drama scenes.
@@ -713,8 +726,12 @@ struct EventWriter<'a, 'b> {
     /// Battle-local flags one record sets and another tests: they become battle flags
     /// ([`EventWriter::flag_name`]) and event conditions.
     shared_flags: BTreeSet<u8>,
-    /// Conditions of the event being written, from its script's `if_flags` on shared flags.
-    when: Vec<FlagCond>,
+    /// Branches of the scripts converted since they were last taken.
+    branches: Vec<Branch>,
+    /// Drama scenes written per record, so every scene id stays unique.
+    scenes: BTreeMap<usize, usize>,
+    /// Scripts of `run` records played on the way between phases, converted once.
+    on_the_way: BTreeMap<usize, (Vec<EventAction>, ScriptEnd)>,
     units: &'a mut Vec<UnitSpawn>,
     persons: &'a [u16],
     /// Person → reinforcement group of its unit (`None`: on the map from the start).
@@ -854,7 +871,8 @@ impl EventWriter<'_, '_> {
     }
 
     /// Convert the script of record `record` into actions (with its text as drama scenes named
-    /// after the record, unless `with_text` is off); returns how it ended.
+    /// after the record, unless `with_text` is off); returns how it ended. Parts guarded by
+    /// shared flags go to [`EventWriter::branches`].
     fn script(
         &mut self,
         record: usize,
@@ -862,18 +880,55 @@ impl EventWriter<'_, '_> {
         actions: &mut Vec<EventAction>,
         with_text: bool,
     ) -> ScriptEnd {
+        self.script_part(record, code, actions, with_text, &[])
+    }
+
+    /// The script of a `run` record played on the way from one phase to the next, converted
+    /// once and reused by every record that leaves the phase.
+    fn on_the_way(
+        &mut self,
+        record: usize,
+        code: &[Instr],
+        actions: &mut Vec<EventAction>,
+    ) -> ScriptEnd {
+        if let Some((cached, end)) = self.on_the_way.get(&record) {
+            actions.extend(cached.iter().cloned());
+            return *end;
+        }
+        let taken = std::mem::take(&mut self.branches);
+        let mut converted = Vec::new();
+        let end = self.script(record, code, &mut converted, true);
+        if !std::mem::replace(&mut self.branches, taken).is_empty() {
+            self.notes.push(format!(
+                "record {record}: its flag-guarded parts are left out (it runs between phases)"
+            ));
+        }
+        actions.extend(converted.iter().cloned());
+        self.on_the_way.insert(record, (converted, end));
+        end
+    }
+
+    /// [`EventWriter::script`] for a part of a script that runs while `when` holds.
+    fn script_part(
+        &mut self,
+        record: usize,
+        code: &[Instr],
+        actions: &mut Vec<EventAction>,
+        with_text: bool,
+        when: &[FlagCond],
+    ) -> ScriptEnd {
         let base_id = format!("orig_{}_{record}", self.battle_id);
         let mut scene = String::new();
-        let mut scenes = 0usize;
-        let mut flush = |scene: &mut String, actions: &mut Vec<EventAction>, this: &mut Self| {
+        let flush = |scene: &mut String, actions: &mut Vec<EventAction>, this: &mut Self| {
             if scene.is_empty() {
                 return;
             }
-            scenes += 1;
-            let id = if scenes == 1 {
+            let n = this.scenes.entry(record).or_insert(0);
+            *n += 1;
+            let id = if *n == 1 {
                 base_id.clone()
             } else {
-                format!("{base_id}_{scenes}")
+                format!("{base_id}_{n}")
             };
             let _ = write!(this.drama, "\n== {id}\n{scene}@hide all\n");
             scene.clear();
@@ -914,31 +969,48 @@ impl EventWriter<'_, '_> {
                         if !self.holds(record, &set_now, &clear_now) {
                             skip = *n;
                         } else if !set_shared.is_empty() || !clear_shared.is_empty() {
+                            // The guarded part becomes a branch with these conditions.
+                            let mut cond = when.to_vec();
                             for (flags, cmp) in
                                 [(set_shared, Compare::Ne), (clear_shared, Compare::Eq)]
                             {
                                 for f in flags {
-                                    let cond = FlagCond {
+                                    let c = FlagCond {
                                         flag: self.flag_name(f),
                                         cmp,
                                         value: 0,
                                     };
-                                    if !self.when.contains(&cond) {
-                                        self.when.push(cond);
+                                    if !cond.contains(&c) {
+                                        cond.push(c);
                                     }
                                 }
                             }
-                            // When the guarded part ends the script, what follows it runs
-                            // only while the flags do not hold.
+                            flush(&mut scene, actions, self);
                             let guarded_to = (index + 1 + usize::from(*n)).min(code.len());
-                            let ends = code[index + 1..guarded_to].iter().any(|c| {
-                                matches!(c.mnemonic, "leave_parallel" | "battle_end" | "goto_block")
+                            let mut guarded = Vec::new();
+                            let branch_end = self.script_part(
+                                record,
+                                &code[index + 1..guarded_to],
+                                &mut guarded,
+                                with_text,
+                                &cond,
+                            );
+                            self.branches.push(Branch {
+                                when: cond,
+                                actions: guarded,
+                                end: branch_end,
                             });
-                            if ends && code[guarded_to..].iter().any(|c| c.mnemonic != "end") {
-                                self.notes.push(format!(
-                                    "record {record}: what its script does while its flags do not \
-                                     hold is left out"
-                                ));
+                            skip = *n;
+                            if branch_end != ScriptEnd::Done {
+                                // What follows runs only while the flags do not hold.
+                                if code[guarded_to..].iter().any(|c| c.mnemonic != "end") {
+                                    self.notes.push(format!(
+                                        "record {record}: what its script does while its flags \
+                                         do not hold is left out"
+                                    ));
+                                }
+                                end = ScriptEnd::Branched;
+                                break;
                             }
                         }
                     }
@@ -1072,7 +1144,11 @@ impl EventWriter<'_, '_> {
                             terrain,
                             image,
                         }),
-                        Ok(None) => {}
+                        Ok(None) => self.notes.push(format!(
+                            "record {record}: map cell ({}, {}): the operation does not apply \
+                             to its terrain",
+                            pos.x, pos.y
+                        )),
                         Err(e) => self.notes.push(format!(
                             "record {record}: map cell ({}, {}): {e}",
                             pos.x, pos.y
@@ -1594,7 +1670,9 @@ pub fn convert(
         route: pairing.flags,
         local_flags,
         shared_flags,
-        when: Vec::new(),
+        branches: Vec::new(),
+        scenes: BTreeMap::new(),
+        on_the_way: BTreeMap::new(),
         units: &mut units,
         persons: &persons,
         arrival: &arrival,
@@ -1603,6 +1681,32 @@ pub fn convert(
         drama: String::new(),
         notes: Vec::new(),
         skipped: BTreeSet::new(),
+    };
+    // Where a script that ended with `end` in phase `i` moves the battle on: the actions to
+    // add (victory, or the next stage and the scripts on the way), if it leaves the phase.
+    let moves_on = |writer: &mut EventWriter, i: usize, parallel: bool, end: ScriptEnd| {
+        let leaves = match end {
+            ScriptEnd::LeavesPhase => true,
+            ScriptEnd::Done => !parallel,
+            ScriptEnd::EndsBattle | ScriptEnd::Branched => false,
+        };
+        if !leaves {
+            return Vec::new();
+        }
+        match next_after(&phases, &stages, i) {
+            Next::Victory => vec![EventAction::Victory],
+            Next::Stage(next, on_the_way) => {
+                let mut actions = vec![EventAction::SetStage { stage: next }];
+                for w in on_the_way {
+                    if writer.on_the_way(w, &orig.records[w].code, &mut actions)
+                        == ScriptEnd::EndsBattle
+                    {
+                        break;
+                    }
+                }
+                actions
+            }
+        }
     };
     let mut events = Vec::new();
     for (i, phase) in phases.iter().enumerate() {
@@ -1647,10 +1751,12 @@ pub fn convert(
                 }
             };
             let occasion = writer.canonical(&trigger);
-            if let Some(k) = battle.events[..base_events]
-                .iter()
-                .position(|e| same_occasion(&writer.canonical(&e.trigger), &occasion))
-            {
+            let kept = battle.events[..base_events].iter().position(|e| {
+                same_occasion(&writer.canonical(&e.trigger), &occasion)
+                    // A base event the record of another phase took over stays with that one.
+                    && !(staged && e.stage.is_some_and(|s| s != stage))
+            });
+            if let Some(k) = kept {
                 notes.push(format!(
                     "record {r}: the base battle's event on {:?} is kept instead",
                     battle.events[k].trigger
@@ -1659,81 +1765,65 @@ pub fn convert(
                 // where it moves the battle on) are added to it.
                 let mut extra = Vec::new();
                 let end = writer.script(r, &rec.code, &mut extra, false);
-                if !std::mem::take(&mut writer.when).is_empty() {
+                if !std::mem::take(&mut writer.branches).is_empty() {
                     notes.push(format!(
-                        "record {r}: its flag conditions are not added to the base event"
+                        "record {r}: its flag-guarded parts are not added to the base event"
                     ));
                 }
+                let moved = if battle.events[k].actions.contains(&EventAction::Victory) {
+                    Vec::new()
+                } else {
+                    moves_on(&mut writer, i, phase.parallel, end)
+                };
                 let kept = &mut battle.events[k];
+                let before = kept.actions.clone();
                 let mut at = kept
                     .actions
                     .iter()
                     .position(|a| *a == EventAction::Victory)
                     .unwrap_or(kept.actions.len());
-                for a in extra {
-                    if a != EventAction::Victory && !kept.actions.contains(&a) {
+                for a in extra.into_iter().chain(moved) {
+                    if a == EventAction::Victory {
+                        if !kept.actions.contains(&a) {
+                            kept.actions.push(a);
+                        }
+                    } else if !kept.actions.contains(&a) {
                         kept.actions.insert(at, a);
                         at += 1;
                     }
                 }
-                let leaves = match end {
-                    ScriptEnd::LeavesPhase => true,
-                    ScriptEnd::Done => !phase.parallel,
-                    ScriptEnd::EndsBattle => false,
-                };
-                let wins = end == ScriptEnd::EndsBattle
-                    || (leaves && matches!(next_after(&phases, &stages, i), Next::Victory));
-                if wins {
-                    if !kept.actions.contains(&EventAction::Victory) {
-                        kept.actions.push(EventAction::Victory);
-                    }
-                } else if leaves && !kept.actions.contains(&EventAction::Victory) {
-                    if let Next::Stage(next, on_the_way) = next_after(&phases, &stages, i) {
-                        kept.actions.push(EventAction::SetStage { stage: next });
-                        for w in on_the_way {
-                            if writer.script(w, &orig.records[w].code, &mut kept.actions, true)
-                                == ScriptEnd::EndsBattle
-                            {
-                                break;
-                            }
-                        }
-                        kept.stage = staged.then_some(stage);
-                    }
+                if end == ScriptEnd::EndsBattle && !kept.actions.contains(&EventAction::Victory) {
+                    kept.actions.push(EventAction::Victory);
+                }
+                if staged && kept.actions != before {
+                    // What the original adds happens in the record's phase only.
+                    kept.stage = Some(stage);
                 }
                 continue;
             }
             let mut actions = Vec::new();
             let end = writer.script(r, &rec.code, &mut actions, true);
-            let when = std::mem::take(&mut writer.when);
-            let leaves = match end {
-                ScriptEnd::LeavesPhase => true,
-                ScriptEnd::Done => !phase.parallel,
-                ScriptEnd::EndsBattle => false,
-            };
-            if leaves {
-                match next_after(&phases, &stages, i) {
-                    Next::Victory => actions.push(EventAction::Victory),
-                    Next::Stage(next, on_the_way) => {
-                        actions.push(EventAction::SetStage { stage: next });
-                        for w in on_the_way {
-                            let end = writer.script(w, &orig.records[w].code, &mut actions, true);
-                            if end == ScriptEnd::EndsBattle {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if actions.is_empty() {
-                continue;
-            }
-            events.push(EventDef {
-                trigger,
-                once: true,
-                stage: staged.then_some(stage),
-                when,
+            let branches = std::mem::take(&mut writer.branches);
+            let parts = std::iter::once(Branch {
+                when: Vec::new(),
                 actions,
-            });
+                end,
+            })
+            .chain(branches);
+            for part in parts {
+                let mut actions = part.actions;
+                actions.extend(moves_on(&mut writer, i, phase.parallel, part.end));
+                if actions.is_empty() {
+                    continue;
+                }
+                events.push(EventDef {
+                    trigger: trigger.clone(),
+                    once: true,
+                    stage: staged.then_some(stage),
+                    when: part.when,
+                    actions,
+                });
+            }
         }
     }
     let drama = std::mem::take(&mut writer.drama);
@@ -2597,6 +2687,143 @@ item = "wine"
         assert_eq!(scenes.len(), 2);
     }
 
+    /// Records that leave a phase share the script on the way (one scene, written once), and a
+    /// base event that a later phase's record joins fires in that phase only.
+    #[test]
+    fn phase_changes_share_the_way_and_keep_their_stage() {
+        let mut scene = scene();
+        scene.blocks[1].records = vec![
+            record(
+                0,
+                0,
+                false,
+                [0; 6],
+                vec![
+                    roster(vec![unit(54, 9, 4), unit(300, 8, 4)]),
+                    fields("load_map", &[("map", 0x3002)]),
+                ],
+            ),
+            record(0, 1, false, [0; 6], vec![op("begin_battle")]),
+            // Phase 0 (not parallel): turn 2 or 300 falls, whichever comes first.
+            record(
+                9,
+                3,
+                false,
+                [2, 0, 0, 0, 0, 0],
+                vec![fields("dialogue", &[("text", 0x10)])],
+            ),
+            record(
+                12,
+                3,
+                false,
+                [44, 1, 0, 0, 0, 0],
+                vec![fields("narration", &[("text", 0x30)])],
+            ),
+            // On the way to phase 1.
+            record(
+                0,
+                4,
+                false,
+                [0; 6],
+                vec![fields("dialogue", &[("text", 0x40)])],
+            ),
+            // Phase 1: Guan Yu next to 54 (the base battle's duel) also makes 54 retreat.
+            record(
+                4,
+                5,
+                true,
+                [1, 0, 54, 0, 0, 0],
+                vec![fields("remove_person", &[("person", 54)])],
+            ),
+            record(
+                9,
+                5,
+                false,
+                [9, 0, 0, 0, 0, 0],
+                vec![fields("narration", &[("text", 0x50)])],
+            ),
+        ];
+        let orig = find_battle(&scene, 2, &[]).unwrap();
+        let text = text();
+        let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        let c = convert(
+            &base_battle(),
+            &orig,
+            &names(),
+            &pair("b", 1, 0, 2),
+            "hexz_02",
+            &mut EventSources {
+                text: &text,
+                cell_change: &mut none,
+            },
+        )
+        .unwrap();
+        let way = [
+            EventAction::SetStage { stage: 1 },
+            EventAction::Drama {
+                scene: "orig_b_4".into(),
+            },
+        ];
+        let staged: Vec<&EventDef> = c
+            .battle
+            .events
+            .iter()
+            .filter(|e| e.stage == Some(0))
+            .collect();
+        assert_eq!(staged.len(), 2, "{:#?}", c.battle.events);
+        for e in staged {
+            assert!(e.actions.ends_with(&way), "{e:#?}");
+        }
+        assert_eq!(c.drama.matches("== orig_b_4\n").count(), 1, "{}", c.drama);
+        hero_core::script::parse_drama("t", &c.drama).expect("scene ids are unique");
+        let duel = &c.battle.events[0];
+        assert!(matches!(duel.trigger, Trigger::Adjacent { .. }));
+        assert_eq!(duel.stage, Some(1));
+        assert!(duel.actions.contains(&EventAction::Retreat {
+            target: "boss".into()
+        }));
+    }
+
+    /// Without the scene's text the battle is still converted, with its dialogue left out.
+    #[test]
+    fn missing_text_leaves_only_the_dialogue_out() {
+        struct Missing;
+        impl TextSource for Missing {
+            fn dialogue(&self, _: u16) -> Result<Vec<(u16, String)>, String> {
+                Err("dialogue left out: SNR1M.R3 missing".into())
+            }
+            fn string(&self, _: u16) -> Result<String, String> {
+                Err("text left out: SNR1M.R3 missing".into())
+            }
+        }
+        let orig = find_battle(&scene(), 2, &[]).unwrap();
+        let mut cells = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        let c = convert(
+            &base_battle(),
+            &orig,
+            &names(),
+            &pair("b", 1, 0, 2),
+            "hexz_02",
+            &mut EventSources {
+                text: &Missing,
+                cell_change: &mut cells,
+            },
+        )
+        .unwrap();
+        // The duel's portraits and sounds stay; no line of dialogue does.
+        assert!(!c.drama.contains(": "), "{}", c.drama);
+        assert!(c
+            .battle
+            .events
+            .iter()
+            .any(|e| e.actions.contains(&EventAction::SetStage { stage: 1 })));
+        assert!(
+            c.notes.iter().any(|n| n.contains("SNR1M.R3 missing")),
+            "{:?}",
+            c.notes
+        );
+    }
+
     #[test]
     fn route_flags_decide_the_conditions() {
         let mut scene = scene();
@@ -2647,20 +2874,38 @@ item = "wine"
             "{}",
             on_route.drama
         );
-        // Flag 90 is set by record 9 and tested by record 7: a battle flag and a condition.
+        // Flag 90 is set by record 9 and tested by record 7: a battle flag and a condition. Only
+        // the narration it guards waits for it; the arrival does not.
         let events = &on_route.battle.events;
-        let rec7 = events
+        let rec7: Vec<&EventDef> = events
             .iter()
-            .find(|e| matches!(e.trigger, Trigger::Reach { to: Some(_), .. }))
-            .unwrap();
+            .filter(|e| matches!(e.trigger, Trigger::Reach { to: Some(_), .. }))
+            .collect();
+        assert_eq!(rec7.len(), 2, "{rec7:#?}");
         assert_eq!(
-            rec7.when,
+            (&rec7[0].when[..], &rec7[0].actions[..]),
+            (
+                &[][..],
+                &[EventAction::Spawn {
+                    group: "original_7".into()
+                }][..]
+            )
+        );
+        assert_eq!(
+            rec7[1].when,
             [FlagCond {
                 flag: "orig_b_90".into(),
                 cmp: Compare::Eq,
                 value: 0
             }]
         );
+        assert_eq!(
+            rec7[1].actions,
+            [EventAction::Drama {
+                scene: "orig_b_7".into()
+            }]
+        );
+        assert_eq!(rec7[1].stage, Some(0));
         assert!(events
             .iter()
             .any(|e| e.actions.contains(&EventAction::SetFlag {

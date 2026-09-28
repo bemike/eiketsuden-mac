@@ -602,6 +602,19 @@ impl battles::TextSource for SceneText<'_> {
     }
 }
 
+/// The text of a scene whose message file could not be read: every lookup reports why.
+struct NoText(String);
+
+impl battles::TextSource for NoText {
+    fn dialogue(&self, _: u16) -> Result<Vec<(u16, String)>, String> {
+        Err(format!("dialogue left out: {}", self.0))
+    }
+
+    fn string(&self, _: u16) -> Result<String, String> {
+        Err(format!("text left out: {}", self.0))
+    }
+}
+
 /// The key of the tile picture of cell `(x, y)` of map `map_id` after operation `op`.
 pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
     format!("{map_id}_{x}_{y}_{op}")
@@ -697,68 +710,88 @@ fn convert_battles(
                 .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
             let scene = crate::scenario::parse_scene(&data)
                 .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
-            let message_bytes = messages[&file]
+            // Without the text the battle is still converted; its dialogue is left out.
+            let payload = messages[&file]
                 .as_deref()
-                .ok_or_else(|| format!("{message_name} missing"))?;
-            let payload = crate::extract::message_payload(message_bytes)
-                .map_err(|e| format!("{message_name}: {e}"))?;
-            let sections = crate::text::parse_messages(&payload)
-                .map_err(|e| format!("{message_name}: {e}"))?;
-            let section = sections
-                .sections
-                .get(scene_index)
-                .cloned()
-                .ok_or_else(|| format!("{message_name} has no section {scene_index}"))?;
-            let text = SceneText { section, encoding };
+                .ok_or_else(|| format!("{message_name} missing"))
+                .and_then(|bytes| {
+                    crate::extract::message_payload(bytes)
+                        .map_err(|e| format!("{message_name}: {e}"))
+                });
+            let section = payload
+                .as_deref()
+                .map_err(Clone::clone)
+                .and_then(|payload| {
+                    let sections = crate::text::parse_messages(payload)
+                        .map_err(|e| format!("{message_name}: {e}"))?;
+                    sections
+                        .sections
+                        .get(scene_index)
+                        .cloned()
+                        .ok_or_else(|| format!("{message_name} has no section {scene_index}"))
+                });
+            let text: Box<dyn battles::TextSource + '_> = match section {
+                Ok(section) => Box::new(SceneText { section, encoding }),
+                Err(e) => Box::new(NoText(e)),
+            };
             let original = battles::find_battle(&scene, map, pairing.flags)
                 .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
             let map_id = map_id(usize::from(map));
             if !maps.iter().any(|m| m.id == map_id) {
                 return Err(format!("battle map {map} ({map_id}) was not converted"));
             }
-            let mut cell_change =
-                |pos: hero_core::geom::Pos, op: u8| -> Result<battles::CellChange, String> {
-                    let store = store.ok_or("the battle maps were not read")?;
-                    let (cells, tables) = match (&exe.cells, &exe.tables) {
-                        (Ok(c), Ok(t)) => (c, t),
-                        (Err(e), _) | (_, Err(e)) => return Err(e.clone()),
-                    };
-                    let number = usize::from(map);
-                    let grid = store
-                        .maps
-                        .get(&number)
-                        .ok_or_else(|| format!("battle map {number} was not read"))?;
-                    let (w, h) = grid.cells();
-                    let (Ok(x), Ok(y)) = (usize::try_from(pos.x), usize::try_from(pos.y)) else {
-                        return Err("outside the map".into());
-                    };
-                    if x >= w || y >= h {
-                        return Err("outside the map".into());
-                    }
-                    let chip =
-                        |dx: usize, dy: usize| grid.chips[(2 * y + dy) * grid.width + 2 * x + dx];
-                    let chips = [chip(0, 0), chip(1, 0), chip(0, 1), chip(1, 1)];
-                    let set = tables.chip_set_for(number);
-                    let Some((after, code)) =
-                        cells.apply(chips, grid.terrain[y * w + x], set == 2, op)?
-                    else {
-                        return Ok(None);
-                    };
-                    let terrain = TERRAIN_MAP
-                        .get(usize::from(code))
-                        .copied()
-                        .flatten()
-                        .ok_or_else(|| format!("terrain code {code} has no pack terrain"))?;
-                    let key = cell_picture(&map_id, x, y, op & 0x7f);
-                    if !pictures.contains_key(&key) {
-                        let image = maps::render_tiles(&after, 2, 2, &store.banks[&set])
-                            .map_err(|e| e.to_string())?;
-                        let png =
-                            encode_png(&image, &store.palette, false).map_err(|e| e.to_string())?;
-                        pictures.insert(key.clone(), png);
-                    }
-                    Ok(Some((terrain.to_string(), Some(key))))
+            let mut cell_state: BTreeMap<(usize, usize), ([u8; 4], u8)> = BTreeMap::new();
+            let mut cell_change = |pos: hero_core::geom::Pos,
+                                   op: u8|
+             -> Result<battles::CellChange, String> {
+                let store = store.ok_or("the battle maps were not read")?;
+                let (cells, tables) = match (&exe.cells, &exe.tables) {
+                    (Ok(c), Ok(t)) => (c, t),
+                    (Err(e), _) | (_, Err(e)) => return Err(e.clone()),
                 };
+                let number = usize::from(map);
+                let grid = store
+                    .maps
+                    .get(&number)
+                    .ok_or_else(|| format!("battle map {number} was not read"))?;
+                let (w, h) = grid.cells();
+                let (Ok(x), Ok(y)) = (usize::try_from(pos.x), usize::try_from(pos.y)) else {
+                    return Err("outside the map".into());
+                };
+                if x >= w || y >= h {
+                    return Err("outside the map".into());
+                }
+                // Operations apply one after another, in the order of the block's scripts.
+                let chip =
+                    |dx: usize, dy: usize| grid.chips[(2 * y + dy) * grid.width + 2 * x + dx];
+                let (chips, before) = *cell_state.entry((x, y)).or_insert((
+                    [chip(0, 0), chip(1, 0), chip(0, 1), chip(1, 1)],
+                    grid.terrain[y * w + x],
+                ));
+                let set = tables.chip_set_for(number);
+                let Some((after, code)) = cells.apply(chips, before, set == 2, op)? else {
+                    return Ok(None);
+                };
+                cell_state.insert((x, y), (after, code));
+                let terrain = TERRAIN_MAP
+                    .get(usize::from(code))
+                    .copied()
+                    .flatten()
+                    .ok_or_else(|| format!("terrain code {code} has no pack terrain"))?;
+                let image = maps::render_tiles(&after, 2, 2, &store.banks[&set])
+                    .map_err(|e| e.to_string())?;
+                let png = encode_png(&image, &store.palette, false).map_err(|e| e.to_string())?;
+                // The same operation on a cell another operation changed first looks
+                // different: it gets its own picture.
+                let mut key = cell_picture(&map_id, x, y, op & 0x7f);
+                let mut n = 1;
+                while pictures.get(&key).is_some_and(|p| *p != png) {
+                    n += 1;
+                    key = format!("{}_{n}", cell_picture(&map_id, x, y, op & 0x7f));
+                }
+                pictures.insert(key.clone(), png);
+                Ok(Some((terrain.to_string(), Some(key))))
+            };
             let base = options
                 .battles
                 .iter()
@@ -771,7 +804,7 @@ fn convert_battles(
                 pairing,
                 &map_id,
                 &mut battles::EventSources {
-                    text: &text,
+                    text: text.as_ref(),
                     cell_change: &mut cell_change,
                 },
             )?;
