@@ -367,6 +367,7 @@ impl BattleStats {
 mod tests {
     use super::*;
     use crate::tests::fixture_pack;
+    use hero_core::battledef::Condition;
     use hero_core::geom::Pos;
 
     #[test]

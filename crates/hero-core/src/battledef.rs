@@ -484,6 +484,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unit_refs_name_every_referenced_unit() {
+        let b: BattleDef = toml::from_str(
+            r#"
+id = "t"
+name = "t"
+objective = "t"
+turn_limit = 10
+victory = [{ type = "defeat_unit", target = "boss" }, { type = "defeat_all" }]
+defeat = [{ type = "unit_retreated", target = "liu_bei" }]
+bonus = { condition = { type = "reach", who = "zhang_fei", pos = [1, 1] }, exp = 1, desc = "" }
+[map]
+rows = "."
+legend = { "." = "plain" }
+[deploy]
+max = 1
+slots = [[0, 0]]
+[[units]]
+officer = "guan_yu"
+side = "player"
+pos = [0, 0]
+ai_target = "boss"
+[[events]]
+trigger = { type = "adjacent", a = "liu_bei", b = "lu_bu" }
+actions = [
+  { type = "set_ai", target = "lu_bu", ai = "target", ai_target = "liu_bei" },
+  { type = "level_up", target = "liu_bei", amount = 1 },
+  { type = "retreat", target = "lu_bu" },
+  { type = "give_gold", amount = 5 },
+]
+[[events]]
+trigger = { type = "hp_below", target = "boss", pct = 50 }
+actions = [{ type = "victory" }]
+"#,
+        )
+        .unwrap();
+        let names: Vec<&str> = b.unit_refs().into_iter().map(|(_, n)| n).collect();
+        assert_eq!(
+            names,
+            [
+                "boss",
+                "liu_bei",
+                "zhang_fei",
+                "liu_bei",
+                "lu_bu",
+                "lu_bu",
+                "liu_bei",
+                "liu_bei",
+                "lu_bu",
+                "boss",
+                "boss"
+            ]
+        );
+        let fields: Vec<&str> = Trigger::Adjacent {
+            a: "x".into(),
+            b: "y".into(),
+        }
+        .unit_refs()
+        .into_iter()
+        .map(|(f, _)| f)
+        .collect();
+        assert_eq!(fields, ["a", "b"]);
+    }
+
+    #[test]
     fn reach_areas() {
         let (p, q) = (Pos::new(5, 5), Pos::new(3, 7));
         assert!(in_reach(p, 1, None, Pos::new(5, 6)));

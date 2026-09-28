@@ -1218,7 +1218,9 @@ impl<'a> Validator<'a> {
                 }
             }
             Condition::DefeatUnit { .. } | Condition::UnitRetreated { .. } => {}
-            Condition::Reach { pos, radius, to, .. } => {
+            Condition::Reach {
+                pos, radius, to, ..
+            } => {
                 self.position(&cctx, map, *pos, *radius, *to);
             }
             Condition::SurviveTurns { turns } => {
@@ -1263,7 +1265,9 @@ impl<'a> Validator<'a> {
                 }
             }
             Trigger::UnitDefeated { .. } => {}
-            Trigger::Reach { pos, radius, to, .. } => {
+            Trigger::Reach {
+                pos, radius, to, ..
+            } => {
                 self.position(ctx, map, *pos, *radius, *to);
             }
             Trigger::Adjacent { a, b } => {
