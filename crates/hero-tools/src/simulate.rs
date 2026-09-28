@@ -471,6 +471,7 @@ mod tests {
             who: Some("jian_yong".into()),
             pos: Pos::new(8, 1),
             radius: 0,
+            to: None,
         });
         b01.victory.push(Condition::DefeatUnit {
             target: "zhang_bao".into(),

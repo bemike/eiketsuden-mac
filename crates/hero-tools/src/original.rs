@@ -664,5 +664,72 @@ mod tests {
                 t.id
             );
         }
+
+        // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
+        // (verified values: FORMATS §13.4).
+        let battles = json["battles"].as_array().unwrap();
+        assert_eq!(battles.len(), 21, "{battles:#?}");
+        let expect = [
+            ("p1_sishui", "hexz_00", 30),
+            ("p2_hulao", "hexz_01", 30),
+            ("c1_jieqiao_a", "hexz_06", 40),
+            ("c1_xiapi", "hexz_14", 45),
+            ("c1_xuzhou2", "hexz_08", 50),
+        ];
+        for (id, map, turns) in expect {
+            let b = &pack.battles[id];
+            assert_eq!(b.map.use_map.as_deref(), Some(map), "{id}");
+            assert_eq!(b.turn_limit, turns, "{id}");
+        }
+        // Sishui: Hua Xiong commands at the pass; the treasures lie on the granary and treasury.
+        let sishui = &pack.battles["p1_sishui"];
+        let hua = sishui
+            .units
+            .iter()
+            .find(|u| u.officer.as_deref() == Some("hua_xiong"))
+            .unwrap();
+        assert_eq!((hua.pos.x, hua.pos.y, hua.commander), (3, 9, true));
+        let map = &pack.maps["hexz_00"];
+        let row = |y: i32| map.rows.lines().nth(y as usize).unwrap().to_string();
+        let glyphs: Vec<char> = sishui
+            .treasures
+            .iter()
+            .map(|t| row(t.pos.y).chars().nth(t.pos.x as usize).unwrap())
+            .collect();
+        let terrain_of = |g: char| map.legend[&g.to_string()].clone();
+        let mut kinds: Vec<String> = glyphs.into_iter().map(terrain_of).collect();
+        kinds.sort();
+        assert_eq!(kinds, ["granary", "treasury"]);
+        // Xuzhou II: Cao Cao's army waits off the map until Liu Bei reaches the east edge.
+        let xuzhou2 = &pack.battles["c1_xuzhou2"];
+        let cao = xuzhou2
+            .units
+            .iter()
+            .find(|u| u.officer.as_deref() == Some("cao_cao"))
+            .unwrap();
+        let group = cao.group.clone().expect("Cao Cao arrives later");
+        assert!(xuzhou2.events.iter().any(|e| {
+            e.actions
+                .contains(&hero_core::battledef::EventAction::Spawn {
+                    group: group.clone(),
+                })
+                && matches!(
+                    e.trigger,
+                    hero_core::battledef::Trigger::Reach { to: Some(_), .. }
+                )
+        }));
+        // The bandit chiefs keep the base pack's recruitment.
+        for (id, chief) in [
+            ("c1_taishan", "chang_xi"),
+            ("c1_pengcheng1", "xia_kun"),
+            ("c1_xiaqiu1", "shi_meng"),
+        ] {
+            let b = &pack.battles[id];
+            assert!(
+                b.units.iter().any(|u| u.officer.as_deref() == Some(chief)),
+                "{id}"
+            );
+            assert!(!b.events.is_empty(), "{id}");
+        }
     }
 }

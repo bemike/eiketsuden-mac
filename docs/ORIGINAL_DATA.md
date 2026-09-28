@@ -207,13 +207,14 @@ eiketsuden --data data/original
   | 얼굴 | `BAKDATA` + `FACEDAT` | `gfx/portraits/<무장>.png` 105/118명 | 기본 팩 무장과 `BAKDATA` 무장을 **이름**으로 대응(중문판은 한자 이름). 표기가 다른 2명(장료=장요, 기령=기영)은 별칭 표, 이름이 겹치는 우금(于禁/牛金)은 일본어 읽기(`ｳｷﾝ`)로 구분. 기본 팩이 새로 만든 인물 등 대응이 없는 13명은 기본 팩 얼굴 그대로이며 `original-pack.json`에 사유와 함께 기록 |
   | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3 + `units.toml`(32×32 프레임) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **초록 = 아군·우군, 주황 = 적군은 선택**입니다(어느 색이 누구인지는 미해독, STATUS 2절) |
   | 지형 타일 | `HEXZMAP` + `HEXZCHP` | `gfx/tiles/terrain.png`·`terrain.toml`(`tile_size = 32`) | 원작 맵의 2×2 칩 칸(32 px, 유닛이 움직이는 격자) = 엔진 타일 하나. 지형마다, 이웃 마스크(`auto` 층의 4비트)마다 **원작 맵 58개에서 가장 자주 나오는 칸**을 고름. 맵에 없는 마스크는 가장 가까운 관찰 마스크를 빌리고, 이웃과 무관한 지형(평지·마을·병영 등)은 가장 흔한 칸 하나. 원작에 없는 `road`는 평지 칸 |
+  | 전투 | `SNR0D`·`SNR1D` + `BAKDATA` | `battles/<전투>.toml` 21개(기본 팩 서장·1장의 전투 id를 대체) | 기본 팩 전투마다 원작의 같은 전투(`battles.rs`의 대응표)를 찾아 **원작 맵(`use = "hexz_NN"`), 턴 제한, 배치 칸, 적·우군 명단**(무장 = 같은 이름의 기본 팩 무장, 아니면 `BAKDATA` 이름의 일반 유닛; 병종·레벨·AI는 원작 값), **보물**(금·아이템 칸), 유비의 **목표 칸**, 나중에 합류하는 부대와 그 **합류 조건**(턴·칸·영역·격파·인접 → `spawn` 이벤트)을 원작대로 둔다. 이름·목표 문구·전후 대사 장면·음악·보상과, 남은 무장만 가리키는 기본 팩 이벤트(관우-화웅 일기토 등)는 기본 팩 것. 기본 팩이 원작 인물의 자리를 다른 인물로 바꾼 곳(산적 두목 창희·하곤·석맹)은 역할 대응표로 그 무장이 맡는다. 옮기지 못한 것(원작 명단에 없는 기본 팩 무장, 그 무장이나 기본 맵의 칸을 가리키는 이벤트·조건, 기본 팩의 증원 그룹)은 전투 파일 주석과 `original-pack.json`에 적는다 |
   | 전투 맵 | `HEXZMAP` + `HEXZCHP` + `MAIN.EXE`(칩 뱅크 목록) | `maps/original.toml`의 `[[map]]` 58개(id `hexz_00`–`hexz_57`) + 맵마다 그림 층 `gfx/maps/hexz_NN.png` | **그림 층** = 맵의 칩 격자를 게임과 같은 뱅크(FORMATS §10.2)로 그대로 그린 것(16 px 칩, 32 px 타일 = 2×2 칩 칸). **규칙 층** = 칸마다의 지형 바이트(칩 통계가 아님). 행의 글자는 원작 지형 코드의 36진수(`0`–`9`, `a`–`h`, FORMATS §10.4 표 그대로)이고 `legend`가 기본 팩 지형 id를 정함. 팩 지형이 없는 코드(화염·탁류, 문서에 없는 코드 — 실물에서는 맵 32의 코드 255 한 칸)는 **그 칸의 칩이 다른 맵들에서 가장 많이 쓰인 지형**으로 대신하고 `original-pack.json`과 맵 파일 주석에 기록. id의 번호는 시나리오가 맵을 가리키는 번호. `name`은 이름 항목의 원문(`신야1`처럼 숫자 포함) |
 
-* **한계**: 원작 맵은 팩에 들어 있지만(맵 파일, [MODDING.md](MODDING.md#map-files)) **아직 어떤 전투도 쓰지
-  않습니다**. 지금 플레이하는 전투는 기본 팩의 전투와 맵이라, 학습한 타일셋으로 기본 팩 맵을 다시 그린 것이고
-  원작 맵처럼 이어지지 않는 경계(초원·산지의 네모난 가장자리)가 보입니다. 원작 맵 위의 원작 전투(유닛 배치·조건)는
-  시나리오 변환(STATUS 4절 2단계)에서 `[map] use = "hexz_NN"`으로 들어갑니다. 대사·규칙·음악·전투 장면 연출도 아직
-  기본 팩 것입니다. 변환된 맵의 수는 `hero-tools info data/original`의 `Maps:` 줄로 볼 수 있습니다.
+* **한계**: 원작 전투의 **전투 중 이벤트**(일기토, 턴에 따른 AI 전환, 산적 두목 영입, 영역 도달 대체 승리)는 아직
+  변환하지 않습니다. 기본 팩 이벤트 가운데 원작 명단의 무장만 가리키는 것은 그대로 동작하지만, 기본 맵의 칸이나 원작에
+  없는 무장·증원 그룹을 쓰는 이벤트는 빠지므로 그 대사 장면(25개)은 재생되지 않습니다(`hero-tools validate`의 경고).
+  AI 방식 0·5·6의 뜻은 추론입니다(FORMATS §13.4). 대사·규칙·음악·전투 장면 연출은 아직 기본 팩 것이고, 서장·1장 밖의
+  원작 맵 42개는 쓰는 전투가 없습니다.
 * **공유 금지**: 팩 안의 그림은 원작 데이터에서 변환한 것입니다. `data/original/`은 `.gitignore`에 있으며, 자기 PC에서만
   쓰세요.
 
@@ -276,11 +277,11 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 | P3 그래픽 | 플레인 셀·팔레트 → PNG | **부분**: 스프라이트·칩·배경 셀·전투 UI 아이콘 완료(실물로 확인), 얼굴(TF-DCE) 완료. `PACKGRP` 화면은 디코딩만 되고 추출 종류는 아직 없음. 오프닝/엔딩(`NPK016`)·`MARK`·`SSCCHR`는 미지원 |
 | P4 맵 | `HEXZMAP` 59개, `HEXBMAP`, `MMAP`, `SMAP`/`PMAP` → 타일 맵 JSON + 참고 PNG | **완료**(실물로 확인, [FORMATS §10](reverse-engineering/FORMATS.md#maps)). 남은 것: 맵별 팔레트 슬롯(P6 시나리오 레코드), `SMAP`/`PMAP` 물체 id의 의미, 지형 코드 255 한 칸 |
 | P5 규칙·무장 | `BAKDATA` 배치 규명, `MAIN.EXE` 병종·지형·책략 표 서명 검색 | **부분**: `BAKDATA` 완료([FORMATS §14](reverse-engineering/FORMATS.md#bakdata)). `MAIN.EXE` 규칙 표는 미착수 |
-| P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | **부분**: 해독·JSON 추출 완료([FORMATS §13](reverse-engineering/FORMATS.md#scenario), 명령 일부 미확인). 우리 이벤트 형식으로의 변환은 미착수 |
+| P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | **부분**: 해독·JSON 추출 완료([FORMATS §13](reverse-engineering/FORMATS.md#scenario), 명령 일부 미확인). 서장·1장 전투의 배치·명단·보물·목표 칸·증원을 원작 모드 전투로 변환(4.5절). 전투 중 이벤트와 마을·캠페인 장면은 미착수 |
 | P7 음악 | OPL2 시퀀스 → FM 합성 | 미착수 (합성기 라이선스·크기 검토 필요) |
 | P8 Steam / PC-98 | Steam 컨테이너(매니페스트 수집 후), 디스크 이미지 리더, Shift-JIS·OPN 변형 | 미착수 — **Steam 매니페스트가 선행 조건**. 암호화가 있으면 법률 검토 전 중단 |
 | P9 세이브 | `ESAVE/MSAVE` 가져오기 | 선택 사항 |
-| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋·원작 전투 맵 58개(그림 층 + 규칙 층, 4.5절). 원작 전투(시나리오)·규칙·UI·음악은 미착수 |
+| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋·원작 전투 맵 58개(그림 층 + 규칙 층)·원작 맵 위의 서장·1장 전투 21개(4.5절). 전투 중 이벤트·규칙·UI·음악은 미착수 |
 
 ## 8. 원작 모드 (부분 구현)
 
@@ -300,7 +301,9 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   UI)는 체인을 통해 기본 팩에서 옵니다. 플레이어는 게임 안에서 원작 폴더를 고르고, 게임이 실행할 때마다 같은 팩을
   메모리에서 만들어 씁니다(4.1절, [DECISIONS.md](DECISIONS.md) D10). 파일로 쓴 팩은 `eiketsuden --data data/original`로
   실행합니다(개발·검증용).
-* **아직 없는 것**: 원작 맵을 쓰는 원작 전투(시나리오 변환 P6), `MAIN.EXE` 규칙 표(P5), 원작 배치의 UI(`PACKGRP`), 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
+* **구현됨**: 기본 팩 서장·1장의 전투 21개를 원작 전투의 맵·배치·명단·보물·증원으로 다시 짠 전투 파일
+  ([DECISIONS.md](DECISIONS.md) D11, 4.5절).
+* **아직 없는 것**: 원작 전투 중 이벤트(시나리오 변환 P6의 나머지), `MAIN.EXE` 규칙 표(P5), 원작 배치의 UI(`PACKGRP`), 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
   넣지 않고, 규명되는 순서대로 팩에 들어갈 항목이 늘어납니다([STATUS 4절](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계)).
 * **제약**: `extends`는 상대 경로만 허용하므로(웹 빌드와 폴더 이동을 위해) 파일로 쓴 원작 모드 팩은 기본 팩과 같은
   드라이브, 예컨대 `data/original/`에 둡니다. 게임이 메모리에서 만든 팩은 기본 팩 옆(`<data>/original`)에 있는 것처럼
@@ -406,7 +409,12 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   assignment is not decoded) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
   neighbour mask the 2×2-chip block the maps show most often). It also holds the 58 original battle maps as a
   map file (`maps/original.toml`, ids `hexz_NN`): the chips as a picture layer (`gfx/maps/hexz_NN.png`) and the
-  terrain bytes as the rules grid; no battle uses them until the scenario is converted. Everything else (the
-  battles and their maps, rules, scenario, dialogue, UI, music) still comes from the base pack. `extends` is relative only, so the pack lives next to the
+  terrain bytes as the rules grid. The 21 battles of the base pack's prologue and chapter 1 are re-staged as the
+  original battles (`battles/<id>.toml`, replacing the base battles): the original map, turn limit, deployment
+  tiles, enemy and allied rosters (officers by name, otherwise generic units with the `BAKDATA` name; class,
+  level and AI from the original), treasures, Liu Bei's objective tile and the units that join later with their
+  arrival triggers, while names, objective texts, scenes, music, rewards and the base events that still fit
+  stay the base pack's (DECISIONS D11). The original's own mid-battle events are not converted yet. Everything else (the
+  rules, scenario events, dialogue, UI, music) still comes from the base pack. `extends` is relative only, so the pack lives next to the
   base pack; there is no original mode on the web. The remaining steps are listed in
   [STATUS.md](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계).

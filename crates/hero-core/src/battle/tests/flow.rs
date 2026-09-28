@@ -441,6 +441,7 @@ fn reach_trigger_watches_player_units_or_a_named_unit() {
                 who: None,
                 pos: p(5, 5),
                 radius: 1,
+                to: None,
             },
             vec![EventAction::Drama {
                 scene: "near".into(),
@@ -451,6 +452,7 @@ fn reach_trigger_watches_player_units_or_a_named_unit() {
                 who: Some("runner".into()),
                 pos: p(0, 7),
                 radius: 0,
+                to: None,
             },
             vec![EventAction::Drama {
                 scene: "escaped".into(),
@@ -668,6 +670,7 @@ fn repeatable_events_fire_after_every_check() {
         who: None,
         pos: p(0, 0),
         radius: 20,
+        to: None,
     };
     def.events = vec![
         EventDef {
@@ -756,6 +759,7 @@ fn victory_and_defeat_event_actions() {
             who: None,
             pos: p(7, 0),
             radius: 0,
+            to: None,
         },
         vec![EventAction::Victory],
     )];
@@ -879,6 +883,7 @@ fn defeat_unit_commander_and_reach_victories() {
         who: Some("liu".into()),
         pos: p(1, 6),
         radius: 1,
+        to: None,
     };
     let (pack, mut st) = one_blow(winning(reach.clone()), false);
     st.apply(
@@ -1025,6 +1030,7 @@ fn bonus_objective_is_announced_and_paid_at_victory() {
             who: None,
             pos: p(0, 3),
             radius: 0,
+            to: None,
         },
         exp: 30,
         desc: String::new(),

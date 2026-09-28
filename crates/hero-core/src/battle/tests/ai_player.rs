@@ -3,7 +3,7 @@
 
 use crate::battle::testkit::*;
 use crate::battle::{Action, BattleState, Outcome, UnitId};
-use crate::battledef::{AiMode, EventAction, EventDef, Side, Trigger};
+use crate::battledef::{AiMode, Condition, EventAction, EventDef, Side, Trigger};
 use crate::geom::Pos;
 use crate::pack::Pack;
 
@@ -240,6 +240,7 @@ fn the_player_side_avoids_a_scripted_defeat() {
             who: Some("hero".into()),
             pos: p(4, 0),
             radius: 0,
+            to: None,
         },
         once: true,
         actions: vec![EventAction::Defeat],
@@ -284,4 +285,49 @@ fn an_idle_unit_heads_for_its_scripted_objective() {
         8 - 4,
         "a full move towards the boss: {to:?}"
     );
+}
+
+#[test]
+fn reach_objectives_lead_onto_tiles_the_unit_can_stand_on() {
+    // The objective column x = 7 is river for y = 0..=4; only (7, 5)–(7, 7) can be entered.
+    // Standing next to the river part must not count as having arrived.
+    let rows = "
+.......~
+.......~
+.......~
+.......~
+.......~
+........
+........
+........";
+    for (pos, radius, to) in [
+        (p(7, 0), 0, Some(p(7, 7))),
+        // The same trap with a radius: the centre is river, the tiles around it are not.
+        (p(7, 2), 3, None),
+    ] {
+        let mut def = battle(rows);
+        def.victory = vec![Condition::Reach {
+            who: Some("hero".into()),
+            pos,
+            radius,
+            to,
+        }];
+        let pack = pack_with(def);
+        let mut st = state(&pack);
+        let hero = unit(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+        tagged(&mut st, hero, "hero");
+        post(&mut st, &pack, 1, p(0, 7));
+        for _ in 0..12 {
+            if st.outcome.is_some() {
+                break;
+            }
+            st.run_ai_phase(&pack);
+        }
+        assert_eq!(
+            st.outcome,
+            Some(Outcome::Victory),
+            "{pos:?} {radius} {to:?}: hero at {:?}",
+            st.units[hero].pos
+        );
+    }
 }

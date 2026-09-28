@@ -34,7 +34,7 @@
 use super::board::Board;
 use super::combat::{counter_chance, hit_damage, morale_loss};
 use super::{Action, BattleEvent, BattleState, Unit, UnitId};
-use crate::battledef::{AiMode, Condition, EventAction, Side, Trigger};
+use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
 use crate::data::{Area, Effect, ItemDef, StatusKind, StrategyDef, TargetSide, TerrainDef};
 use crate::geom::Pos;
 use crate::pack::Pack;
@@ -214,22 +214,19 @@ fn damage_value(damage: i32, target: &Unit) -> i64 {
 enum Place {
     /// Orthogonally next to one of these tiles (the units an `adjacent` trigger pairs it with).
     NextTo(Vec<Pos>),
-    /// Within manhattan `radius` of `pos` (`reach` triggers and conditions).
-    Near { pos: Pos, radius: i32 },
+    /// In the area of a `reach` trigger or condition ([`in_reach`]).
+    Near {
+        pos: Pos,
+        radius: i32,
+        to: Option<Pos>,
+    },
 }
 
 impl Place {
     fn holds(&self, tile: Pos) -> bool {
         match self {
             Place::NextTo(partners) => partners.iter().any(|p| p.manhattan(tile) == 1),
-            Place::Near { pos, radius } => pos.manhattan(tile) <= *radius,
-        }
-    }
-
-    fn goals(&self) -> Vec<Pos> {
-        match self {
-            Place::NextTo(partners) => partners.clone(),
-            Place::Near { pos, .. } => vec![*pos],
+            Place::Near { pos, radius, to } => in_reach(*pos, *radius, *to, tile),
         }
     }
 }
@@ -284,9 +281,15 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
                 }
                 Place::NextTo(next_to)
             }
-            Trigger::Reach { who, pos, radius } if named(who.as_deref()) => Place::Near {
+            Trigger::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } if named(who.as_deref()) => Place::Near {
                 pos: *pos,
                 radius: *radius,
+                to: *to,
             },
             _ => continue,
         };
@@ -294,13 +297,20 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
     }
     for (conditions, wins) in [(&def.victory, true), (&def.defeat, false)] {
         for c in conditions {
-            if let Condition::Reach { who, pos, radius } = c {
+            if let Condition::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } = c
+            {
                 if named(who.as_deref()) {
                     out.push(Scripted {
                         wins,
                         place: Place::Near {
                             pos: *pos,
                             radius: *radius,
+                            to: *to,
                         },
                     });
                 }
@@ -511,12 +521,42 @@ impl<'a> Planner<'a> {
     /// bring about, otherwise towards the nearest hostile unit. A lord stays with its army
     /// rather than leading the charge, and without an army it keeps to the best position it
     /// can reach.
+    /// Tiles to head for to bring about `place`: the partners' tiles for an `adjacent` trigger
+    /// (standing next to one is enough), every tile of a `reach` area this unit can stand on
+    /// (an impassable tile of the area must not look like an arrival).
+    fn place_goals(&self, place: &Place) -> Vec<Pos> {
+        match place {
+            Place::NextTo(partners) => partners.clone(),
+            &Place::Near { pos, radius, to } => {
+                let (lo, hi) = match to {
+                    Some(to) => (
+                        Pos::new(pos.x.min(to.x), pos.y.min(to.y)),
+                        Pos::new(pos.x.max(to.x), pos.y.max(to.y)),
+                    ),
+                    None => (pos.offset(-radius, -radius), pos.offset(radius, radius)),
+                };
+                let move_type = &self.st.class_of(self.pack, self.id).move_type;
+                (lo.y..=hi.y)
+                    .flat_map(|y| (lo.x..=hi.x).map(move |x| Pos::new(x, y)))
+                    .filter(|&t| in_reach(pos, radius, to, t))
+                    .filter(|&t| {
+                        self.board
+                            .index(t)
+                            .and_then(|i| self.board.terrain_at_index(i))
+                            .and_then(|terrain| terrain.move_cost(move_type))
+                            .is_some()
+                    })
+                    .collect()
+            }
+        }
+    }
+
     fn idle_tile(&self, reach: &[Pos]) -> Pos {
         let objective: Vec<Pos> = self
             .script
             .iter()
             .filter(|s| s.wins)
-            .flat_map(|s| s.place.goals())
+            .flat_map(|s| self.place_goals(&s.place))
             .collect();
         if !objective.is_empty() {
             return self.approach(&objective, reach);

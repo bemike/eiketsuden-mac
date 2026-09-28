@@ -630,6 +630,24 @@ fn battle_logic_checks() {
         error(
             &[(
                 B01,
+                "pos = [8, 1], radius = 1",
+                "pos = [8, 1], radius = 0, to = [9, 12]",
+            )],
+            "battle b01 event #5",
+            "position [9, 12] is outside the map",
+        ),
+        error(
+            &[(
+                B01,
+                "pos = [8, 1], radius = 1",
+                "pos = [8, 1], radius = 1, to = [9, 2]",
+            )],
+            "battle b01 event #5",
+            "a reach with `to` is a rectangle and takes no radius",
+        ),
+        error(
+            &[(
+                B01,
                 "pos = [8, 1]\nitem = \"red_horse\"",
                 "pos = [18, 1]\nitem = \"red_horse\"",
             )],

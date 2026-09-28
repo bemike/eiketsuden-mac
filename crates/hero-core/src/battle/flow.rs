@@ -3,7 +3,7 @@
 
 use super::board::Board;
 use super::{BattleEvent, BattleState, DefeatReason, Outcome, UnitId, UnitState, Weather};
-use crate::battledef::{AiMode, Condition, EventAction, Side, Trigger};
+use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
 use crate::data::StatusKind;
 use crate::geom::Pos;
 use crate::pack::Pack;
@@ -305,11 +305,11 @@ impl BattleState {
     }
 
     /// An active unit named by `who` (any player unit when `None`) within manhattan `radius` of `pos`.
-    fn someone_near(&self, who: Option<&str>, pos: Pos, radius: i32) -> bool {
+    fn someone_near(&self, who: Option<&str>, pos: Pos, radius: i32, to: Option<Pos>) -> bool {
         self.units.iter().any(|u| {
             u.is_active()
                 && who.map_or(u.side == Side::Player, |w| u.matches(w))
-                && u.pos.manhattan(pos) <= radius
+                && in_reach(pos, radius, to, u.pos)
         })
     }
 
@@ -317,7 +317,12 @@ impl BattleState {
         match trigger {
             Trigger::TurnStart { turn, side } => phase == Some((*turn, *side)),
             Trigger::UnitDefeated { target } => self.all_retreated(target),
-            Trigger::Reach { who, pos, radius } => self.someone_near(who.as_deref(), *pos, *radius),
+            Trigger::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } => self.someone_near(who.as_deref(), *pos, *radius, *to),
             Trigger::Adjacent { a, b } => self.matching(a).any(|x| {
                 self.units[x].is_active()
                     && self.matching(b).any(|y| {
@@ -450,9 +455,12 @@ impl BattleState {
                 .units
                 .iter()
                 .any(|u| u.side == Side::Enemy && u.commander && u.state == UnitState::Retreated),
-            Condition::Reach { who, pos, radius } => {
-                self.someone_near(who.as_deref(), *pos, *radius)
-            }
+            Condition::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } => self.someone_near(who.as_deref(), *pos, *radius, *to),
             Condition::SurviveTurns { turns } => completed_turns >= *turns,
         }
     }

@@ -11,12 +11,15 @@
 //! <out>/gfx/tiles/terrain.png, .toml  a 32-px tileset learned from the original battle maps
 //! <out>/maps/original.toml            the original battle maps (`[[map]]`, id `hexz_NN`) ...
 //! <out>/gfx/maps/hexz_NN.png          ... and their picture layers
+//! <out>/battles/<battle>.toml         the base pack's prologue and chapter 1 battles re-staged
+//!                                     as the original battles on those maps (`crate::battles`)
 //! ```
 //!
 //! Everything the pack does not hold (rules, officers, battles, dramas, music, the other
 //! pictures) comes from the base pack through the layered-pack chain, so the original mode grows
 //! one converted asset kind at a time (`docs/ORIGINAL_DATA.md` §8, `docs/DECISIONS.md` D8). The
-//! original maps are shipped as map files ahead of the battles that will `use` them (D9).
+//! original maps are shipped as map files (D9); the base battles that follow an original battle
+//! `use` them (D11).
 //!
 //! # Mapping rules
 //!
@@ -47,6 +50,7 @@
 //! tileset (they are sized for 32-px tiles) and are skipped when it cannot be built.
 
 use crate::bakdata::{self, Officer};
+use crate::battles;
 use crate::edition::{identify, Edition, EditionId};
 use crate::extract::{
     output_error, prepare_output, read_source, ExtractError, KindReport, Output, Status,
@@ -69,7 +73,8 @@ pub const PACK_INDEX: &str = "original-pack.json";
 /// `format` of [`PACK_INDEX`].
 pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 2: `maps` (the converted battle maps) and the map file in `pack.toml`.
-pub const PACK_FORMAT_VERSION: u32 = 2;
+/// 3: `battles` (the base battles re-staged as the original battles) and their battle files.
+pub const PACK_FORMAT_VERSION: u32 = 3;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×480 VGA screen.
@@ -102,8 +107,35 @@ pub struct BaseTerrain {
     pub tile: String,
 }
 
+/// An item of the base pack, matched to the release's items by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseItem {
+    pub id: String,
+    /// Korean name.
+    pub name: String,
+    /// Hanja name (empty when the pack gives none).
+    pub hanja: String,
+}
+
+/// The base items as `(id, name)` in the language of an `edition`'s `BAKDATA` names: the hanja
+/// for the Traditional-Chinese release, the Korean name otherwise (items without a name in that
+/// language are left out).
+pub fn item_names(items: &[BaseItem], edition: EditionId) -> Vec<(String, String)> {
+    items
+        .iter()
+        .map(|i| {
+            let name = match edition {
+                EditionId::ChineseDos => &i.hanja,
+                _ => &i.name,
+            };
+            (i.id.clone(), name.clone())
+        })
+        .filter(|(_, name)| !name.is_empty())
+        .collect()
+}
+
 /// What the pack is built on.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PackOptions {
     /// Use this edition instead of identifying it (must be a DOS/V edition).
     pub edition: Option<EditionId>,
@@ -115,6 +147,13 @@ pub struct PackOptions {
     pub terrain: Vec<BaseTerrain>,
     /// Sprite keys of the pack chain's classes.
     pub sprites: Vec<String>,
+    /// Classes of the pack chain: `(id, sprite key)`.
+    pub classes: Vec<(String, String)>,
+    /// Items of the pack chain.
+    pub items: Vec<BaseItem>,
+    /// Battles of the pack chain; those that follow an original battle are re-staged
+    /// ([`crate::battles`]).
+    pub battles: Vec<hero_core::battledef::BattleDef>,
 }
 
 impl PackOptions {
@@ -148,6 +187,21 @@ impl PackOptions {
                 })
                 .collect(),
             sprites: sprites.into_iter().collect(),
+            classes: parent
+                .classes
+                .values()
+                .map(|c| (c.id.to_string(), c.sprite.clone()))
+                .collect(),
+            items: parent
+                .items
+                .values()
+                .map(|i| BaseItem {
+                    id: i.id.to_string(),
+                    name: i.name.clone(),
+                    hanja: i.hanja.clone(),
+                })
+                .collect(),
+            battles: parent.battles.values().cloned().collect(),
         }
     }
 }
@@ -178,11 +232,13 @@ pub struct PackIndex {
     pub edition: Edition,
     pub extends: String,
     pub canvas: [u32; 2],
-    /// By asset kind: `maps`, `portraits`, `tiles`, `units`.
+    /// By asset kind: `battles`, `maps`, `portraits`, `tiles`, `units`.
     pub assets: BTreeMap<String, KindReport>,
     pub portraits: Vec<PortraitMatch>,
     /// Battle maps written to [`MAPS_FILE`].
     pub maps: Vec<MapRecord>,
+    /// Battles re-staged as the original battles.
+    pub battles: Vec<BattleRecord>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unmatched_officers: Vec<Unmatched>,
     /// Every file written, relative to the pack folder.
@@ -229,7 +285,7 @@ pub fn write_pack(
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
     // Checked before anything is written; the final manifest also lists the map file.
-    pack_toml(&options.extends, edition.id, false)
+    pack_toml(&options.extends, edition.id, false, &[])
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
     let mut output = Output::dir(out);
@@ -251,7 +307,7 @@ pub struct MemoryPack {
 pub fn build_pack(source: &Path, options: &PackOptions) -> Result<MemoryPack, ExtractError> {
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
-    pack_toml(&options.extends, edition.id, false)
+    pack_toml(&options.extends, edition.id, false, &[])
         .map_err(|e| output_error(Path::new("pack.toml"), e))?;
     let mut output = Output::in_memory(PACK_ID);
     let index = convert(&install, edition, encoding, options, &mut output)?;
@@ -328,8 +384,24 @@ fn convert(
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
 
-    let manifest = pack_toml(&options.extends, edition.id, !map_records.is_empty())
-        .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
+    let (battles, battle_records) = convert_battles(
+        install,
+        encoding,
+        edition.id,
+        options,
+        &map_records,
+        output,
+        KindReport::new(Status::Extracted, false, ""),
+    )?;
+
+    let battle_files: Vec<String> = battle_records.iter().map(|b| b.file.clone()).collect();
+    let manifest = pack_toml(
+        &options.extends,
+        edition.id,
+        !map_records.is_empty(),
+        &battle_files,
+    )
+    .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
     output.files.sort();
     let mut assets = BTreeMap::new();
@@ -337,6 +409,7 @@ fn convert(
     assets.insert("tiles".to_string(), tiles);
     assets.insert("units".to_string(), units);
     assets.insert("maps".to_string(), maps);
+    assets.insert("battles".to_string(), battles);
     let index = PackIndex {
         format: PACK_FORMAT.into(),
         format_version: PACK_FORMAT_VERSION,
@@ -347,6 +420,7 @@ fn convert(
         assets,
         portraits: matches,
         maps: map_records,
+        battles: battle_records,
         unmatched_officers: unmatched,
         files: output.files.clone(),
     };
@@ -372,8 +446,13 @@ fn toml_str(s: &str) -> String {
 }
 
 /// The `pack.toml` of the pack; `extends` must be a relative directory. `maps`: list
-/// [`MAPS_FILE`].
-fn pack_toml(extends: &str, edition: EditionId, maps: bool) -> Result<String, String> {
+/// [`MAPS_FILE`]; `battles`: the battle files.
+fn pack_toml(
+    extends: &str,
+    edition: EditionId,
+    maps: bool,
+    battles: &[String],
+) -> Result<String, String> {
     if extends.is_empty()
         || Path::new(extends).is_absolute()
         || extends.starts_with('/')
@@ -389,6 +468,15 @@ fn pack_toml(extends: &str, edition: EditionId, maps: bool) -> Result<String, St
     } else {
         String::new()
     };
+    let battles = if battles.is_empty() {
+        String::new()
+    } else {
+        let list: Vec<String> = battles
+            .iter()
+            .map(|b| format!("  {},\n", toml_str(b)))
+            .collect();
+        format!("battles = [\n{}]\n", list.concat())
+    };
     Ok(format!(
         "# Original mode, written by `hero-tools original pack` ({tool}) from the player's own copy\n\
          # of KOEI's Sangokushi Eiketsuden ({edition}). It holds converted game art: keep it on this\n\
@@ -399,9 +487,10 @@ fn pack_toml(extends: &str, edition: EditionId, maps: bool) -> Result<String, St
          name = \"영걸전 원작 모드\"\n\
          version = {version}\n\
          license = \"LicenseRef-Private (converted from the player's own copy; not redistributable)\"\n\
-         description = \"보유한 원작에서 변환한 얼굴·유닛·지형 그림과 전투 맵을 기본 팩 위에 얹은 팩. 변환되지 않은 것은 기본 팩에서 온다.\"\n\
+         description = \"보유한 원작에서 변환한 얼굴·유닛·지형 그림과 전투 맵, 원작 맵 위로 옮긴 전투를 기본 팩 위에 얹은 팩. 변환되지 않은 것은 기본 팩에서 온다.\"\n\
          extends = {extends}\n\
          {maps}\
+         {battles}\
          \n\
          [presentation]\n\
          canvas = [{w}, {h}]\n",
@@ -413,6 +502,173 @@ fn pack_toml(extends: &str, edition: EditionId, maps: bool) -> Result<String, St
         w = CANVAS[0],
         h = CANVAS[1],
     ))
+}
+
+// ----- battles -------------------------------------------------------------------------------
+
+/// Folder of the re-staged battles.
+pub const BATTLES_DIR: &str = "battles";
+
+/// A base battle re-staged as an original battle ([`crate::battles`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BattleRecord {
+    /// Battle id (the base pack's, which the file replaces).
+    pub id: String,
+    /// Battle file, relative to the pack.
+    pub file: String,
+    /// Where the original battle is: `SNRnD.R3`, scene and block.
+    pub source: String,
+    /// Map file id the battle `use`s.
+    pub map: String,
+    pub turn_limit: u32,
+    pub units: usize,
+    pub treasures: usize,
+    /// What did not carry over.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+type BattlesResult = (KindReport, Vec<BattleRecord>);
+
+/// Re-stage the base battles that follow an original battle ([`battles::ORIGINAL_BATTLES`]) on
+/// the converted maps and write them to [`BATTLES_DIR`].
+fn convert_battles(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    edition: EditionId,
+    options: &PackOptions,
+    maps: &[MapRecord],
+    out: &mut Output,
+    mut report: KindReport,
+) -> Result<BattlesResult, ExtractError> {
+    let wanted: Vec<_> = battles::ORIGINAL_BATTLES
+        .iter()
+        .filter(|p| options.battles.iter().any(|b| b.id == p.battle))
+        .collect();
+    if wanted.is_empty() {
+        report.status = Status::Unsupported;
+        report.summary =
+            "the pack chain has none of the base pack's battles that follow the original".into();
+        return Ok((report, Vec::new()));
+    }
+    report.status = Status::Failed;
+    let Some(bak) = read_source(install, "BAKDATA.R3", &mut report)? else {
+        report.status = Status::MissingSource;
+        report.summary = "BAKDATA.R3 missing".into();
+        return Ok((report, Vec::new()));
+    };
+    let bak = match bakdata::parse(&bak, encoding) {
+        Ok(b) => b,
+        Err(e) => {
+            report.summary = "BAKDATA.R3 invalid".into();
+            report.errors.push(e.to_string());
+            return Ok((report, Vec::new()));
+        }
+    };
+    let names = battles::Names::new(
+        &bak.officers,
+        &bak.items,
+        |person| {
+            let mut ids = options
+                .officers
+                .iter()
+                .filter(|o| is_same_officer(o, person, edition));
+            match (ids.next(), ids.next()) {
+                (Some(o), None) => Some(o.id.clone()),
+                _ => None,
+            }
+        },
+        &CLASS_SPRITES,
+        &options.classes,
+        &item_names(&options.items, edition),
+    );
+
+    // Scenario files, read once.
+    let mut sources: BTreeMap<usize, Option<Vec<u8>>> = BTreeMap::new();
+    let mut records = Vec::new();
+    for pairing in &wanted {
+        let (id, file, scene_index, map) =
+            (pairing.battle, pairing.file, pairing.scene, pairing.map);
+        let name = format!("SNR{file}D.R3");
+        if let std::collections::btree_map::Entry::Vacant(slot) = sources.entry(file) {
+            slot.insert(read_source(install, &name, &mut report)?);
+        }
+        let result = (|| -> Result<BattleRecord, String> {
+            let bytes = sources[&file]
+                .as_deref()
+                .ok_or_else(|| format!("{name} missing"))?;
+            let archive = ls11::Archive::parse(bytes).map_err(|e| format!("{name}: {e}"))?;
+            let data = archive
+                .decode(scene_index)
+                .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
+            let scene = crate::scenario::parse_scene(&data)
+                .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
+            let original = battles::find_battle(&scene, map, pairing.flags)
+                .map_err(|e| format!("{name} scene {scene_index}: {e}"))?;
+            let map_id = map_id(usize::from(map));
+            if !maps.iter().any(|m| m.id == map_id) {
+                return Err(format!("battle map {map} ({map_id}) was not converted"));
+            }
+            let base = options
+                .battles
+                .iter()
+                .find(|b| b.id == id)
+                .expect("filtered above");
+            let converted = battles::convert(base, &original, &names, pairing.roles, &map_id)?;
+            let source = format!("{name} scene {scene_index} block {}", original.block);
+            let file = format!("{BATTLES_DIR}/{id}.toml");
+            let body = toml::to_string(&converted.battle)
+                .map_err(|e| format!("{id}: cannot write the battle: {e}"))?;
+            let mut text = format!(
+                "# {id}: the base pack's battle re-staged as the original battle ({source}) on the\n\
+                 # original map {map_id}. Written by `hero-tools original pack` from the player's own\n\
+                 # copy: keep it on this computer. Rules: docs/ORIGINAL_DATA.md §4.5.\n"
+            );
+            for note in &converted.notes {
+                let _ = writeln!(text, "# note: {note}");
+            }
+            text.push('\n');
+            text.push_str(&body);
+            out.write(&file, text.as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(BattleRecord {
+                id: id.to_string(),
+                file,
+                source,
+                map: map_id,
+                turn_limit: converted.battle.turn_limit,
+                units: converted.battle.units.len(),
+                treasures: converted.battle.treasures.len(),
+                notes: converted.notes,
+            })
+        })();
+        match result {
+            Ok(r) => records.push(r),
+            Err(e) => report.errors.push(format!("{id}: {e}")),
+        }
+    }
+    report.outputs = records.len();
+    report.status = if report.errors.is_empty() {
+        Status::Extracted
+    } else if records.is_empty() {
+        Status::Failed
+    } else {
+        Status::Partial
+    };
+    report.summary = format!(
+        "{} of {} base battles re-staged as the original battles on the original maps",
+        records.len(),
+        wanted.len()
+    );
+    report.notes.push(
+        "the original's own mid-battle events (trigger records) are not converted yet: the base \
+         battles' events that still fit are kept, the others are listed per battle"
+            .into(),
+    );
+    report.notes.push(
+        "AI modes 0, 5 and 6 are inferred (docs/reverse-engineering/FORMATS.md §13.4)".into(),
+    );
+    Ok((report, records))
 }
 
 // ----- portraits -----------------------------------------------------------------------------
@@ -446,8 +702,10 @@ pub enum FaceMatch {
     Ambiguous(Vec<(usize, u16)>),
 }
 
-/// Find the portrait of `officer` among the `BAKDATA` officers of an `edition`.
-pub fn match_officer(officer: &BaseOfficer, table: &[Officer], edition: EditionId) -> FaceMatch {
+/// Whether the `BAKDATA` officer `person` of an `edition` is the base-pack `officer`: the same
+/// name (the hanja in the Chinese release, [`NAME_ALIASES`] for spellings that differ) and, for
+/// the officers in [`READINGS`], the same Japanese reading.
+pub fn is_same_officer(officer: &BaseOfficer, person: &Officer, edition: EditionId) -> bool {
     let lookup = |list: &[(&str, &'static str)]| {
         list.iter()
             .find(|(id, _)| *id == officer.id)
@@ -457,13 +715,14 @@ pub fn match_officer(officer: &BaseOfficer, table: &[Officer], edition: EditionI
         EditionId::ChineseDos => officer.hanja.as_str(),
         _ => lookup(NAME_ALIASES).unwrap_or(&officer.name),
     };
-    if name.is_empty() {
-        return FaceMatch::Missing;
-    }
-    let reading = lookup(READINGS);
+    !name.is_empty() && person.name == name && lookup(READINGS).is_none_or(|r| person.reading == r)
+}
+
+/// Find the portrait of `officer` among the `BAKDATA` officers of an `edition`.
+pub fn match_officer(officer: &BaseOfficer, table: &[Officer], edition: EditionId) -> FaceMatch {
     let candidates: Vec<&Officer> = table
         .iter()
-        .filter(|o| o.name == name && reading.is_none_or(|r| o.reading == r))
+        .filter(|o| is_same_officer(officer, o, edition))
         .collect();
     let portraits: BTreeSet<u16> = candidates.iter().map(|o| o.portrait).collect();
     match (candidates.first(), portraits.len()) {
@@ -1635,8 +1894,8 @@ fn convert_maps(
         ));
     }
     report.notes.push(
-        "no battle uses these maps yet: the battles of the original scenario come with the \
-         scenario conversion (docs/reverse-engineering/STATUS.md §4, step 2)"
+        "the base battles re-staged as the original battles use them (`battles`); the other \
+         maps wait for the chapters the base pack does not have yet"
             .into(),
     );
     Ok((report, records))
@@ -1896,22 +2155,56 @@ mod tests {
     }
 
     #[test]
+    fn items_match_in_the_release_language() {
+        let items = [
+            BaseItem {
+                id: "bean".into(),
+                name: "콩".into(),
+                hanja: "豆".into(),
+            },
+            BaseItem {
+                id: "new".into(),
+                name: "새 아이템".into(),
+                hanja: String::new(),
+            },
+        ];
+        assert_eq!(
+            item_names(&items, EditionId::KoreanDos),
+            [
+                ("bean".to_string(), "콩".to_string()),
+                ("new".to_string(), "새 아이템".to_string())
+            ]
+        );
+        assert_eq!(
+            item_names(&items, EditionId::ChineseDos),
+            [("bean".to_string(), "豆".to_string())]
+        );
+    }
+
+    #[test]
     fn manifest_needs_a_relative_extends() {
-        let toml = pack_toml("../base", EditionId::KoreanDos, false).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, false, &[]).unwrap();
         assert!(toml.contains("\nid = \"original\"\n"), "{toml}");
         assert!(toml.contains("\nextends = \"../base\"\n"), "{toml}");
         assert!(toml.contains("canvas = [640, 480]"), "{toml}");
         assert!(!toml.contains("maps"), "{toml}");
-        let toml = pack_toml("../base", EditionId::KoreanDos, true).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, true, &[]).unwrap();
         assert!(
             toml.contains(
                 "\nextends = \"../base\"\nmaps = [\"maps/original.toml\"]\n\n[presentation]"
             ),
             "{toml}"
         );
+        let battles = [
+            "battles/p1_sishui.toml".to_string(),
+            "battles/p2_hulao.toml".to_string(),
+        ];
+        let toml = pack_toml("../base", EditionId::KoreanDos, true, &battles).unwrap();
+        let manifest: hero_core::pack::PackManifest = toml::from_str(&toml).unwrap();
+        assert_eq!(manifest.battles, battles);
         for bad in ["", "C:/data/base", "/data/base", "..\\base"] {
             assert!(
-                pack_toml(bad, EditionId::KoreanDos, false).is_err(),
+                pack_toml(bad, EditionId::KoreanDos, false, &[]).is_err(),
                 "{bad}"
             );
         }
@@ -2015,6 +2308,7 @@ mod tests {
                 })
                 .collect(),
             sprites: CLASS_SPRITES.iter().map(|s| s.to_string()).collect(),
+            ..PackOptions::default()
         }
     }
 
