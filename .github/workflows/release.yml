@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # A release is built only from a commit whose rules and base pack pass (the same checks as CI).
+  # A release is built only from a commit whose rules and base pack pass (a subset of CI's checks).
   verify:
     runs-on: ubuntu-latest
     steps:

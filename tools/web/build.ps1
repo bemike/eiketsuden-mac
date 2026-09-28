@@ -49,10 +49,12 @@ try {
     & cargo @cargoArgs
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed (exit code $LASTEXITCODE)" }
 
-    # `python3` on Windows is often only the Microsoft Store stub, so try `python` first.
+    # `python3` on Windows is often only the Microsoft Store stub, so try `python` first; take the
+    # first one that is 3.11 or newer.
     $python = @("python", "python3") |
         Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } |
         Where-Object { (Get-Command $_).Source -notlike "*\WindowsApps\*" } |
+        Where-Object { & $_ -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>$null; $LASTEXITCODE -eq 0 } |
         Select-Object -First 1
     if (-not $python) { throw "python 3.11+ is needed to assemble the site (tools/web/assemble.py)" }
     $wasm = "target/wasm32-unknown-unknown/$buildProfile/eiketsuden.wasm"

@@ -178,9 +178,10 @@ web:
   with `extends = "../vanilla"` in the child. `extends = "../base"` (or the `"../../data/base"` of the
   example above) points back at `data/base/`, the child itself, and the pack fails to load.
 * `tools/web/build.sh --data <pack>` and `build.ps1 -Data <pack>` copy that directory to
-  `<out>/data/base/` and each pack it extends to the path its child's `extends` names (with
-  `extends = "../vanilla"`, to `<out>/data/vanilla/`); a parent that would land on `data/base/` is an
-  error.
+  `<out>/data/base/` and each pack it extends to the path its child's `extends` names, resolved from
+  `data/base/` like the browser does (with `extends = "../vanilla"`, to `<out>/data/vanilla/`). A
+  parent must end up below `data/` and not on `data/base/` itself; a parent inside its child's
+  folder (`extends = "core"`) is copied with the child.
 
 Natively the same child works from any directory whose `extends` path reaches the parent, so a mod
 meant for both keeps its parent at a name other than `base` in both layouts (for example

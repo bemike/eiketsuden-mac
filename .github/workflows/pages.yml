@@ -14,17 +14,45 @@ permissions:
   pages: write
   id-token: write
 
+# A running deployment is not cancelled (GitHub's recommendation for Pages); an older commit never
+# deploys after a newer one because `check` only lets the tip of main through.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
+  check:
     # GitHub Pages needs a public repository on the free plan; skip while the repository is private.
     # After CI, only a successful run of a push to main deploys.
     if: >-
       ${{ !github.event.repository.private && (github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.tip.outputs.deploy }}
+    steps:
+      # A CI run that finishes late, or is re-run, for a commit main has moved past would roll the
+      # site back; that commit's successor deploys through its own CI run.
+      - id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "${{ github.event_name }}" != "workflow_run" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tip=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$tip" = "$SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main is at $tip, not $SHA: not deploying an older commit"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       # Fails at once, with a clear message, when the repository's Pages source is not set to

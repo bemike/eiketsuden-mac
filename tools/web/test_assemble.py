@@ -66,6 +66,36 @@ class AssembleTest(unittest.TestCase):
         with self.assertRaisesRegex(assemble.AssembleError, "has no pack.toml"):
             assemble.chain(pack(self.root / "b", "child", "../missing"))
 
+    def test_a_parent_inside_its_child_is_copied_with_it(self) -> None:
+        child = pack(self.root, "mod", "core")
+        pack(child, "core")
+        out = self.root / "site"
+        assemble.assemble(self.wasm, out, child)
+        self.assertIn("core", (out / "data/base/core/pack.toml").read_text(encoding="utf-8"))
+
+    def test_extends_resolved_from_the_site_root(self) -> None:
+        # mods/balance extends ../../data/vanilla: on the web data/base + ../../data/vanilla is
+        # data/vanilla, where the parent is copied.
+        pack(self.root / "data", "vanilla")
+        child = pack(self.root / "mods", "balance", "../../data/vanilla")
+        self.assertEqual(
+            [site for _, site in assemble.chain(child)],
+            ["data/base", "data/vanilla"],
+        )
+        with self.assertRaisesRegex(assemble.AssembleError, "extends must be a relative path"):
+            assemble.chain(pack(self.root / "c", "child", "C:/elsewhere"))
+
+    def test_packs_that_cannot_be_laid_out(self) -> None:
+        # The parent's site path lies inside the child's, but on disk it is somewhere else.
+        pack(self.root / "p", "sub")
+        child = pack(self.root / "x", "child", "sub")
+        with self.assertRaisesRegex(assemble.AssembleError, "cannot lay these packs out"):
+            assemble.copies([(child, "data/base"), (self.root / "p/sub", "data/base/sub")])
+        # The output inside the pack it copies.
+        top = pack(self.root, "top")
+        with self.assertRaisesRegex(assemble.AssembleError, "lies inside the pack"):
+            assemble.assemble(self.wasm, top / "site", top)
+
     def test_chain_depth(self) -> None:
         packs = self.root / "deep"
         pack(packs, "p4")

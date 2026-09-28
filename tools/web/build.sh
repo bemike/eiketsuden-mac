@@ -49,7 +49,15 @@ else
     cargo build -p hero-game --target wasm32-unknown-unknown
 fi
 
-python=$(command -v python3 || command -v python || true)
+# The first Python that is 3.11 or newer (macOS ships an older python3).
+python=""
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+        "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1; then
+        python=$(command -v "$candidate")
+        break
+    fi
+done
 if [ -z "$python" ]; then
     echo "python 3.11+ is needed to assemble the site (tools/web/assemble.py)" >&2
     exit 1

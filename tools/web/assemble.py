@@ -16,6 +16,7 @@ Needs Python 3.11+ (tomllib).
 from __future__ import annotations
 
 import argparse
+import os
 import posixpath
 import shutil
 import sys
@@ -49,19 +50,22 @@ def extends_of(pack: Path) -> str | None:
         raise AssembleError(f"{manifest}: {e}") from e
     if value is None:
         return None
-    if not isinstance(value, str) or not value or value.startswith("/") or "\\" in value:
+    # The same rule as hero_core's pack.toml check: a relative path with '/'.
+    if not isinstance(value, str) or not value or value.startswith("/") or "\\" in value or ":" in value:
         raise AssembleError(f"{manifest}: extends must be a relative path with '/', got {value!r}")
     return value
 
 
 def chain(top: Path) -> list[tuple[Path, str]]:
-    """The packs to copy: `(source dir, site path below data/)`, the top pack first.
+    """The packs of the chain: `(source dir, site path)`, the top pack first.
 
-    A parent's site path is its child's site path joined with the child's `extends`, resolved
-    lexically like a URL (the browser resolves it that way). It must stay inside data/ and must
-    not land on a pack already placed (a parent at data/base would be the child itself).
+    Sources are resolved lexically from the top pack, like hero_core does. Site paths are
+    relative to the site root: the top pack is `data/base`, and a parent is its child's site path
+    joined with the child's `extends`, resolved lexically like the browser resolves the URL. A
+    parent must stay below `data/` and must not be a pack already placed (a parent at data/base
+    would be the child itself).
     """
-    packs = [(top, "base")]
+    packs = [(Path(os.path.normpath(top)), "data/base")]
     while True:
         source, site = packs[-1]
         rel = extends_of(source)
@@ -69,21 +73,51 @@ def chain(top: Path) -> list[tuple[Path, str]]:
             return packs
         if len(packs) == MAX_CHAIN:
             raise AssembleError(f"{top}: a chain holds at most {MAX_CHAIN} packs")
-        parent_source = (source / rel).resolve()
+        parent_source = Path(os.path.normpath(source / rel))
         parent_site = posixpath.normpath(posixpath.join(site, rel))
-        if parent_site.startswith("..") or parent_site == ".":
+        manifest = source / "pack.toml"
+        if parent_site != "data" and not parent_site.startswith("data/"):
             raise AssembleError(
-                f"{source / 'pack.toml'}: extends = {rel!r} leaves the site's data/ folder (from data/{site}/)"
+                f"{manifest}: extends = {rel!r} leaves the site's data/ folder (from {site}/): "
+                "the web build loads every pack below data/"
             )
         if any(parent_site == placed for _, placed in packs):
             raise AssembleError(
-                f"{source / 'pack.toml'}: extends = {rel!r} points back at data/{parent_site}/ "
-                "on the web, where the top pack always sits in data/base/; keep the parent in a "
-                "sibling directory with another name (docs/MODDING.md)"
+                f"{manifest}: extends = {rel!r} points back at {parent_site}/ on the web, where the "
+                "top pack always sits in data/base/; keep the parent in a sibling directory with "
+                "another name (docs/MODDING.md)"
             )
         if not (parent_source / "pack.toml").is_file():
-            raise AssembleError(f"{source / 'pack.toml'}: extends {parent_source}, which has no pack.toml")
+            raise AssembleError(f"{manifest}: extends {parent_source}, which has no pack.toml")
         packs.append((parent_source, parent_site))
+
+
+def inside(path: str, parent: str) -> bool:
+    """`path` is `parent` or below it (site paths, '/'-separated)."""
+    return path == parent or path.startswith(parent + "/")
+
+
+def copies(packs: list[tuple[Path, str]]) -> list[tuple[Path, str]]:
+    """The directory copies that put every pack in place.
+
+    A pack whose site path lies inside another pack's (a parent in a subfolder of its child, or a
+    child inside its parent) is already copied with it when the two sit the same way on disk;
+    otherwise the layout cannot be built.
+    """
+    result = []
+    for source, site in sorted(packs, key=lambda p: p[1].count("/")):
+        outer = next(((s, t) for s, t in result if inside(site, t)), None)
+        if outer is None:
+            result.append((source, site))
+            continue
+        outer_source, outer_site = outer
+        want = Path(os.path.normpath(outer_source / posixpath.relpath(site, outer_site)))
+        if want != source:
+            raise AssembleError(
+                f"{source} would go to {site}/, inside {outer_site}/ ({outer_source}), where "
+                f"{want} is: the web build cannot lay these packs out"
+            )
+    return result
 
 
 def assemble(wasm: Path, out: Path, data: Path) -> list[str]:
@@ -91,6 +125,16 @@ def assemble(wasm: Path, out: Path, data: Path) -> list[str]:
     warnings = []
     if not wasm.is_file():
         raise AssembleError(f"{wasm} not found: build hero-game for wasm32-unknown-unknown first")
+    plan: list[tuple[Path, str]] = []
+    if data.is_dir():
+        if not (data / "pack.toml").is_file():
+            warnings.append(f"{data} has no pack.toml: only the UI gallery (#gallery) will work")
+        plan = copies(chain(data))
+        for source, _ in plan:
+            if out == source or source in out.parents:
+                raise AssembleError(f"the output {out} lies inside the pack {source}")
+    else:
+        warnings.append(f"data pack {data} not found: the page will show the 'pack not found' error screen")
     if out.exists():
         if not (out / MARKER).exists():
             raise AssembleError(f"{out} exists but was not created by this script; refusing to overwrite it")
@@ -101,14 +145,8 @@ def assemble(wasm: Path, out: Path, data: Path) -> list[str]:
     for name in WEB_FILES:
         shutil.copy2(ROOT / "web" / name, out / name)
     shutil.copy2(wasm, out / "eiketsuden.wasm")
-
-    if not data.is_dir():
-        warnings.append(f"data pack {data} not found: the page will show the 'pack not found' error screen")
-        return warnings
-    if not (data / "pack.toml").is_file():
-        warnings.append(f"{data} has no pack.toml: only the UI gallery (#gallery) will work")
-    for source, site in chain(data):
-        shutil.copytree(source, out / "data" / site)
+    for source, site in plan:
+        shutil.copytree(source, out / site, dirs_exist_ok=site == "data")
     return warnings
 
 
@@ -124,8 +162,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        warnings = assemble(args.wasm.resolve(), args.out.resolve(), args.data.resolve())
-    except AssembleError as e:
+        warnings = assemble(
+            Path(os.path.abspath(args.wasm)), Path(os.path.abspath(args.out)), Path(os.path.abspath(args.data))
+        )
+    except (AssembleError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     for w in warnings:
