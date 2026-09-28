@@ -302,6 +302,29 @@ fn the_picture_must_exist_and_fit_the_map() {
     write(root, "gfx/maps/field.png", &png_head(320, 256));
     assert!(picture_issues(&pack, root).is_empty());
 
+    // Up to 4096 pixels a side is fine (10×8 tiles of 409 px: 4090×3272); over that, a
+    // warning (phones draw it black).
+    write(
+        root,
+        "gfx/tiles/terrain.toml",
+        b"tile_size = 409\nimage = \"terrain.png\"\n",
+    );
+    write(root, "gfx/maps/field.png", &png_head(4090, 3272));
+    assert!(picture_issues(&pack, root).is_empty());
+    write(
+        root,
+        "gfx/tiles/terrain.toml",
+        b"tile_size = 512\nimage = \"terrain.png\"\n",
+    );
+    write(root, "gfx/maps/field.png", &png_head(5120, 4096));
+    let issues = picture_issues(&pack, root);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "map field",
+        "is 5120×4096 pixels: many phones cannot load a texture over 4096",
+    );
+
     write(root, "gfx/maps/field.png", b"GIF89a not a png at all");
     let issues = picture_issues(&pack, root);
     assert_issue(&issues, Severity::Error, "map field", "not a readable PNG");
