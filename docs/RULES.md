@@ -198,3 +198,19 @@ The lord retreating loses the battle immediately.
 * When no action is possible, the unit moves towards its goal (nearest hostile unit, target or position) along the
   cheapest path and waits.
 * The AI is deterministic for a given state (ties broken by unit id, then position order).
+
+## 13. The forbidden secret (hidden command)
+
+The PC original hides a command behind the lord's portrait; the game keeps it (`crate::secret` in
+`hero-game`, `CampaignState::forbidden_secret` in `hero-core`). Read from the Korean `MAIN.EXE` (the
+counter at DS `0x2D54`, the handler at image `0x1D3F2`, the orb effects at `0x1FD14`):
+
+* On a non-battle screen, tap the lord's portrait. Here: the lord's detail page of 무장 정보 in the camp.
+* The 44th tap plays a chime and arms the prompt; the 9th tap after that asks whether to use it. "No"
+  disarms it but keeps the count, so the chime comes again only when the count reaches 44 once more.
+  Nothing is saved: a new game or a loaded save starts over.
+* "Yes" shows a small blue orb in the top left corner. Tapping it gives the lord the level cap
+  (`rules.level_cap`, 99 in the base pack) with no spare EXP, 100 in 무력, 지력 and 통솔, and 10000 gold
+  (clamped to `gold_cap`). It can be tapped again.
+* The original has four more orbs (every other officer to level 1, a sound test, item values 255, one
+  without effect); they are not implemented.

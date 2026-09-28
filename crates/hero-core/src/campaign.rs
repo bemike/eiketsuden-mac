@@ -8,6 +8,12 @@ use crate::script::{cmp_field, Compare};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Abilities (무력, 지력, 통솔) the forbidden secret gives the lord
+/// ([`CampaignState::forbidden_secret`]): the original's value (`MAIN.EXE`, docs/RULES.md).
+pub const FORBIDDEN_SECRET_ABILITY: i32 = 100;
+/// Gold the forbidden secret gives: the original's 10000.
+pub const FORBIDDEN_SECRET_GOLD: i64 = 10_000;
+
 /// One step of the campaign. Nodes are visited in order of their `next` links.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -304,6 +310,27 @@ impl CampaignState {
     pub fn add_gold(&mut self, pack: &Pack, amount: i64) {
         let cap = pack.rules.gold_cap.max(0);
         self.gold = self.gold.saturating_add(amount).clamp(0, cap);
+    }
+
+    /// The original's "forbidden secret" (a hidden command of the PC game): the lord reaches the
+    /// level cap with 100 in every ability and no spare EXP, and the army gets
+    /// [`FORBIDDEN_SECRET_GOLD`] gold. Returns the lord's id, or `None` when the army has no lord.
+    pub fn forbidden_secret(&mut self, pack: &Pack) -> Option<Id> {
+        let lord = self
+            .roster
+            .iter()
+            .find(|o| pack.officer(&o.id).is_some_and(|d| d.lord))?
+            .id
+            .clone();
+        let cap = pack.rules.level_cap;
+        let o = self.officer_mut(&lord)?;
+        o.level = o.level.max(cap);
+        o.exp = 0;
+        o.strength = FORBIDDEN_SECRET_ABILITY;
+        o.int = FORBIDDEN_SECRET_ABILITY;
+        o.lead = FORBIDDEN_SECRET_ABILITY;
+        self.add_gold(pack, FORBIDDEN_SECRET_GOLD);
+        Some(lord)
     }
 
     /// Buy one copy of `item` for its price (items with price 0 are not for sale). Which

@@ -38,6 +38,7 @@ use crate::screens::error::ErrorScreen;
 use crate::screens::gameover::GameOverScreen;
 use crate::screens::loading::{LoadingScreen, Target};
 use crate::screens::title::TitleScreen;
+use crate::secret::ForbiddenSecret;
 use hero_core::battle::{BattleState, Outcome};
 use hero_core::campaign::{CampaignError, CampaignState, Node};
 use hero_core::pack::Pack;
@@ -78,6 +79,8 @@ pub struct Session {
     pub battle: Option<BattleState>,
     /// Fraction of a second not yet added to `campaign.play_seconds`.
     play_fraction: f32,
+    /// The original's hidden command (not saved: a new session starts over).
+    pub secret: ForbiddenSecret,
 }
 
 impl Session {
@@ -86,6 +89,7 @@ impl Session {
             campaign,
             battle: None,
             play_fraction: 0.0,
+            secret: ForbiddenSecret::default(),
         }
     }
 
@@ -94,6 +98,7 @@ impl Session {
             campaign: save.campaign,
             battle: save.battle,
             play_fraction: 0.0,
+            secret: ForbiddenSecret::default(),
         }
     }
 

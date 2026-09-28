@@ -17,6 +17,7 @@
 //! | [`saves`] | save slots (autosave + manual) on top of the storage |
 //! | [`settings`] | player settings persisted as JSON |
 //! | [`screens`] | loading, error, title, save/load, settings, credits, game over, UI gallery |
+//! | [`secret`] | the original's hidden command ("금단의 비법", tapping the lord's portrait) |
 //!
 //! Start with the module docs of [`app`] (how to write a screen) and [`flow`] (where campaign
 //! screens plug in). All drawing happens in virtual canvas coordinates, see [`gfx`].
@@ -32,5 +33,6 @@ pub mod original;
 pub mod platform;
 pub mod saves;
 pub mod screens;
+pub mod secret;
 pub mod settings;
 pub mod ui;
