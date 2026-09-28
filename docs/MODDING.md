@@ -1134,7 +1134,8 @@ branch loops, battles no campaign node uses.
   cells, or an autotile frame without exactly 16 cells), a missing terrain atlas image (`image`, default
   `terrain.png`), terrain without a `[tiles.<key>]` entry, a `tile_size` of 0, strategy effects without an
   `fx.toml` entry or strip, a map picture (`image`) that is missing, is not a PNG or is not exactly the
-  map's size in tiles times `tile_size`. W for missing portraits (the `_unknown` portrait is shown), a
+  map's size in tiles times `tile_size`. W for a map picture over 4096 pixels a side (many phones
+  cannot load it), missing portraits (the `_unknown` portrait is shown), a
   missing `icons.toml` or unknown icon keys. `icons.toml` is checked for TOML syntax and its keys only.
   In all index files, values that are legal but odd (a zero frame size, `fps = 0`) are not reported, so
   check a new index in the game.
