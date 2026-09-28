@@ -58,6 +58,13 @@ canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 
   their spacing.
 * **Portraits and backgrounds** are drawn into boxes in virtual pixels (64×80 portrait boxes, the
   whole canvas for backgrounds with `Cover` fitting), independent of their file resolution.
+* **Fixed UI sizes (not data).** Icons (`icons.png`, always drawn 16×16), banners (16×16), portrait
+  boxes (64×80) and the fonts' pixel sizes are set by the engine, not by the pack. A pack made for
+  another resolution changes the canvas and the tile size; the UI keeps these sizes, so a bigger
+  canvas shows more, not bigger, UI (like the fonts). Larger portrait files still help: they are
+  scaled into their box, so they keep detail at window scales above 1. These sizes
+  would become `[presentation]` fields (inherited field by field, `docs/DECISIONS.md` D8) only when
+  a pack needs a different one; none does yet.
 
 ## Canonical terrain ids
 

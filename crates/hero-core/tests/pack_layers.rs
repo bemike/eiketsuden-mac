@@ -319,16 +319,16 @@ fn presentation_is_inherited_from_the_nearest_declaring_pack() {
     );
     assert_eq!(load(&files).manifest.presentation.canvas, [800, 600]);
 
-    // The table is inherited as a whole: an empty `[presentation]` in the child replaces the
-    // parent's 640x480 with the default rather than inheriting its fields.
+    // Fields are inherited one by one: an empty `[presentation]` in the child keeps the
+    // parent's 640x480.
     files.insert(
         "pack.toml".into(),
         manifest("balance", "extends = \"../mini_ext\"\n[presentation]"),
     );
     assert_eq!(
-        load(&files).manifest.presentation,
-        Presentation::default(),
-        "table-level inheritance"
+        load(&files).manifest.presentation.canvas,
+        [640, 480],
+        "field-level inheritance"
     );
 
     // Without any declaration: the default.

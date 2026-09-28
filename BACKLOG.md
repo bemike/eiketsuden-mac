@@ -9,18 +9,10 @@
   - 무엇을: `units.toml`·`terrain.toml`·`fx.toml`의 serde 타입(SpriteDef/FxDef/Tileset)과 `validate_layer`를 hero-game에서 hero-core로 옮긴다. `Pack::missing_media`가 타입 오류를 Error로 보고하게 하고, 색인 파일을 `unknown_fields` 린트에 넣는다.
   - 왜: 지금은 검증기가 키 존재만 봐서 `anchor` 하나가 빠져도 validate는 통과하고, 게임에서는 스프라이트가 조용히 깨진다. 임포터도 같은 스키마를 써야 한다.
   - 영향 범위: hero-core `pack/media.rs`, hero-game `screens/battle/{sprites,tileset}.rs`, `docs/ASSETS.md`
-- [ ] **`[presentation]` 상속 규칙 확정**
-  - 무엇을: 테이블 단위 상속을 유지할지, 필드 단위로 병합할지 정해 DECISIONS D8에 기록한다. MODDING에 "빈 `[presentation]`도 부모 값을 기본값으로 되돌린다"를 명시한다.
-  - 왜: 필드를 하나 추가하는 순간 호환성을 깨는 변경이 된다.
-  - 영향 범위: `docs`, `pack/chain.rs`
 - [ ] **전투 색인과 credits.txt도 오버레이·부모 팩 순서로 읽기**
   - 무엇을: 전투 색인 3종과 `credits.txt`를 `DataRoot::path` 대신 `media_paths` 순서로 읽고, `FirstOf`를 `assets.rs`에서 공용화한다.
   - 왜: 오버레이 이미지와 팩 색인이 섞이면 셀이 어긋날 수 있다.
   - 영향 범위: hero-game `assets.rs`, `loading.rs`, `screens/battle/mod.rs`, `screens/credits.rs`
-- [ ] **UI 표시 크기의 데이터화 여부 결정**
-  - 무엇을: 아이콘(항상 16×16 표시), 깃발 16×16, 초상 64×80, 글꼴 크기를 데이터로 조정할지 결정하고 ASSETS.md에 적는다.
-  - 왜: 원작 해상도 팩 제작자가 무엇을 조정할 수 있는지 알 수 없다.
-  - 영향 범위: `docs/ASSETS.md`, hero-game `ui/`
 
 ## 원작 모드 팩 (2026-09-26 `original pack` 도입 후)
 
