@@ -273,38 +273,63 @@ impl MapRenderer {
             camera.render_target = Some(target.clone());
             set_camera(&camera);
             clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
-            self.draw_static(map, pack, tileset, atlas, i == 0);
+            let area = Rect::new(x as f32, y as f32, cw as f32, ch as f32);
+            self.draw_static(map, pack, tileset, atlas, area, i == 0);
             pieces.push((vec2(x as f32, y as f32), target));
         }
         set_default_camera();
         self.base = Some(StaticMap::Cache(pieces));
     }
 
-    /// The static layers at their cache positions; with `collect`, also the tiles whose upper
-    /// layers animate (once per build).
+    /// The static layers at their cache positions, of the tiles that can reach `area` (a
+    /// piece of the cache, in cache pixels); with `collect`, also the tiles whose upper layers
+    /// animate, of the whole map (once per build).
     fn draw_static(
         &mut self,
         map: &BattleMap,
         pack: &Pack,
         tileset: Option<&Tileset>,
         atlas: Option<&Texture2D>,
+        area: Rect,
         collect: bool,
     ) {
         let tile = self.tile;
         let origin = vec2(PAD * tile, PAD * tile);
+        // A tile's drawing reaches past it by its layers' offsets: tiles within that margin
+        // (plus one tile) of the piece are drawn into it too.
+        let overhang = tileset.map_or(0.0, |ts| {
+            ts.tiles
+                .values()
+                .flatten()
+                .map(|l| l.offset.x.abs().max(l.offset.y.abs()))
+                .fold(0.0, f32::max)
+        });
+        let margin = tile + overhang;
+        let reach = Rect::new(
+            area.x - margin,
+            area.y - margin,
+            area.w + 2.0 * margin,
+            area.h + 2.0 * margin,
+        );
         for p in map.positions() {
+            let at = origin + vec2(p.x as f32, p.y as f32) * tile;
+            let inside = reach.overlaps(&Rect::new(at.x, at.y, tile, tile));
+            if !inside && !collect {
+                continue;
+            }
             let terrain_id = map.terrain_at(p).unwrap_or("");
             let key = pack
                 .terrain(terrain_id)
                 .map(|t| t.tile_key().to_string())
                 .unwrap_or_else(|| terrain_id.to_string());
-            let at = origin + vec2(p.x as f32, p.y as f32) * tile;
             let layers = match (tileset, atlas) {
                 (Some(ts), Some(_)) => ts.tiles.get(&key),
                 _ => None,
             };
             let (Some(layers), Some(ts), Some(atlas)) = (layers, tileset, atlas) else {
-                fill_rect(Rect::new(at.x, at.y, tile, tile), terrain_color(terrain_id));
+                if inside {
+                    fill_rect(Rect::new(at.x, at.y, tile, tile), terrain_color(terrain_id));
+                }
                 continue;
             };
             for (i, layer) in layers.iter().enumerate() {
@@ -318,8 +343,10 @@ impl MapRenderer {
                     }
                     break;
                 }
-                let cell = layer_cell(map, layer, i, p, 0);
-                draw_cell(atlas, ts.tile_size, tile, cell, at + layer.offset);
+                if inside {
+                    let cell = layer_cell(map, layer, i, p, 0);
+                    draw_cell(atlas, ts.tile_size, tile, cell, at + layer.offset);
+                }
             }
         }
     }
