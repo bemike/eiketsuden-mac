@@ -20,7 +20,8 @@ pub const FX_FILE: &str = "gfx/fx/fx.toml";
 /// colour map drawn without a tileset.
 pub const DEFAULT_TILE: u32 = 16;
 
-/// Parse a media index (a leading byte-order mark is allowed, as in the rules files).
+/// Parse a media index. A leading byte-order mark is dropped as for the rules files (the TOML
+/// parser accepts it too).
 pub fn parse<T: DeserializeOwned>(src: &str) -> Result<T, String> {
     toml::from_str(src.strip_prefix('\u{feff}').unwrap_or(src))
         .map_err(|e| e.to_string().trim_end().to_string())

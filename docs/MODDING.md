@@ -191,8 +191,9 @@ pack that has them. A child pack meant for the web ships its own copies of those
 
 `hero-tools validate`, `info` and `simulate` take the top pack directory and work on the whole chain.
 `validate` checks unknown keys in every `pack.toml`, in the rules, officer and campaign files in use (a
-parent's file that the child replaces is not checked) and in every battle and map file of the chain,
-and it looks for media in every pack of the chain.
+parent's file that the child replaces is not checked), in every battle and map file of the chain and in
+the battle media indexes (`units.toml`, `terrain.toml`, `fx.toml`) the game uses, and it looks for media
+in every pack of the chain.
 
 ## rules/game.toml
 
@@ -1132,9 +1133,9 @@ branch loops, battles no campaign node uses.
   `terrain.png`), terrain without a `[tiles.<key>]` entry, a `tile_size` of 0, strategy effects without an
   `fx.toml` entry or strip, a map picture (`image`) that is missing, is not a PNG or is not exactly the
   map's size in tiles times `tile_size`. W for missing portraits (the `_unknown` portrait is shown), a
-  missing `icons.toml` or unknown icon keys. `icons.toml` is checked for TOML syntax and its keys only;
-  values that are legal but odd (a zero frame size, `fps = 0`) are not reported, so check a new index in
-  the game.
+  missing `icons.toml` or unknown icon keys. `icons.toml` is checked for TOML syntax and its keys only.
+  In all index files, values that are legal but odd (a zero frame size, `fps = 0`) are not reported, so
+  check a new index in the game.
 
 ## hero-tools
 
