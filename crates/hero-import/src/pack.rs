@@ -892,6 +892,13 @@ pub const NAME_ALIASES: &[(&str, &str)] = &[
     ("zhang_liao", "장요"),
     // 紀靈: 기령 / 기영.
     ("ji_ling", "기영"),
+    // 宋憲 (ソウケン): 송겸 in the release, a Lü Bu officer next to 위속 and 진궁 with the
+    // base pack's stats (leadership 50, war 59).
+    ("song_xian", "송겸"),
+    // 王楷 (オウカイ): 왕개, Lü Bu's army.
+    ("wang_kai", "왕개"),
+    // 關興 (カンコウ): 관훙, a misspelling in the release, in 장포's and 관평's army.
+    ("guan_xing", "관훙"),
 ];
 
 /// Base-pack officers whose name `BAKDATA` gives to two officers, with the Japanese reading

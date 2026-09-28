@@ -406,7 +406,7 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   layered pack (`id = "original"`, `extends` the base pack, `canvas = [640, 480]`, git-ignored) holding what can be mapped
   onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. It holds officer
   portraits (matched to the base pack's officers by name, with two spelling aliases and one reading used to tell
-  two officers of the same name apart; 105 of 118 on the verified copy), unit sheets of all 19 classes from the
+  two officers of the same name apart; 108 of 118 on the verified copy), unit sheets of all 19 classes from the
   `HEXZCHR` map icons (32×32 frames; green for the player and allies, orange for enemies is a choice, the colour
   assignment is not decoded) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
   neighbour mask the 2×2-chip block the maps show most often). It also holds the 58 original battle maps as a
