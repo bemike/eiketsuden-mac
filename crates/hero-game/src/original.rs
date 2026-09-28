@@ -307,9 +307,14 @@ pub fn sole_install(folders: &[Folder]) -> Option<&Folder> {
     installs.next().is_none().then_some(first)
 }
 
-/// The folder a typed or pasted path names. Surrounding blanks and quotes (Explorer's "Copy as
-/// path" adds them) are dropped, and a file's path (a pasted `MAIN.EXE`) names its folder.
-pub fn typed_folder(text: &str) -> Result<PathBuf, String> {
+/// Most characters of a typed or pasted path.
+pub const MAX_TYPED: usize = 1024;
+
+/// The folder a typed or pasted path names, as an absolute path (it is stored in the settings).
+/// Surrounding blanks and quotes (Explorer's "Copy as path" adds them) are dropped, a relative
+/// path is taken from `base` (the folder shown), a bare Windows drive (`D:`) is its root, and a
+/// file's path (a pasted `MAIN.EXE`) names its folder.
+pub fn typed_folder(text: &str, base: Option<&Path>) -> Result<PathBuf, String> {
     let mut text = text.trim();
     for q in ['"', '\''] {
         if let Some(inner) = text.strip_prefix(q).and_then(|t| t.strip_suffix(q)) {
@@ -319,7 +324,23 @@ pub fn typed_folder(text: &str) -> Result<PathBuf, String> {
     if text.is_empty() {
         return Err("경로를 입력해 주세요".to_string());
     }
-    let path = PathBuf::from(text);
+    let bare_drive = cfg!(windows)
+        && text.len() == 2
+        && text.as_bytes()[0].is_ascii_alphabetic()
+        && text.as_bytes()[1] == b':';
+    let mut path = if bare_drive {
+        PathBuf::from(format!("{text}\\"))
+    } else {
+        PathBuf::from(text)
+    };
+    if path.is_relative() {
+        if let Some(base) = base {
+            path = base.join(path);
+        }
+    }
+    // Still relative without a base (or drive-relative, `D:game`): resolved against the current
+    // folder, so what is stored does not depend on where the game is started next time.
+    let path = std::path::absolute(&path).map_err(|e| format!("{text}: {e}"))?;
     if path.is_dir() {
         return Ok(path);
     }
@@ -434,19 +455,41 @@ mod tests {
         assert_eq!(sole_install(&one).map(|f| f.name.as_str()), Some("game"));
         assert_eq!(sole_install(&[]), None);
 
-        // Typed paths: blanks and quotes dropped, a file names its folder.
-        let game = tmp.0.join("game");
+        // Typed paths: blanks and quotes dropped, a file names its folder, relative paths are
+        // taken from the folder shown; the result is absolute.
+        let root = std::path::absolute(&tmp.0).unwrap();
+        let game = root.join("game");
         let shown = game.display().to_string();
-        assert_eq!(typed_folder(&shown), Ok(game.clone()));
-        assert_eq!(typed_folder(&format!("  \"{shown}\" ")), Ok(game.clone()));
-        assert_eq!(typed_folder(&format!("'{shown}'")), Ok(game.clone()));
+        assert_eq!(typed_folder(&shown, None), Ok(game.clone()));
         assert_eq!(
-            typed_folder(&game.join("disk1.r3i").display().to_string()),
+            typed_folder(&format!("  \"{shown}\" "), None),
             Ok(game.clone())
         );
-        assert!(typed_folder("").is_err());
-        assert!(typed_folder(" \"\" ").is_err());
-        assert!(typed_folder(&tmp.0.join("missing").display().to_string()).is_err());
+        assert_eq!(typed_folder(&format!("'{shown}'"), None), Ok(game.clone()));
+        assert_eq!(
+            typed_folder(&game.join("disk1.r3i").display().to_string(), None),
+            Ok(game.clone())
+        );
+        let relative = typed_folder("game", Some(&root)).unwrap();
+        assert!(relative.is_absolute(), "{relative:?}");
+        assert!(
+            relative.ends_with("game") && relative.is_dir(),
+            "{relative:?}"
+        );
+        let dotted = typed_folder("./game/", Some(&root)).unwrap();
+        assert!(dotted.is_absolute() && dotted.is_dir(), "{dotted:?}");
+        assert!(typed_folder("game", Some(&root.join("b"))).is_err());
+        assert!(typed_folder("", None).is_err());
+        assert!(typed_folder(" \"\" ", None).is_err());
+        assert!(typed_folder(&root.join("missing").display().to_string(), None).is_err());
+        if cfg!(windows) {
+            // A bare drive is its root, not the drive's current folder.
+            let drive = &shown[..2];
+            assert_eq!(
+                typed_folder(drive, Some(&root)),
+                Ok(PathBuf::from(format!("{drive}\\")))
+            );
+        }
     }
 
     #[test]
@@ -528,6 +571,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         };
+        assert_eq!(job.fraction(), 1.0, "every step reported");
         eprintln!("converted in {:?}", started.elapsed());
         assert!(built.index.success(), "{:#?}", built.index.assets);
 

@@ -94,8 +94,8 @@ EUC-KR 한글입니다. 그래서 헤더만으로는 언어를 정하지 않고 
    - 조작: 확인(Enter·Z·클릭)으로 폴더에 들어가고, Backspace·`..`로 상위 폴더, 글자 키로 그 글자로 시작하는 폴더로
      이동(Z·X 제외), Page Up/Down, 휠. Windows에서는 드라이브 최상위에서 한 번 더 올라가면 드라이브 목록입니다.
    - 경로를 알면 **경로 입력…**이나 **Ctrl+V**(macOS는 Cmd+V)로 경로 줄을 열어 입력·붙여넣기하고 Enter로 그
-     폴더로 갑니다(Esc: 목록으로, Ctrl+Backspace: 지우기). 탐색기의 "경로로 복사"처럼 따옴표가 붙은 경로와 원작
-     파일(`MAIN.EXE` 등)의 경로도 받습니다.
+     폴더로 갑니다(Esc·우클릭: 목록으로, Ctrl+Backspace: 지우기). 탐색기의 "경로로 복사"처럼 따옴표가 붙은 경로와
+     원작 파일(`MAIN.EXE` 등)의 경로도 받고, 상대 경로는 보고 있는 폴더 기준, `D:`는 그 드라이브의 최상위입니다.
 3. 지원하는 판본(한국어 DOS/V, 중국어 DOS)이면 **이 폴더 사용**이 켜집니다. 고르면 설정에 경로와 "원작 모드 켬"을
    저장하고 데이터를 다시 불러옵니다.
 4. 로딩 화면이 기본 팩을 읽은 뒤 원작을 **메모리에서** 원작 모드 팩(4.5절과 같은 파일)으로 변환해 기본 팩 위에
@@ -402,8 +402,8 @@ was used, and the repository and CI contain no original bytes (tests use synthet
 * **Original mode in the game (no command line)**: on native builds the title menu's "원작 데이터" (original data)
   opens an in-game folder browser (★ marks folders holding original files; entering one shows the same verdict and
   evidence as `probe`; a folder whose only install is one subfolder, like a DOSBox package, offers that subfolder;
-  "경로 입력…" or Ctrl+V takes a typed or pasted path). "이 폴더 사용" (use this folder) stores the folder in the
-  settings and reloads: the loading
+  "경로 입력…" or Ctrl/Cmd+V takes a typed or pasted path). "이 폴더 사용" (use this folder) stores the folder in
+  the settings and reloads: the loading
   screen loads the base pack, converts the install **in memory** on a worker thread (about 0.1 s in a release build
   on the Korean copy), mounts the result next to the base pack and plays it; nothing is written and the install is
   only read. Later launches start in the original mode directly; the same screen switches back to the base pack.

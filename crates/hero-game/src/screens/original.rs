@@ -82,23 +82,33 @@ fn fit(gfx: &Gfx, text: &str, width: f32) -> String {
     format!("{out}…")
 }
 
+/// The paste shortcut as the player presses it.
+const PASTE_KEY: &str = if cfg!(target_os = "macos") {
+    "Cmd+V"
+} else {
+    "Ctrl+V"
+};
+
 /// `text` with its start cut off (`…`) to fit `width` pixels of the main font: the end of a path
-/// is the part being typed.
+/// is the part being typed. Measures each character once, from the end.
 fn fit_tail(gfx: &Gfx, text: &str, width: f32) -> String {
     if gfx.text_width(text, FontId::Main, 1) <= width {
         return text.to_string();
     }
-    let mut chars: std::collections::VecDeque<char> = text.chars().collect();
-    loop {
-        chars.pop_front();
-        let out: String = std::iter::once('…').chain(chars.iter().copied()).collect();
-        if chars.is_empty() || gfx.text_width(&out, FontId::Main, 1) <= width {
-            return out;
+    let room = width - gfx.text_width("…", FontId::Main, 1);
+    let mut used = 0.0;
+    let mut start = text.len();
+    for (i, c) in text.char_indices().rev() {
+        used += gfx.text_width(c.encode_utf8(&mut [0; 4]), FontId::Main, 1);
+        if used > room {
+            break;
         }
+        start = i;
     }
+    format!("…{}", &text[start..])
 }
 
-/// Ctrl (Cmd on macOS) is held.
+/// Ctrl or Cmd is held (the paste shortcut).
 fn ctrl_down(ctx: &Ctx) -> bool {
     [
         KeyCode::LeftControl,
@@ -110,11 +120,30 @@ fn ctrl_down(ctx: &Ctx) -> bool {
     .any(|&k| ctx.input.key_down(k))
 }
 
-/// The first line of the clipboard.
-fn pasted() -> String {
+/// Cmd (Super) is held: macOS types the letter of a Cmd shortcut, Windows and X11 send a control
+/// character for Ctrl shortcuts (and AltGr, which Windows reports with a Ctrl, types normally).
+fn cmd_down(ctx: &Ctx) -> bool {
+    ctx.input.key_down(KeyCode::LeftSuper) || ctx.input.key_down(KeyCode::RightSuper)
+}
+
+/// The first line of the clipboard, `None` when it holds no text.
+fn pasted() -> Option<String> {
     macroquad::miniquad::window::clipboard_get()
         .and_then(|s| s.lines().next().map(str::to_string))
-        .unwrap_or_default()
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// Forget the characters typed before (macroquad keeps them until they are read).
+fn drain_chars() {
+    while get_char_pressed().is_some() {}
+}
+
+/// `text` cut to [`original::MAX_TYPED`] characters.
+fn capped(mut text: String) -> String {
+    if let Some((i, _)) = text.char_indices().nth(original::MAX_TYPED) {
+        text.truncate(i);
+    }
+    text
 }
 
 /// The first folder row after `cursor` (wrapping around) whose name starts with `c`, ignoring
@@ -288,8 +317,11 @@ impl OriginalScreen {
                 ),
                 None => self.wrap_into(
                     gfx,
-                    "원작 파일(DISK1.R3I, HEXZMAP.R3 등)이 있는 폴더로 들어가세요. ★는 원작 파일이 있는 \
-                     폴더입니다. 경로를 알면 \"경로 입력…\"이나 Ctrl+V로 붙여 넣을 수 있습니다.",
+                    &format!(
+                        "원작 파일(DISK1.R3I, HEXZMAP.R3 등)이 있는 폴더로 들어가세요. ★는 원작 파일이 \
+                         있는 폴더입니다. 경로를 알면 \"경로 입력…\"이나 {PASTE_KEY}로 붙여 넣을 수 \
+                         있습니다."
+                    ),
                     theme::TEXT_DIM,
                 ),
             },
@@ -316,7 +348,7 @@ impl OriginalScreen {
                 Row::UseChild(f) => {
                     MenuItem::new(fit(gfx, &format!("{} 폴더 사용", f.name), width)).tag("★")
                 }
-                Row::Type => MenuItem::new("경로 입력…").detail("Ctrl+V"),
+                Row::Type => MenuItem::new("경로 입력…").detail(PASTE_KEY),
                 Row::Up => MenuItem::new("..").detail("상위 폴더"),
                 Row::Open(f) => {
                     let item = MenuItem::new(fit(gfx, &f.name, width));
@@ -380,6 +412,8 @@ impl OriginalScreen {
                 Command::PlayOriginal => OriginalScreen::apply(ctx, None, true),
                 Command::PlayBase => OriginalScreen::apply(ctx, None, false),
                 Command::Browse => {
+                    // Letters typed on earlier screens would jump through the list.
+                    drain_chars();
                     let place = original::start_place(ctx.settings.original_dir.as_deref());
                     self.show_place(ctx, place, None);
                     Transition::None
@@ -415,26 +449,43 @@ impl OriginalScreen {
         }
     }
 
-    /// The path line: text keys type, Ctrl+V pastes, Backspace deletes (Ctrl+Backspace clears),
-    /// Enter opens the folder, Esc goes back to the list.
-    fn update_typing(&mut self, ctx: &mut Ctx, mut text: String) -> Transition {
+    /// The path line: text keys type, Ctrl/Cmd+V pastes, Backspace deletes (held: repeats;
+    /// Ctrl+Backspace clears), Enter opens the folder, Esc, a right click or a tap outside the
+    /// line goes back to the list.
+    fn update_typing(&mut self, ctx: &mut Ctx, place: &Place, mut text: String) -> Transition {
         let ctrl = ctrl_down(ctx);
+        let cmd = cmd_down(ctx);
+        let clear = ctrl && ctx.input.key_pressed(KeyCode::Backspace);
+        // Backspace arrives as a character too (with the OS key repeat); the key press is the
+        // fallback where it does not.
+        let mut deleted = 0;
         while let Some(c) = get_char_pressed() {
-            if !c.is_control() && !ctrl {
-                text.push(c);
+            match c {
+                '\u{8}' | '\u{7f}' => deleted += 1,
+                c if c.is_control() || cmd => {}
+                c => text.push(c),
             }
         }
-        if ctrl && ctx.input.key_pressed(KeyCode::V) {
-            text.push_str(&pasted());
+        if deleted == 0 && ctx.input.key_pressed(KeyCode::Backspace) {
+            deleted = 1;
         }
-        if ctx.input.key_pressed(KeyCode::Backspace) {
-            if ctrl {
-                text.clear();
-            } else {
+        if clear {
+            text.clear();
+        } else {
+            for _ in 0..deleted {
                 text.pop();
             }
         }
-        let escape = ctx.input.key_pressed(KeyCode::Escape);
+        if ctrl && ctx.input.key_pressed(KeyCode::V) {
+            match pasted() {
+                Some(p) => text.push_str(&p),
+                None => ctx.toast("클립보드에 텍스트가 없습니다"),
+            }
+        }
+        let text = capped(text);
+        let frame = self.typing_frame(&ctx.gfx);
+        let away = ctx.input.right_click() || ctx.input.tap().is_some_and(|p| !frame.contains(p));
+        let escape = ctx.input.key_pressed(KeyCode::Escape) || away;
         let enter =
             ctx.input.key_pressed(KeyCode::Enter) || ctx.input.key_pressed(KeyCode::KpEnter);
         ctx.input.consume();
@@ -443,7 +494,11 @@ impl OriginalScreen {
             return Transition::None;
         }
         if enter {
-            match original::typed_folder(&text) {
+            let base = match place {
+                Place::Dir(dir) => Some(dir.as_path()),
+                Place::Roots => None,
+            };
+            match original::typed_folder(&text, base) {
                 Ok(dir) => {
                     ctx.sfx(sfx::CONFIRM);
                     self.show_place(ctx, Place::Dir(dir), None);
@@ -461,14 +516,20 @@ impl OriginalScreen {
 
     fn update_browser(&mut self, ctx: &mut Ctx, place: &Place, rows: &[Row]) -> Transition {
         if let Some(text) = self.typing.take() {
-            return self.update_typing(ctx, text);
+            return self.update_typing(ctx, place, text);
         }
         let ctrl = ctrl_down(ctx);
         if ctrl && ctx.input.key_pressed(KeyCode::V) {
             // Paste straight into a new path line.
-            while get_char_pressed().is_some() {}
-            self.typing = Some(pasted());
+            drain_chars();
             ctx.input.consume();
+            match pasted() {
+                Some(p) => self.typing = Some(capped(p)),
+                None => {
+                    ctx.sfx(sfx::ERROR);
+                    ctx.toast("클립보드에 텍스트가 없습니다");
+                }
+            }
             return Transition::None;
         }
         let up = original::parent(place);
@@ -487,8 +548,9 @@ impl OriginalScreen {
                 return Transition::None;
             }
         }
+        let cmd = cmd_down(ctx);
         while let Some(c) = get_char_pressed() {
-            if ctrl {
+            if cmd {
                 continue;
             }
             if let Some(i) = next_starting_with(rows, self.menu.cursor(), c) {
@@ -553,6 +615,7 @@ impl Screen for OriginalScreen {
             return;
         }
         if self.browse_only {
+            drain_chars();
             let place = original::start_place(ctx.settings.original_dir.as_deref());
             self.show_place(ctx, place, None);
         } else {
@@ -614,21 +677,26 @@ impl Screen for OriginalScreen {
 }
 
 impl OriginalScreen {
-    /// The path line, where the menu is.
-    fn draw_typing(&self, ctx: &Ctx, text: &str) {
-        let gfx = &ctx.gfx;
+    /// Where the path line is drawn: where the menu is.
+    fn typing_frame(&self, gfx: &Gfx) -> Rect {
         let top = TEXT_TOP + self.lines.len() as f32 * LINE + 12.0;
-        let width = gfx.size().x - 2.0 * MARGIN;
-        let frame = Rect::new(
+        Rect::new(
             MARGIN,
             top,
-            width,
+            gfx.size().x - 2.0 * MARGIN,
             2.0 * theme::ROW_HEIGHT + 2.0 * theme::PADDING,
-        );
+        )
+    }
+
+    /// The path line.
+    fn draw_typing(&self, ctx: &Ctx, text: &str) {
+        let gfx = &ctx.gfx;
+        let frame = self.typing_frame(gfx);
+        let (top, width) = (frame.y, frame.w);
         draw_window(frame);
         let x = MARGIN + theme::PADDING;
         gfx.text(
-            "경로를 입력하거나 붙여 넣고(Ctrl+V) Enter — Esc: 목록으로",
+            &format!("경로를 입력하거나 붙여 넣고({PASTE_KEY}) Enter — Esc·우클릭: 목록으로"),
             x,
             top + theme::PADDING,
             TextStyle::small(theme::TEXT_DIM),
