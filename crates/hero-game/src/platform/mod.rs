@@ -278,11 +278,11 @@ impl DataRoot {
         }
     }
 
-    /// Path or URL of a pack-relative file (`fonts/Galmuri11.ttf`, `credits.txt`), for
-    /// `load_file`. For a layered pack natively the first pack of the chain that has the file
-    /// (the top pack's path when none has it); on the web the top pack's path, because the
-    /// browser cannot check for a file without fetching it — media lookups through the whole
-    /// chain go through [`DataRoot::media_paths`].
+    /// Path or URL of a pack-relative file (`pack.toml`, `rules/game.toml`), for `load_file`. For
+    /// a layered pack natively the first pack of the chain that has the file (the top pack's path
+    /// when none has it); on the web the top pack's path, because the browser cannot check for a
+    /// file without fetching it. Media files (fonts, index files and `credits.txt` included) are
+    /// looked up through the whole chain with [`DataRoot::media_paths`] instead.
     pub fn path(&self, rel: &str) -> String {
         let rel = rel.trim_start_matches('/');
         let top = self.in_pack("", rel);

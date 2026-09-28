@@ -38,7 +38,7 @@ mod text;
 mod tileset;
 
 use crate::app::{Ctx, Enter, Screen, Transition};
-use crate::assets::{AssetState, FileRequest};
+use crate::assets::{AssetState, FirstOf};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
 use crate::gfx::{draw_placeholder, fill_rect, Align, FontId, TextStyle};
@@ -79,9 +79,9 @@ const AUTO_END_DELAY: f32 = 0.4;
 /// Metadata files of the battle art, loaded when the screen opens.
 #[derive(Default)]
 struct Meta {
-    tileset_req: Option<FileRequest>,
-    units_req: Option<FileRequest>,
-    fx_req: Option<FileRequest>,
+    tileset_req: Option<FirstOf>,
+    units_req: Option<FirstOf>,
+    fx_req: Option<FirstOf>,
     tileset: Option<Tileset>,
     /// Texture key of the map's picture layer (`maps/<image>`) until the map is built from it,
     /// or given up for the tileset.
@@ -99,8 +99,8 @@ impl Meta {
 }
 
 /// Read a finished request as UTF-8 text.
-fn request_text(req: &mut Option<FileRequest>) -> Option<Result<String, String>> {
-    let result = req.as_mut()?.poll()?.clone();
+fn request_text(req: &mut Option<FirstOf>) -> Option<Result<String, String>> {
+    let result = req.as_mut()?.poll()?;
     *req = None;
     Some(result.and_then(|b| String::from_utf8(b).map_err(|e| e.to_string())))
 }
@@ -367,9 +367,11 @@ impl BattleScreen {
 
     fn start_loading(&mut self, ctx: &Ctx) {
         let root = ctx.media.root();
-        self.meta.tileset_req = Some(FileRequest::new(root.path(tileset::TILESET_FILE)));
-        self.meta.units_req = Some(FileRequest::new(root.path(sprites::UNITS_FILE)));
-        self.meta.fx_req = Some(FileRequest::new(root.path(sprites::FX_FILE)));
+        // Each index from the first place that has it, like the pictures it describes: the
+        // overlay, the top pack, then its parents.
+        self.meta.tileset_req = Some(FirstOf::new(root.media_paths(tileset::TILESET_FILE)));
+        self.meta.units_req = Some(FirstOf::new(root.media_paths(sprites::UNITS_FILE)));
+        self.meta.fx_req = Some(FirstOf::new(root.media_paths(sprites::FX_FILE)));
         let mut textures: Vec<String> = vec!["ui/flags".into(), "ui/icons".into()];
         for u in &self.state.units {
             let sprite = self
