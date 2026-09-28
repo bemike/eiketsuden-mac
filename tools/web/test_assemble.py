@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import importlib.util
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import assemble
+
+HAS_FONTTOOLS = importlib.util.find_spec("fontTools") is not None
 
 
 def pack(root: Path, name: str, extends: str | None = None) -> Path:
@@ -111,6 +116,47 @@ class AssembleTest(unittest.TestCase):
         self.assertIn("not found", warnings[0])
         with self.assertRaises(assemble.AssembleError):
             assemble.assemble(self.root / "no.wasm", self.root / "s2", self.root / "nothing")
+
+    @unittest.skipUnless(HAS_FONTTOOLS, "needs fontTools")
+    def test_fonts_keep_only_the_hanja_the_game_shows(self) -> None:
+        from fontTools.ttLib import TTFont
+
+        base = pack(self.root, "base")
+        (base / "fonts").mkdir()
+        for font in assemble.FONT_FILES:
+            shutil.copy2(assemble.ROOT / "data/base" / font, base / font)
+        cmap = TTFont(base / assemble.FONT_FILES[0]).getBestCmap()
+        liu, bei, guan, zhang = (ord(c) for c in "劉備關張")
+        self.assertTrue(all(c in cmap for c in (liu, bei, guan, zhang)))
+        (base / "officers.toml").write_text('name = "유비"\nhanja = "劉備"\n', encoding="utf-8")
+        (base / "credits.txt").write_text("關\n", encoding="utf-8")
+        # The game's own strings.
+        self.wasm.write_bytes(b"\0asm\x01" + "영걸전 張".encode() + b"\xff")
+        out = self.root / "site"
+        self.assertEqual(assemble.assemble(self.wasm, out, base), [])
+        for font in assemble.FONT_FILES:
+            kept = TTFont(out / "data/base" / font).getBestCmap()
+            hanja = {c for c in kept if assemble.is_hanja(c)}
+            self.assertEqual(hanja, {liu, bei, guan, zhang}, font)
+            # Every other character stays.
+            original = TTFont(base / font).getBestCmap()
+            self.assertEqual(
+                {c for c in kept if not assemble.is_hanja(c)},
+                {c for c in original if not assemble.is_hanja(c)},
+            )
+            self.assertLess((out / "data/base" / font).stat().st_size, (base / font).stat().st_size)
+            self.assertIn("ER", TTFont(out / "data/base" / font)["name"].getBestFamilyName())
+
+    def test_without_fonttools_the_fonts_are_copied_whole(self) -> None:
+        base = pack(self.root, "base")
+        (base / "fonts").mkdir()
+        (base / assemble.FONT_FILES[0]).write_bytes(b"font")
+        with mock.patch.dict(sys.modules, {"fontTools": None}):
+            warnings = assemble.assemble(self.wasm, self.root / "s1", base)
+            self.assertIn("pip install fonttools", warnings[0])
+            self.assertEqual((self.root / "s1/data/base" / assemble.FONT_FILES[0]).read_bytes(), b"font")
+            with self.assertRaisesRegex(assemble.AssembleError, "pip install fonttools"):
+                assemble.assemble(self.wasm, self.root / "s2", base, require_font_subset=True)
 
 
 if __name__ == "__main__":

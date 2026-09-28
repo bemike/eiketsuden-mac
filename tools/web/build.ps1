@@ -4,7 +4,8 @@ Builds the WebAssembly version of the game and assembles a static site.
 
 .DESCRIPTION
 Runs `cargo build -p hero-game --target wasm32-unknown-unknown`, then tools/web/assemble.py
-(Python 3.11+, the same step the GitHub Pages workflow runs) lays out the site in the output folder
+(Python 3.11+, with fontTools to subset the fonts; the same step the GitHub Pages workflow runs) lays
+out the site in the output folder
 (default target/web-dist, which is git-ignored): the page, the wasm and the data pack with the packs
 it extends. Browsers cannot load WebAssembly from file:// URLs, so serve the folder over HTTP
 (-Serve does that with tools/web/serve.py, a no-cache variant of Python's built-in server).

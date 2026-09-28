@@ -58,9 +58,6 @@
   - 무엇을: 출진 준비와 전투 화면에 작은 캔버스용 레이아웃을 만든다.
   - 왜: 지금은 validate 경고만 한다.
   - 영향 범위: hero-game `screens/camp`, `screens/battle`
-- [ ] **웹 첫 로딩 경량화**
-  - 무엇을: 폰트(gzip 약 1.6MB)를 서브셋하거나 지연 로딩한다.
-  - 영향 범위: `tools/assets`, hero-game `assets`
 - [ ] **이후 콘텐츠 제작**
   - 무엇을: 제2장(관도 ~ 장판파) 이후 캠페인과 IF 루트, 영어 번역을 만든다.
   - 영향 범위: `data/base`

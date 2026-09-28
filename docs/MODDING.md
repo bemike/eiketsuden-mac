@@ -183,6 +183,9 @@ web:
   `data/base/` like the browser does (with `extends = "../vanilla"`, to `<out>/data/vanilla/`). A
   parent must end up below `data/` and not on `data/base/` itself; a parent inside its child's
   folder (`extends = "core"`) is copied with the child.
+* The copied fonts keep only the Hanja of the chain's text files (`.toml`, `.drama`, `credits.txt`) and
+  of the game's own strings: text the game builds from anything else (none of the base game's) would
+  show its other Hanja as blanks on the web.
 
 Natively the same child works from any directory whose `extends` path reaches the parent, so a mod
 meant for both keeps its parent at a name other than `base` in both layouts (for example

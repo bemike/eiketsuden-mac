@@ -12,7 +12,8 @@
 #            (a no-cache variant of `python3 -m http.server`)
 #
 # Relative --data / --out paths are taken relative to the current directory. The site is laid out
-# by tools/web/assemble.py (Python 3.11+), the same step the GitHub Pages workflow runs. Browsers
+# by tools/web/assemble.py (Python 3.11+; with fontTools it subsets the fonts), the same step the
+# GitHub Pages workflow runs. Browsers
 # cannot load WebAssembly from file:// URLs, so the folder has to be served over HTTP. Open
 # http://localhost:<port>/#gallery for the UI gallery.
 set -eu

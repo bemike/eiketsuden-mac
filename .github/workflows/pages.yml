@@ -71,8 +71,10 @@ jobs:
       - name: Build WebAssembly
         run: cargo build --release -p hero-game --target wasm32-unknown-unknown
       - name: Assemble site
-        # The same step as tools/web/build.sh and build.ps1.
-        run: python tools/web/assemble.py --wasm target/wasm32-unknown-unknown/release/eiketsuden.wasm --out site
+        # The same step as tools/web/build.sh and build.ps1; fontTools subsets the fonts.
+        run: |
+          pip install "fonttools==4.66.0"
+          python tools/web/assemble.py --wasm target/wasm32-unknown-unknown/release/eiketsuden.wasm --out site --require-font-subset
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

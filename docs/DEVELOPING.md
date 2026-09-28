@@ -10,7 +10,8 @@ formats are described in [ARCHITECTURE.md](ARCHITECTURE.md), [RULES.md](RULES.md
 * Windows only: the resource compiler that embeds the application icon (`rc.exe` of the Windows SDK,
   installed with the MSVC build tools; `windres` and `ar` of binutils for the GNU toolchain). The icon is drawn by
   `tools/assets/build_icon.py` (`crates/hero-game/icon/`)
-* Python 3.11+ to assemble (and serve) the web build; PowerShell 7 (`pwsh`) for the `.ps1` scripts
+* Python 3.11+ to assemble (and serve) the web build, with fontTools (`pip install fonttools`) to subset its fonts;
+  PowerShell 7 (`pwsh`) for the `.ps1` scripts
 
 Before committing, run what CI runs for the crates you touched:
 
@@ -72,7 +73,10 @@ runs): `index.html`, `mq_js_bundle.js`, `hero_web.js`, the wasm and `data/base/`
 rebuilt wasm. `-Data` / `--data` copies another pack to `<out>/data/base/` (the web build always
 loads the top pack from there) together with every pack it `extends`, each at the path its child's
 `extends` names; a parent that would land on `data/base/` itself (`extends = "../base"`) is an error
-(see [MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). Open `http://localhost:8080/`, or
+(see [MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). The site's copies
+of the fonts keep only the Hanja the game can show (those in the packs' text files and in the wasm's
+own strings), about 0.7 MB less to download (gzip); without fontTools they are copied whole, with a
+warning (the Pages workflow passes `--require-font-subset`, which makes that an error). Open `http://localhost:8080/`, or
 `http://localhost:8080/#gallery` for the UI gallery. Browsers refuse to load WebAssembly from
 `file://` URLs, so the folder has to be served.
 
