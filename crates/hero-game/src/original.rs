@@ -219,6 +219,11 @@ pub const MAX_LISTED: usize = 1000;
 /// Most subfolders checked for [`looks_like_install`] in one folder (each check lists a folder).
 pub const MAX_CHECKED: usize = 300;
 
+/// Whether every folder of a [`list`] was checked for an install (the ★ marks are complete).
+pub fn all_checked(folders: &[Folder]) -> bool {
+    folders.len() <= MAX_CHECKED
+}
+
 /// A place in the folder browser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Place {
@@ -305,7 +310,7 @@ pub fn list(place: &Place) -> Result<Vec<Folder>, String> {
 /// Only a listing whose folders were all checked ([`list`] checks the first `MAX_CHECKED`) can
 /// tell that one is the only install, so a longer one offers none.
 pub fn sole_install(folders: &[Folder]) -> Option<&Folder> {
-    if folders.len() > MAX_CHECKED {
+    if !all_checked(folders) {
         return None;
     }
     let mut installs = folders.iter().filter(|f| f.install);
