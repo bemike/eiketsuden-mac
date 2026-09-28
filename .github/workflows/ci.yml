@@ -41,6 +41,16 @@ jobs:
               exit 1
             fi
           done
+      - name: Web JS plugin version matches the crate
+        # hero_web.js and platform/web.rs must be bumped together; the miniquad loader only reports
+        # a mismatch in the browser console, so a forgotten bump would go unnoticed.
+        run: |
+          js=$(sed -n 's/.*name: "hero_web", version: \([0-9]*\).*/\1/p' web/hero_web.js)
+          rs=$(sed -n 's/^pub const HERO_WEB_VERSION: u32 = \([0-9]*\);/\1/p' crates/hero-game/src/platform/web.rs)
+          if [ -z "$js" ] || [ -z "$rs" ] || [ "$js" != "$rs" ]; then
+            echo "::error::web/hero_web.js version '$js' != HERO_WEB_VERSION '$rs' in crates/hero-game/src/platform/web.rs"
+            exit 1
+          fi
       - name: WebAssembly clippy
         run: cargo clippy -p hero-game --target wasm32-unknown-unknown -- -D warnings
       - name: WebAssembly build
@@ -59,10 +69,12 @@ jobs:
         run: pip install pillow "fonttools[woff]" ruff==0.16.9
       - name: Lint
         run: |
-          ruff check tools/assets
-          ruff format --check tools/assets
+          ruff check tools/assets tools/web
+          ruff format --check tools/assets tools/web
       - name: Unit tests
-        run: python -m unittest discover -s tools/assets -p "test_*.py"
+        run: |
+          python -m unittest discover -s tools/assets -p "test_*.py"
+          python -m unittest discover -s tools/web -p "test_*.py"
       - name: Application icon matches its script
         run: python tools/assets/build_icon.py --check
 

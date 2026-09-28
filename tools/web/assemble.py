@@ -73,8 +73,7 @@ def chain(top: Path) -> list[tuple[Path, str]]:
         parent_site = posixpath.normpath(posixpath.join(site, rel))
         if parent_site.startswith("..") or parent_site == ".":
             raise AssembleError(
-                f"{source / 'pack.toml'}: extends = {rel!r} leaves the site's data/ folder "
-                f"(from data/{site}/)"
+                f"{source / 'pack.toml'}: extends = {rel!r} leaves the site's data/ folder (from data/{site}/)"
             )
         if any(parent_site == placed for _, placed in packs):
             raise AssembleError(
