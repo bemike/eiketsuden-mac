@@ -26,6 +26,9 @@
     canvas.addEventListener("mouseleave", function () { pointerInside = false; });
     canvas.addEventListener("mouseenter", function () { pointerInside = true; });
     window.addEventListener("blur", function () { pointerInside = false; });
+    // Back from another window without leaving the canvas, no mouseenter comes: the first move
+    // over the canvas (with the page focused) turns it back on.
+    canvas.addEventListener("mousemove", function () { pointerInside = document.hasFocus(); });
   }
 
   function register_plugin(importObject) {
