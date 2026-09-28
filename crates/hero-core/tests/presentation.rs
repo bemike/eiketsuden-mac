@@ -1,5 +1,5 @@
-//! `[presentation]` of `pack.toml`: the default canvas, the allowed range (checked when the
-//! manifest loads) and the warning for canvases the frontend's screens are not laid out for.
+//! `[presentation]` of `pack.toml`: the default canvas and the allowed range (checked when the
+//! manifest loads).
 
 mod common;
 

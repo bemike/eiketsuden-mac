@@ -1426,11 +1426,12 @@ mod tests {
         assert_eq!(portrait_light("liu_bei", &Spotlight::Nobody), DIMMED);
     }
 
-    /// Canvas sizes the layout tests run on: the default, VGA and the smallest allowed.
+    /// Canvas sizes the layout tests run on: the default (also the smallest allowed), VGA and
+    /// the largest allowed.
     const CANVASES: [Vec2; 3] = [
         crate::gfx::DEFAULT_CANVAS,
         Vec2::new(640.0, 480.0),
-        Vec2::new(320.0, 200.0),
+        Vec2::new(1280.0, 800.0),
     ];
 
     #[test]

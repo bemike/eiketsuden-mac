@@ -43,8 +43,9 @@ canvas = [640, 480]   # virtual canvas in pixels, each side within 480×270 ..= 
   `canvas` the canvas is 480×270. Every screen is laid out relative to the canvas: windows
   are centred or anchored to its edges, lists and panels grow with it, fonts keep their pixel size
   (so a bigger canvas shows more, not bigger, text). 480×270 is also the smallest canvas: the camp
-  and battle screens are laid out for at least that size (`docs/DECISIONS.md` D13). Procedural backdrops (title, credits, missing drama backgrounds) are designed for
-  a 270-pixel-high canvas and stretch vertically with the canvas height.
+  and battle screens are laid out for at least that size (`docs/DECISIONS.md` D13). Procedural
+  backdrops (title, credits, missing drama backgrounds) are designed for a 270-pixel-high canvas and
+  stretch vertically with the canvas height.
 * **Tile size.** The battle map, camera, cursor, range highlights, unit placement, floating numbers,
   effects and pointer hit-testing use the tileset's `tile_size`: one atlas pixel is one virtual
   pixel. Maps are drawn with flat colours at 16 pixels per tile when the tileset is missing. The
