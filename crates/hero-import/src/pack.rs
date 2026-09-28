@@ -880,9 +880,6 @@ fn convert_battles(
          base battle keeps an event with the same trigger, the base event stays"
             .into(),
     );
-    report.notes.push(
-        "AI modes 0, 5 and 6 are inferred (docs/reverse-engineering/FORMATS.md §13.4)".into(),
-    );
     Ok((report, records, wrote_drama))
 }
 

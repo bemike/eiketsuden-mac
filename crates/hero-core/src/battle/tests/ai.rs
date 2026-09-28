@@ -204,6 +204,42 @@ fn guard_stays_within_three_tiles_of_its_post() {
     assert!(to.manhattan(p(1, 1)) < p(7, 7).manhattan(p(1, 1)));
 }
 
+/// `march` walks to its unit or tile without attacking anything on the way, then waits; a
+/// marching foe is no threat to plan around.
+#[test]
+fn march_moves_without_attacking() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    // On the way: a unit that could attack it would stop next to it and strike.
+    let bystander = add(&mut st, &pack, Side::Player, "infantry", 1, p(4, 2));
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    st.units[foe].ai = AiMode::March;
+    st.units[foe].ai_pos = Some(p(7, 1));
+    enemy_phase(&mut st);
+    let plan = st.ai_actions(&pack, foe);
+    let to = move_target(&plan).expect("marches");
+    assert!(to.manhattan(p(7, 1)) < p(1, 1).manhattan(p(7, 1)), "{to:?}");
+    assert_eq!(
+        last(&plan),
+        &Action::Wait { unit: foe },
+        "no attack on {bystander}"
+    );
+    // Towards a unit when it has one.
+    st.units[foe].ai_pos = None;
+    st.units[foe].ai_target = Some("mark".into());
+    let mark = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 7));
+    st.units[mark].tag = Some("mark".into());
+    let to = move_target(&st.ai_actions(&pack, foe)).expect("marches");
+    assert!(to.manhattan(p(1, 7)) < p(1, 1).manhattan(p(1, 7)), "{to:?}");
+    // Next to the destination it steps onto it (a reach trigger there needs the tile itself).
+    st.units[foe].ai_target = None;
+    st.units[foe].ai_pos = Some(p(1, 2));
+    assert_eq!(move_target(&st.ai_actions(&pack, foe)), Some(p(1, 2)));
+    // At the destination it waits.
+    st.units[foe].ai_pos = Some(p(1, 1));
+    assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
+}
+
 #[test]
 fn flee_maximises_the_distance_to_hostile_units() {
     let pack = pack(OPEN_MAP);

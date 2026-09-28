@@ -53,10 +53,11 @@
 //!   store **row, column** (record bytes 4 and 5): read that way, every tile whose script gives
 //!   gold or an item is a granary or treasury on the map, and the "reach" objectives are the
 //!   granary (Jieqiao) and forts (Julu, Huainan) their objective texts name.
-//! * **AI** ([`ai_mode`]): 1 attacks (Lü Bu at Hulao switches from 2 to 1 on turn 18, when he
-//!   leaves the gate), 2 holds its ground (`guard`), 3 and 5 go for an officer (`target`), 4 and 6
-//!   head for a tile (`advance`), 0 — the most common — waits until approached (`defensive`). The
-//!   meaning of 0, 5 and 6 is inferred **[추론]**.
+//! * **AI** ([`ai_mode`]): `MAIN.EXE` maps each mode to an AI routine and names them (FORMATS
+//!   §13.4): 0 대기 waits until an enemy can be reached (`defensive`), 1 최단 적공격 attacks the
+//!   nearest enemy (`aggressive`), 2 부동 never moves (`hold`), 3 and 4 이동 head for an officer
+//!   or a tile and fight on the way (`target`, `advance`), 5 and 6 무공격이동 head there without
+//!   attacking (`march`).
 //! * **Cast.** Where the base pack gives an original person's part to another officer (the bandit
 //!   chiefs Liu Bei wins over), [`Pairing::roles`] names the officer who plays it.
 //! * **Classes** follow the game's class order ([`crate::pack::CLASS_SPRITES`]); **items** match
@@ -365,10 +366,28 @@ pub fn ai_mode(mode: u8, param: u16) -> (AiMode, Option<u16>, Option<Pos>) {
     };
     match mode {
         1 => (AiMode::Aggressive, None, None),
-        2 => (AiMode::Guard, None, None),
-        3 | 5 => (AiMode::Target, Some(param), None),
-        4 | 6 => (AiMode::Advance, None, tile()),
+        2 => (AiMode::Hold, None, None),
+        3 => (AiMode::Target, Some(param), None),
+        4 => (AiMode::Advance, None, tile()),
+        5 => (AiMode::March, Some(param), None),
+        6 => (AiMode::March, None, tile()),
         _ => (AiMode::Defensive, None, None),
+    }
+}
+
+/// The AI of a unit whose target officer could not be resolved: `target` attacks the nearest
+/// enemy instead, `march` (which never attacks) stays where it is.
+fn without_target(ai: AiMode) -> AiMode {
+    match ai {
+        AiMode::March => AiMode::Hold,
+        _ => AiMode::Aggressive,
+    }
+}
+
+fn fallback_note(ai: AiMode) -> &'static str {
+    match ai {
+        AiMode::Hold => "holds its ground instead",
+        _ => "attacks instead",
     }
 }
 
@@ -1080,11 +1099,12 @@ impl EventWriter<'_, '_> {
                         match self.unit_ref(t) {
                             Ok(Some(r)) => ai_target = Some(r),
                             _ => {
+                                ai = without_target(ai);
                                 self.notes.push(format!(
-                                    "record {record}: AI target {} is not on the map; attacks instead",
-                                    self.names.person_label(t)
+                                    "record {record}: AI target {} is not on the map; {}",
+                                    self.names.person_label(t),
+                                    fallback_note(ai)
                                 ));
-                                ai = AiMode::Aggressive;
                             }
                         }
                     }
@@ -1407,12 +1427,13 @@ pub fn convert(
                 match officer_ref(t) {
                     Some(id) => spawn.ai_target = Some(id),
                     None => {
+                        spawn.ai = without_target(spawn.ai);
                         notes.push(format!(
-                            "{}: AI target {} has no base-pack officer; attacks instead",
+                            "{}: AI target {} has no base-pack officer; {}",
                             names.person_label(u.person),
-                            names.person_label(t)
+                            names.person_label(t),
+                            fallback_note(spawn.ai)
                         ));
-                        spawn.ai = AiMode::Aggressive;
                     }
                 }
             }
@@ -1472,8 +1493,8 @@ pub fn convert(
                 .zip(&persons)
                 .filter(|(_, &p)| p == get("person"))
             {
-                (u.ai, u.ai_target, u.ai_pos) = match (ai, &ai_target) {
-                    (AiMode::Target, None) => (AiMode::Aggressive, None, None),
+                (u.ai, u.ai_target, u.ai_pos) = match (target, &ai_target) {
+                    (Some(_), None) => (without_target(ai), None, None),
                     _ => (ai, ai_target.clone(), ai_pos),
                 };
             }
@@ -2302,11 +2323,16 @@ mod tests {
     #[test]
     fn ai_modes() {
         assert_eq!(ai_mode(1, 0), (AiMode::Aggressive, None, None));
-        assert_eq!(ai_mode(2, 0), (AiMode::Guard, None, None));
+        assert_eq!(ai_mode(2, 0), (AiMode::Hold, None, None));
         assert_eq!(ai_mode(3, 7), (AiMode::Target, Some(7), None));
         assert_eq!(
-            ai_mode(6, 0x0D16),
+            ai_mode(4, 0x0D16),
             (AiMode::Advance, None, Some(Pos::new(22, 13)))
+        );
+        assert_eq!(ai_mode(5, 7), (AiMode::March, Some(7), None));
+        assert_eq!(
+            ai_mode(6, 0x0D16),
+            (AiMode::March, None, Some(Pos::new(22, 13)))
         );
         assert_eq!(ai_mode(0, 0), (AiMode::Defensive, None, None));
     }
@@ -2510,7 +2536,11 @@ item = "wine"
         // The hidden units wait for the records that bring them in.
         assert_eq!(b.units[2].group.as_deref(), Some("original_7"));
         assert_eq!(b.units[3].group.as_deref(), Some("original_10"));
-        assert_eq!(b.units[4].ai, AiMode::Guard, "the opening's AI");
+        assert_eq!(
+            b.units[4].ai,
+            AiMode::Hold,
+            "the opening's AI (mode 2, 부동)"
+        );
 
         assert_eq!(
             b.victory,

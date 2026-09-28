@@ -431,6 +431,11 @@ fn deploy_checks() {
 #[test]
 fn unit_checks() {
     run(&[
+        warning(
+            &[(B01, "pos = [4, 3]", "pos = [4, 3]\nai = \"march\"")],
+            "battle b01 unit #2 (deng_mao)",
+            "ai = \"march\" without ai_target or ai_pos has nowhere to go",
+        ),
         error(
             &[(B01, "pos = [4, 3]", "pos = [40, 3]")],
             "battle b01 unit #2 (deng_mao)",

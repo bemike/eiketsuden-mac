@@ -49,6 +49,9 @@ pub enum AiMode {
     Advance,
     /// Move away from hostile units (fleeing civilians, escaping commanders).
     Flee,
+    /// Head for the unit named by `ai_target`, else for `ai_pos`, without attacking or using
+    /// strategies (the original's 무공격이동); it waits once there or without a destination.
+    March,
 }
 
 /// The map of a battle: written in the battle file, or taken from the pack's map files with

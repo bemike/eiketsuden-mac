@@ -1128,6 +1128,12 @@ impl<'a> Validator<'a> {
             if u.ai == AiMode::Target && u.ai_target.is_none() {
                 self.error(&uctx, "ai = \"target\" needs an ai_target");
             }
+            if u.ai == AiMode::March && u.ai_target.is_none() && u.ai_pos.is_none() {
+                self.warn(
+                    &uctx,
+                    "ai = \"march\" without ai_target or ai_pos has nowhere to go; the unit waits",
+                );
+            }
             if let Some(t) = &u.ai_target {
                 if !names.contains(t.as_str()) {
                     self.error(
@@ -1320,6 +1326,12 @@ impl<'a> Validator<'a> {
                     self.warn(
                         ctx,
                         "set_ai to `advance` without an ai_pos clears the destination; the unit then behaves as `aggressive`",
+                    );
+                }
+                if *ai == AiMode::March && ai_target.is_none() && ai_pos.is_none() {
+                    self.warn(
+                        ctx,
+                        "set_ai to `march` without ai_target or ai_pos has nowhere to go; the unit waits",
                     );
                 }
             }
