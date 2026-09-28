@@ -375,6 +375,41 @@ fn unit_sheets_match_their_frame_size() {
 }
 
 #[test]
+fn big_tileset_caches_are_reported() {
+    let dir = TempDir::new("media-cache");
+    complete_media(&dir.0);
+    let tiles = std::fs::read_to_string(dir.0.join("gfx/tiles/terrain.toml")).unwrap();
+    // 16-pixel tiles: every fixture map is small.
+    assert!(load_fixture().missing_media(&dir.0).is_empty());
+    // 1024-pixel tiles: the 9×7 castle map of b02 takes 11 × 9 tiles of cache, 396 MB.
+    write(
+        &dir.0,
+        "gfx/tiles/terrain.toml",
+        tiles.replacen("tile_size = 16", "tile_size = 1024", 1),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "battle b02",
+        "this 9×7 map with 1024-pixel tiles takes 396 MB of texture memory in battle (more than 64 MB)",
+    );
+    // The largest tile size does not overflow the arithmetic.
+    write(
+        &dir.0,
+        "gfx/tiles/terrain.toml",
+        tiles.replacen("tile_size = 16", "tile_size = 4294967295", 1),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "battle b02",
+        "this 9×7 map with 4294967295-pixel tiles takes",
+    );
+}
+
+#[test]
 fn hanja_the_fonts_lack_are_reported() {
     let dir = TempDir::new("media-hanja");
     complete_media(&dir.0);

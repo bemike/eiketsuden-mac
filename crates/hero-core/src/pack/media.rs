@@ -20,6 +20,9 @@ const ICONS_TOML: &str = "gfx/ui/icons.toml";
 /// Largest texture side many mobile GPUs load (WebGL 2 guarantees 2048); a bigger picture comes
 /// out black there. The tileset-drawn map cache is split into pieces instead.
 const MOBILE_TEXTURE: u32 = 4096;
+/// Pixels of cache a map drawn from the tileset may take (the battle caches its static layers
+/// with one tile of padding, 4 bytes a pixel): 4096² is 64 MB.
+const CACHE_BUDGET: u128 = 4096 * 4096;
 const UNKNOWN_PORTRAIT: &str = "gfx/portraits/_unknown.png";
 
 impl Pack {
@@ -305,11 +308,31 @@ impl MediaCheck {
             }
         }
         for (ctx, def) in users {
-            // Bad keys are reported by `Pack::validate`.
-            let Some(key) = def.image.as_deref().filter(|k| is_media_key(k)) else {
+            let Ok(map) = BattleMap::parse(&def.rows, &def.legend, &pack.terrain) else {
                 continue;
             };
-            let Ok(map) = BattleMap::parse(&def.rows, &def.legend, &pack.terrain) else {
+            if def.image.is_none() {
+                // Drawn from the tileset into a cache the size of the map (plus padding).
+                // In u128: a huge tile_size times a big map overflows u64.
+                let tile = u128::from(self.tile_size);
+                let area = (map.width as u128 + 2) * tile * (map.height as u128 + 2) * tile;
+                if area > CACHE_BUDGET {
+                    self.push(
+                        Severity::Warning,
+                        &ctx,
+                        format!(
+                            "drawn from the tileset, this {}×{} map with {tile}-pixel tiles takes {} MB of texture memory in battle (more than {} MB): use a smaller tile_size or split the map",
+                            map.width,
+                            map.height,
+                            (area * 4).div_ceil(1024 * 1024),
+                            CACHE_BUDGET * 4 / (1024 * 1024)
+                        ),
+                    );
+                }
+                continue;
+            }
+            // Bad keys are reported by `Pack::validate`.
+            let Some(key) = def.image.as_deref().filter(|k| is_media_key(k)) else {
                 continue;
             };
             let rel = format!("gfx/maps/{key}.png");
