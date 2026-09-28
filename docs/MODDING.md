@@ -55,6 +55,7 @@ Typical workflow:
 hero-tools validate my_pack          # load + cross-check everything, list errors and warnings
 hero-tools info my_pack              # content summary
 hero-tools simulate my_pack --seeds 8   # let the AI fight every battle, find unwinnable maps
+hero-tools simulate my_pack --campaign  # play the campaign through, with the army carried over
 eiketsuden --data my_pack            # play it (or set EIKETSUDEN_DATA=my_pack)
 ```
 
@@ -1156,6 +1157,7 @@ has errors (or a simulation failed), 2 = bad command line.
 ```
 hero-tools validate <pack_dir>
 hero-tools simulate <pack_dir> [--seeds N] [--battle ID]
+hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N[,N...]]...
 hero-tools info <pack_dir>
 hero-tools --help | --version
 ```
@@ -1173,6 +1175,23 @@ hero-tools --help | --version
   are deployed first, then the roster up to `deploy.max`. It prints the win rate and average turns per
   battle, warns about battles that are never or always won, and fails (exit 1) when a battle panics, cannot
   be set up or does not finish within 200 phases.
+* **simulate --campaign** — plays the whole campaign from a new game once per seed, the way the game does:
+  drama nodes, the scenes battles play and an ending's scene run with their effects (flags, gold, items,
+  officers joining), camps buy and equip nothing and deploy what the camp screen selects when the player
+  changes nothing (the first camp the whole army fitted to `deploy.max`, later camps that same selection
+  fitted to their battle: an officer who joins later is not added), battles are fought AI against AI with
+  the army earlier battles left (levels, classes, recruits, items), and a defeat follows the battle's
+  `on_defeat` or ends the run (game over). A choice takes option N (1 = the first) where `--choose
+  SCENE=N,N,...` names its scene, one N per choice the scene asks in order (a scene played again asks
+  again); past them, and by default, the first option not taken yet at that question while the scene
+  plays, so a question that leads back to itself until answered right is left the way a player would
+  (a scene asking more than 100 choices in one play fails the run). It prints how each run ended and the choices
+  it took, then per battle how often it was fought and won, its average turns and the army's average level
+  at its start; it warns when no run reaches an ending or a `--choose` scene never asks, and fails (exit 1)
+  when a run panics, a battle does not finish within 200 phases, the campaign cannot go on (a missing
+  scene, an option the choice does not have) or a run passes 1000 nodes. A `--choose` naming a scene the
+  pack does not have is a command line error (exit 2). Where the game would show an error and go on,
+  the tool fails: it is a check.
 
 Every command takes the top pack directory of a [layered pack](#layered-packs-extends) and works on the
 whole chain.

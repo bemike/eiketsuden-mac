@@ -3,6 +3,7 @@
 //! (`original probe|extract|pack`). See `hero-tools --help`, `docs/MODDING.md` and
 //! `docs/ORIGINAL_DATA.md`.
 
+mod campaign_sim;
 mod cli;
 mod info;
 mod original;
@@ -51,6 +52,11 @@ fn main() -> ExitCode {
             seeds,
             battle,
         } => simulate::run(&pack, seeds, battle.as_deref()),
+        Command::SimulateCampaign {
+            pack,
+            seeds,
+            choose,
+        } => campaign_sim::run(&pack, seeds, &choose),
         Command::Info { pack } => info::run(&pack).map_err(Failure::Failed),
         Command::OriginalProbe { dir, out } => {
             original::run_probe(&dir, out.as_deref()).map_err(Failure::Failed)
