@@ -152,9 +152,10 @@ Linux and in the browser via WebAssembly.
 * Optional, experimental importer for players who own the original game
   ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)), and a fully data-driven, moddable format
   ([docs/MODDING.md](docs/MODDING.md)); a layered pack (`extends`) holds only the files a mod changes.
-* How the engine is built — the OpenRCT2 model without decompiling the original: a new engine from the
-  published rules, license-clean data packs, and the original game only ever read from the player's own copy
-  and converted at launch — is described in [docs/ENGINE.md](docs/ENGINE.md) (Korean, English summary).
+* How the engine is built — the OpenRCT2 model without reverse-engineering the original's code: a new engine
+  from the published rules, license-clean data packs, and the original game read from the player's own copy
+  and converted at launch (native builds) — is described in [docs/ENGINE.md](docs/ENGINE.md) (Korean,
+  English summary).
 * Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
   (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).

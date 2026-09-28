@@ -1,10 +1,11 @@
 # 엔진은 어떻게 만들어졌나
 
 > **English summary** — How Eiketsuden Reloaded is built. It follows the OpenRCT2/OpenTTD model (an
-> open-source engine; the content is data) but not OpenRCT2's route of decompiling the original executable and
-> replacing its functions one by one: the engine is written from scratch from the published rules, content
-> ships as license-clean data packs, and the original game is only ever *read* — statically, from the player's
-> own copy — to convert its art, maps and battle scripts into the same pack format at every launch. The page
+> open-source engine; the content is data) but not their route of reverse-engineering the original program's code
+> into a re-implementation: the engine is written from scratch from the published rules, content ships as
+> license-clean data packs, and the original game is only read — from the player's own copy, never run — and
+> converted into the same pack format at every launch (native builds; the development tools can also write the
+> result to a local folder the player chooses). The page
 > explains the three layers (engine, base pack, original mode), how the rules and the original formats were
 > established, how a converted battle reaches the screen, and the development practice (data validation,
 > deterministic AI-vs-AI simulation, synthetic fixtures plus gated golden tests on a real copy, recorded
@@ -17,7 +18,8 @@
 ## 1. 한 줄 요약
 
 **원작 게임을 흉내 내는 새 엔진 + 그 엔진이 읽는 데이터.** [OpenRCT2](https://openrct2.io/)가 롤러코스터 타이쿤 2를,
-[OpenTTD](https://www.openttd.org/)가 트랜스포트 타이쿤을 되살린 것과 같은 모델입니다. 엔진은 오픈소스(GPL-3.0)이고,
+[OpenTTD](https://www.openttd.org/)가 트랜스포트 타이쿤을 되살린 것과 같은 모델입니다. 엔진은 오픈소스
+(GPL-3.0-or-later)이고,
 화면에 나오는 모든 것(규칙 수치·무장·맵·전투·대사·그림·음악)은 **데이터 팩**에서 옵니다.
 
 ## 2. OpenRCT2와 같은 점, 다른 점
@@ -25,13 +27,15 @@
 | | OpenRCT2 | 영걸전 Reloaded |
 |---|---|---|
 | 목표 | 원작과 같은 게임을 현대 환경에서 | 같음(PC판 규칙, Windows·macOS·Linux·웹) |
-| 출발점 | 원작 실행 파일을 **디컴파일**해 함수 단위로 C/C++로 옮기며 원작 바이너리를 점점 대체 | 원작 코드를 옮기지 않고, 공개된 규칙 공식과 플레이 사실로 **엔진을 처음부터 새로 작성**(Rust) |
+| 출발점 | 원작 실행 파일을 **디컴파일**해 함수 단위로 C/C++로 옮기며 원작 바이너리를 점점 대체(OpenTTD도 원작을 역어셈블한 재구현에서 출발) | 원작 코드를 옮기지 않고, 공개된 규칙 공식과 플레이 사실로 **엔진을 처음부터 새로 작성**(Rust) |
 | 원작 파일 | 설치본이 **필수**(그래픽·사운드·시나리오를 읽음) | **선택**. 원작 없이도 끝까지 플레이할 수 있는 라이선스 청정 기본 팩을 함께 배포 |
-| 원작 데이터 사용 | 실행할 때 원작 형식을 직접 읽음 | 실행할 때마다 원작 파일을 **엔진의 팩 형식으로 변환**해 메모리에 얹음(원작 모드) |
+| 원작 데이터 사용 | 실행할 때 원작 형식을 직접 읽음 | 실행할 때마다 원작 파일을 **엔진의 팩 형식으로 변환**해 메모리에 얹음(원작 모드, 네이티브 빌드 전용. 웹에서는 로컬 폴더를 읽을 수 없음) |
 | 원작 실행 파일 | 코드의 원천 | 데이터 표(팔레트·맵 표·칸 변경 표)를 찾는 대상일 뿐. **읽기 전용 정적 분석**, 실행하지 않음 |
 
-원작 코드를 옮기지 않기로 한 이유는 [DECISIONS.md](DECISIONS.md) D3·D5에 있습니다. 요약하면 (1) 저장소와 배포물에
-KOEI의 저작물이 한 바이트도 들어가지 않게 하고, (2) 원작 없이도 누구나 플레이·모딩할 수 있게 하기 위해서입니다.
+이렇게 한 이유는 [DECISIONS.md](DECISIONS.md) D3(에셋 정책)·D5(공개)·D6(클린룸 임포터)에 있습니다. 요약하면
+(1) 저장소와 배포물에 KOEI의 그래픽·음악·텍스트·실행 코드를 넣지 않고, (2) 원작 없이도 누구나 플레이·모딩할 수 있게
+하기 위해서입니다. 예외는 원작 형식을 설명하는 데 필요한 사실입니다. 형식 문서의 구조와 몇몇 표 값, 그리고 사용자
+실행 파일에서 표를 찾기 위한 짧은 코드 서명이 여기에 해당합니다([FORMATS §15](reverse-engineering/FORMATS.md#main-exe)).
 
 ## 3. 세 층
 
@@ -42,8 +46,8 @@ KOEI의 저작물이 한 바이트도 들어가지 않게 하고, (2) 원작 없
                │ 같은 팩 형식             │
 ┌──────────────┴───────────┐  ┌───────────┴──────────────────────────────┐
 │ 기본 팩 data/base        │  │ 원작 모드 팩 (사용자 PC에서만 만들어짐)   │
-│ CC0·CC-BY·퍼블릭 도메인  │◀─│ extends = 기본 팩. 원작 설치본에서 변환한 │
-│ 그림·음악, 새로 쓴 대사  │  │ 얼굴·유닛·지형·맵·전투·전투 대사          │
+│ 공개 라이선스 그림·음악  │◀─│ extends = 기본 팩. 원작 설치본에서 변환한 │
+│ 새로 쓴 대사 (CREDITS)   │  │ 얼굴·유닛·지형·맵·전투·전투 대사          │
 └──────────────────────────┘  └──────────────────────────────────────────┘
 ```
 
@@ -72,13 +76,15 @@ KOEI의 저작물이 한 바이트도 들어가지 않게 하고, (2) 원작 없
 
 * **구조 불변식을 정답 삼기**: 컨테이너 디렉터리가 파일 끝에서 정확히 끝나는지, 압축이 선언한 길이로 풀리는지,
   대사 파일의 모든 바이트가 시나리오 스크립트로 덮이는지 같은 조건을 실물 전체에 걸어 가설을 검증합니다.
-* **실행 파일은 표를 찾는 대상**: 팔레트·맵 칩 뱅크 목록·지형 이름·성문/적교 변경 표 같은 데이터는 그 표를 **읽는
-  코드의 바이트 패턴**(코드 서명)으로 찾습니다. 그래서 표 값을 저장소에 복사하지 않고 사용자의 실행 파일에서 읽으며,
-  다른 빌드에도 같은 방법이 통합니다([FORMATS §15](reverse-engineering/FORMATS.md#main-exe)).
+* **실행 파일은 표를 찾는 대상**: 맵 칩 뱅크 목록·성문/적교 변경 표 같은 데이터는 그 표를 **읽는 코드의 바이트
+  패턴**(코드 서명)으로, 팔레트는 표 자체의 모양(데이터 서명)으로 찾습니다. 게임은 표 값을 저장소가 아니라 사용자의
+  실행 파일에서 읽습니다. 다른 빌드에도 통하도록 설계했지만 확인한 것은 한국어판 한 벌뿐입니다
+  ([FORMATS §15](reverse-engineering/FORMATS.md#main-exe)).
 * **뜻을 모르면 추측하지 않음**: 형식 문서의 모든 항목에 [검증]·[코드]·[추론]·[미상]을 표시합니다. 추론으로 옮긴 것
-  (예: AI 방식 0·5·6)은 변환 결과와 문서에 그렇다고 적습니다.
-* **저장소에는 사실만**: 원작 바이트·표·그림·대사는 저장소와 CI에 없습니다. 테스트는 우리 인코더로 만든 합성 데이터를
-  쓰고, 실물 검증은 원작을 가진 개발자의 PC에서만 도는 골든 테스트(`EIKETSU_ORIGINAL_DIR`)로 합니다.
+  (예: 화면별 팔레트 슬롯)은 변환 결과와 문서에 그렇다고 적고, 코드로 확인되면 표기를 바꿉니다.
+* **저장소에는 사실만**: 원작의 그림·대사·음악과 파일 자체는 저장소와 CI에 없습니다(형식 사실과 코드 서명은 위의
+  예외). 테스트는 우리 인코더로 만든 합성 데이터를 쓰고, 실물 검증은 원작을 가진 개발자의 PC에서만 도는 골든
+  테스트(`EIKETSU_ORIGINAL_DIR`)로 합니다.
 
 ## 6. 원작 전투가 화면에 오기까지 (예: 하비 전투)
 
@@ -87,10 +93,12 @@ KOEI의 저작물이 한 바이트도 들어가지 않게 하고, (2) 원작 없
    (무장·아이템), `MAIN.EXE`(팔레트·표)를 읽습니다.
 3. **팩 키로 옮기기** — 원작 맵은 그림 층 + 규칙 층의 맵 파일로(D9), 원작 전투는 기본 팩의 같은 전투를 원작의 맵·배치·
    명단·보물·증원으로 다시 짠 전투 파일로(D11) 만듭니다. 전투 블록의 트리거 레코드는 엔진 이벤트가 됩니다(D12):
-   예컨대 하비의 "30턴이 되거나, 후성·위속·송겸을 모두 설득한 뒤 유비가 적교 앞에 서면 적교가 내려오고 조조군이
-   합류한다"는 원작 스크립트는 `turn_start`·`reach` 트리거, `when` 플래그 조건, `set_terrain`(바뀐 칩으로 그린 칸
-   그림과 함께)·`spawn`·`set_ai`·`set_stage` 동작과 원작 대사로 만든 대사 장면이 됩니다.
-4. **검증** — 만든 팩은 기본 팩과 같은 검증기(`hero-tools validate`)를 통과해야 합니다.
+   예컨대 하비에서 "30턴이 되거나, 유비가 후성·위속·송겸과의 일기토(플래그 17·18·19)를 모두 마친 뒤 (12, 12) 칸에
+   서면 적교가 내려오고 조조군이 합류한다"는 원작 스크립트(FORMATS §13.2)는 `turn_start`·`reach` 트리거, `when`
+   플래그 조건, `set_terrain`(바뀐 칩으로 그린 칸 그림과 함께)·`spawn`·`set_ai`·`set_stage` 동작과 원작 대사로 만든
+   대사 장면이 됩니다.
+4. **검증** — 개발 중에는 `hero-tools original pack`과 골든 테스트로 변환 결과가 기본 팩과 같은 검증기를 통과하는지
+   확인합니다. 게임은 실행할 때 검증하지 않고, 팩을 불러오지 못하면 오류 화면으로 알립니다.
 5. **플레이** — 엔진은 이 팩을 기본 팩과 똑같이 읽습니다. 원작 바이트코드를 해석하는 별도 실행 경로는 없습니다.
 
 ## 7. 개발 방식
@@ -116,5 +124,6 @@ KOEI의 저작물이 한 바이트도 들어가지 않게 하고, (2) 원작 없
 * **모드·콘텐츠**: [MODDING.md](MODDING.md)의 형식으로 전투·장면·규칙을 만들 수 있습니다. 레이어드 팩(`extends`)으로
   바꾸는 파일만 담으면 됩니다.
 * **원작 판본 제보**: Steam판·번체 중문판·PC-98판을 가진 분은 `hero-tools original probe`로 만든 매니페스트(파일 이름·
-  크기·해시·첫 16바이트, 원작 내용 없음)를 이슈에 올려 주시면 형식 조사에 큰 도움이 됩니다([ORIGINAL_DATA.md](ORIGINAL_DATA.md) 5절).
+  크기·해시·형식 식별용 첫 16바이트·컨테이너 요약. 복원된 데이터·텍스트·그림은 없음)를 이슈에 올려 주시면 형식
+  조사에 큰 도움이 됩니다([ORIGINAL_DATA.md](ORIGINAL_DATA.md) 5절).
 * **개발**: 빌드와 테스트는 [DEVELOPING.md](DEVELOPING.md), 코드 구조는 [ARCHITECTURE.md](ARCHITECTURE.md).
