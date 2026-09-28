@@ -214,6 +214,42 @@ fn a_child_battle_overrides_the_parent_battle_with_the_same_id() {
     assert!(msg.contains("duplicate scene id `b03_intro`"), "{msg}");
 }
 
+/// Scenes the top pack no longer plays are reported only when they are its own: a parent's
+/// scene left over by a battle the child replaced is the parent's business.
+#[test]
+fn only_the_top_packs_unused_scenes_are_reported() {
+    let pack = load(&layered_files());
+    assert!(pack.parent_scenes.contains("oath"));
+    assert!(!pack.parent_scenes.contains("b03_intro"), "the child's own");
+    assert!(
+        !pack.parent_scenes.contains("b01_outro"),
+        "the child replaced it"
+    );
+
+    let mut files = layered_files();
+    let b01 =
+        files["../mini/battles/b01.toml"].replace("scene = \"b01_duel\"", "scene = \"b01_rein\"");
+    files.insert("battles/b01.toml".into(), b01);
+    edit(
+        &mut files,
+        "pack.toml",
+        "battles = [\"battles/b03.toml\"]",
+        "battles = [\"battles/b03.toml\", \"battles/b01.toml\"]",
+    );
+    append(
+        &mut files,
+        "dramas/ext.drama",
+        "\n== spare\n@narr 쓰이지 않는 장면.\n",
+    );
+    let issues = load(&files).validate();
+    assert!(
+        !issues.iter().any(|i| i.context == "scene b01_duel"),
+        "{}",
+        format_issues(&issues)
+    );
+    assert_issue(&issues, Severity::Warning, "scene spare", "is never played");
+}
+
 #[test]
 fn a_replaced_parent_battle_never_meets_the_child_terrain() {
     // The child's terrain drops the village glyph `v`, which mini's b01 uses; replacing b01 as

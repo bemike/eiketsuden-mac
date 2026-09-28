@@ -108,6 +108,23 @@ impl BattleMap {
         self.terrain_ids.get(idx).map(|s| s.as_str())
     }
 
+    /// Change the terrain at `p` to the terrain id `terrain` (added to the palette when the map
+    /// has no tile of it yet). Returns `false`, changing nothing, when `p` is out of bounds.
+    pub fn set_terrain(&mut self, p: Pos, terrain: &str) -> bool {
+        if !self.in_bounds(p) {
+            return false;
+        }
+        let idx = match self.terrain_ids.iter().position(|t| t == terrain) {
+            Some(i) => i,
+            None => {
+                self.terrain_ids.push(terrain.to_string());
+                self.terrain_ids.len() - 1
+            }
+        };
+        self.tiles[(p.y * self.width + p.x) as usize] = idx as u16;
+        true
+    }
+
     /// All positions, row-major.
     pub fn positions(&self) -> impl Iterator<Item = Pos> + '_ {
         (0..self.height).flat_map(move |y| (0..self.width).map(move |x| Pos::new(x, y)))
@@ -144,6 +161,17 @@ mod tests {
         assert_eq!(m.terrain_at(Pos::new(1, 1)), Some("forest"));
         assert_eq!(m.terrain_at(Pos::new(0, 1)), Some("river"));
         assert_eq!(m.terrain_at(Pos::new(3, 0)), None);
+
+        let mut changed = m.clone();
+        assert!(changed.set_terrain(Pos::new(0, 1), "plain"));
+        assert!(changed.set_terrain(Pos::new(1, 0), "bridge"));
+        assert!(
+            !changed.set_terrain(Pos::new(3, 0), "plain"),
+            "out of bounds"
+        );
+        assert_eq!(changed.terrain_at(Pos::new(0, 1)), Some("plain"));
+        assert_eq!(changed.terrain_at(Pos::new(1, 0)), Some("bridge"));
+        assert_eq!(changed.terrain_ids.len(), m.terrain_ids.len() + 1);
         assert_eq!(m.positions().count(), 6);
     }
 

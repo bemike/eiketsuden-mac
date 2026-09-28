@@ -386,6 +386,8 @@ pub enum Cue {
     Jingle(bool),
     /// Play a drama scene as an overlay; the queue waits for [`EventPlayer::resume`].
     Drama(String),
+    /// Show the map with this tile's new terrain (`set_terrain`).
+    Terrain(Pos),
 }
 
 /// One timed step of the event animation.
@@ -468,6 +470,8 @@ pub enum BeatKind {
         gold: i64,
     },
     Drama(String),
+    /// A tile's terrain changed: the view centres on it while the map shows the change.
+    Terrain(Pos),
     Outcome(bool),
 }
 
@@ -514,6 +518,8 @@ const POPUP_SECONDS: f32 = 1.8;
 const POPUP_MIN: f32 = 0.35;
 const OUTCOME_SECONDS: f32 = 2.6;
 const OUTCOME_MIN: f32 = 0.8;
+/// Seconds the view rests on a tile whose terrain an event changed.
+const TERRAIN_SECONDS: f32 = 0.6;
 
 /// Turn one batch of events into beats. Names are resolved now (the state is the one after
 /// the events happened, but names and classes do not change).
@@ -703,6 +709,7 @@ pub fn plan(
                 1.6,
             )),
             BattleEvent::Drama { scene } => BeatKind::Drama(scene.clone()),
+            BattleEvent::TerrainChanged { pos } => BeatKind::Terrain(*pos),
             BattleEvent::BonusAchieved { exp } => BeatKind::Banner(banner(
                 "보너스 달성!",
                 Some(format!("승리하면 출진한 전원 경험치 +{exp}")),
@@ -1324,6 +1331,13 @@ fn step(
                 cues.push(Cue::Drama(scene_id.clone()));
             }
             true
+        }
+        BeatKind::Terrain(pos) => {
+            if first {
+                cues.push(Cue::Center(*pos));
+                cues.push(Cue::Terrain(*pos));
+            }
+            t >= TERRAIN_SECONDS || skip
         }
         BeatKind::Outcome(victory) => {
             if first {

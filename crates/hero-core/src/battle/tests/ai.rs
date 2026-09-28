@@ -402,6 +402,8 @@ fn skirmish_pack() -> Pack {
                 side: Side::Enemy,
             },
             once: true,
+            stage: None,
+            when: Vec::new(),
             actions: vec![EventAction::Spawn {
                 group: "rein".into(),
             }],
@@ -412,6 +414,8 @@ fn skirmish_pack() -> Pack {
                 pct: 40,
             },
             once: true,
+            stage: None,
+            when: Vec::new(),
             actions: vec![EventAction::SetAi {
                 target: "boss".into(),
                 ai: AiMode::Flee,

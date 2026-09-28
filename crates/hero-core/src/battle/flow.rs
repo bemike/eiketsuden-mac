@@ -2,7 +2,9 @@
 //! battle events, conditions and the outcome (§9).
 
 use super::board::Board;
-use super::{BattleEvent, BattleState, DefeatReason, Outcome, UnitId, UnitState, Weather};
+use super::{
+    BattleEvent, BattleState, DefeatReason, MapImage, Outcome, UnitId, UnitState, Weather,
+};
 use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
 use crate::data::StatusKind;
 use crate::geom::Pos;
@@ -262,7 +264,11 @@ impl BattleState {
                 if self.outcome.is_some() {
                     return;
                 }
-                if this_check[i] || (e.once && self.fired[i]) {
+                if this_check[i]
+                    || (e.once && self.fired[i])
+                    || e.stage.is_some_and(|s| s != self.stage)
+                    || !self.conditions_hold(&e.when)
+                {
                     continue;
                 }
                 if only_turn_start && !matches!(e.trigger, Trigger::TurnStart { .. }) {
@@ -382,6 +388,23 @@ impl BattleState {
             }
             EventAction::SetFlag { flag, value } => {
                 self.flags.insert(flag.clone(), *value);
+            }
+            EventAction::SetStage { stage } => self.stage = *stage,
+            EventAction::SetTerrain {
+                pos,
+                terrain,
+                image,
+            } => {
+                if pack.terrain(terrain).is_some() && self.map.set_terrain(*pos, terrain) {
+                    self.map_images.retain(|m| m.pos != *pos);
+                    if let Some(image) = image {
+                        self.map_images.push(MapImage {
+                            pos: *pos,
+                            image: image.clone(),
+                        });
+                    }
+                    ev.push(BattleEvent::TerrainChanged { pos: *pos });
+                }
             }
             EventAction::Victory => {
                 if self.outcome.is_none() {

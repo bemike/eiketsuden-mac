@@ -724,6 +724,146 @@ pub fn find_exe_tables(exe: &[u8]) -> Result<ExeTables, ExeTableError> {
     })
 }
 
+/// What `MAIN.EXE` does to a battle-map cell when a scenario script changes it
+/// (`set_map_chip`, opcode `0x26`, FORMATS §13.3): the value is an operation, not a chip.
+/// Operations 0 and 1 open and close a gate, 2 lowers a drawbridge (3 would raise it; the data
+/// never does). The tables are read from the player's `MAIN.EXE` ([`find_cell_changes`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CellChanges {
+    /// Terrain codes by operation: operation `n` leaves the cell with `terrain[n ^ 1]`, and
+    /// every operation but the drawbridge acts only on a cell whose terrain is `terrain[n]`.
+    pub terrain: [u8; 4],
+    /// Chip offset by chip set (entry 1, entry 2 of `HEXZCHP`) and operation.
+    pub offsets: [[i16; 4]; 2],
+    /// Drawbridge: each chip equal to `swap_from[i]` becomes `swap_to[i]`, in table order.
+    pub swap_from: Vec<u8>,
+    pub swap_to: Vec<u8>,
+    /// Drawbridge: a cell that shows this chip afterwards becomes a bridge.
+    pub bridge_chip: u8,
+    /// Chips the offset operations replace outright: `(from, to)`.
+    pub fixed: [(u8, u8); 2],
+}
+
+/// The drawbridge operation of [`CellChanges`].
+pub const DRAWBRIDGE: u8 = 2;
+
+impl CellChanges {
+    /// The four chips (row-major) and terrain code of a cell after operation `op` (its high bit,
+    /// a redraw flag, is ignored); `None` when the operation leaves this cell alone. `second_set`
+    /// is whether the map draws with `HEXZCHP` entry 2.
+    pub fn apply(
+        &self,
+        chips: [u8; 4],
+        terrain: u8,
+        second_set: bool,
+        op: u8,
+    ) -> Result<Option<([u8; 4], u8)>, String> {
+        let op = op & 0x7f;
+        let Some(&after) = self.terrain.get(usize::from(op ^ 1)) else {
+            return Err(format!(
+                "map-cell operation {op} is not one the game knows (0–3)"
+            ));
+        };
+        if op == DRAWBRIDGE {
+            let chips = chips.map(|mut chip| {
+                for (&from, &to) in self.swap_from.iter().zip(&self.swap_to) {
+                    if chip == from {
+                        chip = to;
+                    }
+                }
+                chip
+            });
+            let terrain = if chips.contains(&self.bridge_chip) {
+                after
+            } else {
+                terrain
+            };
+            return Ok(Some((chips, terrain)));
+        }
+        if terrain != self.terrain[usize::from(op)] {
+            return Ok(None);
+        }
+        let offset = self.offsets[usize::from(second_set)][usize::from(op)];
+        let chips = chips.map(
+            |chip| match self.fixed.iter().find(|(from, _)| *from == chip) {
+                Some(&(_, to)) => to,
+                None => chip.wrapping_add_signed(offset as i8),
+            },
+        );
+        Ok(Some((chips, after)))
+    }
+}
+
+/// `mov al, [si+from] / mov bx, [bp-4] / cmp es:[bx], al / jnz / mov al, [si+to] / mov es:[bx],
+/// al / inc si / cmp si, n / jc / mov bx, [bp-4] / cmp byte es:[bx], bridge`: the drawbridge's
+/// chip swap.
+const CELL_SWAP: Pattern = pat!(
+    0x8a 0x84 _ _ 0x8b 0x5e 0xfc 0x26 0x38 0x07 0x75 0x07 0x8a 0x84 _ _ 0x26 0x88 0x07 0x46 0x83
+    0xfe _ 0x72 0xe7 0x8b 0x5e 0xfc 0x26 0x80 0x3f _
+);
+/// `cmp [bx+terrain], al / jz`: the terrain an operation needs.
+const CELL_TERRAIN: Pattern = pat!(0x38 0x87 _ _ 0x74 0x03);
+/// `shl bx, 2 / add bx, [bp-0x12] / add bx, bx / mov di, [bx+offsets]`: the chip offset by chip
+/// set and operation.
+const CELL_OFFSET: Pattern = pat!(0xc1 0xe3 0x02 0x03 0x5e 0xee 0x03 0xdb 0x8b 0xbf _ _);
+/// `cmp byte es:[si], a / jnz / mov byte es:[si], b / jmp / cmp byte es:[si], c / jnz / mov
+/// byte es:[si], d / jmp`: the two chips the offset operations replace outright.
+const CELL_FIXED: Pattern = pat!(
+    0x26 0x80 0x3c _ 0x75 0x06 0x26 0xc6 0x04 _ 0xeb 0x11 0x26 0x80 0x3c _ 0x75 0x06 0x26 0xc6 0x04
+    _ 0xeb 0x05
+);
+
+/// Locate the tables of the map-cell operations of `MAIN.EXE` through the code that uses them.
+pub fn find_cell_changes(exe: &[u8]) -> Result<CellChanges, ExeTableError> {
+    let base = data_base(exe)?;
+    let what = "map-cell change tables";
+    let swap = unique(exe, CELL_SWAP, "map-cell drawbridge swap")?;
+    let count = usize::from(exe[swap + 22]);
+    let from = u16_at(exe, swap + 2).unwrap_or(0);
+    let to = u16_at(exe, swap + 14).unwrap_or(0);
+    let swap_from = table(exe, base, from, count, what)?.to_vec();
+    let swap_to = table(exe, base, to, count, what)?.to_vec();
+    let at = unique(exe, CELL_TERRAIN, "map-cell terrain table")?;
+    let terrain: [u8; 4] = table(exe, base, u16_at(exe, at + 2).unwrap_or(0), 4, what)?
+        .try_into()
+        .expect("four bytes");
+    let at = unique(exe, CELL_OFFSET, "map-cell chip offsets")?;
+    let words = table(exe, base, u16_at(exe, at + 10).unwrap_or(0), 16, what)?;
+    let word = |i: usize| i16::from_le_bytes([words[2 * i], words[2 * i + 1]]);
+    let offsets = [
+        std::array::from_fn(&word),
+        std::array::from_fn(|op| word(4 + op)),
+    ];
+    let at = unique(exe, CELL_FIXED, "map-cell fixed chips")?;
+    let fixed = [(exe[at + 3], exe[at + 9]), (exe[at + 15], exe[at + 21])];
+    if count == 0 || terrain.iter().any(|&t| usize::from(t) >= TERRAIN_COUNT) {
+        return Err(ExeTableError::Table {
+            what,
+            detail: format!("{count} swapped chips, terrain codes {terrain:?}"),
+        });
+    }
+    Ok(CellChanges {
+        terrain,
+        offsets,
+        swap_from,
+        swap_to,
+        bridge_chip: exe[swap + 31],
+        fixed,
+    })
+}
+
+/// The map-cell tables the fixtures of [`build_exe_fixture`] carry (the Korean DOS/V values).
+pub fn fixture_cell_changes() -> CellChanges {
+    CellChanges {
+        terrain: [10, 0, 3, 4],
+        offsets: [[8, -8, -9, 9], [17, -17, 0, 0]],
+        swap_from: vec![0xd9, 0xd6, 0xd5, 0xd7, 0xd8, 0xda, 0xe7, 0xe8, 0xe9],
+        swap_to: vec![0xd2, 0xcd, 0xcc, 0xce, 0xcf, 0xd3, 0xd0, 0xd4, 0xd1],
+        bridge_chip: 0xd3,
+        fixed: [(0xc5, 0xc7), (0xc6, 0xe6)],
+    }
+}
+
 /// Contents of a synthetic `MAIN.EXE` for fixtures.
 #[derive(Debug, Clone)]
 pub struct ExeFixture<'a> {
@@ -771,6 +911,15 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     data.extend(f.ground);
     let size_address = data.len() as u16;
     data.extend(f.campaign_sizes.iter().flat_map(|&(w, h)| [w, h]));
+    let cells = fixture_cell_changes();
+    let cell_terrain = data.len() as u16;
+    data.extend(cells.terrain);
+    let cell_offsets = data.len() as u16;
+    data.extend(cells.offsets.iter().flatten().flat_map(|o| o.to_le_bytes()));
+    let swap_from = data.len() as u16;
+    data.extend(&cells.swap_from);
+    let swap_to = data.len() as u16;
+    data.extend(&cells.swap_to);
 
     let mut put = |pattern: Pattern, fill: &[u8]| {
         let mut fill = fill.iter();
@@ -787,6 +936,17 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     put(SCENE_LOOKUP, &[lo, hi]);
     let [lo, hi] = size_address.to_le_bytes();
     put(CAMPAIGN_SIZE, &[lo, hi]);
+    let ([a, b], [c, d]) = (swap_from.to_le_bytes(), swap_to.to_le_bytes());
+    put(
+        CELL_SWAP,
+        &[a, b, c, d, cells.swap_from.len() as u8, cells.bridge_chip],
+    );
+    let [lo, hi] = cell_terrain.to_le_bytes();
+    put(CELL_TERRAIN, &[lo, hi]);
+    let [lo, hi] = cell_offsets.to_le_bytes();
+    put(CELL_OFFSET, &[lo, hi]);
+    let [(a, b), (c, d)] = cells.fixed;
+    put(CELL_FIXED, &[a, b, c, d]);
 
     let data_at = HEADER + DGROUP * 16;
     assert!(
@@ -832,6 +992,61 @@ mod tests {
         let names = t.terrain_names.unwrap();
         assert_eq!(names.len(), TERRAIN_COUNT);
         assert_eq!(names[19], b"flood");
+    }
+
+    #[test]
+    fn cell_change_tables_are_found_through_their_code() {
+        assert_eq!(
+            find_cell_changes(&fixture_exe()),
+            Ok(fixture_cell_changes())
+        );
+        let mut exe = fixture_exe();
+        let at = find_all(&exe, CELL_OFFSET)[0];
+        exe[at] = 0x90;
+        assert_eq!(
+            find_cell_changes(&exe),
+            Err(ExeTableError::Code {
+                what: "map-cell chip offsets",
+                found: 0
+            })
+        );
+    }
+
+    #[test]
+    fn cell_changes_follow_the_game() {
+        let t = fixture_cell_changes();
+        // Opening a gate (terrain 10): +8 per chip with entry 1, +17 with entry 2, the two fixed
+        // chips replaced outright; the cell becomes plain.
+        assert_eq!(
+            t.apply([100, 101, 0xc5, 0xc6], 10, false, 0),
+            Ok(Some(([108, 109, 0xc7, 0xe6], 0)))
+        );
+        assert_eq!(
+            t.apply([100, 101, 102, 103], 10, true, 0x80),
+            Ok(Some(([117, 118, 119, 120], 0))),
+            "the redraw bit is ignored"
+        );
+        assert_eq!(
+            t.apply([100, 101, 102, 103], 3, false, 0),
+            Ok(None),
+            "a gate operation on a river"
+        );
+        // Closing it again.
+        assert_eq!(
+            t.apply([108, 109, 110, 111], 0, false, 1),
+            Ok(Some(([100, 101, 102, 103], 10)))
+        );
+        // The drawbridge swaps chips; a cell showing the bridge chip becomes a bridge, the others
+        // keep their terrain.
+        assert_eq!(
+            t.apply([0xda, 0xd9, 0x10, 0xe9], 3, false, 2),
+            Ok(Some(([0xd3, 0xd2, 0x10, 0xd1], 4)))
+        );
+        assert_eq!(
+            t.apply([0xd6, 0x10, 0x11, 0x12], 0, true, 2),
+            Ok(Some(([0xcd, 0x10, 0x11, 0x12], 0)))
+        );
+        assert!(t.apply([0; 4], 0, false, 4).is_err());
     }
 
     #[test]

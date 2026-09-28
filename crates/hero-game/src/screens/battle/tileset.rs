@@ -273,6 +273,11 @@ impl MapRenderer {
         self.base.is_some()
     }
 
+    /// Whether the map is drawn from its picture layer.
+    pub fn uses_picture(&self) -> bool {
+        matches!(self.base, Some(StaticMap::Picture(_)))
+    }
+
     /// Whether a picture of `size` pixels covers the map exactly (one tile = `tile` pixels, as
     /// for atlas cells). Any other size would drift away from the rules grid.
     pub fn fits(&self, size: Vec2) -> bool {

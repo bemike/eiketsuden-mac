@@ -4,33 +4,9 @@ use crate::battle::{BattleState, Outcome};
 use crate::battledef::Side;
 use crate::data::{Effect, Equipment, Id, ItemDef, ItemKind, OfficerDef};
 use crate::pack::Pack;
-use crate::script::Compare;
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize};
+use crate::script::{cmp_field, Compare};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-
-fn ne() -> Compare {
-    Compare::Ne
-}
-
-/// `cmp` of a branch node: an operator (`==`, `!=`, `<`, `<=`, `>`, `>=`) or the
-/// [`Compare`] variant name (`Eq`, `Ge`, ... in any case).
-fn de_compare<'de, D: Deserializer<'de>>(d: D) -> Result<Compare, D::Error> {
-    let s = String::deserialize(d)?;
-    Ok(match s.to_ascii_lowercase().as_str() {
-        "==" | "eq" => Compare::Eq,
-        "!=" | "ne" => Compare::Ne,
-        "<" | "lt" => Compare::Lt,
-        "<=" | "le" => Compare::Le,
-        ">" | "gt" => Compare::Gt,
-        ">=" | "ge" => Compare::Ge,
-        _ => {
-            return Err(D::Error::custom(format!(
-                "unknown comparison `{s}`, expected one of ==, !=, <, <=, >, >="
-            )))
-        }
-    })
-}
 
 /// One step of the campaign. Nodes are visited in order of their `next` links.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,7 +40,10 @@ pub enum Node {
     Branch {
         id: Id,
         flag: String,
-        #[serde(default = "ne", deserialize_with = "de_compare")]
+        #[serde(
+            default = "cmp_field::default",
+            deserialize_with = "cmp_field::deserialize"
+        )]
         cmp: Compare,
         #[serde(default)]
         value: i64,

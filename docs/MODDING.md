@@ -753,7 +753,31 @@ actions = [{ type = "drama", scene = "b01_duel" }, { type = "level_up", target =
 |---|---|---|---|
 | `trigger` | trigger | required | When the event fires. |
 | `once` | bool | `true` | Fire only the first time. |
+| `stage` | integer | none | Fire only while the battle is at this stage (see below); without it, at every stage. |
+| `when` | list of flag conditions | `[]` | Fire only while every condition holds (see below). |
 | `actions` | list of actions | required | Run in order. |
+
+**Stages.** Every battle starts at stage 0; a `set_stage` action moves it to another. An event with a
+`stage` fires only while the battle is at that stage, so a battle can be told in phases: "first break
+through to the city, then hold off the relief army". Events without `stage` fire at every stage.
+
+```toml
+[[events]]
+trigger = { type = "unit_defeated", target = "che_zhou" }
+stage = 0
+actions = [{ type = "drama", scene = "gate_taken" }, { type = "set_stage", stage = 1 }]
+
+[[events]]
+trigger = { type = "reach", who = "liu_bei", pos = [1, 16] }
+stage = 1                            # only after the gate is taken
+actions = [{ type = "victory" }]
+```
+
+**Conditions.** `when = [{ flag = "gate_open" }, { flag = "route", cmp = "==", value = 2 }]`: the event
+fires only while every condition holds. A condition compares a [flag](#flags) with `value` (default 0)
+using `cmp` (`==`, `!=`, `<`, `<=`, `>`, `>=`; default `!=`, so `{ flag = "x" }` means "x is set"). The
+flag's value is the one this battle's `set_flag` actions gave it, else the campaign's when the battle began.
+An event whose conditions do not hold is not used up: it fires later when they do.
 
 Triggers:
 
@@ -777,6 +801,8 @@ Actions:
 | `give_item` | `item` | Give the player an item (kept after a victory). |
 | `give_gold` | `amount` | Give the player gold (kept after a victory). |
 | `set_flag` | `flag`, `value` | Set a campaign [flag](#flags). |
+| `set_stage` | `stage` | Move the battle to another stage (see above). |
+| `set_terrain` | `pos`, `terrain`, `image` (opt.) | Change one tile's terrain for the rest of the battle (a gate opens, a drawbridge comes down); movement and defence follow the new terrain at once. `image` is a media key of `gfx/maps/<image>.png`, one tile in size, drawn over the tile from then on. Without it, a map drawn from the tileset shows the new terrain's tile, while a map with a picture layer keeps its picture there. |
 | `victory` / `defeat` | — | End the battle. |
 
 ### Treasures
@@ -1071,12 +1097,15 @@ there, see [Units](#units)).
 *Conditions, triggers, actions* — E: unit references that match nothing, positions outside the map,
 negative radius, `defeat_all` without enemies on the map at the start, `defeat_commander` without an enemy
 commander, `survive_turns`/`turn_start` with turn 0, `hp_below` outside 1..=100, unknown scenes, unknown
-`give_item` items, `set_flag` without a name. W: `survive_turns` or `turn_start` after `turn_limit`, events
-without actions, `adjacent` naming the same unit twice, `set_ai` to `advance` without `ai_pos`,
-`level_up` by 0.
+`give_item` items, `set_flag` without a name, `set_terrain` to an unknown terrain or with an image that
+is not a media key. W: `survive_turns` or `turn_start` after `turn_limit`, events without actions,
+`adjacent` naming the same unit twice, `set_ai` to `advance` without `ai_pos`, `level_up` by 0, an event
+`stage` that no `set_stage` reaches, a `when` flag that nothing sets.
 
 **Dramas** — E: `@join`/`@leave` of unknown officers, `@item` of unknown items, speakers that look like
-ids but name no officer. W: scenes that no campaign node or battle plays.
+ids but name no officer. W: scenes of the pack itself that no campaign node or battle plays (in a
+[layered pack](#layered-packs-extends), a parent's scene that only a battle the child replaced played is not
+reported: it is the parent's).
 
 **campaign.toml** — E: unknown or branch `start` node, unknown starting officers or items, no lord among the
 starting officers, unknown scenes, battles and shop items, branches without a flag, links to unknown nodes.
