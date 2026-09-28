@@ -198,6 +198,10 @@ The lord retreating loses the battle immediately.
   threat to plan around); `aggressive` approaches the best target anywhere.
 * When no action is possible, the unit moves towards its goal (nearest hostile unit, target or position) along the
   cheapest path and waits.
+* The player side in simulations and lords play carefully *(design)*: they keep off tiles where they would be
+  defeated and act only when that beats moving on. When one of them is below 50% HP and has nothing better to do,
+  it goes onto a healing tile (`heal_hp`) instead (towards the nearest one out of reach) and stays until it is back
+  at 75%.
 * The AI is deterministic for a given state (ties broken by unit id, then position order).
 
 ## 13. The forbidden secret (hidden command)

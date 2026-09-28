@@ -43,6 +43,11 @@ use std::collections::{BinaryHeap, HashMap};
 
 /// `guard` units stay within this manhattan distance of their `ai_pos`.
 const GUARD_RADIUS: i32 = 3;
+/// A careful unit below this percentage of its max HP heads for a healing tile when it has
+/// nothing better to do *(design)*...
+const HEAL_BELOW_PCT: i64 = 50;
+/// ...and stays on it until healed to this percentage.
+const HEAL_UNTIL_PCT: i64 = 75;
 /// A lord values each orthogonally adjacent friendly unit (friends take the attack slots
 /// around it) at this percentage of its max HP.
 const LORD_ESCORT_PCT: i64 = 5;
@@ -571,6 +576,9 @@ impl<'a> Planner<'a> {
     }
 
     fn idle_tile(&self, reach: &[Pos]) -> Pos {
+        if let Some(tile) = self.heal_tile(reach) {
+            return tile;
+        }
         let objective: Vec<Pos> = self
             .script
             .iter()
@@ -590,6 +598,35 @@ impl<'a> Planner<'a> {
             (true, true) => self.best_position(reach),
             (true, false) => self.me.pos,
         }
+    }
+
+    /// Where a careful unit that is badly hurt goes instead of on towards the enemy: onto a
+    /// healing tile (`heal_hp`) in reach, else towards the nearest one, and it stays on it
+    /// until nearly healed. Without this a hurt unit facing units that `hold` finds every
+    /// tile towards them deadly and waits where it is for the rest of the battle.
+    fn heal_tile(&self, reach: &[Pos]) -> Option<Pos> {
+        let (hp, max) = (self.me.hp as i64, self.me.max_hp as i64);
+        let heals = |p: Pos| self.board.terrain(p).is_some_and(|t| t.heal_hp > 0);
+        let hurt = hp * 100 < max * HEAL_BELOW_PCT
+            || (heals(self.me.pos) && hp * 100 < max * HEAL_UNTIL_PCT);
+        if !self.careful() || !hurt {
+            return None;
+        }
+        let safe_heal = |p: Pos| heals(p) && self.danger(p) < hp;
+        let origin = self.me.pos;
+        if let Some(tile) = reach
+            .iter()
+            .copied()
+            .filter(|&p| safe_heal(p))
+            .min_by_key(|&p| (self.threat_at(p), p != origin, p))
+        {
+            return Some(tile);
+        }
+        let goals: Vec<Pos> = (0..self.board.len())
+            .map(|i| self.board.pos_of(i))
+            .filter(|&p| safe_heal(p) && self.occupant(p, origin).is_none())
+            .collect();
+        (!goals.is_empty()).then(|| self.approach(&goals, reach))
     }
 
     /// The scripted ending standing on `tile` brings about: `Some(false)` for a defeat (which

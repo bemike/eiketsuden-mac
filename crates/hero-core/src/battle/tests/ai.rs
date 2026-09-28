@@ -337,6 +337,51 @@ fn advance_heads_for_its_position() {
 }
 
 #[test]
+fn hurt_careful_units_heal_on_villages() {
+    let pack = pack(
+        "
+........
+........
+........
+........
+........
+........
+........
+.......v",
+    );
+    let mut st = state(&pack);
+    let me = brawler(&mut st, &pack, Side::Player, p(4, 7));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(0, 0));
+    st.units[foe].ai = AiMode::Hold;
+    let max = st.units[me].max_hp;
+    // Below half its HP it goes onto the village in reach instead of towards the enemy...
+    st.units[me].hp = max * 4 / 10;
+    assert_eq!(move_target(&st.ai_actions(&pack, me)), Some(p(7, 7)));
+    // ...or towards it when it is out of reach.
+    st.units[me].pos = p(0, 7);
+    let to = move_target(&st.ai_actions(&pack, me)).expect("moves");
+    assert!(to.manhattan(p(7, 7)) < 7, "{to:?}");
+    // On the village it stays until healed to three quarters...
+    st.units[me].pos = p(7, 7);
+    st.units[me].hp = max * 7 / 10;
+    assert_eq!(st.ai_actions(&pack, me), vec![Action::Wait { unit: me }]);
+    // ...then goes on.
+    st.units[me].hp = max * 8 / 10;
+    let to = move_target(&st.ai_actions(&pack, me)).expect("moves on");
+    assert!(to.manhattan(p(0, 0)) < 14, "{to:?}");
+    // Enemy units (not careful) do not retreat: a hurt one still heads for the player unit,
+    // away from the village.
+    st.units[me].pos = p(0, 7);
+    st.units[foe].pos = p(4, 0);
+    st.units[foe].ai = AiMode::Aggressive;
+    st.units[foe].hp = st.units[foe].max_hp / 10;
+    st.units[foe].mp = 0;
+    enemy_phase(&mut st);
+    let to = move_target(&st.ai_actions(&pack, foe)).expect("moves");
+    assert!(to.x < 4, "{to:?}");
+}
+
+#[test]
 fn player_side_simulation_uses_healing_items() {
     let pack = pack(OPEN_MAP);
     let mut st = state(&pack);
