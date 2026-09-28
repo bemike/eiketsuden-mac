@@ -1194,6 +1194,30 @@ pub fn unit_sheet(icon: &IndexedImage) -> Result<IndexedImage, String> {
     Ok(sheet)
 }
 
+/// One officer icon: the class (an index into [`CLASS_SPRITES`], `None` for any class) and its
+/// `HEXZCHR` entry.
+pub type OfficerIcon = (Option<usize>, usize);
+
+/// Officers the original draws with their own battle-map icon, whatever side they are on
+/// (`MAIN.EXE`, FORMATS §8.2): the base-pack officer id and, per class (an index into
+/// [`CLASS_SPRITES`], `None` for any class), the `HEXZCHR` entry. Liu Bei (officer 0) takes
+/// entry 38 + his class for his first three classes (flag infantry, flag long infantry, the
+/// white-horse chariot), Lü Bu (4) entry 45 and Cao Cao (8) entry 46 (red hare, yellow horse).
+pub const OFFICER_ICONS: &[(&str, &[OfficerIcon])] = &[
+    ("liu_bei", &[(Some(0), 38), (Some(1), 39), (Some(2), 40)]),
+    ("lu_bu", &[(None, 45)]),
+    ("cao_cao", &[(None, 46)]),
+];
+
+/// Sprite key of an officer's own icon: `officer_<id>` (for any class) or
+/// `officer_<id>_<class sprite>`.
+fn officer_sprite(officer: &str, class: Option<usize>) -> String {
+    match class {
+        Some(k) => format!("officer_{officer}_{}", CLASS_SPRITES[k]),
+        None => format!("officer_{officer}"),
+    }
+}
+
 fn units_toml() -> String {
     let mut s = String::from(
         "# Unit sprites of the original mode: the battle-map icons of HEXZCHR.R3, written by\n\
@@ -1201,13 +1225,29 @@ fn units_toml() -> String {
          # the 32-px tiles of gfx/tiles/terrain.toml. Layout and side colours: crates/hero-import/\n\
          # src/pack.rs (`unit_sheet`, `PLAYER_ICON`).\n",
     );
-    for key in CLASS_SPRITES {
+    let officer_keys = OFFICER_ICONS.iter().flat_map(|(officer, icons)| {
+        icons
+            .iter()
+            .map(move |&(class, _)| officer_sprite(officer, class))
+    });
+    for key in CLASS_SPRITES
+        .iter()
+        .map(|k| k.to_string())
+        .chain(officer_keys)
+    {
         let _ = write!(
             s,
             "\n[sprites.{key}]\nframe = [{ICON_PX}, {ICON_PX}]\nanchor = [{}, {}]\n",
             ICON_PX / 2,
             ICON_PX - 1
         );
+    }
+    for (officer, icons) in OFFICER_ICONS {
+        let _ = write!(s, "\n[officers.{officer}]\n");
+        for &(class, _) in *icons {
+            let class_key = class.map_or("\"*\"", |k| CLASS_SPRITES[k]);
+            let _ = writeln!(s, "{class_key} = \"{}\"", officer_sprite(officer, class));
+        }
     }
     s
 }
@@ -1277,6 +1317,7 @@ fn convert_units(
     };
     // Build every sheet first: the index file is written only for a complete set.
     let mut sheets = Vec::new();
+    let mut owned: Vec<(String, Vec<u8>)> = Vec::new();
     for (k, key) in CLASS_SPRITES.iter().enumerate() {
         let player = icon(2 * k + PLAYER_ICON).and_then(|i| unit_sheet(&i));
         let enemy = icon(2 * k + 1 - PLAYER_ICON).and_then(|i| unit_sheet(&i));
@@ -1290,6 +1331,19 @@ fn convert_units(
             Err(e) => report.errors.push(format!("{key}: {e}")),
         }
     }
+    for (officer, icons) in OFFICER_ICONS {
+        for &(class, entry) in *icons {
+            let key = officer_sprite(officer, class);
+            let png = icon(entry)
+                .and_then(|i| unit_sheet(&i))
+                .and_then(|sheet| encode_png(&sheet, &pal, true).map_err(|e| e.to_string()));
+            match png {
+                // One icon for every side, as the original draws it.
+                Ok(png) => owned.push((key, png)),
+                Err(e) => report.errors.push(format!("{key}: {e}")),
+            }
+        }
+    }
     if !report.errors.is_empty() {
         report.summary = "HEXZCHR.R3 does not hold every class icon".into();
         return Ok(report);
@@ -1300,13 +1354,23 @@ fn convert_units(
         out.write(&format!("gfx/units/{key}_enemy.png"), enemy)?;
         report.outputs += 3;
     }
+    for (key, png) in &owned {
+        for side in ["player", "ally", "enemy"] {
+            out.write(&format!("gfx/units/{key}_{side}.png"), png)?;
+        }
+        report.outputs += 3;
+    }
     out.write("gfx/units/units.toml", units_toml().as_bytes())?;
     report.outputs += 1;
     report.status = Status::Extracted;
-    report.summary = format!("{} classes, 32×32 frames", sheets.len());
+    report.summary = format!(
+        "{} classes and {} officer icons, 32×32 frames",
+        sheets.len(),
+        owned.len()
+    );
     report.notes.push(
-        "officer-specific icons (HEXZCHR 38-40, 45-46) and status icons (43-44) are not \
-         used: every unit is drawn with its class icon"
+        "the status icons (HEXZCHR 43-44, units whose status byte has 0x02) are not used: \
+         what that status is is not known"
             .into(),
     );
     Ok(report)
@@ -2716,8 +2780,28 @@ mod tests {
         }
         // The indexes fit the schema the game and the validator read them with.
         let text = |f: &str| std::fs::read_to_string(pack.join(f)).unwrap();
-        let sprites = hero_core::media_index::parse_units(&text("gfx/units/units.toml")).unwrap();
-        assert_eq!(sprites.len(), CLASS_SPRITES.len());
+        let units = hero_core::media_index::parse_units(&text("gfx/units/units.toml")).unwrap();
+        let officer_icons: usize = OFFICER_ICONS.iter().map(|(_, icons)| icons.len()).sum();
+        assert_eq!(units.sprites.len(), CLASS_SPRITES.len() + officer_icons);
+        // Liu Bei draws his own icon in his first three classes, Lü Bu and Cao Cao in any.
+        assert_eq!(
+            units.sprite_for(Some("liu_bei"), "long_infantry"),
+            "officer_liu_bei_long_infantry"
+        );
+        assert_eq!(units.sprite_for(Some("liu_bei"), "archer"), "archer");
+        assert_eq!(
+            units.sprite_for(Some("lu_bu"), "light_cavalry"),
+            "officer_lu_bu"
+        );
+        assert_eq!(
+            units.sprite_for(Some("cao_cao"), "archer"),
+            "officer_cao_cao"
+        );
+        for side in ["player", "ally", "enemy"] {
+            assert!(pack
+                .join(format!("gfx/units/officer_lu_bu_{side}.png"))
+                .is_file());
+        }
         let tileset =
             hero_core::media_index::TilesetFile::parse(&text("gfx/tiles/terrain.toml")).unwrap();
         assert_eq!(tileset.tile_size, ICON_PX as u32);

@@ -47,16 +47,35 @@ impl Default for SpriteDef {
     }
 }
 
+/// Key of an [`UnitsFile::officers`] entry that applies whatever the officer's class.
+pub const ANY_CLASS: &str = "*";
+
 /// `units.toml`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnitsFile {
     #[serde(default)]
     pub sprites: BTreeMap<String, SpriteDef>,
+    /// Sprites of particular officers in battle: officer id -> the sprite key of the class the
+    /// officer is (or [`ANY_CLASS`]) -> the sprite key to draw instead (the original draws Liu
+    /// Bei, Lü Bu and Cao Cao with their own icons).
+    #[serde(default)]
+    pub officers: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+impl UnitsFile {
+    /// The sprite key a unit of `officer` (if any) whose class draws with `class_sprite` is
+    /// drawn with: the officer's own for that class, else for any class, else the class's.
+    pub fn sprite_for<'a>(&'a self, officer: Option<&str>, class_sprite: &'a str) -> &'a str {
+        officer
+            .and_then(|o| self.officers.get(o))
+            .and_then(|m| m.get(class_sprite).or_else(|| m.get(ANY_CLASS)))
+            .map_or(class_sprite, String::as_str)
+    }
 }
 
 /// Parse `units.toml`.
-pub fn parse_units(src: &str) -> Result<BTreeMap<String, SpriteDef>, String> {
-    parse::<UnitsFile>(src).map(|f| f.sprites)
+pub fn parse_units(src: &str) -> Result<UnitsFile, String> {
+    parse::<UnitsFile>(src)
 }
 
 // ----- fx.toml -----------------------------------------------------------------------------------
@@ -224,13 +243,30 @@ mod tests {
     #[test]
     fn units_need_frame_and_anchor() {
         let ok = parse_units("[sprites.infantry]\nframe = [16, 16]\nanchor = [8, 15]").unwrap();
-        assert_eq!(ok["infantry"], SpriteDef::default());
+        assert_eq!(ok.sprites["infantry"], SpriteDef::default());
         let e = parse_units("[sprites.infantry]\nframe = [16, 16]").unwrap_err();
         assert!(e.contains("anchor"), "{e}");
         assert!(
-            parse_units("\u{feff}").unwrap().is_empty(),
+            parse_units("\u{feff}").unwrap().sprites.is_empty(),
             "BOM, no sprites"
         );
+    }
+
+    #[test]
+    fn officers_can_have_their_own_sprites() {
+        let units = parse_units(
+            "[officers.liu_bei]\ninfantry = \"liu_bei_flag\"\n\n[officers.lu_bu]\n\"*\" = \"red_hare\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            units.sprite_for(Some("liu_bei"), "infantry"),
+            "liu_bei_flag"
+        );
+        // Another class of his has no own sprite.
+        assert_eq!(units.sprite_for(Some("liu_bei"), "cavalry"), "cavalry");
+        assert_eq!(units.sprite_for(Some("lu_bu"), "cavalry"), "red_hare");
+        assert_eq!(units.sprite_for(Some("cao_cao"), "cavalry"), "cavalry");
+        assert_eq!(units.sprite_for(None, "cavalry"), "cavalry");
     }
 
     #[test]

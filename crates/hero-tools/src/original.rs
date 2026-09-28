@@ -625,7 +625,8 @@ mod tests {
                 .iter()
                 .filter(|f| f.starts_with("gfx/units/") && f.ends_with(".png"))
                 .count(),
-            57
+            // 19 classes and 5 officer icons (Liu Bei's three, Lü Bu's, Cao Cao's), 3 sides.
+            (19 + 5) * 3
         );
         let portraits = json["portraits"].as_array().unwrap().len();
         assert!(portraits >= 100, "{portraits} portraits");
