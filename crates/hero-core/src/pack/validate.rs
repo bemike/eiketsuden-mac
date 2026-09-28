@@ -1140,14 +1140,28 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn position(&mut self, ctx: &str, map: Option<&BattleMap>, p: Pos, radius: i32) {
+    /// The area of a `reach`: `pos` (and `to`) inside the map, a radius of at least 0 and none
+    /// with `to`.
+    fn position(
+        &mut self,
+        ctx: &str,
+        map: Option<&BattleMap>,
+        p: Pos,
+        radius: i32,
+        to: Option<Pos>,
+    ) {
         if let Some(map) = map {
-            if !map.in_bounds(p) {
-                self.error(ctx, format!("position {} is outside the map", at(p)));
+            for p in std::iter::once(p).chain(to) {
+                if !map.in_bounds(p) {
+                    self.error(ctx, format!("position {} is outside the map", at(p)));
+                }
             }
         }
         if radius < 0 {
             self.error(ctx, "radius must not be negative");
+        }
+        if to.is_some() && radius != 0 {
+            self.error(ctx, "a reach with `to` is a rectangle and takes no radius");
         }
     }
 
@@ -1179,11 +1193,16 @@ impl<'a> Validator<'a> {
             Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
                 self.reference(&cctx, names, "target", target)
             }
-            Condition::Reach { who, pos, radius } => {
+            Condition::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } => {
                 if let Some(who) = who {
                     self.reference(&cctx, names, "who", who);
                 }
-                self.position(&cctx, map, *pos, *radius);
+                self.position(&cctx, map, *pos, *radius, *to);
             }
             Condition::SurviveTurns { turns } => {
                 if *turns == 0 {
@@ -1224,11 +1243,16 @@ impl<'a> Validator<'a> {
                 }
             }
             Trigger::UnitDefeated { target } => self.reference(ctx, names, "target", target),
-            Trigger::Reach { who, pos, radius } => {
+            Trigger::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } => {
                 if let Some(who) = who {
                     self.reference(ctx, names, "who", who);
                 }
-                self.position(ctx, map, *pos, *radius);
+                self.position(ctx, map, *pos, *radius, *to);
             }
             Trigger::Adjacent { a, b } => {
                 self.reference(ctx, names, "a", a);
@@ -1272,7 +1296,7 @@ impl<'a> Validator<'a> {
                     self.reference(ctx, names, "ai_target", t);
                 }
                 if let Some(p) = ai_pos {
-                    self.position(ctx, map, *p, 0);
+                    self.position(ctx, map, *p, 0, None);
                 }
                 if *ai == AiMode::Advance && ai_pos.is_none() {
                     self.warn(

@@ -34,7 +34,7 @@
 use super::board::Board;
 use super::combat::{counter_chance, hit_damage, morale_loss};
 use super::{Action, BattleEvent, BattleState, Unit, UnitId};
-use crate::battledef::{AiMode, Condition, EventAction, Side, Trigger};
+use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
 use crate::data::{Area, Effect, ItemDef, StatusKind, StrategyDef, TargetSide, TerrainDef};
 use crate::geom::Pos;
 use crate::pack::Pack;
@@ -214,15 +214,19 @@ fn damage_value(damage: i32, target: &Unit) -> i64 {
 enum Place {
     /// Orthogonally next to one of these tiles (the units an `adjacent` trigger pairs it with).
     NextTo(Vec<Pos>),
-    /// Within manhattan `radius` of `pos` (`reach` triggers and conditions).
-    Near { pos: Pos, radius: i32 },
+    /// In the area of a `reach` trigger or condition ([`in_reach`]).
+    Near {
+        pos: Pos,
+        radius: i32,
+        to: Option<Pos>,
+    },
 }
 
 impl Place {
     fn holds(&self, tile: Pos) -> bool {
         match self {
             Place::NextTo(partners) => partners.iter().any(|p| p.manhattan(tile) == 1),
-            Place::Near { pos, radius } => pos.manhattan(tile) <= *radius,
+            Place::Near { pos, radius, to } => in_reach(*pos, *radius, *to, tile),
         }
     }
 
@@ -284,9 +288,15 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
                 }
                 Place::NextTo(next_to)
             }
-            Trigger::Reach { who, pos, radius } if named(who.as_deref()) => Place::Near {
+            Trigger::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } if named(who.as_deref()) => Place::Near {
                 pos: *pos,
                 radius: *radius,
+                to: *to,
             },
             _ => continue,
         };
@@ -294,13 +304,20 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
     }
     for (conditions, wins) in [(&def.victory, true), (&def.defeat, false)] {
         for c in conditions {
-            if let Condition::Reach { who, pos, radius } = c {
+            if let Condition::Reach {
+                who,
+                pos,
+                radius,
+                to,
+            } = c
+            {
                 if named(who.as_deref()) {
                     out.push(Scripted {
                         wins,
                         place: Place::Near {
                             pos: *pos,
                             radius: *radius,
+                            to: *to,
                         },
                     });
                 }

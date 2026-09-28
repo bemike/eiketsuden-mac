@@ -240,6 +240,7 @@ fn the_player_side_avoids_a_scripted_defeat() {
             who: Some("hero".into()),
             pos: p(4, 0),
             radius: 0,
+            to: None,
         },
         once: true,
         actions: vec![EventAction::Defeat],

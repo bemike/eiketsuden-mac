@@ -472,6 +472,11 @@ mod tests {
         assert_eq!(pack.manifest.id, PACK_DIR);
         assert_eq!(pack.layers.len(), 2);
         assert_eq!(pack.maps.len(), 58);
+        // The prologue's first battle is played on its original map.
+        assert_eq!(
+            pack.battles["p1_sishui"].map.use_map.as_deref(),
+            Some("hexz_00")
+        );
         let errors: Vec<_> = pack
             .validate()
             .into_iter()

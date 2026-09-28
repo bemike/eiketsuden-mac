@@ -94,9 +94,10 @@ as it would from disk. Nothing is written; `hero-import` is a native-only depend
 inspection and validation.
 
 Today the pack holds officer portraits, unit sheets, a 32-px terrain tileset learned from the
-original battle maps and the 58 original battle maps as map files (mapping rules in
-`crates/hero-import/src/pack.rs` and ORIGINAL_DATA.md §4.5); battles, rules, scenario, UI and music
-still come from the base pack. The separate media overlay (`--original <dir>`, D6) remains for looking
+original battle maps, the 58 original battle maps as map files, and the 21 battles of the base
+pack's prologue and chapter 1 re-staged as the original battles on those maps (mapping rules in
+`crates/hero-import/src/pack.rs`, `battles.rs` and ORIGINAL_DATA.md §4.5); rules, scenario events,
+UI and music still come from the base pack. The separate media overlay (`--original <dir>`, D6) remains for looking
 at the raw extraction.
 
 ## Determinism and testing

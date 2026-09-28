@@ -175,6 +175,19 @@ pub struct UnitSpawn {
     pub drop: Option<Id>,
 }
 
+/// Whether `tile` is in the area of a `reach`: within Manhattan distance `radius` of `pos`, or,
+/// when `to` is given, in the rectangle with the corners `pos` and `to` (inclusive, in either
+/// order; `radius` is then not used).
+pub fn in_reach(pos: Pos, radius: i32, to: Option<Pos>, tile: Pos) -> bool {
+    match to {
+        None => pos.manhattan(tile) <= radius,
+        Some(to) => {
+            (pos.x.min(to.x)..=pos.x.max(to.x)).contains(&tile.x)
+                && (pos.y.min(to.y)..=pos.y.max(to.y)).contains(&tile.y)
+        }
+    }
+}
+
 /// Something that can become true during a battle. Unit references (`target`, `who`)
 /// accept a spawn `tag` or an officer id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,13 +199,16 @@ pub enum Condition {
     DefeatUnit { target: String },
     /// Any enemy commander has retreated.
     DefeatCommander,
-    /// A unit (or any player unit when `who` is absent) stands within `radius` of `pos`.
+    /// A unit (or any player unit when `who` is absent) stands within `radius` of `pos`, or,
+    /// with `to`, in the rectangle from `pos` to `to` ([`in_reach`]).
     Reach {
         #[serde(default)]
         who: Option<String>,
         pos: Pos,
         #[serde(default)]
         radius: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<Pos>,
     },
     /// The given turn has been completed (all phases of that turn ended).
     SurviveTurns { turns: u32 },
@@ -211,13 +227,16 @@ pub enum Trigger {
     },
     /// A unit retreated.
     UnitDefeated { target: String },
-    /// A unit (any player unit when `who` is absent) moved within `radius` of `pos`.
+    /// A unit (any player unit when `who` is absent) moved within `radius` of `pos`, or, with
+    /// `to`, into the rectangle from `pos` to `to` ([`in_reach`]).
     Reach {
         #[serde(default)]
         who: Option<String>,
         pos: Pos,
         #[serde(default)]
         radius: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<Pos>,
     },
     /// Two units stand orthogonally adjacent (typical duel trigger).
     Adjacent { a: String, b: String },
@@ -343,6 +362,44 @@ pub struct BattleDef {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reach_areas() {
+        let (p, q) = (Pos::new(5, 5), Pos::new(3, 7));
+        assert!(in_reach(p, 1, None, Pos::new(5, 6)));
+        assert!(!in_reach(p, 1, None, Pos::new(6, 6)), "manhattan");
+        // A rectangle, corners in any order; the radius is not used.
+        for tile in [Pos::new(3, 5), Pos::new(5, 7), Pos::new(4, 6)] {
+            assert!(in_reach(p, 0, Some(q), tile), "{tile:?}");
+        }
+        assert!(!in_reach(p, 0, Some(q), Pos::new(6, 6)));
+        assert!(!in_reach(p, 0, Some(q), Pos::new(4, 8)));
+
+        let c: Condition = toml::from_str(
+            "type = \"reach\"
+who = \"liu_bei\"
+pos = [29, 10]
+to = [29, 14]",
+        )
+        .unwrap();
+        assert_eq!(
+            c,
+            Condition::Reach {
+                who: Some("liu_bei".into()),
+                pos: Pos::new(29, 10),
+                radius: 0,
+                to: Some(Pos::new(29, 14)),
+            }
+        );
+        // Without `to` the written form is unchanged.
+        let t = Trigger::Reach {
+            who: None,
+            pos: Pos::new(1, 2),
+            radius: 3,
+            to: None,
+        };
+        assert!(!toml::to_string(&t).unwrap().contains("to"));
+    }
 
     #[test]
     fn parses_minimal_battle() {

@@ -25,6 +25,7 @@
 //! | [`planar`], [`palette`], [`image`] | P3 | 4 bpp planar cells and packed images, palettes inside `MAIN.EXE`, indexed PNG output |
 //! | [`sprites`] | P3 | per-archive geometry, palette slot and entry groups of the sprite / chip archives |
 //! | [`extract`] | P1–P3 | conversion into a media overlay folder with an `index.json` |
+//! | [`battles`] | original mode | the original battles (setup, rosters, treasures) re-staged onto the base pack's battles |
 //! | [`pack`] | original mode | conversion into a layered data pack on top of the base pack (portraits, unit sheets, a tileset learned from the battle maps) |
 //!
 //! Every structural invariant (directory chains, exact decoded lengths, full input consumption,
@@ -32,6 +33,7 @@
 //! producing partial output.
 
 pub mod bakdata;
+pub mod battles;
 pub mod diskimage;
 pub mod edition;
 pub mod extract;

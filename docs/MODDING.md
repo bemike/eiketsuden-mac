@@ -736,7 +736,7 @@ Used by `victory`, `defeat` and `bonus`:
 | `{ type = "defeat_all" }` | — | Every enemy unit on the map has retreated (hidden reinforcements do not count). |
 | `{ type = "defeat_unit", target = "boss" }` | `target` | That unit has retreated. |
 | `{ type = "defeat_commander" }` | — | Any enemy commander has retreated. |
-| `{ type = "reach", who = "liu_bei", pos = [8, 1], radius = 1 }` | `who` (optional), `pos`, `radius` (default 0) | The unit (any player unit without `who`) stands within Manhattan distance `radius` of `pos`. |
+| `{ type = "reach", who = "liu_bei", pos = [8, 1], radius = 1 }` | `who` (optional), `pos`, `radius` (default 0), `to` (optional) | The unit (any player unit without `who`) stands within Manhattan distance `radius` of `pos` — or, with `to = [x, y]`, anywhere in the rectangle with the corners `pos` and `to` (inclusive; `radius` must then be 0). |
 | `{ type = "survive_turns", turns = 10 }` | `turns` | That turn has been completed. |
 | `{ type = "unit_retreated", target = "militia" }` | `target` | That unit has retreated (for defeat conditions such as "protect the villagers"). |
 
@@ -761,7 +761,7 @@ Triggers:
 |---|---|---|
 | `turn_start` | `turn`, `side` (default `player`) | The phase of `side` starts on `turn`. |
 | `unit_defeated` | `target` | That unit retreated. |
-| `reach` | `who` (optional), `pos`, `radius` (default 0) | The unit (any player unit without `who`) moved within `radius` of `pos`. |
+| `reach` | `who` (optional), `pos`, `radius` (default 0), `to` (optional) | The unit (any player unit without `who`) moved within `radius` of `pos`, or into the rectangle from `pos` to `to`. |
 | `adjacent` | `a`, `b` | Two units stand orthogonally adjacent (duels). |
 | `hp_below` | `target`, `pct` (1..=100) | The unit's HP fell below `pct` percent of its maximum. |
 

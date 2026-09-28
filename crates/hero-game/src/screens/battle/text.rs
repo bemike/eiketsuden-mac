@@ -74,9 +74,16 @@ pub fn condition_text(c: &Condition, name: impl Fn(&str) -> String) -> String {
         Condition::DefeatAll => "적군 전멸".into(),
         Condition::DefeatUnit { target } => format!("{} 격파", name(target)),
         Condition::DefeatCommander => "적 대장 격파".into(),
-        Condition::Reach { who, pos, radius } => {
+        Condition::Reach {
+            who,
+            pos,
+            radius,
+            to,
+        } => {
             let who = who.as_deref().map(&name).unwrap_or_else(|| "아군".into());
-            let place = if *radius > 0 {
+            let place = if let Some(to) = to {
+                format!("({}, {})–({}, {}) 구역", pos.x, pos.y, to.x, to.y)
+            } else if *radius > 0 {
                 format!("({}, {}) 부근 {}칸 이내", pos.x, pos.y, radius)
             } else {
                 format!("({}, {}) 지점", pos.x, pos.y)
@@ -239,7 +246,8 @@ mod tests {
                 &Condition::Reach {
                     who: None,
                     pos: Pos::new(3, 4),
-                    radius: 0
+                    radius: 0,
+                    to: None,
                 },
                 name
             ),
@@ -250,11 +258,24 @@ mod tests {
                 &Condition::Reach {
                     who: Some("hua_xiong".into()),
                     pos: Pos::new(3, 4),
-                    radius: 2
+                    radius: 2,
+                    to: None,
                 },
                 name
             ),
             "화웅이 (3, 4) 부근 2칸 이내 도달"
+        );
+        assert_eq!(
+            condition_text(
+                &Condition::Reach {
+                    who: None,
+                    pos: Pos::new(29, 10),
+                    radius: 0,
+                    to: Some(Pos::new(29, 14)),
+                },
+                name
+            ),
+            "아군이 (29, 10)–(29, 14) 구역 도달"
         );
         assert_eq!(
             defeat_text(DefeatReason::LordRetreated, Some("유비")),
