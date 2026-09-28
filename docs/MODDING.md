@@ -149,7 +149,8 @@ What the chain provides:
 | `dramas` | The same for scene ids: every pack's scenes, a nearer pack's scene replacing a farther pack's scene with the same id (`== b01_outro` in a child replaces the parent's `b01_outro`). |
 | `maps` | The same for map ids. A battle's `use` is resolved after the whole chain is merged, so a child's map with the id of a parent's map also replaces it in the parent's battles (a mod can redraw a map without copying the battles). |
 | `[presentation]` | Inherited **field by field**: each field (today only `canvas`) comes from the nearest pack that sets it; without any, `[480, 270]`. A field a child leaves out keeps the parent's value, so an empty `[presentation]` changes nothing. |
-| media (`gfx/`, `bgm/`, `sfx/`, `fonts/`, `credits.txt`) | Every media file is looked up in the top pack first, then in each parent in chain order; the first pack that has the file wins. This includes the media index files `gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml` and `gfx/ui/icons.toml`: a child's index **replaces** its parent's as a whole, so copy the entries you keep. |
+| media (`gfx/`, `bgm/`, `sfx/`, `fonts/`) | Every media file is looked up in the top pack first, then in each parent in chain order; the first pack that has the file wins. This includes the media index files `gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml` and `gfx/ui/icons.toml`: a child's index **replaces** its parent's as a whole, so copy the entries you keep. |
+| `credits.txt` | **Every** pack's, nearest first: the credits screen shows the child's credits, then each parent's, so a mod keeps the attributions of the pack it builds on without copying them. |
 | `id`, `name`, `version`, `authors`, `license`, `description` | The top pack's. Save games remember the top pack's `id`, so saves of the parent pack do not load in the child and vice versa; each pack also has its own save slots (autosave included), so playing one pack never overwrites another's saves. |
 
 Rules of the chain (all errors when loading):
@@ -185,9 +186,9 @@ web:
 Natively the same child works from any directory whose `extends` path reaches the parent, so a mod
 meant for both keeps its parent at a name other than `base` in both layouts (for example
 `data/vanilla/` next to `data/balance/`). The battle screen's media index files (`units.toml`,
-`terrain.toml`, `fx.toml`) and `credits.txt` are looked up like every media file, natively and on the
-web: the first pack of the chain that has the file (on the web each missing candidate costs one failed
-fetch).
+`terrain.toml`, `fx.toml`) are looked up like every media file, natively and on the web: the first pack
+of the chain that has the file (on the web each missing candidate costs one failed fetch); every
+`credits.txt` of the chain is read.
 
 `hero-tools validate`, `info` and `simulate` take the top pack directory and work on the whole chain.
 `validate` checks unknown keys in every `pack.toml`, in the rules, officer and campaign files in use (a

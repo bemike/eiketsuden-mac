@@ -5,8 +5,9 @@
 //! (`<data>/original`, see [`crate::platform::DataRoot::memory_pack`]), so the layered-pack
 //! chain reads it like a pack on disk: its `pack.toml` says `extends = "../base"`, and every
 //! path the game builds for it is `<data>/original/<rel>` or, for a parent's file,
-//! `<data>/original/../base/<rel>`. Every file read ([`crate::assets`]) and existence check
-//! ([`crate::platform::DataRoot::path`]) goes through [`lookup`]:
+//! `<data>/original/../base/<rel>`. Every file read ([`crate::assets`]) goes through [`lookup`]
+//! (a media file the converted pack lacks then falls through to the base pack's candidate,
+//! [`crate::platform::DataRoot::media_paths`]):
 //!
 //! * a path inside the mount directory is served from memory, and a file the converted pack
 //!   lacks is *missing* — a folder of that name on disk (an earlier `hero-tools original pack`
@@ -113,7 +114,9 @@ pub fn lookup(path: &str) -> Lookup {
 }
 
 /// Whether a file exists at `path`: in the mounted pack, or on disk (native builds; the web
-/// build cannot check without fetching and answers `false` for files outside the mount).
+/// build cannot check without fetching and answers `false` for files outside the mount). The
+/// game reads files instead of asking first; tests check the mount with this.
+#[cfg(test)]
 pub fn is_file(path: &str) -> bool {
     MOUNT.with(|m| match m.borrow().as_ref() {
         None => disk_is_file(path),
@@ -127,6 +130,7 @@ pub fn is_file(path: &str) -> bool {
     })
 }
 
+#[cfg(test)]
 fn disk_is_file(path: &str) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
