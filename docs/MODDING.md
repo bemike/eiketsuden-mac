@@ -1126,7 +1126,7 @@ branch loops, battles no campaign node uses.
   This covers the battle media indexes `units.toml`, `terrain.toml` and `fx.toml` too (in the first pack
   of the chain that has each).
 * **Media** (natively, below the pack directory; for a layered pack in every pack of the chain, top pack
-  first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries,
+  first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries, a unit sheet that is not 4 × 6 of its entry's `frame` (the camp cuts frames from the sheet size),
   `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing
   `units.toml`/`terrain.toml`/`fx.toml` or one the game cannot read (not valid TOML, or a field missing or
   of the wrong type: `units.toml`, `terrain.toml` and `fx.toml` are read with the game's own schema, so a

@@ -167,7 +167,10 @@ The sprite key of a class is its `sprite` field; the base pack uses the class id
 `civilian` 백성.
 
 One sheet per sprite key and side colour: `side` ∈ `player` (blue), `ally` (green), `enemy` (red).
-Layout (same as the Ninja Adventure character sheets): **4 columns = facing down, up, left, right**; rows:
+Layout (the Ninja Adventure character sheets' layout, cut to their first 6 rows): **4 columns = facing down, up,
+left, right**, 6 rows, so a sheet is exactly 4 × 6 of the entry's `frame`, without margins (the camp cuts frames
+from the sheet size, the battle from `frame`; `hero-tools validate` reports a sheet of another size, so drop the
+7th row of a Ninja Adventure sheet); rows:
 
 | row | content |
 |---|---|
