@@ -1710,7 +1710,12 @@ mod tests {
     use super::*;
     use crate::screens::drama::OVERLAY_TOOL_TOP;
 
-    const CANVASES: [Vec2; 2] = [crate::gfx::DEFAULT_CANVAS, Vec2::new(640.0, 480.0)];
+    /// The default (and smallest allowed), VGA and the largest allowed canvas.
+    const CANVASES: [Vec2; 3] = [
+        crate::gfx::DEFAULT_CANVAS,
+        Vec2::new(640.0, 480.0),
+        Vec2::new(1280.0, 800.0),
+    ];
 
     /// Drama overlays over the battle (intro, events, outro) put their toolbar at
     /// `OVERLAY_TOOL_TOP`, below the top bar of the screen underneath: the battle HUD's top bar

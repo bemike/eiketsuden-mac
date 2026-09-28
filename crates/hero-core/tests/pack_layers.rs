@@ -349,11 +349,12 @@ fn presentation_is_inherited_field_by_field() {
 #[test]
 fn the_canvas_must_be_within_limits() {
     for (canvas, ok) in [
-        ("[320, 200]", true),
+        ("[480, 270]", true),
         ("[1280, 800]", true),
         ("[640, 480]", true),
-        ("[319, 240]", false),
-        ("[640, 199]", false),
+        ("[479, 270]", false),
+        ("[640, 269]", false),
+        ("[320, 200]", false),
         ("[1281, 720]", false),
         ("[1280, 801]", false),
     ] {
@@ -369,7 +370,7 @@ fn the_canvas_must_be_within_limits() {
             let (file, msg) = parse_error(load_err(&files));
             assert_eq!(file, "pack.toml");
             assert!(
-                msg.contains("must be between [320, 200] and [1280, 800]"),
+                msg.contains("must be between [480, 270] and [1280, 800]"),
                 "{canvas}: {msg}"
             );
         }

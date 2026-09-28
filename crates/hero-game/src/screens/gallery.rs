@@ -19,8 +19,9 @@
 //!    the game itself) and exercises the audio manager.
 //!
 //! `V` switches the canvas between the presentation profiles screens must lay out on
-//! ([`CANVAS_SIZES`]: the default 480×270, 640×480 and the smallest allowed, 320×200), so the
-//! widgets and the real screens can be checked without a pack that declares another canvas.
+//! ([`CANVAS_SIZES`]: the default and smallest allowed 480×270, 640×480 and the largest allowed,
+//! 1280×800), so the widgets and the real screens can be checked without a pack that declares
+//! another canvas.
 //! Loading the game (화면 → 게임 시작) sets the pack's own canvas again.
 
 use super::backdrop::draw_backdrop;
@@ -73,12 +74,12 @@ const WRAP_SAMPLE: &str = "황건적이 들고일어나 온 고을이 불타던 
 const WRAP_MIN: f32 = 96.0;
 const WRAP_MAX: f32 = 440.0;
 
-/// Canvas sizes `V` cycles through: the default, the original's VGA screen and the smallest a
-/// pack may declare.
+/// Canvas sizes `V` cycles through: the default (also the smallest a pack may declare), the
+/// original's VGA screen and the largest a pack may declare.
 pub const CANVAS_SIZES: [Vec2; 3] = [
     DEFAULT_CANVAS,
     Vec2::new(640.0, 480.0),
-    Vec2::new(320.0, 200.0),
+    Vec2::new(1280.0, 800.0),
 ];
 
 /// Dialogue samples: speaker, portrait key, text. All text is original to this project.

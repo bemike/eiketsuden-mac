@@ -57,8 +57,9 @@ pub struct RulesFiles {
 
 /// Default virtual canvas size in pixels (the base pack's 16 px tiles: 30 × 17 visible tiles).
 pub const DEFAULT_CANVAS: [u32; 2] = [480, 270];
-/// Smallest virtual canvas a pack may ask for, `[width, height]`.
-pub const MIN_CANVAS: [u32; 2] = [320, 200];
+/// Smallest virtual canvas a pack may ask for, `[width, height]`: the smallest the camp and
+/// battle screens are laid out for (`docs/DECISIONS.md` D13).
+pub const MIN_CANVAS: [u32; 2] = [480, 270];
 /// Largest virtual canvas a pack may ask for, `[width, height]`.
 pub const MAX_CANVAS: [u32; 2] = [1280, 800];
 
