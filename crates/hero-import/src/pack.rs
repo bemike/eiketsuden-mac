@@ -26,7 +26,7 @@
 //! # Mapping rules
 //!
 //! * **Portraits.** A base-pack officer gets the `FACEDAT` entry of the `BAKDATA` officer with the
-//!   same name (the Korean name in the Korean release, the hanja in the Chinese one). Two spellings
+//!   same name (the Korean name in the Korean release, the hanja in the Chinese one). A few spellings
 //!   differ between the release and the base pack ([`NAME_ALIASES`]); one name is used by two
 //!   officers and their stored Japanese reading tells them apart ([`READINGS`]). An officer with no
 //!   or several candidate portraits keeps the base pack's picture and is listed in the index.
@@ -45,7 +45,8 @@
 //!   are (the picture layer, 16-px chips, so a 32-px tile is one 2×2-chip cell) and its terrain
 //!   bytes as the rules grid ([`map_rows`]: the code in base 36, [`TERRAIN_MAP`] in the legend).
 //!   A cell whose code has no pack terrain gets the terrain its chips are drawn with elsewhere
-//!   ([`ChipTerrain::code_of`]) and is listed as a stand-in.
+//!   ([`ChipTerrain::code_of`]), an off-map code ([`OFF_MAP`]) an impassable one; both are listed
+//!   as stand-ins.
 //!
 //! The pack is written only when the palette bank of `MAIN.EXE` is found: unlike the overlay, a
 //! pack is played, so no grey-ramp stand-in art is written. Unit sheets and map pictures need the
@@ -921,6 +922,15 @@ pub const NAME_ALIASES: &[(&str, &str)] = &[
     ("zhang_liao", "장요"),
     // 紀靈: 기령 / 기영.
     ("ji_ling", "기영"),
+    // 宋憲 (ソウケン): 송겸 in the release, a Lü Bu officer next to 위속 and 진궁 with the
+    // base pack's stats (leadership 50, war 59); Xiapi's lines name "후성, 위속, 송겸", the three
+    // who betrayed Lü Bu.
+    ("song_xian", "송겸"),
+    // 王楷 (オウカイ): 왕개, Lü Bu's army, right after 허사.
+    ("wang_kai", "왕개"),
+    // 關興 (カンコウ): 관훙, a misspelling in the release (its lines say 관흥, "관우의 아들"), in
+    // 장포's and 관평's army with the base pack's stats (85 / 88 / 70).
+    ("guan_xing", "관훙"),
 ];
 
 /// Base-pack officers whose name `BAKDATA` gives to two officers, with the Japanese reading
@@ -1821,8 +1831,8 @@ pub fn code_glyph(code: u8) -> Option<char> {
     char::from_digit(u32::from(code), 36)
 }
 
-/// A cell whose terrain code names no pack terrain (fire, flood, or a code the documentation
-/// does not know), and the code whose terrain it gets instead.
+/// A cell whose terrain code names no pack terrain (fire, flood, [`OFF_MAP`] or a code the
+/// documentation does not know), and the code whose terrain it gets instead.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StandIn {
     /// `[x, y]` in cells (32-px tiles), `[0, 0]` top left.
@@ -1899,9 +1909,18 @@ impl ChipTerrain {
 /// Rows, legend and stand-ins of a map's rules grid.
 pub type MapRows = (String, BTreeMap<char, &'static str>, Vec<StandIn>);
 
+/// Terrain code the original returns for a cell off the map (`0x1cb6:0xBDBC`); one cell of map 32
+/// stores it. No original unit can move onto it (FORMATS §10.4; placement and some AI searches
+/// still treat it as open), so it becomes [`OFF_MAP_STAND_IN`].
+pub const OFF_MAP: u8 = 255;
+
+/// Terrain code (cliff, impassable for every movement type) used for [`OFF_MAP`] cells.
+pub const OFF_MAP_STAND_IN: u8 = 9;
+
 /// The rules grid of `map` (chip set `set`): rows of [`code_glyph`] characters and the legend
 /// of the characters used. A code without pack terrain ([`TERRAIN_MAP`]: fire, flood, unknown
-/// codes) gets the terrain its chips show ([`ChipTerrain::code_of`]) and is listed as a stand-in.
+/// codes) gets the terrain its chips show ([`ChipTerrain::code_of`]), an [`OFF_MAP`] cell
+/// [`OFF_MAP_STAND_IN`]; both are listed as stand-ins.
 /// Fails when a terrain the map needs is not in `known` (the pack chain's terrain ids).
 pub fn map_rows(
     map: &BattleMap,
@@ -1918,6 +1937,14 @@ pub fn map_rows(
             let code = map.terrain[y * w + x];
             let used = match TERRAIN_MAP.get(usize::from(code)).copied().flatten() {
                 Some(_) => code,
+                None if code == OFF_MAP => {
+                    stand_ins.push(StandIn {
+                        cell: [x, y],
+                        code,
+                        used: OFF_MAP_STAND_IN,
+                    });
+                    OFF_MAP_STAND_IN
+                }
                 None => {
                     let chip =
                         |dx: usize, dy: usize| map.chips[(2 * y + dy) * map.width + 2 * x + dx];
@@ -1972,9 +1999,14 @@ fn map_entry_toml(
         record.number, record.chip_set
     );
     for st in &record.stand_ins {
+        let why = if st.code == OFF_MAP {
+            "the off-map code, impassable in the original"
+        } else {
+            "what its chips show"
+        };
         let _ = write!(
             s,
-            "\n# cell [{}, {}]: terrain code {} has no pack terrain; code {} (what its chips show) is used",
+            "\n# cell [{}, {}]: terrain code {} has no pack terrain; code {} ({why}) is used",
             st.cell[0], st.cell[1], st.code, st.used
         );
     }
@@ -2139,7 +2171,8 @@ fn convert_maps(
     if stand_ins > 0 {
         report.notes.push(format!(
             "{stand_ins} cells have a terrain code without pack terrain; they get the terrain \
-             their chips are drawn with elsewhere (listed per map in {PACK_INDEX} and {MAPS_FILE})"
+             their chips are drawn with elsewhere, or cliff for the off-map code {OFF_MAP} \
+             (listed per map in {PACK_INDEX} and {MAPS_FILE})"
         ));
     }
     report.notes.push(
@@ -2495,10 +2528,10 @@ mod tests {
     #[test]
     fn cells_without_pack_terrain_get_what_their_chips_show() {
         let known: BTreeSet<&str> = ["plain", "forest", "castle"].into();
-        // Cell (1, 0) has code 255 but the chips of a castle cell (code 6), which the other
-        // map draws twice as castle and once as forest.
+        // Cell (1, 0) has code 18 (fire, no pack terrain) but the chips of a castle cell (code
+        // 6), which the other map draws twice as castle and once as forest.
         let mut odd = map(&[&[0, 6]]);
-        odd.terrain[1] = 255;
+        odd.terrain[1] = 18;
         let other = map(&[&[6, 6], &[1, 0]]);
         let mut other_forest = map(&[&[1]]);
         other_forest.chips = vec![24, 25, 26, 27];
@@ -2510,11 +2543,28 @@ mod tests {
             stand_ins,
             vec![StandIn {
                 cell: [1, 0],
-                code: 255,
+                code: 18,
                 used: 6
             }]
         );
-        // Fire and flood (18, 19) are stand-ins too; chips never drawn with pack terrain fail.
+        // An off-map code is impassable whatever its chips show.
+        odd.terrain[1] = OFF_MAP;
+        let with_cliff: BTreeSet<&str> = ["plain", "forest", "castle", "cliff"].into();
+        let (rows, legend, stand_ins) = map_rows(&odd, 1, &chips, &with_cliff).unwrap();
+        assert_eq!(rows, "09\n");
+        assert_eq!(legend[&'9'], "cliff");
+        assert_eq!(
+            stand_ins,
+            vec![StandIn {
+                cell: [1, 0],
+                code: OFF_MAP,
+                used: OFF_MAP_STAND_IN
+            }]
+        );
+        // Without cliff in the pack chain the map fails like any missing terrain.
+        let e = map_rows(&odd, 1, &chips, &known).unwrap_err();
+        assert!(e.contains("code 9 is `cliff`"), "{e}");
+        // Chips never drawn with pack terrain fail.
         let mut fire = map(&[&[0, 18]]);
         fire.chips[2] = 70;
         fire.chips[3] = 71;
