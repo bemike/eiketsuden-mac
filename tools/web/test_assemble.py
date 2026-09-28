@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import importlib.util
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import assemble
+
+HAS_FONTTOOLS = importlib.util.find_spec("fontTools") is not None
 
 
 def pack(root: Path, name: str, extends: str | None = None) -> Path:
@@ -111,6 +116,71 @@ class AssembleTest(unittest.TestCase):
         self.assertIn("not found", warnings[0])
         with self.assertRaises(assemble.AssembleError):
             assemble.assemble(self.root / "no.wasm", self.root / "s2", self.root / "nothing")
+
+    @unittest.skipUnless(HAS_FONTTOOLS, "needs fontTools")
+    def test_fonts_keep_only_the_hanja_the_game_shows(self) -> None:
+        from fontTools.ttLib import TTFont
+
+        # A mod whose parent sits inside it (`extends = "core"`) and holds the fonts.
+        mod = pack(self.root, "mod", "core")
+        core = pack(mod, "core")
+        (core / "fonts").mkdir()
+        for font in assemble.FONT_FILES:
+            shutil.copy2(assemble.ROOT / "data/base" / font, core / font)
+        cmap = TTFont(core / assemble.FONT_FILES[0]).getBestCmap()
+        liu, bei, guan, zhang = (ord(c) for c in "劉備關張")
+        self.assertTrue(all(c in cmap for c in (liu, bei, guan, zhang)))
+        # 劉 only as a TOML escape, 備 in a drama, 關 in the credits, 張 in the game's strings.
+        (mod / "officers.toml").write_text('name = "유비"\nhanja = "\\u5289"\n', encoding="utf-8")
+        (core / "story.drama").write_text("== a\n@narr 備\n", encoding="utf-8")
+        (mod / "credits.txt").write_text("關\n", encoding="utf-8")
+        self.wasm.write_bytes(b"\0asm\x01" + "영걸전 張".encode() + b"\xff")
+        out = self.root / "site"
+        self.assertEqual(assemble.assemble(self.wasm, out, mod, require_font_subset=True), [])
+        for font in assemble.FONT_FILES:
+            subset = out / "data/base/core" / font
+            kept = TTFont(subset).getBestCmap()
+            hanja = {c for c in kept if assemble.is_hanja(c)}
+            self.assertEqual(hanja, {liu, bei, guan, zhang}, font)
+            # Every other character stays.
+            original = TTFont(core / font).getBestCmap()
+            self.assertEqual(
+                {c for c in kept if not assemble.is_hanja(c)},
+                {c for c in original if not assemble.is_hanja(c)},
+            )
+            self.assertLess(subset.stat().st_size, (core / font).stat().st_size)
+            self.assertIn("ER", TTFont(subset)["name"].getBestFamilyName())
+
+    @unittest.skipUnless(HAS_FONTTOOLS, "needs fontTools")
+    def test_a_font_that_cannot_be_subset(self) -> None:
+        base = pack(self.root, "base")
+        (base / "fonts").mkdir()
+        (base / assemble.FONT_FILES[0]).write_bytes(b"not a font")
+        warnings = assemble.assemble(self.wasm, self.root / "s1", base)
+        self.assertIn("cannot subset the font", warnings[0])
+        self.assertEqual((self.root / "s1/data/base" / assemble.FONT_FILES[0]).read_bytes(), b"not a font")
+        with self.assertRaisesRegex(assemble.AssembleError, "cannot subset the font"):
+            assemble.assemble(self.wasm, self.root / "s2", base, require_font_subset=True)
+
+    def test_command_line(self) -> None:
+        base = pack(self.root, "base")
+        out = self.root / "site"
+        args = ["--wasm", str(self.wasm), "--out", str(out), "--data", str(base)]
+        self.assertEqual(assemble.main([*args, "--require-font-subset"]), 0)
+        self.assertTrue((out / "data/base/pack.toml").is_file())
+        with mock.patch.dict(sys.modules, {"fontTools": None}):
+            self.assertEqual(assemble.main([*args, "--require-font-subset"]), 1)
+
+    def test_without_fonttools_the_fonts_are_copied_whole(self) -> None:
+        base = pack(self.root, "base")
+        (base / "fonts").mkdir()
+        (base / assemble.FONT_FILES[0]).write_bytes(b"font")
+        with mock.patch.dict(sys.modules, {"fontTools": None}):
+            warnings = assemble.assemble(self.wasm, self.root / "s1", base)
+            self.assertIn("pip install fonttools", warnings[0])
+            self.assertEqual((self.root / "s1/data/base" / assemble.FONT_FILES[0]).read_bytes(), b"font")
+            with self.assertRaisesRegex(assemble.AssembleError, "pip install fonttools"):
+                assemble.assemble(self.wasm, self.root / "s2", base, require_font_subset=True)
 
 
 if __name__ == "__main__":
