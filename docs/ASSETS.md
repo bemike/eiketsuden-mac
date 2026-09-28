@@ -28,6 +28,7 @@ laid out without engine changes:
 |---|---|---|
 | virtual canvas `[width, height]` | `pack.toml`: `[presentation] canvas = [640, 480]` | `[480, 270]` |
 | map tile size (virtual pixels) | `gfx/tiles/terrain.toml`: `tile_size` | `16` |
+| map picture size | `gfx/maps/<key>.png`: map tiles × `tile_size` | — |
 | unit frame size and anchor | `gfx/units/units.toml`: `frame`, `anchor` per sprite | 16×16, anchor `[8, 15]` |
 | effect frame size | `gfx/fx/fx.toml`: `frame` per effect | — |
 
@@ -118,6 +119,24 @@ layers = [
   (bit 1 = north, 2 = east, 4 = south, 8 = west). Out-of-map neighbours count as connected.
 * A layer may also carry `offset = [dx, dy]` (pixels) for objects that overhang their tile, and `fps` + `frames`
   (list of cell lists) for animated water.
+
+## Map pictures — `gfx/maps/<key>.png`
+
+A map with `image = "<key>"` (in a battle's `[map]` or a map file entry, see
+[MODDING.md](MODDING.md#map)) is drawn from this one picture instead of the terrain tileset: the
+**picture layer**. The map's `rows` stay the rules layer, so the picture has to line up with them:
+
+* Size: exactly `width × tile_size` by `height × tile_size` pixels, where `width`/`height` are the
+  map's size in tiles and `tile_size` is the tileset's (`gfx/tiles/terrain.toml`, 16 without one).
+  Tile `(x, y)` is the square at `(x·T, y·T)`. The tileset still sets the tile size, the camera and
+  everything drawn on the map, so a pack with picture maps keeps a `terrain.toml`.
+* One picture pixel is one virtual pixel, drawn with nearest filtering like the tiles.
+* No animation: animated tileset layers (water) are not drawn on a picture map.
+* A picture that is missing or of another size is not drawn; the game logs a warning and uses the
+  tileset. `hero-tools validate` reports both as errors.
+
+The original mode writes one per converted original battle map (`gfx/maps/hexz_NN.png`, 32-px tiles;
+[ORIGINAL_DATA.md](ORIGINAL_DATA.md#45-원작-모드-팩-만들기)).
 
 ## Unit sprites — `gfx/units/<sprite>_<side>.png` + `gfx/units/units.toml`
 

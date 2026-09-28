@@ -12,7 +12,9 @@
 //!
 //! [`MapRenderer`] draws every static layer once into a render target per battle; only animated
 //! layers are drawn per frame. Without a tileset (missing `terrain.toml` or atlas) the map is
-//! drawn as flat colours per terrain so the battle stays playable.
+//! drawn as flat colours per terrain so the battle stays playable. A map with a picture layer
+//! (`image`, `gfx/maps/<key>.png`) is drawn from that picture instead of the tileset
+//! ([`MapRenderer::use_picture`]); the tileset still sets the tile size.
 //!
 //! The tileset's `tile_size` is the size of a map tile on screen, in virtual pixels: one atlas
 //! pixel is one virtual pixel, like every other piece of pixel art. The battle screen uses it for
@@ -234,9 +236,17 @@ struct AnimatedTile {
     first_layer: usize,
 }
 
+/// What the static part of a map is drawn from.
+enum StaticMap {
+    /// The tileset's static layers (or flat colours), drawn once into a render target.
+    Cache(RenderTarget),
+    /// The map's picture layer, drawn as it is.
+    Picture(Texture2D),
+}
+
 /// Static-map cache and animated layers of one battle map.
 pub struct MapRenderer {
-    cache: Option<RenderTarget>,
+    base: Option<StaticMap>,
     animated: Vec<AnimatedTile>,
     /// Size of a tile in virtual pixels.
     pub tile: f32,
@@ -252,7 +262,7 @@ impl MapRenderer {
     /// [`DEFAULT_TILE`] without a tileset). Nothing is drawn until [`MapRenderer::build`].
     pub fn new(map: &BattleMap, tile: f32) -> MapRenderer {
         MapRenderer {
-            cache: None,
+            base: None,
             animated: Vec::new(),
             tile,
             size: vec2(map.width as f32, map.height as f32) * tile,
@@ -260,7 +270,20 @@ impl MapRenderer {
     }
 
     pub fn is_built(&self) -> bool {
-        self.cache.is_some()
+        self.base.is_some()
+    }
+
+    /// Whether a picture of `size` pixels covers the map exactly (one tile = `tile` pixels, as
+    /// for atlas cells). Any other size would drift away from the rules grid.
+    pub fn fits(&self, size: Vec2) -> bool {
+        size == self.size
+    }
+
+    /// Draw the map from its picture layer instead of the tileset. The caller checks
+    /// [`MapRenderer::fits`] first.
+    pub fn use_picture(&mut self, picture: Texture2D) {
+        self.animated.clear();
+        self.base = Some(StaticMap::Picture(picture));
     }
 
     /// Draw the static layers into the cache render target. `atlas` is `None` when the tileset
@@ -316,7 +339,7 @@ impl MapRenderer {
             }
         }
         set_default_camera();
-        self.cache = Some(target);
+        self.base = Some(StaticMap::Cache(target));
     }
 
     /// Draw the map with its top-left corner at `origin` (virtual pixels).
@@ -328,22 +351,38 @@ impl MapRenderer {
         atlas: Option<&Texture2D>,
         time: f64,
     ) {
-        let Some(cache) = &self.cache else {
-            return;
-        };
-        let tex = &cache.texture;
-        let pad = vec2(PAD, PAD) * self.tile;
-        draw_texture_ex(
-            tex,
-            (origin.x - pad.x).round(),
-            (origin.y - pad.y).round(),
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(vec2(tex.width(), tex.height())),
-                flip_y: true,
-                ..Default::default()
-            },
-        );
+        match &self.base {
+            None => return,
+            Some(StaticMap::Picture(picture)) => {
+                draw_texture_ex(
+                    picture,
+                    origin.x.round(),
+                    origin.y.round(),
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(self.size),
+                        ..Default::default()
+                    },
+                );
+                // A picture has no animated layers.
+                return;
+            }
+            Some(StaticMap::Cache(cache)) => {
+                let tex = &cache.texture;
+                let pad = vec2(PAD, PAD) * self.tile;
+                draw_texture_ex(
+                    tex,
+                    (origin.x - pad.x).round(),
+                    (origin.y - pad.y).round(),
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2(tex.width(), tex.height())),
+                        flip_y: true,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         let (Some(ts), Some(atlas)) = (tileset, atlas) else {
             return;
         };
@@ -495,6 +534,10 @@ layers = [ { auto = [[0, 0]], connect = ["x"] } ]
         let m = map("...\n...");
         assert_eq!(MapRenderer::new(&m, 32.0).size, vec2(96.0, 64.0));
         assert_eq!(MapRenderer::new(&m, 16.0).size, vec2(48.0, 32.0));
+        // A picture layer must cover the map exactly at the tile size in use.
+        assert!(MapRenderer::new(&m, 32.0).fits(vec2(96.0, 64.0)));
+        assert!(!MapRenderer::new(&m, 16.0).fits(vec2(96.0, 64.0)));
+        assert!(!MapRenderer::new(&m, 32.0).fits(vec2(96.0, 63.0)));
     }
 
     #[test]

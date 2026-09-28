@@ -48,6 +48,24 @@ pub fn render(pack: &Pack) -> String {
     let _ = writeln!(out, "Items:       {}", pack.items.len());
     let _ = writeln!(out, "Officers:    {}", pack.officers.len());
     let _ = writeln!(out, "Battles:     {}", pack.battles.len());
+    // Only packs with map files print the line, so the usual output stays as it was.
+    if !pack.maps.is_empty() {
+        let used = pack
+            .maps
+            .keys()
+            .filter(|id| {
+                pack.battles
+                    .values()
+                    .any(|b| b.map.use_map.as_ref() == Some(*id))
+            })
+            .count();
+        let _ = writeln!(
+            out,
+            "Maps:        {} in {} files ({used} used by battles)",
+            pack.maps.len(),
+            pack.files.maps.len()
+        );
+    }
 
     let lines: usize = pack
         .scenes
@@ -124,6 +142,32 @@ mod tests {
             assert!(out.contains(expected), "missing {expected:?} in:\n{out}");
         }
         assert!(!out.contains("Extends:"), "{out}");
+        assert!(!out.contains("Maps:"), "{out}");
+    }
+
+    #[test]
+    fn counts_map_files_and_their_users() {
+        let mut pack = crate::tests::fixture_pack();
+        for id in ["field", "spare"] {
+            pack.maps.insert(
+                id.into(),
+                hero_core::battledef::MapEntry {
+                    id: id.into(),
+                    name: String::new(),
+                    rows: "..".into(),
+                    legend: Default::default(),
+                    theme: None,
+                    image: None,
+                },
+            );
+        }
+        pack.files.maps.push(Default::default());
+        pack.battles.get_mut("b01").unwrap().map.use_map = Some("field".into());
+        let out = render(&pack);
+        assert!(
+            out.contains("Maps:        2 in 1 files (1 used by battles)\n"),
+            "{out}"
+        );
     }
 
     #[test]

@@ -50,9 +50,17 @@ pub enum AiMode {
     Flee,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The map of a battle: written in the battle file, or taken from the pack's map files with
+/// `use`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MapDef {
+    /// Id of a map of the pack's map files ([`MapEntry`], `maps` in `pack.toml`). Such a
+    /// battle writes nothing else in `[map]`: `Pack::load` copies the map's `rows`, `legend`,
+    /// `theme` and `image` here and keeps the id, so a loaded battle always has its rows.
+    #[serde(default, rename = "use", skip_serializing_if = "Option::is_none")]
+    pub use_map: Option<Id>,
     /// One text line per map row; characters are terrain glyphs.
+    #[serde(default)]
     pub rows: String,
     /// Extra glyph -> terrain id mappings for this map (single-character keys).
     #[serde(default)]
@@ -60,6 +68,53 @@ pub struct MapDef {
     /// Visual theme hint for the renderer (e.g. `field`, `castle`, `snow`, `desert`).
     #[serde(default)]
     pub theme: Option<String>,
+    /// Picture layer: media key of `gfx/maps/<image>.png`, a picture of the whole map drawn
+    /// instead of the terrain tileset. `rows` stay the rules (movement, defence, healing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+impl MapDef {
+    /// Whether the definition writes any part of a map itself (which a `use` map must not).
+    pub fn has_own_content(&self) -> bool {
+        !self.rows.trim().is_empty()
+            || !self.legend.is_empty()
+            || self.theme.is_some()
+            || self.image.is_some()
+    }
+}
+
+/// A map of a map file (`[[map]]`), shared by the battles that `use` its id. Map files let a
+/// pack ship maps apart from battles, e.g. the converted original maps before the battles
+/// that play on them exist, or one map for several battles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MapEntry {
+    pub id: Id,
+    /// Display name for tools and authors (battles show their own name).
+    #[serde(default)]
+    pub name: String,
+    /// Same as [`MapDef::rows`].
+    pub rows: String,
+    #[serde(default)]
+    pub legend: BTreeMap<String, Id>,
+    #[serde(default)]
+    pub theme: Option<String>,
+    /// Same as [`MapDef::image`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+impl MapEntry {
+    /// The battle map definition of a battle that uses this map.
+    pub fn to_def(&self) -> MapDef {
+        MapDef {
+            use_map: Some(self.id.clone()),
+            rows: self.rows.clone(),
+            legend: self.legend.clone(),
+            theme: self.theme.clone(),
+            image: self.image.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

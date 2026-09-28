@@ -110,6 +110,7 @@ items = "rules/items.toml"
 | `campaign` | path | yes, unless `extends` | Campaign graph. |
 | `battles` | list of paths | no (`[]`) | Battle files, one battle each. |
 | `dramas` | list of paths | no (`[]`) | Drama scripts, any number of scenes each. |
+| `maps` | list of paths | no (`[]`) | [Map files](#map-files): maps that battles `use` by id. |
 | `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[320, 200]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
 
 ```toml
@@ -146,6 +147,7 @@ What the chain provides:
 | `rules.game`, `.terrain`, `.classes`, `.strategies`, `.items`, `officers`, `campaign` | Each comes from the **nearest** pack that lists it, starting with the top pack: a child's file **replaces** its parent's as a whole (there is no merging inside a file, so a child `items.toml` must hold every item the pack needs). Some pack of the chain must list each of them. |
 | `battles` | The **union** of every pack's battle files. A battle whose `id` a nearer pack defines again **overrides** the farther pack's battle with that id. Within one pack a battle id must still be unique. |
 | `dramas` | The same for scene ids: every pack's scenes, a nearer pack's scene replacing a farther pack's scene with the same id (`== b01_outro` in a child replaces the parent's `b01_outro`). |
+| `maps` | The same for map ids. A battle's `use` is resolved after the whole chain is merged, so a child's map with the id of a parent's map also replaces it in the parent's battles (a mod can redraw a map without copying the battles). |
 | `[presentation]` | Inherited: the nearest pack that has a `[presentation]` table decides; without any, `[480, 270]`. |
 | media (`gfx/`, `bgm/`, `sfx/`, `fonts/`, `credits.txt`) | Every media file is looked up in the top pack first, then in each parent in chain order; the first pack that has the file wins. This includes the media index files `gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml` and `gfx/ui/icons.toml`: a child's index **replaces** its parent's as a whole, so copy the entries you keep. |
 | `id`, `name`, `version`, `authors`, `license`, `description` | The top pack's. Save games remember the top pack's `id`, so saves of the parent pack do not load in the child and vice versa; each pack also has its own save slots (autosave included), so playing one pack never overwrites another's saves. |
@@ -189,8 +191,8 @@ pack that has them. A child pack meant for the web ships its own copies of those
 
 `hero-tools validate`, `info` and `simulate` take the top pack directory and work on the whole chain.
 `validate` checks unknown keys in every `pack.toml`, in the rules, officer and campaign files in use (a
-parent's file that the child replaces is not checked) and in every battle file of the chain, and it
-looks for media in every pack of the chain.
+parent's file that the child replaces is not checked) and in every battle and map file of the chain,
+and it looks for media in every pack of the chain.
 
 ## rules/game.toml
 
@@ -633,12 +635,43 @@ gold = 50
 
 | field | type | default | meaning |
 |---|---|---|---|
-| `rows` | string | required | One line per map row, one terrain glyph per tile. Blank lines and spaces around lines are ignored; every row must have the same width. |
+| `rows` | string | required (unless `use`) | One line per map row, one terrain glyph per tile. Blank lines and spaces around lines are ignored; every row must have the same width. |
 | `legend` | table glyph → terrain id | `{}` | Extra glyphs for this map only (keys are single characters). Checked before the terrain glyphs, so it can also override one. |
 | `theme` | string | none | Renderer hint (`field`, `castle`, `snow`, `desert` ...). |
+| `image` | media key | none | **Picture layer**: `gfx/maps/<image>.png`, one picture of the whole map drawn instead of the terrain tileset. `rows` stay the rules (movement, defence, healing, strategies); the picture only changes the look. It must be exactly the map's width × height in tiles times the tileset's `tile_size` pixels (16 without a tileset), so that picture and rules line up; the game draws the tileset instead of a picture that is missing or of another size (and logs a warning). A picture has no animated layers. |
+| `use` | map id | none | Take the whole map from a [map file](#map-files). The battle's `[map]` then holds nothing else. |
 
 Write `rows` as a TOML multi-line string (`"""`). If a glyph is special in TOML strings (`\`), use a
 literal string (`'''`) instead.
+
+### Map files
+
+A map file holds maps apart from battles, as `[[map]]` tables; battles play on one with
+`[map] use = "<id>"`. Use map files for a map several battles share, or to ship maps before the
+battles that play on them (the original mode's converted maps, for example). The files are listed in
+`pack.toml` `maps`; a map nobody uses is loaded and checked all the same.
+
+```toml
+# maps/hills.toml
+[[map]]
+id = "hills"                 # unique in the pack; battles `use` it
+name = "구릉지"               # optional, for tools and authors (battles show their own name)
+theme = "field"
+image = "hills"              # optional picture layer: gfx/maps/hills.png
+legend = { "0" = "plain", "1" = "forest" }
+rows = '''
+0011
+0001
+'''
+```
+
+```toml
+# battles/b07.toml
+[map]
+use = "hills"
+```
+
+A map file entry has the fields of a battle's [Map](#map) except `use`, plus `id` and `name`.
 
 ### Deployment
 
@@ -941,6 +974,7 @@ Rules and scripts refer to media by **key**; the engine turns keys into paths:
 | item `icon` | `[icons] <key> = [col, row]` in `gfx/ui/icons.toml` |
 | battle `bgm` / `bgm_enemy`, `@bgm` | `bgm/<key>.ogg` |
 | `@bg` | `gfx/bg/<key>.png` |
+| map `image` | `gfx/maps/<key>.png` |
 | `@sfx` | `sfx/<key>.ogg` or `sfx/<key>.wav` |
 
 Formats, sizes, sheet layouts and the keys the engine itself uses (UI icons, sound effects, jingles) are
@@ -965,11 +999,13 @@ start it and `hero-tools validate` exits with 1. **Errors** of stage 3 (missing 
   without a readable `pack.toml`, a pack that extends itself (directly or through others), two packs of
   a chain with the same `id`, more than 4 packs in a chain, a rules file, `officers` or `campaign` that
   no pack of the chain lists.
-* Empty or duplicate ids of terrain, classes, strategies, items, officers, campaign nodes and battles;
-  two terrain types with the same glyph. (In a chain, battle ids must be unique within each pack; a
-  nearer pack's battle overrides a farther pack's.)
-* A battle map that cannot be parsed (no rows, rows of different width, unknown glyph, legend key longer
-  than one character, legend naming unknown terrain).
+* Empty or duplicate ids of terrain, classes, strategies, items, officers, campaign nodes, battles and
+  maps of map files; two terrain types with the same glyph. (In a chain, battle and map ids must be
+  unique within each pack; a nearer pack's battle or map overrides a farther pack's.)
+* A battle map or map file entry that cannot be parsed (no rows, rows of different width, unknown
+  glyph, legend key longer than one character, legend naming unknown terrain).
+* A battle that `use`s a map no map file defines, or that writes `rows`, `legend`, `theme` or `image`
+  next to `use`.
 * Drama syntax errors (reported as `file: line N: ...`): unknown commands, jumps to unknown labels,
   duplicate labels, commands outside a scene, malformed `@choice`, `@if`, `@set`, `@wait` ...
 * The same scene id in two scenes, in one file or across files of one pack.
@@ -1010,7 +1046,11 @@ non-weapon, `def_pct` on non-armor, `move_bonus` on a non-accessory.
 **officers.toml** — E: unknown class, level outside 1..=`level_cap`, equipment that does not exist or does
 not fit its slot. W: empty name, stats outside 0..=100, equipment not meant for the officer's family.
 
-**Battles** — E: `turn_limit` 0, legend naming unknown terrain, no victory condition and no event granting
+**Maps** (map file entries) — E: legend naming unknown terrain, an `image` that is not a media key
+(`/`-separated parts of letters, digits, `_` and `-`).
+
+**Battles** — E: `turn_limit` 0, legend naming unknown terrain or an `image` that is not a media key
+(for maps written in the battle; a `use`d map is checked as a map), no victory condition and no event granting
 victory, `spawn` of a group without units, treasures outside the map / on the same tile / with unknown
 items / negative gold, negative `reward_gold`, unknown `intro`/`outro` scenes. W: empty name, no enemy
 units, a group no event spawns, a treasure that gives nothing, `@item` of a battle consumable in the
@@ -1054,12 +1094,14 @@ branch loops, battles no campaign node uses.
   first, index files read from the first pack that has them): E for missing unit sheets and `units.toml` entries,
   `_unknown.png`, music, backgrounds and sound effects used by battles and dramas, a missing
   `terrain.toml`/`fx.toml` or one that is not valid TOML, a missing terrain atlas image, terrain without a
-  `[tiles.<key>]` entry, strategy effects without an `fx.toml` entry or strip. W for missing portraits (the
+  `[tiles.<key>]` entry, a `tile_size` that is not a positive whole number, strategy effects without an
+  `fx.toml` entry or strip, a map picture (`image`) that is missing, is not a PNG or is not exactly the
+  map's size in tiles times `tile_size`. W for missing portraits (the
   `_unknown` portrait is shown), a missing `icons.toml` or unknown icon keys. For the media index files
   (`units.toml`, `terrain.toml`, `fx.toml`, `icons.toml`) this checks only the TOML syntax, the files
-  they name and that the entries the pack needs exist; it does not check the other fields' types or
-  values (`tile_size`, `frame`, `anchor`, `frames`, `fps`, …). An index with such a mistake (say
-  `tile_size = "48"`) passes validation; the game then logs a warning (stderr natively, the browser
+  they name, `tile_size` and that the entries the pack needs exist; it does not check the other fields'
+  types or values (`frame`, `anchor`, `frames`, `fps`, …). An index with such a mistake (say
+  `frame = "48"`) passes validation; the game then logs a warning (stderr natively, the browser
   console on the web) and falls back to defaults or placeholders (16×16 unit frames, for example), so
   check a new index in the game.
 

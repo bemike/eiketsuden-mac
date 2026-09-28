@@ -16,8 +16,9 @@
 //!   player's actions; holding confirm fast-forwards.
 //!
 //! * **Presentation** — the map is drawn with the tile size of the pack's tileset
-//!   (`gfx/tiles/terrain.toml` `tile_size`, 16 pixels without one) and every window is laid out
-//!   relative to the canvas size (`[presentation] canvas` of `pack.toml`).
+//!   (`gfx/tiles/terrain.toml` `tile_size`, 16 pixels without one), from the map's picture layer
+//!   (`gfx/maps/<image>.png`) when it has one, and every window is laid out relative to the
+//!   canvas size (`[presentation] canvas` of `pack.toml`).
 //!
 //! Controls: arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc/right click cancel,
 //! Tab/E and Q cycle through units that can still act, mouse at the screen edge / right-drag /
@@ -82,6 +83,9 @@ struct Meta {
     units_req: Option<FileRequest>,
     fx_req: Option<FileRequest>,
     tileset: Option<Tileset>,
+    /// Texture key of the map's picture layer (`maps/<image>`) until the map is built from it,
+    /// or given up for the tileset.
+    picture: Option<String>,
     sprites: BTreeMap<String, SpriteDef>,
     fx: BTreeMap<String, FxDef>,
     /// Media key per effect (`fx/<key>`), so drawing does not format strings.
@@ -371,6 +375,13 @@ impl BattleScreen {
                 }
             }
         }
+        self.meta.picture = self
+            .def()
+            .map
+            .image
+            .as_ref()
+            .map(|key| format!("maps/{key}"));
+        textures.extend(self.meta.picture.iter().cloned());
         ctx.media.preload_textures(&textures);
         let mut sounds: Vec<String> = sfx::ALL.iter().map(|k| format!("sfx/{k}")).collect();
         for key in [self.bgm_for(Side::Player), self.bgm_for(Side::Enemy)] {
@@ -424,6 +435,36 @@ impl BattleScreen {
             }
         }
         if !self.map.is_built() && self.meta.tileset_req.is_none() {
+            // The tile size is known now (the tileset's, or the default without one), so the
+            // picture layer can be checked against the map; one that is missing or does not
+            // fit is given up with a warning and the tileset draws the map.
+            if let Some(key) = self.meta.picture.clone() {
+                match ctx.media.texture_state(&key) {
+                    AssetState::Loading => return,
+                    AssetState::Ready => {
+                        if let Some(picture) = ctx.media.texture(&key) {
+                            let size = vec2(picture.width(), picture.height());
+                            if self.map.fits(size) {
+                                self.map.use_picture(picture);
+                                return;
+                            }
+                            macroquad::logging::warn!(
+                                "gfx/{}.png is {}x{} pixels, the map needs {}x{}; drawing the tileset",
+                                key,
+                                size.x,
+                                size.y,
+                                self.map.size.x,
+                                self.map.size.y
+                            );
+                        }
+                    }
+                    AssetState::Missing => macroquad::logging::warn!(
+                        "gfx/{}.png unavailable; drawing the tileset",
+                        key
+                    ),
+                }
+                self.meta.picture = None;
+            }
             match &self.meta.tileset {
                 Some(ts) => match ctx.media.texture_state(&ts.texture) {
                     AssetState::Loading => {}

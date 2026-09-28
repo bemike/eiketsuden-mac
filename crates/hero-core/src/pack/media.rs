@@ -1,7 +1,10 @@
 //! Native media check behind [`Pack::missing_media`]; the file conventions are those of
 //! `docs/ASSETS.md`.
 
+use super::validate::is_media_key;
 use super::{Issue, Pack, Severity};
+use crate::battledef::MapDef;
+use crate::map::BattleMap;
 use crate::script::Cmd;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -13,6 +16,9 @@ const TILES_TOML: &str = "gfx/tiles/terrain.toml";
 const FX_TOML: &str = "gfx/fx/fx.toml";
 const ICONS_TOML: &str = "gfx/ui/icons.toml";
 const UNKNOWN_PORTRAIT: &str = "gfx/portraits/_unknown.png";
+/// Tile size of a tileset without `tile_size`, and of the flat-colour map drawn without one
+/// (`docs/ASSETS.md`).
+const DEFAULT_TILE_SIZE: u32 = 16;
 
 impl Pack {
     /// Check that every media file the pack refers to exists below `root` (the top pack
@@ -24,8 +30,9 @@ impl Pack {
     /// officer and `@show` portraits `gfx/portraits/<key>.png` (warnings: `_unknown.png` is
     /// shown instead, which must exist), `bgm/<key>.ogg` of battles and dramas, `gfx/bg/<key>.png`
     /// and `sfx/<key>.(ogg|wav)` of dramas, a `gfx/tiles/terrain.toml` tile for every terrain,
-    /// `gfx/fx/fx.toml` entries and strips for strategy effects, and `gfx/ui/icons.toml` keys
-    /// of item icons (warnings).
+    /// `gfx/fx/fx.toml` entries and strips for strategy effects, `gfx/ui/icons.toml` keys
+    /// of item icons (warnings), and the picture layers `gfx/maps/<key>.png` of maps, whose
+    /// size must be the map's size in tiles times the tileset's `tile_size`.
     pub fn missing_media(&self, root: &Path) -> Vec<Issue> {
         let mut dirs: Vec<PathBuf> = self.layers.iter().map(|l| root.join(&l.dir)).collect();
         if dirs.is_empty() {
@@ -35,11 +42,13 @@ impl Pack {
             dirs,
             issues: Vec::new(),
             reported: BTreeSet::new(),
+            tile_size: DEFAULT_TILE_SIZE,
         };
         m.units(self);
         m.portraits(self);
         m.audio_and_backgrounds(self);
         m.tiles(self);
+        m.map_pictures(self);
         m.effects(self);
         m.icons(self);
         m.issues
@@ -52,6 +61,8 @@ struct MediaCheck {
     issues: Vec<Issue>,
     /// Missing files already reported (each is reported once, at its first user).
     reported: BTreeSet<String>,
+    /// `tile_size` of the tileset in use (read by [`MediaCheck::tiles`]).
+    tile_size: u32,
 }
 
 impl MediaCheck {
@@ -221,6 +232,17 @@ impl MediaCheck {
         let Some(index) = self.index(TILES_TOML, "terrain tiles") else {
             return;
         };
+        match index.get("tile_size") {
+            None => {}
+            Some(v) => match v.as_integer().and_then(|n| u32::try_from(n).ok()) {
+                Some(n) if n > 0 => self.tile_size = n,
+                _ => self.push(
+                    Severity::Error,
+                    TILES_TOML,
+                    format!("tile_size {v} must be a positive whole number of pixels"),
+                ),
+            },
+        }
         match index.get("image").and_then(|v| v.as_str()) {
             Some(image) => {
                 let rel = format!("gfx/tiles/{image}");
@@ -241,6 +263,58 @@ impl MediaCheck {
                     &format!("terrain {}", t.id),
                     format!("{TILES_TOML} has no [tiles.{key}] entry"),
                 );
+            }
+        }
+    }
+
+    /// Picture layers of the map files and of battles that write their map themselves. A
+    /// picture of another size would be drawn misaligned with the rules grid, so the game
+    /// falls back to the tileset for it; here that is an error.
+    fn map_pictures(&mut self, pack: &Pack) {
+        let mut users: Vec<(String, &MapDef)> = Vec::new();
+        let library: Vec<(String, MapDef)> = pack
+            .maps
+            .values()
+            .map(|m| (format!("map {}", m.id), m.to_def()))
+            .collect();
+        for (ctx, def) in &library {
+            users.push((ctx.clone(), def));
+        }
+        for b in pack.battles.values() {
+            if b.map.use_map.is_none() {
+                users.push((format!("battle {}", b.id), &b.map));
+            }
+        }
+        for (ctx, def) in users {
+            // Bad keys are reported by `Pack::validate`.
+            let Some(key) = def.image.as_deref().filter(|k| is_media_key(k)) else {
+                continue;
+            };
+            let Ok(map) = BattleMap::parse(&def.rows, &def.legend, &pack.terrain) else {
+                continue;
+            };
+            let rel = format!("gfx/maps/{key}.png");
+            let Some(path) = self.find(&rel) else {
+                self.require(Severity::Error, &ctx, &rel, "map picture");
+                continue;
+            };
+            let tile = self.tile_size;
+            let want = (map.width as u32 * tile, map.height as u32 * tile);
+            match png_size(&path) {
+                Ok(size) if size == want => {}
+                Ok((w, h)) => self.push(
+                    Severity::Error,
+                    &ctx,
+                    format!(
+                        "{rel} is {w}×{h} pixels; the map needs {}×{} ({}×{} tiles of {tile} px, the tileset's tile_size)",
+                        want.0, want.1, map.width, map.height
+                    ),
+                ),
+                Err(e) => self.push(
+                    Severity::Error,
+                    &ctx,
+                    format!("{}: not a readable PNG: {e}", path.display()),
+                ),
             }
         }
     }
@@ -303,4 +377,20 @@ impl MediaCheck {
             }
         }
     }
+}
+
+/// Width and height of the PNG image at `path`, from its `IHDR` chunk (the first chunk of
+/// every PNG), without decoding the image.
+fn png_size(path: &Path) -> Result<(u32, u32), String> {
+    use std::io::Read;
+    const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
+    let mut head = [0u8; 24];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .map_err(|e| e.to_string())?;
+    if head[..8] != SIGNATURE || &head[12..16] != b"IHDR" {
+        return Err("no PNG signature and IHDR chunk".into());
+    }
+    let be = |at: usize| u32::from_be_bytes([head[at], head[at + 1], head[at + 2], head[at + 3]]);
+    Ok((be(16), be(20)))
 }

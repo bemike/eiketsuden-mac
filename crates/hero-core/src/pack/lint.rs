@@ -6,8 +6,8 @@
 //! of the original that did not survive the round trip.
 
 use super::{
-    parse_error, parse_toml, read, ClassesFile, FileSource, ItemsFile, OfficersFile, PackChain,
-    PackError, PackFile, PackManifest, StrategiesFile, TerrainFile,
+    parse_error, parse_toml, read, ClassesFile, FileSource, ItemsFile, MapsFile, OfficersFile,
+    PackChain, PackError, PackFile, PackManifest, StrategiesFile, TerrainFile,
 };
 use super::{Issue, Pack, Severity};
 use crate::battledef::BattleDef;
@@ -20,8 +20,8 @@ use toml::Value;
 impl Pack {
     /// Keys in the pack's TOML files that the schema does not know (typos such as
     /// `hp_grwth`), as warnings with the file as context. For a layered pack every `pack.toml`
-    /// of the chain, the rules, officer and campaign files in use and the battle files of every
-    /// layer are checked. Files that fail to parse return the same error as [`Pack::load`].
+    /// of the chain, the rules, officer and campaign files in use and the battle and map files
+    /// of every layer are checked. Files that fail to parse return the same error as [`Pack::load`].
     pub fn unknown_fields(src: &dyn FileSource) -> Result<Vec<Issue>, PackError> {
         let chain = PackChain::read(src)?;
         let files = chain.resolve()?;
@@ -43,6 +43,9 @@ impl Pack {
         run(&files.campaign, check::<CampaignDef>)?;
         for file in &files.battles {
             run(file, check::<BattleDef>)?;
+        }
+        for file in &files.maps {
+            run(file, check::<MapsFile>)?;
         }
         Ok(issues)
     }

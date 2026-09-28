@@ -9,11 +9,14 @@
 //! <out>/gfx/units/<sprite>_<side>.png HEXZCHR battle-map icons of the 19 classes as unit sheets
 //! <out>/gfx/units/units.toml          32×32 frames standing on 32-px tiles
 //! <out>/gfx/tiles/terrain.png, .toml  a 32-px tileset learned from the original battle maps
+//! <out>/maps/original.toml            the original battle maps (`[[map]]`, id `hexz_NN`) ...
+//! <out>/gfx/maps/hexz_NN.png          ... and their picture layers
 //! ```
 //!
-//! Everything the pack does not hold (rules, officers, battles, maps, dramas, music, the other
+//! Everything the pack does not hold (rules, officers, battles, dramas, music, the other
 //! pictures) comes from the base pack through the layered-pack chain, so the original mode grows
-//! one converted asset kind at a time (`docs/ORIGINAL_DATA.md` §8, `docs/DECISIONS.md` D8).
+//! one converted asset kind at a time (`docs/ORIGINAL_DATA.md` §8, `docs/DECISIONS.md` D8). The
+//! original maps are shipped as map files ahead of the battles that will `use` them (D9).
 //!
 //! # Mapping rules
 //!
@@ -33,10 +36,15 @@
 //!   mask no map has borrows the closest observed mask. Terrain without neighbour-dependent looks
 //!   gets its most frequent block. Base terrain the original lacks reuses a stand-in
 //!   ([`TILE_FALLBACK`]).
+//! * **Battle maps.** Every map of `HEXZMAP.R3` becomes a map file entry: its chips drawn as they
+//!   are (the picture layer, 16-px chips, so a 32-px tile is one 2×2-chip cell) and its terrain
+//!   bytes as the rules grid ([`map_rows`]: the code in base 36, [`TERRAIN_MAP`] in the legend).
+//!   A cell whose code has no pack terrain gets the terrain its chips are drawn with elsewhere
+//!   ([`ChipTerrain::code_of`]) and is listed as a stand-in.
 //!
 //! The pack is written only when the palette bank of `MAIN.EXE` is found: unlike the overlay, a
-//! pack is played, so no grey-ramp stand-in art is written. Unit sheets need the tileset (their
-//! frames are sized for 32-px tiles) and are skipped when it cannot be built.
+//! pack is played, so no grey-ramp stand-in art is written. Unit sheets and map pictures need the
+//! tileset (they are sized for 32-px tiles) and are skipped when it cannot be built.
 
 use crate::bakdata::{self, Officer};
 use crate::edition::{identify, Edition, EditionId};
@@ -60,7 +68,8 @@ use std::path::Path;
 pub const PACK_INDEX: &str = "original-pack.json";
 /// `format` of [`PACK_INDEX`].
 pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
-pub const PACK_FORMAT_VERSION: u32 = 1;
+/// 2: `maps` (the converted battle maps) and the map file in `pack.toml`.
+pub const PACK_FORMAT_VERSION: u32 = 2;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×480 VGA screen.
@@ -134,9 +143,11 @@ pub struct PackIndex {
     pub edition: Edition,
     pub extends: String,
     pub canvas: [u32; 2],
-    /// By asset kind: `portraits`, `tiles`, `units`.
+    /// By asset kind: `maps`, `portraits`, `tiles`, `units`.
     pub assets: BTreeMap<String, KindReport>,
     pub portraits: Vec<PortraitMatch>,
+    /// Battle maps written to [`MAPS_FILE`].
+    pub maps: Vec<MapRecord>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unmatched_officers: Vec<Unmatched>,
     /// Every file written, relative to the pack folder.
@@ -190,7 +201,8 @@ pub fn write_pack(
     let Some(encoding) = edition.id.text_encoding() else {
         return Err(ExtractError::NotExtractable(Box::new(edition)));
     };
-    let manifest = pack_toml(&options.extends, edition.id)
+    // Checked before anything is written; the final manifest also lists the map file.
+    pack_toml(&options.extends, edition.id, false)
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
     let mut output = Output {
@@ -222,21 +234,34 @@ pub fn write_pack(
         &mut output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
+    let tiles_ok = matches!(tiles.status, Status::Extracted | Status::Partial);
     let units = convert_units(
         &install,
         &exe,
         options,
-        matches!(tiles.status, Status::Extracted | Status::Partial),
+        tiles_ok,
+        &mut output,
+        with_exe(KindReport::new(Status::Extracted, true, "")),
+    )?;
+    let (maps, map_records) = convert_maps(
+        &install,
+        encoding,
+        &exe,
+        options,
+        tiles_ok,
         &mut output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
 
+    let manifest = pack_toml(&options.extends, edition.id, !map_records.is_empty())
+        .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
     output.files.sort();
     let mut assets = BTreeMap::new();
     assets.insert("portraits".to_string(), portraits);
     assets.insert("tiles".to_string(), tiles);
     assets.insert("units".to_string(), units);
+    assets.insert("maps".to_string(), maps);
     let index = PackIndex {
         format: PACK_FORMAT.into(),
         format_version: PACK_FORMAT_VERSION,
@@ -246,6 +271,7 @@ pub fn write_pack(
         canvas: CANVAS,
         assets,
         portraits: matches,
+        maps: map_records,
         unmatched_officers: unmatched,
         files: output.files.clone(),
     };
@@ -270,8 +296,9 @@ fn toml_str(s: &str) -> String {
     out
 }
 
-/// The `pack.toml` of the pack; `extends` must be a relative directory.
-fn pack_toml(extends: &str, edition: EditionId) -> Result<String, String> {
+/// The `pack.toml` of the pack; `extends` must be a relative directory. `maps`: list
+/// [`MAPS_FILE`].
+fn pack_toml(extends: &str, edition: EditionId, maps: bool) -> Result<String, String> {
     if extends.is_empty()
         || Path::new(extends).is_absolute()
         || extends.starts_with('/')
@@ -282,6 +309,11 @@ fn pack_toml(extends: &str, edition: EditionId) -> Result<String, String> {
             "`extends` must be a relative directory with `/` separators, got `{extends}`"
         ));
     }
+    let maps = if maps {
+        format!("maps = [{}]\n", toml_str(MAPS_FILE))
+    } else {
+        String::new()
+    };
     Ok(format!(
         "# Original mode, written by `hero-tools original pack` ({tool}) from the player's own copy\n\
          # of KOEI's Sangokushi Eiketsuden ({edition}). It holds converted game art: keep it on this\n\
@@ -292,8 +324,9 @@ fn pack_toml(extends: &str, edition: EditionId) -> Result<String, String> {
          name = \"영걸전 원작 모드\"\n\
          version = {version}\n\
          license = \"LicenseRef-Private (converted from the player's own copy; not redistributable)\"\n\
-         description = \"보유한 원작에서 변환한 얼굴·유닛·지형 그림을 기본 팩 위에 얹은 팩. 변환되지 않은 것은 기본 팩에서 온다.\"\n\
+         description = \"보유한 원작에서 변환한 얼굴·유닛·지형 그림과 전투 맵을 기본 팩 위에 얹은 팩. 변환되지 않은 것은 기본 팩에서 온다.\"\n\
          extends = {extends}\n\
+         {maps}\
          \n\
          [presentation]\n\
          canvas = [{w}, {h}]\n",
@@ -1068,6 +1101,56 @@ fn toml_key(key: &str) -> String {
     }
 }
 
+/// The readable battle maps of `HEXZMAP.R3` with their entry numbers, the map names of its
+/// last entry, and the `HEXZCHP.R3` entries.
+struct BattleMaps {
+    maps: Vec<(usize, BattleMap)>,
+    /// Raw name per map number (empty when the name entry is missing).
+    names: Vec<Vec<u8>>,
+    chipsets: Vec<Vec<u8>>,
+}
+
+/// Read the battle maps; an unreadable archive is the inner error, an unreadable map entry is
+/// pushed to `report.errors` and left out.
+fn read_battle_maps(
+    install: &InstallDir,
+    report: &mut KindReport,
+) -> Result<Result<BattleMaps, String>, ExtractError> {
+    let archive = |name: &str,
+                   report: &mut KindReport|
+     -> Result<Result<Vec<Vec<u8>>, String>, ExtractError> {
+        Ok(match read_source(install, name, report)? {
+            None => Err(format!("{name} missing")),
+            Some(data) => ls11::Archive::parse(&data)
+                .and_then(|a| a.decode_all())
+                .map_err(|e| format!("{name}: {e}")),
+        })
+    };
+    let entries = archive("HEXZMAP.R3", report)?;
+    let chipsets = archive("HEXZCHP.R3", report)?;
+    let (entries, chipsets) = match (entries, chipsets) {
+        (Ok(e), Ok(c)) => (e, c),
+        (Err(e), _) | (_, Err(e)) => return Ok(Err(e)),
+    };
+    let mut maps: Vec<(usize, BattleMap)> = Vec::new();
+    let mut names = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        match BattleMap::parse(entry) {
+            Ok(map) => maps.push((i, map)),
+            // The last entry is the name list (as in the map extraction).
+            Err(_) if i + 1 == entries.len() && !maps.is_empty() => {
+                names = maps::parse_map_names(entry);
+            }
+            Err(e) => report.errors.push(format!("HEXZMAP.R3 entry {i}: {e}")),
+        }
+    }
+    Ok(Ok(BattleMaps {
+        maps,
+        names,
+        chipsets,
+    }))
+}
+
 fn convert_tiles(
     install: &InstallDir,
     exe: &Exe,
@@ -1084,35 +1167,18 @@ fn convert_tiles(
             return Ok(report);
         }
     };
-    let archive = |name: &str,
-                   report: &mut KindReport|
-     -> Result<Result<Vec<Vec<u8>>, String>, ExtractError> {
-        Ok(match read_source(install, name, report)? {
-            None => Err(format!("{name} missing")),
-            Some(data) => ls11::Archive::parse(&data)
-                .and_then(|a| a.decode_all())
-                .map_err(|e| format!("{name}: {e}")),
-        })
-    };
-    let entries = archive("HEXZMAP.R3", &mut report)?;
-    let chipsets = archive("HEXZCHP.R3", &mut report)?;
-    let (entries, chipsets) = match (entries, chipsets) {
-        (Ok(e), Ok(c)) => (e, c),
-        (Err(e), _) | (_, Err(e)) => {
+    let BattleMaps {
+        maps: battle,
+        chipsets,
+        ..
+    } = match read_battle_maps(install, &mut report)? {
+        Ok(b) => b,
+        Err(e) => {
             report.summary = "battle maps not readable".into();
             report.errors.push(e);
             return Ok(report);
         }
     };
-    let mut battle: Vec<(usize, BattleMap)> = Vec::new();
-    for (i, entry) in entries.iter().enumerate() {
-        match BattleMap::parse(entry) {
-            Ok(map) => battle.push((i, map)),
-            // The last entry is the name list (as in the map extraction).
-            Err(_) if i + 1 == entries.len() && !battle.is_empty() => {}
-            Err(e) => report.errors.push(format!("HEXZMAP.R3 entry {i}: {e}")),
-        }
-    }
     if battle.is_empty() {
         report.summary = "HEXZMAP.R3 holds no readable battle map".into();
         return Ok(report);
@@ -1159,6 +1225,346 @@ fn convert_tiles(
         ));
     }
     Ok(report)
+}
+
+// ----- battle maps ---------------------------------------------------------------------------
+
+/// Id of the map file entry (and key of the picture) of `HEXZMAP.R3` entry `number`. The number
+/// is kept because the scenario scripts name maps by it.
+pub fn map_id(number: usize) -> String {
+    format!("hexz_{number:02}")
+}
+
+/// Pack-relative path of the map file the pack writes.
+pub const MAPS_FILE: &str = "maps/original.toml";
+
+/// Rules-grid character of an original terrain code: the code in base 36 (`0`–`9`, `a`–`h`),
+/// so a row reads as the map's terrain bytes (docs/reverse-engineering/FORMATS.md §10.4). The
+/// map's `legend` names the pack terrain of each character, which keeps the grid independent
+/// of the glyphs the base pack happens to use.
+pub fn code_glyph(code: u8) -> Option<char> {
+    char::from_digit(u32::from(code), 36)
+}
+
+/// A cell whose terrain code names no pack terrain (fire, flood, or a code the documentation
+/// does not know), and the code whose terrain it gets instead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StandIn {
+    /// `[x, y]` in cells (32-px tiles), `[0, 0]` top left.
+    pub cell: [usize; 2],
+    pub code: u8,
+    pub used: u8,
+}
+
+/// A converted battle map, as listed in [`PACK_INDEX`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MapRecord {
+    /// `HEXZMAP.R3` entry.
+    pub number: usize,
+    /// Map file id and picture key ([`map_id`]).
+    pub id: String,
+    /// Name from the name entry, decoded (empty when there is none).
+    pub name: String,
+    /// `[width, height]` in cells.
+    pub cells: [usize; 2],
+    /// Second `HEXZCHP` entry of the chip bank (1 or 2).
+    pub chip_set: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stand_ins: Vec<StandIn>,
+}
+
+/// How often each chip is drawn in cells of each terrain code, over every map
+/// ([`maps::chip_uses`]).
+pub struct ChipTerrain {
+    uses: Vec<maps::ChipUse>,
+    sizes: [usize; 3],
+}
+
+impl ChipTerrain {
+    /// Statistics of `maps` (each with its chip set 1 or 2) for banks of `sizes` chips.
+    pub fn new(maps: &[(&BattleMap, usize)], sizes: [usize; 3]) -> ChipTerrain {
+        ChipTerrain {
+            uses: maps::chip_uses(maps, sizes),
+            sizes,
+        }
+    }
+
+    fn counts(&self, chip: u8, set: usize) -> Option<&[u32]> {
+        let chip = usize::from(chip);
+        let (set, index) = if chip < maps::COMMON_CHIPS {
+            (0, chip)
+        } else {
+            (set, chip - maps::COMMON_CHIPS)
+        };
+        if set >= 3 || index >= self.sizes[set] {
+            return None;
+        }
+        let offset: usize = self.sizes[..set].iter().sum();
+        Some(&self.uses[offset + index].counts)
+    }
+
+    /// The terrain code the four chips of a cell are most often drawn in, among codes with a
+    /// pack terrain (ties: the lower code). This is what the picture shows at that cell.
+    pub fn code_of(&self, chips: [u8; 4], set: usize) -> Option<u8> {
+        let mut totals = [0u32; TERRAIN_COUNT];
+        for chip in chips {
+            if let Some(counts) = self.counts(chip, set) {
+                for (code, total) in totals.iter_mut().enumerate() {
+                    *total += counts[code];
+                }
+            }
+        }
+        (0..TERRAIN_COUNT)
+            .filter(|&code| TERRAIN_MAP[code].is_some() && totals[code] > 0)
+            .max_by_key(|&code| (totals[code], std::cmp::Reverse(code)))
+            .map(|code| code as u8)
+    }
+}
+
+/// Rows, legend and stand-ins of a map's rules grid.
+pub type MapRows = (String, BTreeMap<char, &'static str>, Vec<StandIn>);
+
+/// The rules grid of `map` (chip set `set`): rows of [`code_glyph`] characters and the legend
+/// of the characters used. A code without pack terrain ([`TERRAIN_MAP`]: fire, flood, unknown
+/// codes) gets the terrain its chips show ([`ChipTerrain::code_of`]) and is listed as a stand-in.
+/// Fails when a terrain the map needs is not in `known` (the pack chain's terrain ids).
+pub fn map_rows(
+    map: &BattleMap,
+    set: usize,
+    chips: &ChipTerrain,
+    known: &BTreeSet<&str>,
+) -> Result<MapRows, String> {
+    let (w, h) = map.cells();
+    let mut rows = String::with_capacity((w + 1) * h);
+    let mut legend = BTreeMap::new();
+    let mut stand_ins = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            let code = map.terrain[y * w + x];
+            let used = match TERRAIN_MAP.get(usize::from(code)).copied().flatten() {
+                Some(_) => code,
+                None => {
+                    let chip =
+                        |dx: usize, dy: usize| map.chips[(2 * y + dy) * map.width + 2 * x + dx];
+                    let used = chips
+                        .code_of([chip(0, 0), chip(1, 0), chip(0, 1), chip(1, 1)], set)
+                        .ok_or_else(|| {
+                            format!(
+                                "cell ({x}, {y}) has terrain code {code} and chips that no \
+                                 terrain is drawn with"
+                            )
+                        })?;
+                    stand_ins.push(StandIn {
+                        cell: [x, y],
+                        code,
+                        used,
+                    });
+                    used
+                }
+            };
+            let id = TERRAIN_MAP[usize::from(used)].expect("stand-ins have a pack terrain");
+            if !known.contains(id) {
+                return Err(format!(
+                    "terrain code {used} is `{id}`, which the pack's terrain does not have"
+                ));
+            }
+            let glyph = code_glyph(used).expect("terrain codes are below 36");
+            legend.insert(glyph, id);
+            rows.push(glyph);
+        }
+        rows.push('\n');
+    }
+    Ok((rows, legend, stand_ins))
+}
+
+/// One `[[map]]` table of [`MAPS_FILE`]; `shown` is the part of the name the game shows.
+fn map_entry_toml(
+    record: &MapRecord,
+    shown: &str,
+    rows: &str,
+    legend: &BTreeMap<char, &str>,
+) -> String {
+    let mut s = String::new();
+    let [w, h] = record.cells;
+    let name = if record.name.is_empty() {
+        "no name".to_string()
+    } else {
+        format!("{} (the game shows \"{shown}\")", record.name)
+    };
+    let _ = write!(
+        s,
+        "\n# HEXZMAP.R3 entry {}: {name}, {w}×{h} cells, chip set {}",
+        record.number, record.chip_set
+    );
+    for st in &record.stand_ins {
+        let _ = write!(
+            s,
+            "\n# cell [{}, {}]: terrain code {} has no pack terrain; code {} (what its chips show) is used",
+            st.cell[0], st.cell[1], st.code, st.used
+        );
+    }
+    let legend: Vec<String> = legend
+        .iter()
+        .map(|(g, id)| format!("{} = {}", toml_str(&g.to_string()), toml_str(id)))
+        .collect();
+    let id = toml_str(&record.id);
+    let _ = write!(
+        s,
+        "\n[[map]]\nid = {id}\nname = {}\nimage = {id}\nlegend = {{ {} }}\nrows = '''\n{rows}'''\n",
+        toml_str(&record.name),
+        legend.join(", "),
+    );
+    s
+}
+
+fn maps_file_header() -> String {
+    format!(
+        "# Battle maps of the original mode, converted from HEXZMAP.R3 of the player's copy by\n\
+         # `hero-tools original pack` (do not edit; run the importer again). A battle plays on one\n\
+         # with `[map] use = \"<id>\"`; the id keeps the map's entry number, which the scenario\n\
+         # scripts use. Each map has a picture layer, gfx/maps/<id>.png (the map's 16-px chips as\n\
+         # the game draws them, so one {TILE_PX}-px tile is one 2×2-chip cell), and a rules grid made\n\
+         # from the map's terrain bytes: one character per cell, the original terrain code in\n\
+         # base 36 (docs/reverse-engineering/FORMATS.md §10.4), with `legend` naming its terrain.\n"
+    )
+}
+
+type MapsResult = (KindReport, Vec<MapRecord>);
+
+fn convert_maps(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    exe: &Exe,
+    options: &PackOptions,
+    tiles_ok: bool,
+    out: &mut Output,
+    mut report: KindReport,
+) -> Result<MapsResult, ExtractError> {
+    report.status = Status::Failed;
+    if !tiles_ok {
+        report.summary = "not written: the 32-px tileset could not be built".into();
+        report.errors.push(
+            "the map pictures are drawn at 32 px per tile; without the tileset the pack would \
+             use the base pack's 16-px tiles"
+                .into(),
+        );
+        return Ok((report, Vec::new()));
+    }
+    let (bank, tables) = match (&exe.bank, &exe.tables) {
+        (Ok(bank), Ok(tables)) => (bank, tables),
+        (Err(e), _) | (_, Err(e)) => {
+            report.summary = "MAIN.EXE tables not found".into();
+            report.errors.push(e.clone());
+            return Ok((report, Vec::new()));
+        }
+    };
+    let BattleMaps {
+        maps: battle,
+        names,
+        chipsets,
+    } = match read_battle_maps(install, &mut report)? {
+        Ok(b) => b,
+        Err(e) => {
+            report.summary = "battle maps not readable".into();
+            report.errors.push(e);
+            return Ok((report, Vec::new()));
+        }
+    };
+    let banks: Result<BTreeMap<usize, Vec<u8>>, String> = [1, 2]
+        .into_iter()
+        .map(|set| {
+            maps::battle_bank(&chipsets, set)
+                .map(|b| (set, b))
+                .map_err(|e| format!("HEXZCHP.R3 set {set}: {e}"))
+        })
+        .collect();
+    let banks = match banks {
+        Ok(b) => b,
+        Err(e) => {
+            report.summary = "chip banks not readable".into();
+            report.errors.push(e);
+            return Ok((report, Vec::new()));
+        }
+    };
+    let bank_cells = |set: usize| chipsets.get(set).map_or(0, |c| c.len() / CELL_BYTES);
+    let pairs: Vec<(&BattleMap, usize)> = battle
+        .iter()
+        .map(|(i, m)| (m, tables.chip_set_for(*i)))
+        .collect();
+    let chips = ChipTerrain::new(&pairs, [maps::COMMON_CHIPS, bank_cells(1), bank_cells(2)]);
+    let known: BTreeSet<&str> = options.terrain.iter().map(|t| t.id.as_str()).collect();
+    let pal = &bank[MAP_PALETTE_SLOT];
+    let decode = |bytes: &[u8]| encoding.decode(bytes).text.trim().to_string();
+
+    let mut toml = maps_file_header();
+    let mut records = Vec::new();
+    for (number, map) in &battle {
+        let number = *number;
+        let set = tables.chip_set_for(number);
+        let converted = map_rows(map, set, &chips, &known).and_then(|(rows, legend, stand_ins)| {
+            let image = maps::render_tiles(&map.chips, map.width, map.height, &banks[&set])
+                .map_err(|e| e.to_string())?;
+            let png = encode_png(&image, pal, false).map_err(|e| e.to_string())?;
+            Ok((rows, legend, stand_ins, png))
+        });
+        let (rows, legend, stand_ins, png) = match converted {
+            Ok(c) => c,
+            Err(e) => {
+                report
+                    .errors
+                    .push(format!("HEXZMAP.R3 entry {number}: {e}"));
+                continue;
+            }
+        };
+        let raw = names.get(number).map(Vec::as_slice).unwrap_or_default();
+        let (w, h) = map.cells();
+        let record = MapRecord {
+            number,
+            id: map_id(number),
+            name: decode(raw),
+            cells: [w, h],
+            chip_set: set,
+            stand_ins,
+        };
+        out.write(&format!("gfx/maps/{}.png", record.id), &png)?;
+        report.outputs += 1;
+        let shown = decode(maps::display_name(raw));
+        toml.push_str(&map_entry_toml(&record, &shown, &rows, &legend));
+        records.push(record);
+    }
+    if records.is_empty() {
+        report.summary = "no battle map could be converted".into();
+        return Ok((report, records));
+    }
+    out.write(MAPS_FILE, toml.as_bytes())?;
+    report.outputs += 1;
+    report.status = if report.errors.is_empty() {
+        Status::Extracted
+    } else {
+        Status::Partial
+    };
+    let stand_ins: usize = records.iter().map(|r| r.stand_ins.len()).sum();
+    report.summary = format!(
+        "{} battle maps (picture layer + rules grid), {stand_ins} cells with a stand-in terrain",
+        records.len()
+    );
+    if names.is_empty() {
+        report
+            .notes
+            .push("HEXZMAP.R3 has no name entry; the maps have no names".into());
+    }
+    if stand_ins > 0 {
+        report.notes.push(format!(
+            "{stand_ins} cells have a terrain code without pack terrain; they get the terrain \
+             their chips are drawn with elsewhere (listed per map in {PACK_INDEX} and {MAPS_FILE})"
+        ));
+    }
+    report.notes.push(
+        "no battle uses these maps yet: the battles of the original scenario come with the \
+         scenario conversion (docs/reverse-engineering/STATUS.md §4, step 2)"
+            .into(),
+    );
+    Ok((report, records))
 }
 
 #[cfg(test)]
@@ -1416,13 +1822,84 @@ mod tests {
 
     #[test]
     fn manifest_needs_a_relative_extends() {
-        let toml = pack_toml("../base", EditionId::KoreanDos).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, false).unwrap();
         assert!(toml.contains("\nid = \"original\"\n"), "{toml}");
         assert!(toml.contains("\nextends = \"../base\"\n"), "{toml}");
         assert!(toml.contains("canvas = [640, 480]"), "{toml}");
+        assert!(!toml.contains("maps"), "{toml}");
+        let toml = pack_toml("../base", EditionId::KoreanDos, true).unwrap();
+        assert!(
+            toml.contains(
+                "\nextends = \"../base\"\nmaps = [\"maps/original.toml\"]\n\n[presentation]"
+            ),
+            "{toml}"
+        );
         for bad in ["", "C:/data/base", "/data/base", "..\\base"] {
-            assert!(pack_toml(bad, EditionId::KoreanDos).is_err(), "{bad}");
+            assert!(
+                pack_toml(bad, EditionId::KoreanDos, false).is_err(),
+                "{bad}"
+            );
         }
+    }
+
+    #[test]
+    fn rules_grids_keep_the_terrain_codes() {
+        assert_eq!(code_glyph(0), Some('0'));
+        assert_eq!(code_glyph(10), Some('a'));
+        assert_eq!(code_glyph(17), Some('h'));
+        let known: BTreeSet<&str> = ["plain", "forest", "river", "bridge", "castle"].into();
+        let m = map(&[&[0, 1, 0], &[3, 4, 3]]);
+        let chips = ChipTerrain::new(&[(&m, 1)], [80, 0, 0]);
+        let (rows, legend, stand_ins) = map_rows(&m, 1, &chips, &known).unwrap();
+        assert_eq!(rows, "010\n343\n");
+        let legend: Vec<(char, &str)> = legend.into_iter().collect();
+        assert_eq!(
+            legend,
+            [
+                ('0', "plain"),
+                ('1', "forest"),
+                ('3', "river"),
+                ('4', "bridge")
+            ]
+        );
+        assert!(stand_ins.is_empty());
+        // A terrain the pack does not have stops the map.
+        let known_less: BTreeSet<&str> = ["plain", "forest", "river"].into();
+        let e = map_rows(&m, 1, &chips, &known_less).unwrap_err();
+        assert!(e.contains("code 4 is `bridge`"), "{e}");
+    }
+
+    #[test]
+    fn cells_without_pack_terrain_get_what_their_chips_show() {
+        let known: BTreeSet<&str> = ["plain", "forest", "castle"].into();
+        // Cell (1, 0) has code 255 but the chips of a castle cell (code 6), which the other
+        // map draws twice as castle and once as forest.
+        let mut odd = map(&[&[0, 6]]);
+        odd.terrain[1] = 255;
+        let other = map(&[&[6, 6], &[1, 0]]);
+        let mut other_forest = map(&[&[1]]);
+        other_forest.chips = vec![24, 25, 26, 27];
+        let chips = ChipTerrain::new(&[(&odd, 1), (&other, 1), (&other_forest, 1)], [80, 0, 0]);
+        let (rows, legend, stand_ins) = map_rows(&odd, 1, &chips, &known).unwrap();
+        assert_eq!(rows, "06\n");
+        assert_eq!(legend[&'6'], "castle");
+        assert_eq!(
+            stand_ins,
+            vec![StandIn {
+                cell: [1, 0],
+                code: 255,
+                used: 6
+            }]
+        );
+        // Fire and flood (18, 19) are stand-ins too; chips never drawn with pack terrain fail.
+        let mut fire = map(&[&[0, 18]]);
+        fire.chips[2] = 70;
+        fire.chips[3] = 71;
+        fire.chips[6] = 72;
+        fire.chips[7] = 73;
+        let chips = ChipTerrain::new(&[(&fire, 1)], [80, 0, 0]);
+        let e = map_rows(&fire, 1, &chips, &known).unwrap_err();
+        assert!(e.contains("cell (1, 0) has terrain code 18"), "{e}");
     }
 
     /// The map install with maps that have plain, forest, stream and bridge cells, and the 47
@@ -1455,7 +1932,7 @@ mod tests {
                     ..base("guan_yu", "관우", "關羽")
                 },
             ],
-            terrain: ["plain", "forest", "river", "road"]
+            terrain: ["plain", "forest", "river", "bridge", "road"]
                 .iter()
                 .map(|&id| BaseTerrain {
                     id: id.into(),
@@ -1499,6 +1976,9 @@ mod tests {
             "gfx/units/short_infantry_enemy.png",
             "gfx/tiles/terrain.png",
             "gfx/tiles/terrain.toml",
+            "gfx/maps/hexz_00.png",
+            "gfx/maps/hexz_01.png",
+            "maps/original.toml",
         ] {
             assert!(pack.join(f).is_file(), "{f}");
             assert!(
@@ -1509,6 +1989,30 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(pack.join(PACK_INDEX)).unwrap()).unwrap();
         assert_eq!(json["format"], PACK_FORMAT);
+
+        // Both maps, with their names, sizes and chip sets; the pictures are 16 px per chip.
+        let summary: Vec<(&str, &str, [usize; 2], usize)> = index
+            .maps
+            .iter()
+            .map(|m| (m.id.as_str(), m.name.as_str(), m.cells, m.chip_set))
+            .collect();
+        assert_eq!(
+            summary,
+            [("hexz_00", "가", [3, 2], 1), ("hexz_01", "각", [2, 2], 2)]
+        );
+        let png = std::fs::read(pack.join("gfx/maps/hexz_00.png")).unwrap();
+        assert_eq!(&png[16..24], &[0, 0, 0, 96, 0, 0, 0, 64]);
+        let manifest = std::fs::read_to_string(pack.join("pack.toml")).unwrap();
+        assert!(
+            manifest.contains("maps = [\"maps/original.toml\"]"),
+            "{manifest}"
+        );
+        let maps = std::fs::read_to_string(pack.join(MAPS_FILE)).unwrap();
+        assert!(
+            maps.contains("[[map]]\nid = \"hexz_00\"\nname = \"가\"\nimage = \"hexz_00\"\nlegend = { \"0\" = \"plain\", \"1\" = \"forest\", \"3\" = \"river\", \"4\" = \"bridge\" }\nrows = '''\n001\n343\n'''\n"),
+            "{maps}"
+        );
+        assert_eq!(index.assets["maps"].status, Status::Extracted);
 
         // A second run replaces the files; a pack folder that is not ours is refused.
         std::fs::write(pack.join("gfx/portraits/stale.png"), b"x").unwrap();
@@ -1541,9 +2045,14 @@ mod tests {
         assert_eq!(tiles.status, Status::Partial, "{tiles:#?}");
         assert!(tiles.errors[0].contains("HEXZMAP.R3 entry 1"), "{tiles:#?}");
         assert!(!index.success());
-        // The tileset from the readable maps is still written, and the unit sheets with it.
+        // The tileset from the readable maps is still written, and the unit sheets and the
+        // readable map with it.
         assert!(out.path().join("gfx/tiles/terrain.toml").is_file());
         assert_eq!(index.assets["units"].status, Status::Extracted);
+        let maps = &index.assets["maps"];
+        assert_eq!(maps.status, Status::Partial, "{maps:#?}");
+        assert_eq!(index.maps.len(), 1);
+        assert!(out.path().join("maps/original.toml").is_file());
 
         // No readable map at all: nothing is learned.
         std::fs::write(src.path().join("HEXZMAP.R3"), ls11::build(&[&names])).unwrap();
@@ -1551,6 +2060,11 @@ mod tests {
         let index = write_pack(src.path(), out.path(), &options()).unwrap();
         assert_eq!(index.assets["tiles"].status, Status::Failed);
         assert!(!out.path().join("gfx/tiles/terrain.toml").exists());
+        // No tileset, no maps (their pictures are sized for its 32-px tiles).
+        assert_eq!(index.assets["maps"].status, Status::Failed);
+        assert!(index.maps.is_empty());
+        let manifest = std::fs::read_to_string(out.path().join("pack.toml")).unwrap();
+        assert!(!manifest.contains("maps"), "{manifest}");
     }
 
     #[test]
@@ -1576,7 +2090,7 @@ mod tests {
         std::fs::write(src.path().join("MAIN.EXE"), b"MZ not a game").unwrap();
         let out = TempDir::new("pack-out-nopal");
         let index = write_pack(src.path(), out.path(), &options()).unwrap();
-        for kind in ["portraits", "tiles", "units"] {
+        for kind in ["portraits", "tiles", "units", "maps"] {
             assert_eq!(index.assets[kind].status, Status::Failed, "{kind}");
         }
         assert!(out.path().join("pack.toml").is_file());

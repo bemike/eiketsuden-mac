@@ -508,6 +508,119 @@ mod tests {
         assert!(err.contains("no pack.toml"), "{err}");
     }
 
+    /// An install with two battle maps (one of them with a cell of unknown terrain code) and
+    /// the `MAIN.EXE` tables and palette the map conversion needs.
+    fn map_install(dir: &Path) {
+        use hero_import::maps::{self, BattleMap};
+        synthetic_install(dir);
+        let names: Vec<&[u8]> = maps::TERRAIN_IDS.iter().map(|s| s.as_bytes()).collect();
+        let mut exe = maps::build_exe_fixture(
+            &maps::ExeFixture {
+                second_set_maps: &[1],
+                backdrop: [0; maps::TERRAIN_COUNT],
+                ground: [5; maps::TERRAIN_COUNT],
+                terrain_names: &names,
+                campaign_sizes: [(16, 4); maps::CHAPTERS],
+            },
+            0,
+        );
+        exe.extend(palette::build_bank(&[[[1, 2, 3]; 16]; palette::SLOTS]));
+        std::fs::write(dir.join("MAIN.EXE"), exe).unwrap();
+        let cells = |n: usize| -> Vec<u8> { (0..n * 128).map(|i| (i % 7) as u8).collect() };
+        let (common, first, second) = (cells(80), cells(4), cells(4));
+        std::fs::write(
+            dir.join("HEXZCHP.R3"),
+            ls11::build(&[&common, &first, &second]),
+        )
+        .unwrap();
+        // Cell (x, y) of terrain code c shows chips 4c .. 4c+3 (all shared chips).
+        let map = |terrain: &[&[u8]]| {
+            let (w, h) = (terrain[0].len(), terrain.len());
+            let mut chips = vec![0; 4 * w * h];
+            for (y, row) in terrain.iter().enumerate() {
+                for (x, &code) in row.iter().enumerate() {
+                    for (i, (dx, dy)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
+                        chips[(2 * y + dy) * 2 * w + 2 * x + dx] = 4 * code.min(19) + i as u8;
+                    }
+                }
+            }
+            BattleMap {
+                width: 2 * w,
+                height: 2 * h,
+                chips,
+                terrain: terrain.concat(),
+            }
+        };
+        let a = map(&[&[0, 1, 2, 0], &[3, 4, 3, 3], &[6, 5, 8, 0]]);
+        let mut b = map(&[&[0, 6], &[0, 6]]);
+        // Unknown code on castle chips: the stand-in is castle.
+        b.terrain[1] = 255;
+        b.chips[2..4].copy_from_slice(&[24, 25]);
+        b.chips[6..8].copy_from_slice(&[26, 27]);
+        let enc = |s: &str| TextEncoding::EucKr.encode(s).unwrap();
+        let mut names = enc("평원1\r\n성");
+        names.extend_from_slice(b"\r\n\r\n\x1a");
+        std::fs::write(
+            dir.join("HEXZMAP.R3"),
+            ls11::build(&[&a.encode(), &b.encode(), &names]),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn original_maps_load_and_validate_on_the_base_pack() {
+        let tmp = Temp::new("maps");
+        let game = tmp.0.join("GAME");
+        std::fs::create_dir(&game).unwrap();
+        map_install(&game);
+        copy_dir(&crate::tests::fixture_dir(), &tmp.0.join("data/base"));
+        let out = tmp.0.join("data/original");
+        // Portraits and unit sheets fail on this install and fixture; the maps do not.
+        assert_eq!(run_pack(&game, &out, None, None), Ok(false));
+        let index: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(out.join(pack::PACK_INDEX)).unwrap()).unwrap();
+        assert_eq!(index["assets"]["maps"]["status"], "extracted", "{index:#}");
+        assert_eq!(index["maps"][1]["stand_ins"][0]["used"], 6, "{index:#}");
+
+        let written = crate::load_pack(&out).unwrap();
+        assert_eq!(written.maps.len(), 2);
+        let a = &written.maps["hexz_00"];
+        assert_eq!(a.name, "평원1");
+        assert_eq!(a.rows, "0120\n3433\n6580\n");
+        assert_eq!(a.image.as_deref(), Some("hexz_00"));
+        let b = &written.maps["hexz_01"];
+        assert_eq!(b.rows, "06\n06\n");
+        assert_eq!(b.legend["6"], "castle");
+        // The rules grid reads as the base pack's terrain.
+        let grid = hero_core::map::BattleMap::parse(&a.rows, &a.legend, &written.terrain).unwrap();
+        assert_eq!(
+            grid.terrain_at(hero_core::geom::Pos::new(1, 0)),
+            Some("forest")
+        );
+        assert_eq!(
+            grid.terrain_at(hero_core::geom::Pos::new(1, 1)),
+            Some("bridge")
+        );
+        assert_eq!(
+            grid.terrain_at(hero_core::geom::Pos::new(2, 2)),
+            Some("village")
+        );
+        // Nothing about the maps is wrong: map files, legends, pictures and their size.
+        let issues = crate::validate::check(&out, &written).unwrap();
+        let about_maps: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i.context.starts_with("map ")
+                    || i.context.contains("maps/")
+                    || i.msg.contains("gfx/maps/")
+            })
+            .collect();
+        assert!(about_maps.is_empty(), "{about_maps:#?}");
+        assert!(
+            crate::info::render(&written).contains("Maps:        2 in 1 files (0 used by battles)")
+        );
+    }
+
     /// The whole conversion on a real install (`EIKETSU_ORIGINAL_DIR`, see
     /// docs/ORIGINAL_DATA.md §6), on top of the repository's base pack.
     #[test]
@@ -545,7 +658,28 @@ mod tests {
             .unwrap()
             .iter()
             .any(|p| p["officer"] == "yu_jin" && p["bakdata"] == 62));
+        // All 58 battle maps (FORMATS.md §10.1); the only cell of a code without terrain is the
+        // code 255 of map 32 (§10.4). Their pictures passed the size check of `run_pack`.
+        let maps = json["maps"].as_array().unwrap();
+        assert_eq!(maps.len(), 58);
+        let stand_ins: Vec<(u64, u64)> = maps
+            .iter()
+            .flat_map(|m| {
+                let number = m["number"].as_u64().unwrap();
+                m["stand_ins"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(move |s| (number, s["code"].as_u64().unwrap()))
+            })
+            .collect();
+        assert_eq!(stand_ins, [(32, 255)]);
         let pack = crate::load_pack(&out).unwrap();
+        assert_eq!(pack.maps.len(), 58);
+        // Map 0 is 56×32 chips, 28×16 cells.
+        let first = &pack.maps["hexz_00"].rows;
+        assert_eq!(first.lines().count(), 16);
+        assert!(first.lines().all(|l| l.chars().count() == 28), "{first}");
         let tiles = std::fs::read_to_string(out.join("gfx/tiles/terrain.toml")).unwrap();
         for t in &pack.terrain {
             assert!(
