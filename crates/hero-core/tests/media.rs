@@ -26,14 +26,25 @@ impl Drop for TempDir {
     }
 }
 
-fn write(root: &Path, rel: &str, content: &str) {
+fn write(root: &Path, rel: &str, content: impl AsRef<[u8]>) {
     let path = root.join(rel);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
 }
 
-/// Every media file the fixture pack refers to (the check only looks at file names, so
-/// empty files stand in for images and audio).
+/// The first 24 bytes of a PNG of `w`×`h` pixels (all the size checks read).
+fn png_head(w: u32, h: u32) -> Vec<u8> {
+    let mut v = vec![
+        0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n', 0, 0, 0, 13,
+    ];
+    v.extend_from_slice(b"IHDR");
+    v.extend_from_slice(&w.to_be_bytes());
+    v.extend_from_slice(&h.to_be_bytes());
+    v
+}
+
+/// Every media file the fixture pack refers to (the check looks at file names and the size of
+/// unit sheets, so empty files stand in for other images and audio).
 fn complete_media(root: &Path) {
     let sprites = [
         "short_infantry",
@@ -46,7 +57,12 @@ fn complete_media(root: &Path) {
     let mut units_toml = String::new();
     for key in sprites {
         for side in ["player", "ally", "enemy"] {
-            write(root, &format!("gfx/units/{key}_{side}.png"), "");
+            // 4 × 6 frames of 16×16.
+            write(
+                root,
+                &format!("gfx/units/{key}_{side}.png"),
+                png_head(64, 96),
+            );
         }
         units_toml.push_str(&format!(
             "[sprites.{key}]\nframe = [16, 16]\nanchor = [8, 15]\n"
@@ -103,7 +119,7 @@ fn complete_media(root: &Path) {
     .enumerate()
     .map(|(i, key)| format!("{key} = [{i}, 0]\n"))
     .collect::<String>();
-    write(root, "gfx/ui/icons.toml", &format!("[icons]\n{icons}"));
+    write(root, "gfx/ui/icons.toml", format!("[icons]\n{icons}"));
 }
 
 #[test]
@@ -296,6 +312,52 @@ fn missing_index_files_are_errors() {
     write(&dir.0, "gfx/tiles/terrain.toml", "image = ");
     let issues = load_fixture().missing_media(&dir.0);
     assert_issue(&issues, Severity::Error, "gfx/tiles/terrain.toml", "");
+}
+
+#[test]
+fn unit_sheets_match_their_frame_size() {
+    let dir = TempDir::new("media-sheets");
+    complete_media(&dir.0);
+    // A 24×24 sheet layout where units.toml says 16×16: the battle and the camp would cut it
+    // differently.
+    write(&dir.0, "gfx/units/archer_enemy.png", png_head(96, 144));
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "class archer",
+        "gfx/units/archer_enemy.png is 96×144 pixels; with frame = [16, 16] in gfx/units/units.toml a sheet of 4 × 6 frames is 64×96",
+    );
+    assert_eq!(issues.len(), 1, "{}", format_issues(&issues));
+
+    // Not a PNG: an error, not a panic; a frame so big 4 × 6 of it overflows 32 bits: a plain
+    // mismatch, not a panic or a wrapped-around match.
+    write(&dir.0, "gfx/units/archer_enemy.png", "");
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "class archer",
+        "not a readable PNG",
+    );
+    write(&dir.0, "gfx/units/archer_enemy.png", png_head(4, 96));
+    let units = std::fs::read_to_string(dir.0.join("gfx/units/units.toml")).unwrap();
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        units.replacen(
+            "[sprites.archer]\nframe = [16, 16]",
+            "[sprites.archer]\nframe = [1073741825, 16]",
+            1,
+        ),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "class archer",
+        "a sheet of 4 × 6 frames is 4294967300×96",
+    );
 }
 
 #[test]
