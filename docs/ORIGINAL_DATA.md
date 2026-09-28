@@ -183,8 +183,8 @@ eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINA
   우선합니다. 원작 그림을 기본 팩의 키로 옮겨 게임 화면에 쓰는 것은 오버레이가 아니라 원작 모드 팩(4.5절)이
   합니다. 이 오버레이는 추출물을 살펴보거나 모드가 `original/...` 키를 직접 참조할 때 쓰는 경로입니다.
 * **오버레이가 바꾸는 것**: 이미지·사운드와 색인 파일 4종(`gfx/ui/icons.toml`, `gfx/units/units.toml`,
-  `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml`), `credits.txt`입니다. 모두 파일마다 따로 찾으므로(오버레이 → 팩),
-  프레임·타일 크기가 다른 시트(원작의 48×48/64×64 유닛 스프라이트, 다른 칩 크기의 타일 아틀라스)를 오버레이에
+  `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml`)이고, 오버레이의 `credits.txt`는 팩 것들 앞에 덧붙습니다. 모두 파일마다
+  따로 찾으므로(오버레이 → 팩), 프레임·타일 크기가 다른 시트(원작의 48×48/64×64 유닛 스프라이트, 다른 칩 크기의 타일 아틀라스)를 오버레이에
   넣을 때는 그 크기를 적은 색인도 함께 넣어야 합니다. 오버레이 색인은 팩 색인을 **통째로** 대체하므로 팩이 쓰는
   모든 키를 적어야 합니다(없으면 그 키는 기본 16×16 프레임이나 평면 색으로 그려집니다). `hero-tools original
   extract`는 색인 파일을 쓰지 않으므로 추출물 그대로는 팩 색인을 씁니다. 원작 그림을 게임 화면에 쓰는 일반적인
@@ -390,7 +390,8 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   `eiketsuden --original <overlay>` (or `EIKETSUDEN_ORIGINAL`; native builds only). Media keys are looked up in
   the overlay first, then in the pack. The extracted keys live under `original/...` and do not replace the base
   pack's own keys automatically yet. The overlay replaces images, sounds, the four index files (`icons.toml`,
-  `units.toml`, `terrain.toml`, `fx.toml`) and `credits.txt`, each file on its own: sheets with other frame
+  `units.toml`, `terrain.toml`, `fx.toml`), each file on its own (an overlay `credits.txt` is shown before the
+  packs'): sheets with other frame
   or tile sizes need their index in the overlay too, and an overlay index replaces the pack's as a whole.
   `extract` writes no index files; the original mode pack (section 4.5) is the usual way to play with the
   original art.

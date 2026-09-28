@@ -4,9 +4,9 @@
 //!   the URL hash (`#gallery`) on the web.
 //! * [`DataRoot`] — where the data pack lives. Natively it is resolved from `--data`, the
 //!   `EIKETSUDEN_DATA` environment variable, `<exe dir>/data/base` and `./data/base` (first match
-//!   wins); on the web it is the relative URL `data/base/` next to `index.html`. All pack files are
-//!   read through [`DataRoot::path`] + `macroquad::file::load_file`, which is a file read natively
-//!   and an HTTP fetch on the web.
+//!   wins); on the web it is the relative URL `data/base/` next to `index.html`. Text files of the
+//!   pack are read through [`DataRoot::path`], media files through [`DataRoot::media_paths`], both
+//!   with `macroquad::file::load_file`, which is a file read natively and an HTTP fetch on the web.
 //! * **Layered packs**: a pack whose `pack.toml` says `extends = "../base"` is built on the packs
 //!   of its chain (`hero_core::pack::PackChain`). Once the loading screen has read the chain it
 //!   records the parent directories ([`DataRoot::with_parent_packs`]); media files are then looked
@@ -257,9 +257,8 @@ impl DataRoot {
         self
     }
 
-    /// The same root without the packs the top pack extends: [`DataRoot::path`] then names
-    /// exactly the file below the top pack directory. The loader reads pack text files this
-    /// way, by their path relative to the top pack (`../base/rules/game.toml` for a parent's).
+    /// The same root without the packs the top pack extends (the loader reads the chain again
+    /// before it records them with [`DataRoot::with_parent_packs`]).
     pub fn top_pack(&self) -> DataRoot {
         self.clone().with_parent_packs(Vec::<String>::new())
     }
@@ -278,26 +277,12 @@ impl DataRoot {
         }
     }
 
-    /// Path or URL of a pack-relative file (`pack.toml`, `rules/game.toml`), for `load_file`. For
-    /// a layered pack natively the first pack of the chain that has the file (the top pack's path
-    /// when none has it); on the web the top pack's path, because the browser cannot check for a
-    /// file without fetching it. Media files (fonts, index files and `credits.txt` included) are
-    /// looked up through the whole chain with [`DataRoot::media_paths`] instead.
+    /// Path or URL of a file relative to the top pack (`pack.toml`, `rules/game.toml`,
+    /// `../base/rules/terrain.toml` for a parent's file as the chain names it), for `load_file`.
+    /// Media files (fonts, index files and `credits.txt` included) are looked up through the
+    /// whole chain with [`DataRoot::media_paths`] instead.
     pub fn path(&self, rel: &str) -> String {
-        let rel = rel.trim_start_matches('/');
-        let top = self.in_pack("", rel);
-        #[cfg(not(target_arch = "wasm32"))]
-        if !self.parents.is_empty() && !memfs::is_file(&top) {
-            if let Some(found) = self
-                .parents
-                .iter()
-                .map(|dir| self.in_pack(dir, rel))
-                .find(|p| memfs::is_file(p))
-            {
-                return found;
-            }
-        }
-        top
+        self.in_pack("", rel.trim_start_matches('/'))
     }
 
     /// Candidate paths of a pack-relative **media** file, in lookup order: the original-data
@@ -592,30 +577,17 @@ mod tests {
     }
 
     #[test]
-    fn layered_paths_prefer_the_first_pack_that_has_the_file() {
+    fn paths_are_relative_to_the_top_pack() {
         let tmp = std::env::temp_dir().join(format!("hero-game-layers-{}", std::process::id()));
-        let (top, base) = (tmp.join("ext"), tmp.join("base"));
-        for (dir, file) in [
-            (&base, "credits.txt"),
-            (&base, "gfx/units/units.toml"),
-            (&top, "gfx/units/units.toml"),
-        ] {
-            let path = dir.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, "x").unwrap();
-        }
+        let top = tmp.join("ext");
         let root = DataRoot::from_dir(&top, &[]).with_parent_packs(["../base"]);
-        let result = (
-            root.path("credits.txt"),
-            root.path("gfx/units/units.toml"),
-            root.path("gfx/fx/fx.toml"),
-        );
-        std::fs::remove_dir_all(&tmp).unwrap();
         let top_prefix = dir_prefix(&top);
-        assert_eq!(result.0, format!("{top_prefix}../base/credits.txt"));
-        assert_eq!(result.1, format!("{top_prefix}gfx/units/units.toml"));
-        // Found nowhere: the top pack's path, so the error names it.
-        assert_eq!(result.2, format!("{top_prefix}gfx/fx/fx.toml"));
+        // A parent's file is named through the chain's own path, never searched for.
+        assert_eq!(root.path("/pack.toml"), format!("{top_prefix}pack.toml"));
+        assert_eq!(
+            root.path("../base/rules/game.toml"),
+            format!("{top_prefix}../base/rules/game.toml")
+        );
     }
 
     #[test]

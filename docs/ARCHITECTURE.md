@@ -88,7 +88,7 @@ The player picks the install folder in the game (title → 원작 데이터, `he
 `screens/original.rs`); the folder is kept in the settings. At every launch the loading screen loads
 the base pack, converts the install **in memory** on a worker thread (`hero_import::pack::build_pack`,
 `hero-game` `original.rs`) and mounts the files at `<data>/original` (`platform/memfs.rs`): every file
-read (`assets.rs` `fetch`) and existence check (`DataRoot::path`) inside that directory is served from
+read (`assets.rs` `fetch`) inside that directory is served from
 memory, paths outside it are read from disk with `..` resolved lexically, so the chain loads exactly
 as it would from disk. Nothing is written; `hero-import` is a native-only dependency of the game
 (D10). `hero-tools original pack` writes the same pack to `data/original/` (git-ignored) for

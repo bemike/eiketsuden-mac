@@ -130,6 +130,35 @@ impl FirstOf {
     }
 }
 
+/// Every one of several candidate paths read at once (a file of which each pack of the chain
+/// may have its own copy); missing ones end in `Err`.
+pub struct AllOf {
+    requests: Vec<FileRequest>,
+}
+
+impl AllOf {
+    pub fn new(paths: Vec<String>) -> AllOf {
+        AllOf {
+            requests: paths.into_iter().map(FileRequest::new).collect(),
+        }
+    }
+
+    /// Advance the reads; `Some` with every result, in the order of the paths, once all are in.
+    pub fn poll(&mut self) -> Option<Vec<Result<Vec<u8>, String>>> {
+        // Poll every request each frame (not only up to the first unfinished one).
+        let mut ready = true;
+        for r in &mut self.requests {
+            ready &= r.poll().is_some();
+        }
+        ready.then(|| {
+            self.requests
+                .iter_mut()
+                .filter_map(|r| r.poll().cloned())
+                .collect()
+        })
+    }
+}
+
 /// One file being read (by full path/URL, see [`DataRoot::path`]).
 pub struct FileRequest {
     future: Option<BoxFuture<BytesResult>>,

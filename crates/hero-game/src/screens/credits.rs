@@ -1,6 +1,7 @@
-//! Credits: scrolls the pack's `credits.txt` (e.g. `data/base/credits.txt`; looked up like a
-//! media file: the original-data overlay, the top pack, then the packs it extends) followed by
-//! the engine credits; when no pack has such a file only the engine credits are shown.
+//! Credits: scrolls the pack credits followed by the engine credits. The pack credits are every
+//! `credits.txt` of the chain, nearest first (the original-data overlay, the top pack, then each
+//! pack it extends, e.g. `data/base/credits.txt`), so a mod does not hide the attributions of
+//! the pack it builds on; when no pack has such a file only the engine credits are shown.
 //!
 //! `credits.txt` is UTF-8 plain text with two markup rules: a line starting with `# ` is a large
 //! heading and a line starting with `## ` a section heading. Long lines wrap.
@@ -12,7 +13,7 @@
 
 use super::backdrop::draw_backdrop;
 use crate::app::{Ctx, Enter, Screen, Transition};
-use crate::assets::FirstOf;
+use crate::assets::AllOf;
 use crate::audio::bgm;
 use crate::flow::Flow;
 use crate::gfx::{fill_rect, Align, FontId, TextStyle};
@@ -86,9 +87,40 @@ fn layout(text: &str, mut wrap: impl FnMut(&str) -> Vec<String>) -> Vec<Line> {
     out
 }
 
+/// The pack credits: every readable `credits.txt` of the chain (`paths` and their `results`,
+/// nearest first), each text once, or `None` when there is none. A byte-order mark is dropped;
+/// a file that cannot be read (other than missing) or is not UTF-8 is logged and skipped.
+fn join_credits(paths: &[String], results: Vec<Result<Vec<u8>, String>>) -> Option<String> {
+    let mut texts: Vec<String> = Vec::new();
+    for (path, result) in paths.iter().zip(results) {
+        let bytes = match result {
+            Ok(b) => b,
+            Err(e) => {
+                macroquad::logging::debug!("no credits at {}: {}", path, e);
+                continue;
+            }
+        };
+        let Ok(text) = String::from_utf8(bytes) else {
+            macroquad::logging::warn!("{} is not valid UTF-8; skipped", path);
+            continue;
+        };
+        // One form for comparing: no BOM, LF line ends, no trailing blank lines.
+        let text = text
+            .strip_prefix('\u{feff}')
+            .unwrap_or(&text)
+            .replace("\r\n", "\n")
+            .trim_end()
+            .to_string();
+        if !text.trim().is_empty() && !texts.contains(&text) {
+            texts.push(text);
+        }
+    }
+    (!texts.is_empty()).then(|| texts.join("\n\n\n"))
+}
+
 pub struct CreditsScreen {
     ending: Option<String>,
-    request: Option<FirstOf>,
+    request: Option<(Vec<String>, AllOf)>,
     lines: Vec<Line>,
     total_height: f32,
     scroll: f32,
@@ -160,7 +192,8 @@ impl Screen for CreditsScreen {
 
     fn on_enter(&mut self, ctx: &mut Ctx, how: Enter) {
         if how == Enter::Fresh {
-            self.request = Some(FirstOf::new(ctx.data_root.media_paths("credits.txt")));
+            let paths = ctx.data_root.media_paths("credits.txt");
+            self.request = Some((paths.clone(), AllOf::new(paths)));
             if self.ending.is_some() {
                 ctx.audio.play_bgm(bgm::ENDING);
             }
@@ -168,23 +201,14 @@ impl Screen for CreditsScreen {
     }
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
-        if let Some(req) = self.request.as_mut() {
-            let Some(result) = req.poll() else {
+        if let Some((paths, req)) = self.request.as_mut() {
+            let Some(results) = req.poll() else {
                 return Transition::None;
             };
-            let pack_credits = match result {
-                Ok(bytes) => match String::from_utf8(bytes) {
-                    Ok(s) => Some(s),
-                    Err(_) => {
-                        macroquad::logging::warn!("credits.txt is not valid UTF-8; skipped");
-                        None
-                    }
-                },
-                Err(e) => {
-                    macroquad::logging::info!("no pack credits ({}); showing engine credits", e);
-                    None
-                }
-            };
+            let pack_credits = join_credits(paths, results);
+            if pack_credits.is_none() {
+                macroquad::logging::info!("no pack credits; showing engine credits");
+            }
             self.request = None;
             self.set_text(ctx, pack_credits);
         }
@@ -279,6 +303,39 @@ impl Screen for CreditsScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_pack_of_the_chain_is_credited() {
+        let ok = |s: &str| Ok(s.as_bytes().to_vec());
+        let paths = |n: usize| {
+            (0..n)
+                .map(|i| format!("p{i}/credits.txt"))
+                .collect::<Vec<_>>()
+        };
+        let joined = join_credits(
+            &paths(3),
+            vec![
+                Err("overlay: missing".into()),
+                ok("# Mod\nme\n"),
+                ok("# Base\nthem\n"),
+            ],
+        );
+        assert_eq!(joined.as_deref(), Some("# Mod\nme\n\n\n# Base\nthem"));
+        // The same text twice (an overlay copy, other line ends, a BOM) once; empty and
+        // non-UTF-8 files are skipped.
+        let joined = join_credits(
+            &paths(5),
+            vec![
+                ok("\u{feff}# Base\r\nthem\r\n"),
+                Ok(vec![0xff]),
+                ok("  \n"),
+                ok("# Base\nthem\n\n"),
+                ok("# Base\nthem"),
+            ],
+        );
+        assert_eq!(joined.as_deref(), Some("# Base\nthem"));
+        assert_eq!(join_credits(&paths(1), vec![Err("missing".into())]), None);
+    }
 
     #[test]
     fn credits_markup() {
