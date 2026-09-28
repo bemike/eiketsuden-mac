@@ -179,10 +179,13 @@ eiketsuden --data data/original
   | 얼굴 | `BAKDATA` + `FACEDAT` | `gfx/portraits/<무장>.png` 105/118명 | 기본 팩 무장과 `BAKDATA` 무장을 **이름**으로 대응(중문판은 한자 이름). 표기가 다른 2명(장료=장요, 기령=기영)은 별칭 표, 이름이 겹치는 우금(于禁/牛金)은 일본어 읽기(`ｳｷﾝ`)로 구분. 기본 팩이 새로 만든 인물 등 대응이 없는 13명은 기본 팩 얼굴 그대로이며 `original-pack.json`에 사유와 함께 기록 |
   | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3 + `units.toml`(32×32 프레임) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **초록 = 아군·우군, 주황 = 적군은 선택**입니다(어느 색이 누구인지는 미해독, STATUS 2절) |
   | 지형 타일 | `HEXZMAP` + `HEXZCHP` | `gfx/tiles/terrain.png`·`terrain.toml`(`tile_size = 32`) | 원작 맵의 2×2 칩 칸(32 px, 유닛이 움직이는 격자) = 엔진 타일 하나. 지형마다, 이웃 마스크(`auto` 층의 4비트)마다 **원작 맵 58개에서 가장 자주 나오는 칸**을 고름. 맵에 없는 마스크는 가장 가까운 관찰 마스크를 빌리고, 이웃과 무관한 지형(평지·마을·병영 등)은 가장 흔한 칸 하나. 원작에 없는 `road`는 평지 칸 |
+  | 전투 맵 | `HEXZMAP` + `HEXZCHP` + `MAIN.EXE`(칩 뱅크 목록) | `maps/original.toml`의 `[[map]]` 58개(id `hexz_00`–`hexz_57`) + 맵마다 그림 층 `gfx/maps/hexz_NN.png` | **그림 층** = 맵의 칩 격자를 게임과 같은 뱅크(FORMATS §10.2)로 그대로 그린 것(16 px 칩, 32 px 타일 = 2×2 칩 칸). **규칙 층** = 칸마다의 지형 바이트(칩 통계가 아님). 행의 글자는 원작 지형 코드의 36진수(`0`–`9`, `a`–`h`, FORMATS §10.4 표 그대로)이고 `legend`가 기본 팩 지형 id를 정함. 팩 지형이 없는 코드(화염·탁류, 문서에 없는 코드 — 실물에서는 맵 32의 코드 255 한 칸)는 **그 칸의 칩이 다른 맵들에서 가장 많이 쓰인 지형**으로 대신하고 `original-pack.json`과 맵 파일 주석에 기록. id의 번호는 시나리오가 맵을 가리키는 번호. `name`은 이름 항목의 원문(`신야1`처럼 숫자 포함) |
 
-* **한계**: 전투 맵의 **배치**는 여전히 기본 팩의 것입니다. 원작 칩으로 기본 팩 맵을 다시 그린 것이라 원작 맵처럼
-  이어지지 않는 경계(초원·산지의 네모난 가장자리)가 보입니다. 원작 맵 자체(그림 층 + 지형 규칙 층)는 시나리오
-  변환(STATUS 4절 2단계)과 함께 들어갑니다. 대사·규칙·음악·전투 장면 연출도 아직 기본 팩 것입니다.
+* **한계**: 원작 맵은 팩에 들어 있지만(맵 파일, [MODDING.md](MODDING.md#map-files)) **아직 어떤 전투도 쓰지
+  않습니다**. 지금 플레이하는 전투는 기본 팩의 전투와 맵이라, 학습한 타일셋으로 기본 팩 맵을 다시 그린 것이고
+  원작 맵처럼 이어지지 않는 경계(초원·산지의 네모난 가장자리)가 보입니다. 원작 맵 위의 원작 전투(유닛 배치·조건)는
+  시나리오 변환(STATUS 4절 2단계)에서 `[map] use = "hexz_NN"`으로 들어갑니다. 대사·규칙·음악·전투 장면 연출도 아직
+  기본 팩 것입니다. 변환된 맵의 수는 `hero-tools info data/original`의 `Maps:` 줄로 볼 수 있습니다.
 * **공유 금지**: 팩 안의 그림은 원작 데이터에서 변환한 것입니다. `data/original/`은 `.gitignore`에 있으며, 자기 PC에서만
   쓰세요.
 
@@ -249,7 +252,7 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 | P7 음악 | OPL2 시퀀스 → FM 합성 | 미착수 (합성기 라이선스·크기 검토 필요) |
 | P8 Steam / PC-98 | Steam 컨테이너(매니페스트 수집 후), 디스크 이미지 리더, Shift-JIS·OPN 변형 | 미착수 — **Steam 매니페스트가 선행 조건**. 암호화가 있으면 법률 검토 전 중단 |
 | P9 세이브 | `ESAVE/MSAVE` 가져오기 | 선택 사항 |
-| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋(4.5절). 원작 맵·시나리오·규칙·UI·음악은 미착수 |
+| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋·원작 전투 맵 58개(그림 층 + 규칙 층, 4.5절). 원작 전투(시나리오)·규칙·UI·음악은 미착수 |
 
 ## 8. 원작 모드 (부분 구현)
 
@@ -264,10 +267,10 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
 * **구현됨 (4.5절)**: `hero-tools original pack`이 사용자의 정품에서 읽은 결과를 기본 팩 옆의 로컬 폴더
   `data/original/`(`.gitignore`에 등록)에 **팩**으로 씁니다. 그 `pack.toml`은 `extends = "../base"`와
   `[presentation] canvas = [640, 480]`(원작의 VGA 화면)을 적고, 변환에 성공한 것만 담습니다: 무장 얼굴, 19병종의
-  유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋. 변환되지 않은 나머지(규칙, 맵 배치, 시나리오,
-  대사, 음악, UI)는 체인을 통해 기본 팩에서 옵니다. 실행은 `eiketsuden --data data/original`입니다.
-* **아직 없는 것**: 원작 맵 자체(칩 격자 = 그림 층, 지형 격자 = 규칙 층; 엔진의 그림 층 지원이 필요), 시나리오
-  변환(P6), `MAIN.EXE` 규칙 표(P5), 원작 배치의 UI(`PACKGRP`), 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
+  유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋, 원작 전투 맵 58개(맵 파일: 칩 격자 = 그림 층,
+  지형 격자 = 규칙 층, [DECISIONS.md](DECISIONS.md) D9). 변환되지 않은 나머지(규칙, 원작 전투, 시나리오, 대사, 음악,
+  UI)는 체인을 통해 기본 팩에서 옵니다. 실행은 `eiketsuden --data data/original`입니다.
+* **아직 없는 것**: 원작 맵을 쓰는 원작 전투(시나리오 변환 P6), `MAIN.EXE` 규칙 표(P5), 원작 배치의 UI(`PACKGRP`), 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
   넣지 않고, 규명되는 순서대로 팩에 들어갈 항목이 늘어납니다([STATUS 4절](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계)).
 * **제약**: `extends`는 상대 경로만 허용하므로(웹 빌드와 폴더 이동을 위해) 원작 모드 팩은 기본 팩과 같은 드라이브,
   예컨대 `data/original/`에 둡니다. 브라우저는 로컬 폴더를 읽을 수 없으므로 웹 빌드에는 원작 모드가 없습니다.
@@ -362,7 +365,9 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   two officers of the same name apart; 105 of 118 on the verified copy), unit sheets of all 19 classes from the
   `HEXZCHR` map icons (32×32 frames; green for the player and allies, orange for enemies is a choice, the colour
   assignment is not decoded) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
-  neighbour mask the 2×2-chip block the maps show most often). Everything else (map layouts, rules, scenario,
-  dialogue, UI, music) still comes from the base pack. `extends` is relative only, so the pack lives next to the
+  neighbour mask the 2×2-chip block the maps show most often). It also holds the 58 original battle maps as a
+  map file (`maps/original.toml`, ids `hexz_NN`): the chips as a picture layer (`gfx/maps/hexz_NN.png`) and the
+  terrain bytes as the rules grid; no battle uses them until the scenario is converted. Everything else (the
+  battles and their maps, rules, scenario, dialogue, UI, music) still comes from the base pack. `extends` is relative only, so the pack lives next to the
   base pack; there is no original mode on the web. The remaining steps are listed in
   [STATUS.md](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계).

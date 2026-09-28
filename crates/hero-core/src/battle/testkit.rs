@@ -391,8 +391,7 @@ pub fn battle(rows: &str) -> BattleDef {
         turn_limit: 30,
         map: MapDef {
             rows: rows.into(),
-            legend: BTreeMap::new(),
-            theme: None,
+            ..MapDef::default()
         },
         deploy: DeployDef {
             max: 4,
@@ -444,6 +443,7 @@ pub fn pack_with(def: BattleDef) -> Pack {
         campaign: None,
         battles: Vec::new(),
         dramas: Vec::new(),
+        maps: Vec::new(),
     };
     Pack {
         layers: vec![PackLayer {
@@ -459,6 +459,7 @@ pub fn pack_with(def: BattleDef) -> Pack {
         items: items(),
         officers: officers(),
         battles,
+        maps: BTreeMap::new(),
         scenes: BTreeMap::new(),
         campaign: CampaignDef {
             title: "test".into(),

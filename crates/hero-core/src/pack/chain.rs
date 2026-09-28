@@ -9,9 +9,9 @@
 //!   (natively the OS opens the result, which differs only after a symbolic link on Unix).
 //! * The five rules files, `officers` and `campaign` are each taken from the nearest layer that
 //!   lists them: a child's file **replaces** its parent's.
-//! * Battles and drama scenes are the **union** of every layer's files; a battle or scene id that
-//!   a nearer layer defines again **overrides** the one of the farther layer. Within one pack an
-//!   id must still be unique.
+//! * Battles, drama scenes and maps (map files) are the **union** of every layer's files; a
+//!   battle, scene or map id that a nearer layer defines again **overrides** the one of the
+//!   farther layer. Within one pack an id must still be unique.
 //! * `[presentation]` is inherited: the nearest layer that declares it wins, otherwise
 //!   [`Presentation::default`]. The rule works on the **whole table**, not field by field: a
 //!   declared table replaces the parent's completely, and a field it omits (even every field, in
@@ -107,10 +107,13 @@ pub struct PackFiles {
     /// Drama files of every layer, in the same order and with the same override rule for
     /// scene ids.
     pub dramas: Vec<PackFile>,
+    /// Map files of every layer, in the same order and with the same override rule for map
+    /// ids.
+    pub maps: Vec<PackFile>,
 }
 
 impl PackFiles {
-    /// Every file, single-role files first, then battles, then dramas.
+    /// Every file, single-role files first, then battles, dramas and maps.
     pub fn all(&self) -> Vec<PackFile> {
         let mut all = vec![
             self.game.clone(),
@@ -123,6 +126,7 @@ impl PackFiles {
         ];
         all.extend(self.battles.iter().cloned());
         all.extend(self.dramas.iter().cloned());
+        all.extend(self.maps.iter().cloned());
         all
     }
 }
@@ -292,6 +296,7 @@ impl PackChain {
             campaign: role("campaign", |m| &m.campaign)?,
             battles: listed(|m| &m.battles),
             dramas: listed(|m| &m.dramas),
+            maps: listed(|m| &m.maps),
         };
         // Each pack lists a file once (checked per manifest); a parent directory inside a
         // child could still make two layers name the same file.

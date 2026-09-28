@@ -24,7 +24,7 @@ mod validate;
 
 pub use chain::{join_path, PackChain, PackFile, PackFiles, PackLayer, MAX_CHAIN_DEPTH};
 
-use crate::battledef::BattleDef;
+use crate::battledef::{BattleDef, MapEntry};
 use crate::campaign::CampaignDef;
 use crate::data::{ClassDef, GameRules, Id, ItemDef, OfficerDef, StrategyDef, TerrainDef};
 use crate::map::BattleMap;
@@ -114,6 +114,9 @@ pub struct PackManifest {
     /// Drama script files (added to the parent's scenes).
     #[serde(default)]
     pub dramas: Vec<String>,
+    /// Map files: `[[map]]` tables that battles `use` by id (added to the parent's maps).
+    #[serde(default)]
+    pub maps: Vec<String>,
 }
 
 impl PackManifest {
@@ -148,6 +151,7 @@ impl PackManifest {
         .collect();
         v.extend(self.battles.iter().cloned());
         v.extend(self.dramas.iter().cloned());
+        v.extend(self.maps.iter().cloned());
         v
     }
 }
@@ -230,7 +234,10 @@ pub struct Pack {
     pub strategies: BTreeMap<Id, StrategyDef>,
     pub items: BTreeMap<Id, ItemDef>,
     pub officers: BTreeMap<Id, OfficerDef>,
+    /// Battles; the map of a battle that `use`s a map file entry is already filled in.
     pub battles: BTreeMap<Id, BattleDef>,
+    /// Maps of the map files by id, whether a battle uses them or not.
+    pub maps: BTreeMap<Id, MapEntry>,
     /// Drama scenes by globally unique scene id.
     pub scenes: BTreeMap<String, Scene>,
     pub campaign: CampaignDef,
@@ -276,6 +283,13 @@ struct ItemsFile {
 struct OfficersFile {
     #[serde(default)]
     officer: Vec<OfficerDef>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MapsFile {
+    #[serde(default)]
+    map: Vec<MapEntry>,
 }
 
 /// Read a pack file, dropping a UTF-8 byte order mark (Windows editors like to add one).
@@ -475,25 +489,70 @@ impl Pack {
             }
         }
 
-        // Battles are parsed as TOML first and their maps checked only once overrides are
-        // resolved: a parent's battle that the child replaces never meets the child's terrain.
+        // Maps and battles are parsed as TOML first and their grids checked only once overrides
+        // are resolved: a parent's map or battle that the child replaces never meets the
+        // child's terrain.
+        let one_char_legend = |path: &str, legend: &BTreeMap<String, Id>| match legend
+            .keys()
+            .find(|k| k.chars().count() != 1)
+        {
+            Some(key) => Err(parse_error(
+                path,
+                format!("map legend key `{key}` must be exactly one character"),
+            )),
+            None => Ok(()),
+        };
+        let mut map_files: BTreeMap<Id, String> = BTreeMap::new();
+        let maps = merge_layers(&files.maps, "map", |path| {
+            let file: MapsFile = parse_toml(path, &read(src, path)?)?;
+            let mut entries = Vec::new();
+            for map in file.map {
+                if map.id.trim().is_empty() {
+                    return Err(parse_error(path, "map with an empty id"));
+                }
+                one_char_legend(path, &map.legend)?;
+                map_files.insert(map.id.clone(), path.to_string());
+                entries.push((map.id.clone(), map));
+            }
+            Ok(entries)
+        })?;
+        for (id, map) in &maps {
+            BattleMap::parse(&map.rows, &map.legend, &terrain)
+                .map_err(|e| parse_error(&map_files[id], format!("map `{id}`: {e}")))?;
+        }
+
         let mut battle_files: BTreeMap<Id, String> = BTreeMap::new();
-        let battles = merge_layers(&files.battles, "battle", |path| {
+        let mut battles = merge_layers(&files.battles, "battle", |path| {
             let battle: BattleDef = parse_toml(path, &read(src, path)?)?;
             if battle.id.trim().is_empty() {
                 return Err(parse_error(path, "battle with an empty id"));
             }
-            if let Some(key) = battle.map.legend.keys().find(|k| k.chars().count() != 1) {
+            one_char_legend(path, &battle.map.legend)?;
+            if battle.map.use_map.is_some() && battle.map.has_own_content() {
                 return Err(parse_error(
                     path,
-                    format!("map legend key `{key}` must be exactly one character"),
+                    format!(
+                        "battle `{}` map: `use` takes the whole map from the map file; remove `rows`, `legend`, `theme` and `image`",
+                        battle.id
+                    ),
                 ));
             }
             battle_files.insert(battle.id.clone(), path.to_string());
             Ok(vec![(battle.id.clone(), battle)])
         })?;
-        for (id, battle) in &battles {
+        for (id, battle) in battles.iter_mut() {
             let file = &battle_files[id];
+            if let Some(map_id) = battle.map.use_map.clone() {
+                // Resolved after every layer is merged, so a child's map replaces the parent's
+                // for the parent's battles too (a mod can redraw a map without copying battles).
+                let entry = maps.get(&map_id).ok_or_else(|| {
+                    parse_error(
+                        file,
+                        format!("battle `{id}` map: uses unknown map `{map_id}` (no map file of the pack defines it)"),
+                    )
+                })?;
+                battle.map = entry.to_def();
+            }
             BattleMap::parse(&battle.map.rows, &battle.map.legend, &terrain)
                 .map_err(|e| parse_error(file, format!("battle `{id}` map: {e}")))?;
         }
@@ -517,6 +576,7 @@ impl Pack {
             items,
             officers,
             battles,
+            maps,
             scenes,
             campaign,
         })

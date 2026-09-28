@@ -27,6 +27,7 @@ pub(super) fn validate(pack: &Pack) -> Vec<Issue> {
     v.strategies();
     v.items();
     v.officers();
+    v.maps();
     for battle in pack.battles.values() {
         v.battle(battle);
     }
@@ -58,6 +59,18 @@ fn range_name(r: &RangeSpec) -> String {
         RangeSpec::Named(n) => format!("`{n}`"),
         RangeSpec::Offsets(o) => format!("{o:?}"),
     }
+}
+
+/// Whether `key` is a media key: `/`-separated non-empty parts of ASCII letters, digits, `_`
+/// and `-` (so it cannot leave the media folder it is looked up in).
+pub(super) fn is_media_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.split('/').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        })
 }
 
 fn at(p: Pos) -> String {
@@ -686,6 +699,46 @@ impl<'a> Validator<'a> {
         pack.class(class)
     }
 
+    /// Maps of the map files, used by a battle or not (a pack may ship maps ahead of the
+    /// battles that play on them).
+    fn maps(&mut self) {
+        for m in self.pack.maps.values() {
+            let ctx = format!("map {}", m.id);
+            self.map_legend(&ctx, &m.legend);
+            self.map_image(&ctx, m.image.as_deref());
+        }
+    }
+
+    fn map_legend(&mut self, ctx: &str, legend: &BTreeMap<String, String>) {
+        for (glyph, terrain) in legend {
+            if glyph.chars().count() != 1 {
+                self.error(
+                    ctx,
+                    format!("map legend key `{glyph}` must be exactly one character"),
+                );
+            }
+            if self.pack.terrain(terrain).is_none() {
+                self.error(
+                    ctx,
+                    format!("map legend maps `{glyph}` to unknown terrain `{terrain}`"),
+                );
+            }
+        }
+    }
+
+    /// The picture layer key names `gfx/maps/<key>.png`, so it must stay a plain relative
+    /// name (no `..`, no drive or absolute path) on every platform and over HTTP.
+    fn map_image(&mut self, ctx: &str, image: Option<&str>) {
+        if let Some(key) = image {
+            if !is_media_key(key) {
+                self.error(
+                    ctx,
+                    format!("map image `{key}` must be a media key: `/`-separated parts of letters, digits, `_` and `-`"),
+                );
+            }
+        }
+    }
+
     fn battle(&mut self, b: &'a BattleDef) {
         let pack = self.pack;
         let ctx = format!("battle {}", b.id);
@@ -695,19 +748,10 @@ impl<'a> Validator<'a> {
         if b.turn_limit == 0 {
             self.error(&ctx, "turn_limit must be at least 1");
         }
-        for (glyph, terrain) in &b.map.legend {
-            if glyph.chars().count() != 1 {
-                self.error(
-                    &ctx,
-                    format!("map legend key `{glyph}` must be exactly one character"),
-                );
-            }
-            if pack.terrain(terrain).is_none() {
-                self.error(
-                    &ctx,
-                    format!("map legend maps `{glyph}` to unknown terrain `{terrain}`"),
-                );
-            }
+        // A map taken from a map file was checked as `map <id>` (once for all its battles).
+        if b.map.use_map.is_none() {
+            self.map_legend(&ctx, &b.map.legend);
+            self.map_image(&ctx, b.map.image.as_deref());
         }
         let map = match BattleMap::parse(&b.map.rows, &b.map.legend, &pack.terrain) {
             Ok(m) => Some(m),
