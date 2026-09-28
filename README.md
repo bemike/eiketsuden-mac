@@ -22,7 +22,8 @@
 1995년 KOEI의 『삼국지 영걸전』은 유비의 일대기를 따라가는 턴제 전술 RPG였습니다. **영걸전 Reloaded**는 그 게임을
 오늘날의 Windows · macOS · Linux · 웹 브라우저에서 다시 즐길 수 있도록 **엔진을 처음부터 새로 만든** 프로젝트입니다.
 [OpenRCT2](https://openrct2.io/)가 롤러코스터 타이쿤 2를, [OpenTTD](https://www.openttd.org/)가 트랜스포트 타이쿤을
-되살린 것과 같은 방식입니다.
+되살린 것과 같은 방식입니다. 엔진을 어떻게 만들고 있는지(OpenRCT2와 같은 점·다른 점, 원작 파일을 읽는 방법, 개발과
+검증 방식)는 **[docs/ENGINE.md](docs/ENGINE.md)** 에 공개합니다.
 
 * **원작 규칙 재현** — PC판(국내 DOS판)의 규칙을 팬 커뮤니티가 역분석한 공식 그대로 옮겼습니다.
   공격력·방어력 `(Lv+10)×(사기/10 + 400/(140−능력치) + 병종 보정)`, 확정 데미지 `(공격 − 방어/2)×지형`,
@@ -96,7 +97,7 @@ cargo run --release -p hero-tools -- validate data/base
 | `data/base` | 기본 데이터 팩: 규칙, 무장, 캠페인, 전투, 대사, 그래픽, 음악 |
 | `tools/assets` | 에셋 파이프라인 (출처 URL·SHA-256 고정, 결정적 빌드) |
 
-설계 문서: [ARCHITECTURE](docs/ARCHITECTURE.md) · [RULES](docs/RULES.md) · [MODDING](docs/MODDING.md) ·
+설계 문서: [ENGINE(개발 방식)](docs/ENGINE.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [RULES](docs/RULES.md) · [MODDING](docs/MODDING.md) ·
 [ASSETS](docs/ASSETS.md) · [DECISIONS](docs/DECISIONS.md) · [ORIGINAL_DATA](docs/ORIGINAL_DATA.md) ·
 [원작 데이터 분석 자료](docs/reverse-engineering/README.md)
 
@@ -151,6 +152,9 @@ Linux and in the browser via WebAssembly.
 * Optional, experimental importer for players who own the original game
   ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)), and a fully data-driven, moddable format
   ([docs/MODDING.md](docs/MODDING.md)); a layered pack (`extends`) holds only the files a mod changes.
+* How the engine is built — the OpenRCT2 model without decompiling the original: a new engine from the
+  published rules, license-clean data packs, and the original game only ever read from the player's own copy
+  and converted at launch — is described in [docs/ENGINE.md](docs/ENGINE.md) (Korean, English summary).
 * Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
   (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).

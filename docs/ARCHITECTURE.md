@@ -1,7 +1,8 @@
 # Architecture
 
 Eiketsuden Reloaded follows the OpenRCT2 model: an original, open-source engine plus data.
-The engine never embeds content; everything the player sees comes from a **data pack**.
+The engine never embeds content; everything the player sees comes from a **data pack**. How the engine
+is developed (and how it differs from OpenRCT2's decompilation route) is in [ENGINE.md](ENGINE.md).
 
 ```
 ┌──────────────────────────── hero-game (bin: eiketsuden) ────────────────────────────┐
