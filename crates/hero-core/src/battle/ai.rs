@@ -25,6 +25,9 @@
 //!   human plays them: being defeated on a tile costs twice the unit's max HP, idle moves
 //!   keep off such tiles, a unit acts only when that beats just moving on, and friends that
 //!   may still move this phase are not counted on to block hostile units.
+//! * **Healing**: a careful unit below half its HP that cannot get closer to its goal goes
+//!   onto a healing tile it can safely stand on (or towards the nearest one it can walk to),
+//!   and a careful unit on a healing tile stays there until it is back at three quarters.
 //! * **Scripted endings**: the player's side knows the battle's `adjacent` / `reach` events
 //!   that end it and its `reach` conditions. A unit that can win the battle by moving does so,
 //!   never moves where it would lose it, and heads for its objective when idle.
@@ -43,6 +46,11 @@ use std::collections::{BinaryHeap, HashMap};
 
 /// `guard` units stay within this manhattan distance of their `ai_pos`.
 const GUARD_RADIUS: i32 = 3;
+/// A careful unit below this percentage of its max HP heads for a healing tile when it has
+/// nothing better to do *(design)*...
+const HEAL_BELOW_PCT: i64 = 50;
+/// ...and stays on it until healed to this percentage.
+const HEAL_UNTIL_PCT: i64 = 75;
 /// A lord values each orthogonally adjacent friendly unit (friends take the attack slots
 /// around it) at this percentage of its max HP.
 const LORD_ESCORT_PCT: i64 = 5;
@@ -567,6 +575,20 @@ impl<'a> Planner<'a> {
     }
 
     fn idle_tile(&self, reach: &[Pos]) -> Pos {
+        let (tile, goals) = self.idle_goal_tile(reach);
+        if self.careful() {
+            let resting = self.heals(self.me.pos) && self.below_pct(HEAL_UNTIL_PCT);
+            if resting || (self.below_pct(HEAL_BELOW_PCT) && !self.progresses(tile, &goals)) {
+                if let Some(heal) = self.heal_tile(reach) {
+                    return heal;
+                }
+            }
+        }
+        tile
+    }
+
+    /// The idle move towards the unit's goal, and the goal tiles.
+    fn idle_goal_tile(&self, reach: &[Pos]) -> (Pos, Vec<Pos>) {
         let objective: Vec<Pos> = self
             .script
             .iter()
@@ -574,18 +596,84 @@ impl<'a> Planner<'a> {
             .flat_map(|s| self.place_goals(&s.place))
             .collect();
         if !objective.is_empty() {
-            return self.approach(&objective, reach);
+            return (self.approach(&objective, reach), objective);
         }
         let goals = if self.me.lord {
             self.friend_positions()
         } else {
             self.hostile_positions()
         };
-        match (goals.is_empty(), self.me.lord) {
+        let tile = match (goals.is_empty(), self.me.lord) {
             (false, _) => self.approach(&goals, reach),
             (true, true) => self.best_position(reach),
             (true, false) => self.me.pos,
+        };
+        (tile, goals)
+    }
+
+    /// Whether moving to `tile` brings the unit closer to `goals` along its paths.
+    fn progresses(&self, tile: Pos, goals: &[Pos]) -> bool {
+        if goals.is_empty() || tile == self.me.pos {
+            return false;
         }
+        let dist = self.goal_distance(goals);
+        let at = |p: Pos| self.board.index(p).map_or(i32::MAX, |i| dist[i]);
+        at(tile) < at(self.me.pos)
+    }
+
+    fn below_pct(&self, pct: i64) -> bool {
+        (self.me.hp as i64) * 100 < self.me.max_hp as i64 * pct
+    }
+
+    /// Whether standing on `tile` restores HP to this unit (a small max HP can round the
+    /// terrain's percentage down to nothing).
+    fn heals(&self, tile: Pos) -> bool {
+        self.board
+            .terrain(tile)
+            .is_some_and(|t| self.me.max_hp as i64 * t.heal_hp.max(0) as i64 / 100 > 0)
+    }
+
+    /// A healing tile for a careful unit that cannot get closer to its goal while badly hurt,
+    /// or is already resting on one: the tile it stands on, else the safest one in reach, else
+    /// a step towards the nearest free one it can walk to; `None` when there is none. Without
+    /// this a hurt unit facing units that `hold` finds every tile towards them deadly and
+    /// waits where it is for the rest of the battle.
+    fn heal_tile(&self, reach: &[Pos]) -> Option<Pos> {
+        let hp = self.me.hp as i64;
+        // As safe as the unit's own moves must be: a lord keeps its two-phase margin.
+        let safe = |p: Pos| {
+            if self.me.lord {
+                self.lord_safe(p, 0)
+            } else {
+                self.danger(p) < hp
+            }
+        };
+        let safe_heal = |p: Pos| self.heals(p) && safe(p);
+        let origin = self.me.pos;
+        if let Some(tile) = reach
+            .iter()
+            .copied()
+            .filter(|&p| safe_heal(p))
+            .min_by_key(|&p| (p != origin, self.threat_at(p), p))
+        {
+            return Some(tile);
+        }
+        // Tiles this unit can stand on: entering a goal costs nothing in `goal_distance`, so an
+        // impassable one would look reachable from next to it.
+        let move_type = &self.st.class_of(self.pack, self.id).move_type;
+        let enterable = |p: Pos| {
+            self.board
+                .terrain(p)
+                .is_some_and(|t| t.move_cost(move_type).is_some())
+        };
+        let goals: Vec<Pos> = (0..self.board.len())
+            .map(|i| self.board.pos_of(i))
+            .filter(|&p| safe_heal(p) && enterable(p) && self.occupant(p, origin).is_none())
+            .collect();
+        // Only a healing tile it can walk to: `approach` falls back to straight-line distance.
+        let dist = self.goal_distance(&goals);
+        let walkable = self.board.index(origin).is_some_and(|i| dist[i] < i32::MAX);
+        walkable.then(|| self.approach(&goals, reach))
     }
 
     /// The scripted ending standing on `tile` brings about: `Some(false)` for a defeat (which
