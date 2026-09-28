@@ -19,14 +19,16 @@ USAGE:
         does not finish or cannot be set up. A --battle ID the pack does not have is a
         command line error (exit 2).
 
-    hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N]...
+    hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N[,N...]]...
         Play the whole campaign from a new game N times (default 4), AI against AI, carrying
         levels, recruits, items and flags from battle to battle: dramas run with their side
-        effects, camps buy nothing and deploy the default army, a lost battle follows its
-        on_defeat or ends the run. --choose takes option N (1 = first) at the choices of
-        scene SCENE (default: the first option). Reports each run's end and, per battle, how
-        often it was won, its average turns and the army's average level; exits with 1 when a
-        run panics, gets stuck or cannot go on.
+        effects, camps buy nothing and keep the camp screen's first selection, a lost battle
+        follows its on_defeat or ends the run. --choose takes option N (1 = first) at the
+        choices of scene SCENE, one N per choice it asks in order (the last N after that;
+        default: the first option). Reports each run's end and, per battle, how often it was
+        won, its average turns and the army's average level at its start; exits with 1 when a
+        run panics, gets stuck or cannot go on, and with 2 when --choose names an unknown
+        scene.
 
     hero-tools info <pack_dir>
         Print a summary of the pack's content.
@@ -78,8 +80,8 @@ pub enum Command {
     SimulateCampaign {
         pack: PathBuf,
         seeds: u32,
-        /// Scene id -> option index (0-based).
-        choose: std::collections::BTreeMap<String, usize>,
+        /// Scene id -> option index (0-based) at each choice the scene asks, in order.
+        choose: std::collections::BTreeMap<String, Vec<usize>>,
     },
     Info {
         pack: PathBuf,
@@ -251,16 +253,31 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
                 };
             }
             "--battle" => battle = Some(value("a battle id")?),
-            "--campaign" if inline.is_none() => campaign = true,
+            "--campaign" if inline.is_some() => return Err("`--campaign` takes no value".into()),
+            "--campaign" => campaign = true,
             "--choose" => {
                 let v = value("SCENE=N")?;
-                let bad = || format!("`--choose` needs SCENE=N with N from 1, got `{v}`");
-                let (scene, n) = v.rsplit_once('=').ok_or_else(bad)?;
-                let n = n.parse::<usize>().ok().filter(|&n| n > 0).ok_or_else(bad)?;
+                let bad = || {
+                    format!("`--choose` needs SCENE=N or SCENE=N,N,... with N from 1, got `{v}`")
+                };
+                let (scene, list) = v.rsplit_once('=').ok_or_else(bad)?;
+                let options = list
+                    .split(',')
+                    .map(|n| {
+                        n.trim()
+                            .parse::<usize>()
+                            .ok()
+                            .filter(|&n| n > 0)
+                            .map(|n| n - 1)
+                    })
+                    .collect::<Option<Vec<usize>>>()
+                    .ok_or_else(bad)?;
                 if scene.is_empty() {
                     return Err(bad());
                 }
-                choose.insert(scene.to_string(), n - 1);
+                if choose.insert(scene.to_string(), options).is_some() {
+                    return Err(format!("`--choose` names scene `{scene}` twice"));
+                }
             }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option `{flag}` for `simulate`"))
@@ -347,13 +364,17 @@ mod tests {
                 "p",
                 "--campaign",
                 "--choose",
-                "oath=2",
+                "oath=2,1",
                 "--choose=a=b=1"
             ]),
             Ok(Command::SimulateCampaign {
                 pack: "p".into(),
                 seeds: DEFAULT_SEEDS,
-                choose: [("oath".to_string(), 1), ("a=b".to_string(), 0)].into(),
+                choose: [
+                    ("oath".to_string(), vec![1, 0]),
+                    ("a=b".to_string(), vec![0])
+                ]
+                .into(),
             })
         );
         for (args, msg) in [
@@ -377,7 +398,23 @@ mod tests {
                 &["simulate", "p", "--campaign", "--choose", "=2"][..],
                 "SCENE=N",
             ),
-            (&["simulate", "p", "--campaign=yes"][..], "unknown option"),
+            (&["simulate", "p", "--campaign=yes"][..], "takes no value"),
+            (
+                &["simulate", "p", "--campaign", "--choose", "s=1,x"][..],
+                "SCENE=N",
+            ),
+            (
+                &[
+                    "simulate",
+                    "p",
+                    "--campaign",
+                    "--choose",
+                    "s=1",
+                    "--choose",
+                    "s=2",
+                ][..],
+                "twice",
+            ),
         ] {
             let err = parse_str(args).unwrap_err();
             assert!(err.contains(msg), "{args:?}: {err}");

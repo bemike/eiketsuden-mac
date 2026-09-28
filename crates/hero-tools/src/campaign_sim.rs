@@ -2,23 +2,27 @@
 //! the way the game's flow does (`hero-game` `flow.rs`), so each battle is fought with the army
 //! the earlier ones left: levels, classes, recruits, items and flags carry over.
 //!
-//! * **Drama** nodes and the scenes battles play (intro, events, outro) run headless
-//!   ([`DramaRunner`]) with their side effects: flags, gold, items, officers joining or
-//!   leaving. A choice takes the option `--choose SCENE=N` names (1 = the first), else the
-//!   first.
-//! * **Camp** nodes buy and equip nothing; the deployment is the game's default (the whole
-//!   army, normalised to the battle: required officers, the lord, then the roster in order,
-//!   up to `deploy.max`).
-//! * **Battle** nodes are fought by the AI on both sides (at most [`MAX_PHASES`] phases); the
-//!   result is applied as the game applies it, then a victory goes to `next`, a defeat to
+//! * **Drama** nodes, the scenes battles play (intro, events, outro) and an ending's scene run
+//!   headless ([`DramaRunner`]) with their side effects: flags, gold, items, officers joining
+//!   or leaving. A choice takes the option `--choose SCENE=N,N,...` names for that scene's
+//!   choices in order (1 = the first; the last one again after that), else the first.
+//! * **Camp** nodes buy and equip nothing and deploy what the camp screen selects when the
+//!   player changes nothing ([`camp_deployment`]): the first camp the whole army, later camps
+//!   that same selection fitted to their battle (an officer who joined since is not added).
+//! * A scene or battle that cannot run fails the run, where the game would show an error and
+//!   go on: the tool is a check.
+//! * **Battle** nodes are fought by the AI on both sides (at most [`MAX_PHASES`] phases, a seed
+//!   per battle made from the run's seed and the battle's number); the result is applied as
+//!   the game applies it, then a victory goes to `next`, a defeat to
 //!   `on_defeat` or ends the run (game over).
 //! * The run ends at an **Ending** node.
 
 use crate::simulate::MAX_PHASES;
 use crate::Failure;
-use hero_core::battle::{BattleEvent, BattleState, Outcome};
-use hero_core::battledef::Side;
+use hero_core::battle::{normalize_deployment, BattleEvent, BattleState, Outcome};
+use hero_core::battledef::{BattleDef, Side};
 use hero_core::campaign::{CampaignState, Node};
+use hero_core::data::Id;
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::{Pack, Severity};
 use std::collections::BTreeMap;
@@ -29,8 +33,9 @@ use std::path::Path;
 /// Campaign nodes visited in one run before it counts as looping.
 pub const MAX_NODES: usize = 1000;
 
-/// `--choose` options: scene id -> option index (0-based).
-pub type Choices = BTreeMap<String, usize>;
+/// `--choose` options: scene id -> the option (0-based) to take at each choice the scene asks,
+/// in order; the last one is kept for later choices (a scene played again asks again).
+pub type Choices = BTreeMap<String, Vec<usize>>;
 
 /// One battle fought in a run.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,7 +43,7 @@ pub struct Fought {
     pub battle: String,
     pub won: bool,
     pub turns: u32,
-    /// Average level of the player's units at the start.
+    /// Average level of the player's officers when the battle began.
     pub level: f64,
 }
 
@@ -63,6 +68,8 @@ pub struct Run {
     pub fought: Vec<Fought>,
     /// The choices taken: `scene: option text`.
     pub chose: Vec<String>,
+    /// How many choices each scene asked.
+    pub asked: BTreeMap<String, usize>,
     pub end: End,
 }
 
@@ -91,132 +98,174 @@ pub fn run(dir: &Path, seeds: u32, choices: &Choices) -> Result<bool, Failure> {
     let runs: Vec<Run> = (1..=seeds)
         .map(|seed| run_seed(&pack, seed, choices))
         .collect();
-    let (report, failed) = render(&pack, &runs);
+    let (report, failed) = render(&pack, &runs, choices);
     print!("{report}");
     Ok(!failed)
 }
 
-/// One run from a new game with `seed` for every battle.
+/// One run from a new game. Battle `n` of the run is fought with a seed made of `seed` and `n`.
 pub fn run_seed(pack: &Pack, seed: u32, choices: &Choices) -> Run {
-    let mut fought = Vec::new();
-    let mut chose = Vec::new();
-    let end = panic::catch_unwind(AssertUnwindSafe(|| {
-        play(pack, seed, choices, &mut fought, &mut chose)
-    }))
-    .unwrap_or_else(|_| End::Panicked(crate::simulate::take_panic_message()));
-    Run { fought, chose, end }
+    let mut sim = Sim {
+        pack,
+        seed,
+        choices,
+        fought: Vec::new(),
+        chose: Vec::new(),
+        asked: BTreeMap::new(),
+    };
+    let end = panic::catch_unwind(AssertUnwindSafe(|| sim.play()))
+        .unwrap_or_else(|_| End::Panicked(crate::simulate::take_panic_message()));
+    Run {
+        fought: sim.fought,
+        chose: sim.chose,
+        asked: sim.asked,
+        end,
+    }
 }
 
-fn play(
-    pack: &Pack,
+struct Sim<'a> {
+    pack: &'a Pack,
     seed: u32,
-    choices: &Choices,
-    fought: &mut Vec<Fought>,
-    chose: &mut Vec<String>,
-) -> End {
-    let mut campaign = CampaignState::new_game(pack);
-    for _ in 0..MAX_NODES {
-        let Some(node) = pack.campaign.node(&campaign.node).cloned() else {
-            return End::Error(format!("unknown node `{}`", campaign.node));
-        };
-        let next = match node {
-            Node::Drama { scene, .. } => {
-                if let Err(e) = play_scene(pack, &mut campaign, &scene, choices, chose) {
-                    return End::Error(e);
-                }
-                campaign.advance(pack)
-            }
-            Node::Camp { .. } => campaign.advance(pack),
-            Node::Battle {
-                battle, on_defeat, ..
-            } => {
-                let state = match fight(pack, &mut campaign, &battle, seed, choices, chose) {
-                    Ok(state) => state,
-                    Err(end) => return end,
-                };
-                let won = state.outcome == Some(Outcome::Victory);
-                let level = average_level(&state);
-                fought.push(Fought {
-                    battle: battle.clone(),
-                    won,
-                    turns: state.turn,
-                    level,
-                });
-                campaign.apply_battle_result(pack, &state);
-                match (won, on_defeat) {
-                    (true, _) => campaign.advance(pack),
-                    (false, Some(node)) => campaign.jump(pack, &node),
-                    (false, None) => return End::GameOver(battle),
-                }
-            }
-            Node::Ending { id, .. } => return End::Ending(id),
-            Node::Branch { .. } => campaign.advance(pack),
-        };
-        if let Err(e) = next {
-            return End::Error(e.to_string());
-        }
-    }
-    End::Looping
+    choices: &'a Choices,
+    fought: Vec<Fought>,
+    chose: Vec<String>,
+    asked: BTreeMap<String, usize>,
 }
 
-/// Fight `battle` with the campaign's army; the scenes it plays run on the campaign.
-fn fight(
-    pack: &Pack,
-    campaign: &mut CampaignState,
-    battle: &str,
-    seed: u32,
-    choices: &Choices,
-    chose: &mut Vec<String>,
-) -> Result<BattleState, End> {
-    let mut state = BattleState::new(pack, battle, campaign, u64::from(seed))
-        .map_err(|e| End::Error(format!("battle `{battle}`: {e}")))?;
-    let mut events = state.begin(pack);
-    let mut phases = 0;
-    loop {
-        for e in events {
-            if let BattleEvent::Drama { scene } = e {
-                play_scene(pack, campaign, &scene, choices, chose).map_err(End::Error)?;
+impl Sim<'_> {
+    fn play(&mut self) -> End {
+        let pack = self.pack;
+        let mut campaign = CampaignState::new_game(pack);
+        for _ in 0..MAX_NODES {
+            let Some(node) = pack.campaign.node(&campaign.node).cloned() else {
+                return End::Error(format!("unknown node `{}`", campaign.node));
+            };
+            let next = match node {
+                Node::Drama { scene, .. } => {
+                    if let Err(e) = self.play_scene(&mut campaign, &scene) {
+                        return End::Error(e);
+                    }
+                    campaign.advance(pack)
+                }
+                Node::Camp { battle, .. } => {
+                    if let Some(def) = battle.as_deref().and_then(|b| pack.battles.get(b)) {
+                        campaign.deployed = camp_deployment(pack, def, &campaign);
+                    }
+                    campaign.advance(pack)
+                }
+                Node::Battle {
+                    battle, on_defeat, ..
+                } => {
+                    let (state, level) = match self.fight(&mut campaign, &battle) {
+                        Ok(fought) => fought,
+                        Err(end) => return end,
+                    };
+                    let won = state.outcome == Some(Outcome::Victory);
+                    self.fought.push(Fought {
+                        battle: battle.clone(),
+                        won,
+                        turns: state.turn,
+                        level,
+                    });
+                    campaign.apply_battle_result(pack, &state);
+                    match (won, on_defeat) {
+                        (true, _) => campaign.advance(pack),
+                        (false, Some(node)) => campaign.jump(pack, &node),
+                        (false, None) => return End::GameOver(battle),
+                    }
+                }
+                Node::Ending { id, scene, .. } => {
+                    if let Some(scene) = scene {
+                        if let Err(e) = self.play_scene(&mut campaign, &scene) {
+                            return End::Error(e);
+                        }
+                    }
+                    return End::Ending(id);
+                }
+                Node::Branch { .. } => campaign.advance(pack),
+            };
+            if let Err(e) = next {
+                return End::Error(e.to_string());
             }
         }
-        if state.outcome.is_some() {
-            return Ok(state);
+        End::Looping
+    }
+
+    /// Fight `battle` with the campaign's army; the scenes it plays run on the campaign.
+    /// Returns the finished battle and the army's average level at its start.
+    fn fight(
+        &mut self,
+        campaign: &mut CampaignState,
+        battle: &str,
+    ) -> Result<(BattleState, f64), End> {
+        let pack = self.pack;
+        let seed = (u64::from(self.seed) << 16) | self.fought.len() as u64;
+        let mut state = BattleState::new(pack, battle, campaign, seed)
+            .map_err(|e| End::Error(format!("battle `{battle}`: {e}")))?;
+        let level = average_level(&state);
+        let mut events = state.begin(pack);
+        let mut phases = 0;
+        loop {
+            for e in events {
+                if let BattleEvent::Drama { scene } = e {
+                    self.play_scene(campaign, &scene).map_err(End::Error)?;
+                }
+            }
+            if state.outcome.is_some() {
+                return Ok((state, level));
+            }
+            if phases == MAX_PHASES {
+                return Err(End::Stuck(battle.to_string()));
+            }
+            events = state.run_ai_phase(pack);
+            phases += 1;
         }
-        if phases == MAX_PHASES {
-            return Err(End::Stuck(battle.to_string()));
+    }
+
+    /// Play `scene` to its end, taking the `--choose` options (else the first) at its choices.
+    fn play_scene(&mut self, campaign: &mut CampaignState, scene: &str) -> Result<(), String> {
+        let pack = self.pack;
+        let at = |e: hero_core::drama::DramaError| format!("scene `{scene}`: {e}");
+        let mut runner = DramaRunner::new(pack, scene).map_err(at)?;
+        loop {
+            match runner.next(pack, campaign).map_err(at)? {
+                Step::End => return Ok(()),
+                Step::Choice(options) => {
+                    let asked = self.asked.entry(scene.to_string()).or_default();
+                    let pick = self
+                        .choices
+                        .get(scene)
+                        .and_then(|list| list.get(*asked).or(list.last()))
+                        .copied()
+                        .unwrap_or(0);
+                    *asked += 1;
+                    let Some(text) = options.get(pick) else {
+                        return Err(format!(
+                            "--choose {scene}: option {} at choice {} of the scene, which offers {} option(s)",
+                            pick + 1,
+                            *asked,
+                            options.len()
+                        ));
+                    };
+                    self.chose.push(format!("{scene}: {text}"));
+                    runner.choose(pack, pick).map_err(at)?;
+                }
+                _ => {}
+            }
         }
-        events = state.run_ai_phase(pack);
-        phases += 1;
     }
 }
 
-/// Play `scene` to its end, taking the `--choose` option (else the first) at each choice.
-fn play_scene(
-    pack: &Pack,
-    campaign: &mut CampaignState,
-    scene: &str,
-    choices: &Choices,
-    chose: &mut Vec<String>,
-) -> Result<(), String> {
-    let at = |e: hero_core::drama::DramaError| format!("scene `{scene}`: {e}");
-    let mut runner = DramaRunner::new(pack, scene).map_err(at)?;
-    loop {
-        match runner.next(pack, campaign).map_err(at)? {
-            Step::End => return Ok(()),
-            Step::Choice(options) => {
-                let pick = choices.get(scene).copied().unwrap_or(0);
-                let Some(text) = options.get(pick) else {
-                    return Err(format!(
-                        "--choose {scene}={}: the choice offers {} option(s)",
-                        pick + 1,
-                        options.len()
-                    ));
-                };
-                chose.push(format!("{scene}: {text}"));
-                runner.choose(pack, pick).map_err(at)?;
-            }
-            _ => {}
-        }
-    }
+/// What the camp screen deploys when the player changes nothing (`initial_selection` in
+/// hero-game): the deployment chosen before, fitted to `def`, or the whole army when there is
+/// none. The camp stores it, so it carries on to the next camp.
+fn camp_deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Vec<Id> {
+    let chosen: Vec<Id> = if campaign.deployed.is_empty() {
+        campaign.roster.iter().map(|o| o.id.clone()).collect()
+    } else {
+        campaign.deployed.clone()
+    };
+    normalize_deployment(pack, def, campaign, &chosen)
 }
 
 fn average_level(state: &BattleState) -> f64 {
@@ -234,9 +283,17 @@ fn average_level(state: &BattleState) -> f64 {
 }
 
 /// The report, and whether any run failed.
-pub fn render(pack: &Pack, runs: &[Run]) -> (String, bool) {
+pub fn render(pack: &Pack, runs: &[Run], choices: &Choices) -> (String, bool) {
     let mut out = String::new();
     let mut failed = false;
+    for scene in choices.keys() {
+        if !runs.iter().any(|r| r.asked.contains_key(scene)) {
+            let _ = writeln!(
+                out,
+                "WARNING: --choose {scene}: no run reached a choice of that scene"
+            );
+        }
+    }
     for (i, run) in runs.iter().enumerate() {
         let won = run.fought.iter().filter(|f| f.won).count();
         let end = match &run.end {
@@ -323,39 +380,142 @@ pub fn render(pack: &Pack, runs: &[Run]) -> (String, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hero_core::battledef::Condition;
+    use hero_core::script::{ChoiceOption, Cmd};
 
     fn fixture() -> Pack {
         crate::tests::fixture_pack()
     }
 
+    fn choose(scene: &str, options: &[usize]) -> Choices {
+        Choices::from([(scene.to_string(), options.to_vec())])
+    }
+
     #[test]
     fn a_run_walks_the_campaign_and_carries_the_army() {
-        let pack = fixture();
+        let mut pack = fixture();
+        // Levels come quickly, so the first battle surely raises some.
+        pack.rules.exp_per_level = 10;
         let run = run_seed(&pack, 1, &Choices::new());
+        // The fixture campaign: oath, camp1, b01, camp2, b02, the ending (with its scene).
+        assert_eq!(run.end, End::Ending("finale".into()), "{run:?}");
+        let battles: Vec<&str> = run.fought.iter().map(|f| f.battle.as_str()).collect();
+        assert_eq!(battles, ["b01", "b02"]);
+        // The second battle starts with the army the first one left: the same officers in a
+        // new game (deployed as the camps deploy them) would be at their starting levels.
+        let mut fresh = CampaignState::new_game(&pack);
+        fresh.join(&pack, "jian_yong").unwrap(); // `oath` recruits him
+        fresh.deployed = camp_deployment(&pack, &pack.battles["b01"], &fresh);
+        fresh.deployed = camp_deployment(&pack, &pack.battles["b02"], &fresh);
+        let fresh = BattleState::new(&pack, "b02", &fresh, 0).unwrap();
         assert!(
-            !matches!(run.end, End::Error(_) | End::Panicked(_) | End::Looping),
-            "{run:?}"
+            run.fought[1].level > average_level(&fresh),
+            "{} vs {}",
+            run.fought[1].level,
+            average_level(&fresh)
         );
-        assert!(!run.fought.is_empty(), "{run:?}");
         // Runs are deterministic for a seed.
         assert_eq!(run, run_seed(&pack, 1, &Choices::new()));
     }
 
     #[test]
-    fn choices_pick_their_option() {
+    fn a_defeat_follows_on_defeat_or_ends_the_run() {
+        let mut pack = fixture();
+        // b01 cannot be won: it would take surviving longer than its turn limit.
+        let b01 = pack.battles.get_mut("b01").unwrap();
+        b01.victory = vec![Condition::SurviveTurns { turns: 99 }];
+        b01.turn_limit = 1;
+        let run = run_seed(&pack, 1, &Choices::new());
+        assert!(!run.fought[0].won, "{run:?}");
+        // `on_defeat = "retreat"` goes on to camp2 and b02.
+        assert_eq!(run.fought.len(), 2, "{run:?}");
+        assert_eq!(run.end, End::Ending("finale".into()));
+        // Without `on_defeat` the run ends there.
+        for node in &mut pack.campaign.nodes {
+            if let Node::Battle { on_defeat, .. } = node {
+                *on_defeat = None;
+            }
+        }
+        let run = run_seed(&pack, 1, &Choices::new());
+        assert_eq!(run.end, End::GameOver("b01".into()));
+        assert_eq!(run.fought.len(), 1);
+    }
+
+    #[test]
+    fn the_camp_keeps_the_deployment_like_the_game() {
+        let pack = fixture();
+        let def = &pack.battles["b02"];
+        let mut campaign = CampaignState::new_game(&pack);
+        campaign.join(&pack, "jian_yong").unwrap();
+        let all: Vec<Id> = campaign.roster.iter().map(|o| o.id.clone()).collect();
+        // Nothing chosen yet: the whole army, fitted to the battle.
+        assert_eq!(
+            camp_deployment(&pack, def, &campaign),
+            normalize_deployment(&pack, def, &campaign, &all)
+        );
+        // Chosen before: that choice, fitted again (an officer who joined since is not added).
+        campaign.deployed = vec!["liu_bei".into()];
+        let kept = camp_deployment(&pack, def, &campaign);
+        assert_eq!(
+            kept,
+            normalize_deployment(&pack, def, &campaign, &campaign.deployed)
+        );
+        assert!(kept.contains(&"liu_bei".to_string()));
+        assert_ne!(kept, normalize_deployment(&pack, def, &campaign, &all));
+    }
+
+    #[test]
+    fn choices_pick_their_option_per_visit() {
         let pack = fixture();
         // The prologue's scene `oath` asks whether to pursue.
         let first = run_seed(&pack, 1, &Choices::new());
         assert_eq!(first.chose[0], "oath: 적을 끝까지 쫓는다");
-        let second = run_seed(&pack, 1, &Choices::from([("oath".to_string(), 1)]));
+        assert_eq!(first.asked["oath"], 1);
+        let second = run_seed(&pack, 1, &choose("oath", &[1]));
         assert_eq!(second.chose[0], "oath: 마을을 지킨다");
         // An option the choice does not have ends the run with an error that says so.
-        let bad = run_seed(&pack, 1, &Choices::from([("oath".to_string(), 8)]));
+        let bad = run_seed(&pack, 1, &choose("oath", &[8]));
         assert_eq!(
             bad.end,
-            End::Error("--choose oath=9: the choice offers 2 option(s)".into())
+            End::Error(
+                "--choose oath: option 9 at choice 1 of the scene, which offers 2 option(s)".into()
+            )
         );
         assert!(bad.fought.is_empty());
+
+        // A scene that asks again takes the options in order, the last one after that: two
+        // more choices right after the label every path of `oath` passes.
+        let mut pack = fixture();
+        let oath = pack.scenes.get_mut("oath").unwrap();
+        let at = oath.labels["recruit"] + 1;
+        for i in oath.labels.values_mut() {
+            if *i >= at {
+                *i += 2;
+            }
+        }
+        oath.labels.insert("second".into(), at + 1);
+        oath.labels.insert("after_again".into(), at + 2);
+        let ask = |to: &str| {
+            Cmd::Choice(vec![
+                ChoiceOption {
+                    text: "하나".into(),
+                    label: to.into(),
+                },
+                ChoiceOption {
+                    text: "둘".into(),
+                    label: to.into(),
+                },
+            ])
+        };
+        oath.cmds.insert(at, ask("after_again"));
+        oath.cmds.insert(at, ask("second"));
+        let run = run_seed(&pack, 1, &choose("oath", &[0, 1]));
+        assert_eq!(
+            run.chose[..3],
+            ["oath: 적을 끝까지 쫓는다", "oath: 둘", "oath: 둘"],
+            "{run:?}"
+        );
+        assert_eq!(run.asked["oath"], 3);
     }
 
     #[test]
@@ -372,24 +532,31 @@ mod tests {
             Run {
                 fought: vec![fought(true)],
                 chose: vec![],
+                asked: BTreeMap::from([("oath".to_string(), 1)]),
                 end: End::Ending("finale".into()),
             },
             Run {
                 fought: vec![fought(false)],
                 chose: vec!["s: a".into()],
+                asked: BTreeMap::new(),
                 end: End::GameOver(battle.clone()),
             },
         ];
-        let (report, failed) = render(&pack, &runs);
+        let (report, failed) = render(&pack, &runs, &choose("oath", &[0]));
         assert!(!failed, "{report}");
         assert!(report.contains("50%"), "{report}");
         assert!(report.contains("1 reached an ending"), "{report}");
+        assert!(!report.contains("WARNING: --choose"), "{report}");
+        // A --choose whose scene never asked is reported.
+        let (report, _) = render(&pack, &runs, &choose("mercy", &[0]));
+        assert!(report.contains("WARNING: --choose mercy"), "{report}");
         let stuck = [Run {
             fought: vec![],
             chose: vec![],
+            asked: BTreeMap::new(),
             end: End::Stuck(battle.clone()),
         }];
-        let (report, failed) = render(&pack, &stuck);
+        let (report, failed) = render(&pack, &stuck, &Choices::new());
         assert!(failed && report.contains("WARNING: none"), "{report}");
     }
 }
