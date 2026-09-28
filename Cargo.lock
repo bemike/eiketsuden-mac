@@ -250,6 +250,7 @@ version = "0.1.0"
 dependencies = [
  "audrey",
  "hero-core",
+ "hero-import",
  "macroquad",
  "sapp-jsutils",
  "serde",
@@ -262,6 +263,7 @@ name = "hero-import"
 version = "0.1.0"
 dependencies = [
  "encoding_rs",
+ "hero-core",
  "png",
  "serde",
  "serde_json",

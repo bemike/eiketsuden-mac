@@ -11,7 +11,7 @@ OpenRCT2가 사용자의 RCT2 데이터를 읽는 방식과 같습니다.
 |---|---|
 | 라이브러리 | `crates/hero-import` (프로브·컨테이너·텍스트·그래픽·추출·원작 모드 팩) |
 | 명령줄 | `hero-tools original probe` / `extract` / `pack` |
-| 게임 연동 | 원작 모드 팩: `eiketsuden --data data/original`(4.5절). 미디어 오버레이: `eiketsuden --original <폴더>` 또는 환경 변수 `EIKETSUDEN_ORIGINAL` (네이티브 전용) |
+| 게임 연동 | **원작 모드**: 타이틀의 "원작 데이터"에서 설치 폴더를 고르면 실행할 때마다 메모리에서 변환해 플레이(4.1절, 네이티브 전용). 개발·검증용: 파일로 쓴 원작 모드 팩 `eiketsuden --data data/original`(4.5절), 미디어 오버레이 `eiketsuden --original <폴더>` 또는 환경 변수 `EIKETSUDEN_ORIGINAL` |
 | 분석 자료 | [reverse-engineering/](reverse-engineering/README.md) — 형식 명세([FORMATS](reverse-engineering/FORMATS.md))·방법론([METHOD](reverse-engineering/METHOD.md))·현황([STATUS](reverse-engineering/STATUS.md)) |
 
 ## 1. 법적·윤리적 원칙
@@ -81,15 +81,40 @@ EUC-KR 한글입니다. 그래서 헤더만으로는 언어를 정하지 않고 
 
 ## 4. 사용법
 
-### 4.1 준비
+### 4.1 게임에서 원작 모드 켜기
 
-```sh
-cargo build --release -p hero-tools      # target/release/hero-tools(.exe)
-```
+명령줄은 필요 없습니다(OpenRCT2와 같은 방식, [DECISIONS.md](DECISIONS.md) D10).
+
+1. 게임(네이티브 빌드)을 실행하고 타이틀에서 **원작 데이터**를 고릅니다.
+2. **원작 폴더 고르기…** → 게임 안의 폴더 탐색기에서 원작 파일이 든 폴더(`DISK1.R3I`, `MAIN.EXE`, `HEXZMAP.R3`
+   등이 바로 들어 있는 폴더, DOSBox 패키지라면 그 안의 `GAME` 같은 폴더)로 들어갑니다. 원작 파일이 있는 폴더는
+   ★로 표시되고, 폴더에 들어가면 `hero-tools original probe`와 같은 판정과 근거가 보입니다.
+   - 조작: 확인(Enter·Z·클릭)으로 폴더에 들어가고, Backspace·`..`로 상위 폴더, 글자 키로 그 글자로 시작하는 폴더로
+     이동(Z·X 제외), Page Up/Down, 휠. Windows에서는 드라이브 최상위에서 한 번 더 올라가면 드라이브 목록입니다.
+3. 지원하는 판본(한국어 DOS/V, 중국어 DOS)이면 **이 폴더 사용**이 켜집니다. 고르면 설정에 경로와 "원작 모드 켬"을
+   저장하고 데이터를 다시 불러옵니다.
+4. 로딩 화면이 기본 팩을 읽은 뒤 원작을 **메모리에서** 원작 모드 팩(4.5절과 같은 파일)으로 변환해 기본 팩 위에
+   얹고 플레이합니다. 디스크에는 아무것도 쓰지 않고, 원작 폴더는 읽기만 합니다. 변환 시간은 한국어 DOS/V 실물에서
+   release 빌드 약 0.1초입니다.
+5. 다음 실행부터는 바로 원작 모드로 시작합니다. 타이틀 → 원작 데이터에서 **기본 팩으로 플레이** / **원작 모드로
+   플레이**로 오갈 수 있고(경로는 기억), 하단의 팩 이름(`영걸전 원작 모드`)으로 지금 모드를 알 수 있습니다.
+
+* **폴더가 사라지거나 바뀌면**: 실행 때 "원작 폴더를 찾을 수 없습니다" / "원작 폴더를 쓸 수 없습니다"(지원하지 않는
+  판본, 근거 표시) / "원작 변환 실패"(손상 파일) 화면이 원인을 보여 주고 **다시 시도 · 다른 폴더 고르기 · 기본 팩으로
+  계속 · 종료**를 제공합니다. "기본 팩으로 계속"은 원작 모드를 끄고(경로는 남김) 기본 팩으로 플레이합니다. 변환된 팩이
+  로드·검증에 실패해도 같은 화면입니다. 일부 종류만 변환하지 못하면 알림을 띄우고 그 부분은 기본 팩 그림을 씁니다.
+* **세이브**: 원작 모드의 세이브는 팩 id `original`로 기본 팩 세이브와 분리됩니다(파일로 만든 팩과 같은 id).
+* **우선순위**: `--data` 또는 `EIKETSUDEN_DATA`로 팩을 지정해 실행하면 그 팩을 그대로 플레이하고 원작 모드 설정은
+  적용하지 않습니다(타이틀에 "원작 데이터"도 나오지 않음).
+* **웹 빌드에는 없습니다.** 브라우저에는 로컬 폴더를 읽는 경로가 없습니다(향후 File System Access API/OPFS로 검토).
+* 설정은 사용자 데이터 폴더의 `settings.json`(`original_dir`, `original_mode`)에 있습니다.
 
 ### 4.2 판본 확인 (프로브)
 
+아래 4.2–4.5절의 명령줄 도구는 개발·검증·매니페스트 공유용입니다.
+
 ```sh
+cargo build --release -p hero-tools      # target/release/hero-tools(.exe)
 hero-tools original probe "D:/Games/영걸전/GAME" --out manifest.json
 ```
 
@@ -137,7 +162,7 @@ hero-tools original extract "D:/Games/영걸전/GAME" --out "D:/영걸전-원작
 <out>/gfx/original/maps/{scene,campaign,town}/...  전투 장면 띠, 캠페인 맵, smap-/pmap- 화면
 ```
 
-### 4.4 게임에서 쓰기
+### 4.4 미디어 오버레이를 게임에서 쓰기
 
 ```sh
 eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINAL=D:/영걸전-원작
@@ -159,7 +184,10 @@ eiketsuden --original "D:/영걸전-원작"          # 또는 EIKETSUDEN_ORIGINA
 * **웹 빌드는 지원하지 않습니다.** 브라우저에는 로컬 폴더를 읽는 경로가 없어 `--original`이 없습니다
   (향후 File System Access API/OPFS로 검토).
 
-### 4.5 원작 모드 팩 만들기
+### 4.5 원작 모드 팩을 파일로 만들기 (개발·검증용)
+
+게임은 4.1절처럼 같은 변환을 실행할 때마다 메모리에서 합니다(`hero_import::pack::build_pack`). 이 명령은 같은
+팩을 파일로 써서 내용을 살펴보거나 `hero-tools validate`·`info`로 검사할 때 씁니다.
 
 ```sh
 hero-tools original pack "D:/Games/영걸전/GAME" --out data/original [--base data/base] [--edition korean-dos]
@@ -269,11 +297,14 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   `[presentation] canvas = [640, 480]`(원작의 VGA 화면)을 적고, 변환에 성공한 것만 담습니다: 무장 얼굴, 19병종의
   유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋, 원작 전투 맵 58개(맵 파일: 칩 격자 = 그림 층,
   지형 격자 = 규칙 층, [DECISIONS.md](DECISIONS.md) D9). 변환되지 않은 나머지(규칙, 원작 전투, 시나리오, 대사, 음악,
-  UI)는 체인을 통해 기본 팩에서 옵니다. 실행은 `eiketsuden --data data/original`입니다.
+  UI)는 체인을 통해 기본 팩에서 옵니다. 플레이어는 게임 안에서 원작 폴더를 고르고, 게임이 실행할 때마다 같은 팩을
+  메모리에서 만들어 씁니다(4.1절, [DECISIONS.md](DECISIONS.md) D10). 파일로 쓴 팩은 `eiketsuden --data data/original`로
+  실행합니다(개발·검증용).
 * **아직 없는 것**: 원작 맵을 쓰는 원작 전투(시나리오 변환 P6), `MAIN.EXE` 규칙 표(P5), 원작 배치의 UI(`PACKGRP`), 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
   넣지 않고, 규명되는 순서대로 팩에 들어갈 항목이 늘어납니다([STATUS 4절](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계)).
-* **제약**: `extends`는 상대 경로만 허용하므로(웹 빌드와 폴더 이동을 위해) 원작 모드 팩은 기본 팩과 같은 드라이브,
-  예컨대 `data/original/`에 둡니다. 브라우저는 로컬 폴더를 읽을 수 없으므로 웹 빌드에는 원작 모드가 없습니다.
+* **제약**: `extends`는 상대 경로만 허용하므로(웹 빌드와 폴더 이동을 위해) 파일로 쓴 원작 모드 팩은 기본 팩과 같은
+  드라이브, 예컨대 `data/original/`에 둡니다. 게임이 메모리에서 만든 팩은 기본 팩 옆(`<data>/original`)에 있는 것처럼
+  마운트되므로 이 제약과 무관합니다. 브라우저는 로컬 폴더를 읽을 수 없으므로 웹 빌드에는 원작 모드가 없습니다.
   세이브는 최상위 팩의 `id`를 기억하므로 원작 모드의 세이브는 기본 팩의 세이브와 섞이지 않습니다.
 
 ## 9. 형식 요약 (그래픽·컨테이너·맵)
@@ -358,8 +389,16 @@ was used, and the repository and CI contain no original bytes (tests use synthet
 * **Roadmap**: P4 maps done (per-map palette slot and the town object ids open); P5 partly done (`BAKDATA`
   decoded; the `MAIN.EXE` rule tables open); P6 partly done (bytecode decoded and extracted; conversion to the
   game's event format open); P7 OPL2 music and P8 Steam/PC-98 open.
-* **Original mode (partly implemented)**: `hero-tools original pack <dir> --out data/original` writes a layered
-  pack (`id = "original"`, `extends` the base pack, `canvas = [640, 480]`, git-ignored) holding what can be mapped
+* **Original mode in the game (no command line)**: on native builds the title menu's "원작 데이터" (original data)
+  opens an in-game folder browser (★ marks folders holding original files; entering one shows the same verdict and
+  evidence as `probe`). "이 폴더 사용" (use this folder) stores the folder in the settings and reloads: the loading
+  screen loads the base pack, converts the install **in memory** on a worker thread (about 0.1 s in a release build
+  on the Korean copy), mounts the result next to the base pack and plays it; nothing is written and the install is
+  only read. Later launches start in the original mode directly; the same screen switches back to the base pack.
+  A missing folder, an unsupported edition or a failed conversion ends on an error screen that offers retry, another
+  folder, or the base pack. An explicit `--data` / `EIKETSUDEN_DATA` wins over the setting. See DECISIONS D10.
+* **Original mode pack as files (development)**: `hero-tools original pack <dir> --out data/original` writes the same
+  layered pack (`id = "original"`, `extends` the base pack, `canvas = [640, 480]`, git-ignored) holding what can be mapped
   onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. It holds officer
   portraits (matched to the base pack's officers by name, with two spelling aliases and one reading used to tell
   two officers of the same name apart; 105 of 118 on the verified copy), unit sheets of all 19 classes from the

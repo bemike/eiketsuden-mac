@@ -11,6 +11,12 @@
 //!
 //! In gallery mode only the chain (for the fonts), the fonts and UI sounds are loaded; a broken
 //! chain is only logged there.
+//!
+//! **Original mode** (native, `crate::original`): when the settings ask for it and no pack was
+//! chosen explicitly, the base pack is loaded as above, then the install is checked and
+//! converted in memory on a worker thread (`Stage::Convert`), the result is mounted next to the
+//! base pack and loading starts over with that layered pack. Every failure on this path ends on
+//! [`ErrorScreen::original`], which also offers to pick another folder or to play the base pack.
 
 use super::error::ErrorScreen;
 use super::gallery::GalleryScreen;
@@ -121,12 +127,27 @@ enum Stage {
     Media {
         since: f64,
     },
+    /// Converting the original install; the result is mounted at the root.
+    #[cfg(not(target_arch = "wasm32"))]
+    Convert(Box<(crate::original::Conversion, crate::platform::DataRoot)>),
     Done,
+}
+
+/// Where the loading screen stands with the original mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Original {
+    /// Not asked for (or not possible: web, gallery, explicit `--data`).
+    Off,
+    /// Convert the install in this folder once the base pack has loaded.
+    Wanted(String),
+    /// The converted pack is mounted; this pass loads it.
+    Mounted,
 }
 
 pub struct LoadingScreen {
     target: Target,
     stage: Stage,
+    original: Original,
     /// 0..=1 for the progress bar.
     progress: f32,
     status: String,
@@ -153,6 +174,7 @@ impl LoadingScreen {
         LoadingScreen {
             target,
             stage: Stage::Start,
+            original: Original::Off,
             progress: 0.0,
             status: String::new(),
             fonts_ready: false,
@@ -162,6 +184,16 @@ impl LoadingScreen {
     fn fail(&self, title: &str, details: Vec<String>, ctx: &Ctx) -> Transition {
         for d in &details {
             macroquad::logging::error!("{}: {}", title, d);
+        }
+        if self.original == Original::Mounted {
+            // The converted pack itself does not load: the base pack is still playable.
+            let mut lines = vec![
+                "원작에서 변환한 팩을 불러오지 못했습니다. 기본 팩으로 계속하거나 다른 폴더를 고를 수 있습니다."
+                    .to_string(),
+                String::new(),
+            ];
+            lines.extend(details);
+            return Transition::replace(ErrorScreen::original(title, lines));
         }
         let mut lines = details;
         lines.push(String::new());
@@ -277,6 +309,9 @@ impl LoadingScreen {
     fn step(&mut self, ctx: &mut Ctx) -> Transition {
         match std::mem::replace(&mut self.stage, Stage::Done) {
             Stage::Start => {
+                if self.original == Original::Off && self.target == Target::Game {
+                    self.original = wanted_original(ctx);
+                }
                 self.read_manifest(ctx, None, BTreeMap::new(), MANIFEST.to_string());
             }
             Stage::Chain {
@@ -437,6 +472,11 @@ impl LoadingScreen {
                     }
                     return self.fail("데이터 팩 검증 실패", errors, ctx);
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Original::Wanted(install) = &self.original {
+                    let install = install.clone();
+                    return self.start_conversion(ctx, &pack, install);
+                }
                 // Every following screen is laid out on the pack's canvas.
                 ctx.gfx
                     .canvas
@@ -470,9 +510,140 @@ impl LoadingScreen {
                 self.progress = 1.0;
                 return Transition::Flow(Flow::Title);
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            Stage::Convert(mut convert) => {
+                let Some(result) = convert.0.poll() else {
+                    self.stage = Stage::Convert(convert);
+                    return Transition::None;
+                };
+                let (job, root) = *convert;
+                return self.conversion_done(ctx, job.install(), root, result);
+            }
             Stage::Done => {}
         }
         Transition::None
+    }
+
+    /// The base pack has loaded: check the install and start converting it.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn start_conversion(&mut self, ctx: &mut Ctx, base: &Pack, install: String) -> Transition {
+        use crate::original::{check_folder, Conversion, FolderCheck, PACK_DIR};
+        use hero_import::pack::PackOptions;
+        let dir = std::path::PathBuf::from(&install);
+        let check = check_folder(&dir);
+        if !check.is_supported() {
+            let title = match check {
+                FolderCheck::Unreadable(_) => "원작 폴더를 찾을 수 없습니다",
+                _ => "원작 폴더를 쓸 수 없습니다",
+            };
+            let mut lines = vec![
+                format!("원작 폴더: {install}"),
+                check.summary(),
+                "폴더가 옮겨졌거나 지워졌다면 다시 골라 주세요. 기본 팩으로는 계속 플레이할 수 있습니다."
+                    .to_string(),
+            ];
+            if !check.evidence().is_empty() {
+                lines.push(String::new());
+                lines.extend(check.evidence().iter().map(|e| format!("- {e}")));
+            }
+            for line in &lines {
+                macroquad::logging::error!("original mode: {}", line);
+            }
+            return Transition::replace(ErrorScreen::original(title, lines));
+        }
+        let display = format!("원작 모드 (메모리 변환: {install})");
+        let Some((root, extends)) = ctx.data_root.memory_pack(PACK_DIR, &display) else {
+            return Transition::replace(ErrorScreen::original(
+                "원작 모드를 시작할 수 없습니다",
+                vec![format!(
+                    "기본 팩 폴더 {} 옆에 원작 모드 팩을 둘 수 없습니다(드라이브 최상위 폴더). 기본 팩을 하위 폴더로 옮겨 주세요.",
+                    ctx.data_root.display()
+                )],
+            ));
+        };
+        macroquad::logging::info!(
+            "original mode: converting {} ({})",
+            install,
+            check.summary()
+        );
+        let options = PackOptions::for_pack(base, extends, None);
+        self.status = "원작 변환".into();
+        self.progress = 0.9;
+        self.stage = Stage::Convert(Box::new((Conversion::start(dir, options), root)));
+        Transition::None
+    }
+
+    /// The conversion finished: mount the pack and load it, or say why it failed.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn conversion_done(
+        &mut self,
+        ctx: &mut Ctx,
+        install: &std::path::Path,
+        root: crate::platform::DataRoot,
+        result: Result<hero_import::pack::MemoryPack, String>,
+    ) -> Transition {
+        use crate::platform::memfs;
+        let converted = match result {
+            Ok(p) => p,
+            Err(e) => {
+                macroquad::logging::error!("original mode: {}: {}", install.display(), e);
+                return Transition::replace(ErrorScreen::original(
+                    "원작 변환 실패",
+                    vec![
+                        format!("원작 폴더: {}", install.display()),
+                        "원작 파일을 변환하지 못했습니다. 파일이 손상되었거나 다른 판본일 수 있습니다."
+                            .to_string(),
+                        String::new(),
+                        e,
+                    ],
+                ));
+            }
+        };
+        let index = &converted.index;
+        let mut incomplete = Vec::new();
+        for (kind, report) in &index.assets {
+            macroquad::logging::info!(
+                "original mode: {} {:?}: {}",
+                kind,
+                report.status,
+                report.summary
+            );
+            for e in &report.errors {
+                macroquad::logging::warn!("original mode: {}: {}", kind, e);
+            }
+            if !report.ok() {
+                incomplete.push(kind.clone());
+            }
+        }
+        if !incomplete.is_empty() {
+            ctx.toast(format!(
+                "원작에서 일부를 변환하지 못해 기본 팩 그림을 씁니다: {}",
+                incomplete.join(", ")
+            ));
+        }
+        macroquad::logging::info!(
+            "original mode: {} files mounted at {}",
+            converted.files.len(),
+            root.top_dir()
+        );
+        memfs::mount(root.top_dir(), converted.files);
+        ctx.media = Media::new(root.clone());
+        ctx.data_root = root;
+        self.original = Original::Mounted;
+        self.progress = 0.0;
+        self.stage = Stage::Start;
+        Transition::None
+    }
+}
+
+/// Whether this launch should play the original mode (native, not with an explicit `--data`).
+fn wanted_original(ctx: &Ctx) -> Original {
+    if crate::platform::is_web() || crate::platform::explicit_data(&ctx.options) {
+        return Original::Off;
+    }
+    match ctx.settings.original_to_play() {
+        Some(dir) => Original::Wanted(dir.to_string()),
+        None => Original::Off,
     }
 }
 

@@ -25,8 +25,14 @@ cargo run -p hero-game                          # the game
 cargo run -p hero-game -- --gallery             # the UI gallery (needs only the fonts)
 cargo run -p hero-game -- --data path/to/pack   # another data pack
 cargo run -p hero-game -- --original path/to/overlay  # original-data overlay (see ORIGINAL_DATA.md)
-cargo run -p hero-game -- --data data/original       # original mode, after `hero-tools original pack`
+cargo run -p hero-game -- --data data/original       # a pack written by `hero-tools original pack`
 ```
+
+The original mode itself needs no option: pick the install folder in the game (title → 원작 데이터);
+the game converts it in memory at every launch (ORIGINAL_DATA.md §4.1). It is kept in the settings
+(`original_dir`, `original_mode` in `settings.json`), so to try the game without it run with an
+explicit `--data data/base`, which wins over the setting. Gated real-copy test of the whole path:
+`EIKETSU_ORIGINAL_DIR=<install> cargo test -p hero-game golden_original_mode`.
 
 `--original <dir>` (or the `EIKETSUDEN_ORIGINAL` environment variable) adds an original-data
 overlay written by `hero-tools original extract` from the player's own copy of the original game:

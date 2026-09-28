@@ -16,6 +16,9 @@
 //! | sound | `sfx/cursor` | `sfx/cursor.wav`, else `sfx/cursor.ogg` |
 //! | icon | `gold` | cell of `gfx/ui/icons.png` listed in `gfx/ui/icons.toml` |
 //!
+//! Every read goes through [`crate::platform::memfs`], so files of the original mode's pack,
+//! converted in memory at launch, are read like files on disk.
+//!
 //! When an original-data overlay is active (`--original <dir>`, native only, see
 //! [`crate::platform`]), every file above is looked up in the overlay first and then in the pack
 //! ([`DataRoot::media_paths`]); a file the overlay lacks falls back to the pack.
@@ -32,6 +35,7 @@
 //! for long. Decoded music is large (PCM); [`Media::release_sound`] drops a track that is no
 //! longer needed (the audio manager does this when music changes).
 
+use crate::platform::memfs::{self, Lookup};
 use crate::platform::DataRoot;
 use macroquad::audio::{load_sound_from_bytes, Sound};
 use macroquad::prelude::*;
@@ -72,8 +76,18 @@ pub fn describe_error(e: &macroquad::Error) -> String {
     }
 }
 
+/// Read a file: from the pack mounted in memory when `path` lies inside it
+/// ([`crate::platform::memfs`]), otherwise with `load_file`.
 fn fetch(path: String) -> BoxFuture<BytesResult> {
-    Box::pin(async move { load_file(&path).await.map_err(|e| describe_error(&e)) })
+    match memfs::lookup(&path) {
+        Lookup::Memory(Some(bytes)) => Box::pin(std::future::ready(Ok(bytes))),
+        Lookup::Memory(None) => Box::pin(std::future::ready(Err(format!(
+            "{path}: not in the converted original pack"
+        )))),
+        Lookup::Disk(path) => {
+            Box::pin(async move { load_file(&path).await.map_err(|e| describe_error(&e)) })
+        }
+    }
 }
 
 /// One file being read (by full path/URL, see [`DataRoot::path`]).

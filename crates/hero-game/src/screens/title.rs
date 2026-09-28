@@ -1,5 +1,6 @@
 //! Title screen: artwork (`gfx/ui/title.png`, else the procedural backdrop), the logo and the
-//! main menu — 새 게임 / 이어하기 / 불러오기 / 설정 / 제작진 / 종료 (native only).
+//! main menu — 새 게임 / 이어하기 / 불러오기 / 원작 데이터 (native, unless `--data` chose the pack) /
+//! 설정 / 제작진 / 종료 (native only).
 
 use super::backdrop::draw_backdrop;
 use super::credits::CreditsScreen;
@@ -27,6 +28,8 @@ enum Item {
     NewGame,
     Continue,
     Load,
+    /// The original mode: pick the install folder, switch modes (native only).
+    Original,
     Settings,
     Credits,
     Quit,
@@ -38,6 +41,7 @@ impl Item {
             Item::NewGame => "새 게임",
             Item::Continue => "이어하기",
             Item::Load => "불러오기",
+            Item::Original => "원작 데이터",
             Item::Settings => "설정",
             Item::Credits => "제작진",
             Item::Quit => "종료",
@@ -55,13 +59,11 @@ pub struct TitleScreen {
 
 impl TitleScreen {
     pub fn new() -> TitleScreen {
-        let mut items = vec![
-            Item::NewGame,
-            Item::Continue,
-            Item::Load,
-            Item::Settings,
-            Item::Credits,
-        ];
+        let mut items = vec![Item::NewGame, Item::Continue, Item::Load];
+        if cfg!(not(target_arch = "wasm32")) {
+            items.push(Item::Original);
+        }
+        items.extend([Item::Settings, Item::Credits]);
         if crate::platform::can_quit() {
             items.push(Item::Quit);
         }
@@ -75,6 +77,10 @@ impl TitleScreen {
     }
 
     fn rebuild_menu(&mut self, ctx: &Ctx) {
+        // A pack chosen with `--data` is played as it is: the original mode does not apply.
+        if crate::platform::explicit_data(&ctx.options) {
+            self.items.retain(|it| *it != Item::Original);
+        }
         let has_pack = ctx.pack.is_some();
         let items = self
             .items
@@ -134,6 +140,7 @@ impl TitleScreen {
                 Some(id) => Transition::push(SaveLoadScreen::load(id)),
                 None => Transition::None,
             },
+            Item::Original => original_screen(),
             Item::Settings => Transition::push(SettingsScreen::new()),
             Item::Credits => Transition::push(CreditsScreen::new()),
             Item::Quit => {
@@ -268,5 +275,17 @@ impl Screen for TitleScreen {
             crate::gfx::fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35));
             dialog.draw(ctx);
         }
+    }
+}
+
+/// The original-data screen (native only).
+fn original_screen() -> Transition {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Transition::push(super::original::OriginalScreen::new())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        Transition::None
     }
 }

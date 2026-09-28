@@ -10,6 +10,8 @@ pub mod error;
 pub mod gallery;
 pub mod gameover;
 pub mod loading;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod original;
 pub mod saveload;
 pub mod settings;
 pub mod title;

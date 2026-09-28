@@ -136,7 +136,7 @@ A map with `image = "<key>"` (in a battle's `[map]` or a map file entry, see
   tileset. `hero-tools validate` reports both as errors.
 
 The original mode writes one per converted original battle map (`gfx/maps/hexz_NN.png`, 32-px tiles;
-[ORIGINAL_DATA.md](ORIGINAL_DATA.md#45-원작-모드-팩-만들기)).
+[ORIGINAL_DATA.md](ORIGINAL_DATA.md#45-원작-모드-팩을-파일로-만들기-개발검증용)).
 
 ## Unit sprites — `gfx/units/<sprite>_<side>.png` + `gfx/units/units.toml`
 

@@ -117,6 +117,41 @@ pub struct PackOptions {
     pub sprites: Vec<String>,
 }
 
+impl PackOptions {
+    /// Options for a pack on top of `parent` (the loaded pack chain it will extend), whose
+    /// directory is `extends` relative to the written pack.
+    pub fn for_pack(
+        parent: &hero_core::pack::Pack,
+        extends: String,
+        edition: Option<EditionId>,
+    ) -> PackOptions {
+        let sprites: BTreeSet<String> = parent.classes.values().map(|c| c.sprite.clone()).collect();
+        PackOptions {
+            edition,
+            extends,
+            officers: parent
+                .officers
+                .values()
+                .map(|o| BaseOfficer {
+                    id: o.id.to_string(),
+                    name: o.name.clone(),
+                    hanja: o.hanja.clone(),
+                    portrait: o.portrait.clone().unwrap_or_else(|| o.id.to_string()),
+                })
+                .collect(),
+            terrain: parent
+                .terrain
+                .iter()
+                .map(|t| BaseTerrain {
+                    id: t.id.to_string(),
+                    tile: t.tile_key().to_string(),
+                })
+                .collect(),
+            sprites: sprites.into_iter().collect(),
+        }
+    }
+}
+
 /// A portrait given to a base-pack officer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PortraitMatch {
@@ -192,69 +227,109 @@ pub fn write_pack(
     options: &PackOptions,
 ) -> Result<PackIndex, ExtractError> {
     let install = InstallDir::open(source)?;
-    let identified = identify(&install);
+    let (edition, encoding) = pack_edition(&install, options)?;
+    // Checked before anything is written; the final manifest also lists the map file.
+    pack_toml(&options.extends, edition.id, false)
+        .map_err(|e| output_error(&out.join("pack.toml"), e))?;
+    prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
+    let mut output = Output::dir(out);
+    convert(&install, edition, encoding, options, &mut output)
+}
+
+/// An original-mode pack converted in memory ([`build_pack`]).
+#[derive(Debug, Clone)]
+pub struct MemoryPack {
+    pub index: PackIndex,
+    /// Every file of the pack ([`PACK_INDEX`] included) by its path relative to the pack folder,
+    /// `/`-separated.
+    pub files: BTreeMap<String, Vec<u8>>,
+}
+
+/// Convert the install in `source` into an original-mode pack held in memory: the same files
+/// [`write_pack`] writes, for the game to play without writing anything (it converts at every
+/// launch, like OpenRCT2 reading the RCT2 install). The install is only read.
+pub fn build_pack(source: &Path, options: &PackOptions) -> Result<MemoryPack, ExtractError> {
+    let install = InstallDir::open(source)?;
+    let (edition, encoding) = pack_edition(&install, options)?;
+    pack_toml(&options.extends, edition.id, false)
+        .map_err(|e| output_error(Path::new("pack.toml"), e))?;
+    let mut output = Output::in_memory(PACK_ID);
+    let index = convert(&install, edition, encoding, options, &mut output)?;
+    let files = output.memory.take().unwrap_or_default();
+    Ok(MemoryPack { index, files })
+}
+
+/// The edition of the install (or the one `options` forces) and its text encoding; an error
+/// when it cannot be converted.
+fn pack_edition(
+    install: &InstallDir,
+    options: &PackOptions,
+) -> Result<(Edition, TextEncoding), ExtractError> {
+    let identified = identify(install);
     let edition = match options.edition {
         Some(id) if id.is_extractable() => Edition::forced(id, &identified),
         Some(id) => return Err(ExtractError::BadForcedEdition(id)),
         None => identified,
     };
-    let Some(encoding) = edition.id.text_encoding() else {
-        return Err(ExtractError::NotExtractable(Box::new(edition)));
-    };
-    // Checked before anything is written; the final manifest also lists the map file.
-    pack_toml(&options.extends, edition.id, false)
-        .map_err(|e| output_error(&out.join("pack.toml"), e))?;
-    prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
-    let mut output = Output {
-        root: out.to_path_buf(),
-        files: Vec::new(),
-    };
+    match edition.id.text_encoding() {
+        Some(encoding) => Ok((edition, encoding)),
+        None => Err(ExtractError::NotExtractable(Box::new(edition))),
+    }
+}
 
+/// Convert every asset kind into `output` and write `pack.toml` and [`PACK_INDEX`].
+fn convert(
+    install: &InstallDir,
+    edition: Edition,
+    encoding: TextEncoding,
+    options: &PackOptions,
+    output: &mut Output,
+) -> Result<PackIndex, ExtractError> {
     // MAIN.EXE is listed as a source of every kind that uses it.
     let mut exe_report = KindReport::new(Status::Extracted, true, "");
-    let exe = Exe::read(&install, &mut exe_report)?;
+    let exe = Exe::read(install, &mut exe_report)?;
     let with_exe = |mut r: KindReport| {
         r.sources.extend(exe_report.sources.iter().cloned());
         r
     };
 
     let (portraits, matches, unmatched) = convert_portraits(
-        &install,
+        install,
         encoding,
         edition.id,
         &exe,
         options,
-        &mut output,
+        output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
     let tiles = convert_tiles(
-        &install,
+        install,
         &exe,
         options,
-        &mut output,
+        output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
     let tiles_ok = matches!(tiles.status, Status::Extracted | Status::Partial);
     let units = convert_units(
-        &install,
+        install,
         &exe,
         options,
         tiles_ok,
-        &mut output,
+        output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
     let (maps, map_records) = convert_maps(
-        &install,
+        install,
         encoding,
         &exe,
         options,
         tiles_ok,
-        &mut output,
+        output,
         with_exe(KindReport::new(Status::Extracted, true, "")),
     )?;
 
     let manifest = pack_toml(&options.extends, edition.id, !map_records.is_empty())
-        .map_err(|e| output_error(&out.join("pack.toml"), e))?;
+        .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
     output.files.sort();
     let mut assets = BTreeMap::new();
@@ -1941,6 +2016,44 @@ mod tests {
                 .collect(),
             sprites: CLASS_SPRITES.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn builds_in_memory_the_files_it_writes() {
+        let src = TempDir::new("pack-mem-src");
+        write_pack_install(src.path());
+        let out = TempDir::new("pack-mem-out");
+        let dir = out.path().join("original");
+        let written = write_pack(src.path(), &dir, &options()).unwrap();
+        let listing = |p: &Path| {
+            let mut names: Vec<_> = std::fs::read_dir(p)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let (install_before, out_before) = (listing(src.path()), listing(out.path()));
+        let built = build_pack(src.path(), &options()).unwrap();
+        // Nothing is written anywhere.
+        assert_eq!(listing(src.path()), install_before);
+        assert_eq!(listing(out.path()), out_before);
+        assert!(built.index.success(), "{:#?}", built.index.assets);
+        assert_eq!(built.index.files, written.files);
+        let mut listed = written.files.clone();
+        listed.push(PACK_INDEX.to_string());
+        listed.sort();
+        assert_eq!(built.files.keys().cloned().collect::<Vec<_>>(), listed);
+        for (rel, bytes) in &built.files {
+            assert_eq!(&std::fs::read(dir.join(rel)).unwrap(), bytes, "{rel}");
+        }
+
+        // An install that cannot be converted is refused before anything is converted.
+        let empty = TempDir::new("pack-mem-empty");
+        assert!(matches!(
+            build_pack(empty.path(), &options()),
+            Err(ExtractError::NotExtractable(_))
+        ));
     }
 
     #[test]

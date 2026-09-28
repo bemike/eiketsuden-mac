@@ -94,6 +94,11 @@ pub struct Settings {
     pub battle_speed: BattleSpeed,
     /// Native builds only; ignored on the web.
     pub fullscreen: bool,
+    /// Folder of the player's own copy of the original game, chosen in the game (native only).
+    pub original_dir: Option<String>,
+    /// Play the original mode: convert [`Settings::original_dir`] at launch and play it on top
+    /// of the base pack (native only; see `crate::original`).
+    pub original_mode: bool,
 }
 
 impl Default for Settings {
@@ -105,6 +110,8 @@ impl Default for Settings {
             text_speed: TextSpeed::Normal,
             battle_speed: BattleSpeed::Normal,
             fullscreen: false,
+            original_dir: None,
+            original_mode: false,
         }
     }
 }
@@ -139,7 +146,20 @@ impl Settings {
         self.master_volume = self.master_volume.min(100);
         self.bgm_volume = self.bgm_volume.min(100);
         self.sfx_volume = self.sfx_volume.min(100);
+        if self
+            .original_dir
+            .as_deref()
+            .is_some_and(|d| d.trim().is_empty())
+        {
+            self.original_dir = None;
+        }
+        self.original_mode &= self.original_dir.is_some();
         self
+    }
+
+    /// The original-mode folder to convert at launch, when the original mode is on.
+    pub fn original_to_play(&self) -> Option<&str> {
+        self.original_dir.as_deref().filter(|_| self.original_mode)
     }
 
     /// Effective music gain 0.0..=1.0.
@@ -203,6 +223,31 @@ mod tests {
         assert_eq!(s.sfx_volume, 100);
         assert_eq!(s.text_speed, TextSpeed::Fast);
         assert_eq!(s.master_volume, Settings::default().master_volume);
+        assert_eq!(s.original_to_play(), None);
+    }
+
+    #[test]
+    fn original_mode_needs_a_folder() {
+        let mut store = MemoryStore::default();
+        let s = Settings {
+            original_dir: Some(r"D:\games\hero\GAME".into()),
+            original_mode: true,
+            ..Settings::default()
+        };
+        s.save(&mut store).unwrap();
+        assert_eq!(
+            Settings::load(&store).0.original_to_play(),
+            Some(r"D:\games\hero\GAME")
+        );
+
+        store
+            .set(
+                SETTINGS_KEY,
+                r#"{"original_mode": true, "original_dir": " "}"#,
+            )
+            .unwrap();
+        let (s, _) = Settings::load(&store);
+        assert_eq!((s.original_dir, s.original_mode), (None, false));
     }
 
     #[test]
