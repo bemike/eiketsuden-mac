@@ -180,7 +180,14 @@ impl MediaCheck {
                 self.push(
                     Severity::Warning,
                     &ctx,
-                    "names no status of the game (`confused`): never drawn".to_string(),
+                    format!(
+                        "names no status of the game ({}): never drawn",
+                        crate::data::StatusKind::ALL
+                            .iter()
+                            .map(|s| format!("`{}`", s.id()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
                 );
             }
             if keys_seen.insert(key.as_str()) {

@@ -202,9 +202,10 @@ short_infantry = "officer_liu_bei_short_infantry"   # drawn with this sheet whil
 
 **Status sprites.** A `[statuses]` table draws every unit under a status with one sprite key, before
 its officer's or class's (`confused = "status_confused"`; the original mode draws confused units with the
-original's confusion icon). The status ids are the game's (`confused`).
+original's confusion icon, and then leaves out the game's own confusion mark). The status ids are the
+game's (`confused`).
 
-`hero-tools validate` reports an officer, class sprite key or status the pack does not have (warning) and a
+`hero-tools validate` reports an officer or class sprite key the pack does not have or a status the game does not have (warning) and a
 missing sheet or entry of the sprite drawn instead (error). Like the rest of `units.toml`, the table
 belongs to the index a layered pack replaces as a whole: a child with its own `units.toml` keeps
 officers' own sprites only if it copies the `[officers]` tables.
