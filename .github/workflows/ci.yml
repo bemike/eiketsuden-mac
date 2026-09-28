@@ -63,6 +63,8 @@ jobs:
           ruff format --check tools/assets
       - name: Unit tests
         run: python -m unittest discover -s tools/assets -p "test_*.py"
+      - name: Application icon matches its script
+        run: python tools/assets/build_icon.py --check
 
   native:
     strategy:

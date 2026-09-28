@@ -9,6 +9,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use hero_game::platform::{self, LaunchOptions};
+use macroquad::miniquad::conf::Icon;
 use macroquad::prelude::*;
 
 /// Window title (also the browser tab title is set by `web/index.html`).
@@ -24,7 +25,18 @@ fn window_conf() -> Conf {
         // The renderer does its own integer scaling of the virtual canvas; physical pixels on
         // high-DPI screens would only change the window size, not the look.
         high_dpi: false,
+        icon: Some(window_icon()),
         ..Default::default()
+    }
+}
+
+/// The window and taskbar icon (drawn by `tools/assets/build_icon.py`; the Windows executable
+/// also carries it as a resource, see `build.rs`).
+fn window_icon() -> Icon {
+    Icon {
+        small: *include_bytes!("../icon/icon_16.rgba"),
+        medium: *include_bytes!("../icon/icon_32.rgba"),
+        big: *include_bytes!("../icon/icon_64.rgba"),
     }
 }
 
