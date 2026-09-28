@@ -301,7 +301,13 @@ pub fn list(place: &Place) -> Result<Vec<Folder>, String> {
 
 /// The only listed folder that looks like an install: offered when the folder shown is not one
 /// itself, e.g. a DOSBox package's `res/hero` holding the game in `GAME`.
+///
+/// Only a listing whose folders were all checked ([`list`] checks the first `MAX_CHECKED`) can
+/// tell that one is the only install, so a longer one offers none.
 pub fn sole_install(folders: &[Folder]) -> Option<&Folder> {
+    if folders.len() > MAX_CHECKED {
+        return None;
+    }
     let mut installs = folders.iter().filter(|f| f.install);
     let first = installs.next()?;
     installs.next().is_none().then_some(first)
@@ -454,6 +460,18 @@ mod tests {
         let one: Vec<Folder> = folders.into_iter().filter(|f| f.name != "zh").collect();
         assert_eq!(sole_install(&one).map(|f| f.name.as_str()), Some("game"));
         assert_eq!(sole_install(&[]), None);
+        // Beyond the checked folders an install could hide unmarked: no offer.
+        let mut many: Vec<Folder> = (0..=MAX_CHECKED)
+            .map(|i| Folder {
+                name: format!("f{i:03}"),
+                path: PathBuf::from(format!("f{i:03}")),
+                install: false,
+            })
+            .collect();
+        many[0].install = true;
+        assert_eq!(sole_install(&many), None);
+        many.pop();
+        assert_eq!(sole_install(&many).map(|f| f.name.as_str()), Some("f000"));
 
         // Typed paths: blanks and quotes dropped, a file names its folder, relative paths are
         // taken from the folder shown; the result is absolute.

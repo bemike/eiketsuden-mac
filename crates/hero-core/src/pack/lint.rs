@@ -62,7 +62,8 @@ impl Pack {
             // cannot be read stops the search (a parent's copy is not the one in use).
             let mut found = None;
             for path in chain.layers().iter().map(|layer| layer.file(rel)) {
-                match src.read_text(&path) {
+                // `read` drops a byte-order mark like for every other pack file.
+                match read(src, &path) {
                     Ok(text) => {
                         found = Some((path, text));
                         break;

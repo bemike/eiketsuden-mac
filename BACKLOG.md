@@ -48,14 +48,15 @@
   - 무엇을: 맵 캐시 render target 크기에 상한을 두고 validate에서 경고하며, 넘치면 청크로 분할한다.
   - 왜: 큰 맵과 큰 타일이 겹치면 모바일 WebGL 텍스처 한도(2048~4096)를 넘어 맵이 검게 나온다.
   - 영향 범위: hero-game `screens/battle/tileset.rs`, hero-core 검증, `docs/ASSETS.md`
-- [ ] **전투의 유닛 참조 열거를 한곳으로 모으기**
-  - 무엇을: exhaustive match로 된 `BattleDef::unit_refs()`를 만들어 validate와 simulate의 `player_needs`가 함께 쓰게 한다.
-  - 왜: 조건·이벤트 variant가 추가되면 simulate가 조용히 왜곡된 승률을 낸다.
-  - 영향 범위: hero-core `battledef.rs`, hero-tools `validate.rs`·`simulate.rs`
 - [ ] **모드 팩 텍스트의 한자 커버리지 경고**
   - 무엇을: 팩 텍스트에 쓰인 한자 중 폰트에 없는 글자를 validate가 경고한다.
   - 왜: 지금은 기본 팩만 CI 폰트 테스트로 확인한다.
   - 영향 범위: hero-core/hero-tools, 폰트 cmap 파서
+
+- [ ] **원작 폴더 탐색기: 300개가 넘는 폴더에서 ★ 표시의 한계 안내**
+  - 무엇을: `list()`는 앞 300개 폴더만 원작 파일 여부를 검사한다. 목록이 그보다 길면 "앞 300개만 ★ 표시" 안내를 덧붙인다(`list()`가 전부 검사했는지를 함께 돌려주게).
+  - 왜: 뒤쪽 폴더는 원작 파일이 있어도 ★가 없는데 안내문은 모든 폴더를 표시하는 것처럼 읽힌다(PR #24 리뷰).
+  - 영향 범위: hero-game `original.rs`(`list`), `screens/original.rs`
 
 ## 게임 · 콘텐츠
 
