@@ -316,6 +316,9 @@ fn advance_heads_for_its_position() {
             Action::Wait { unit: foe }
         ]
     );
+    // Next to its destination it steps onto it (a reach trigger there needs the tile itself).
+    st.units[foe].pos = p(6, 0);
+    assert_eq!(move_target(&st.ai_actions(&pack, foe)), Some(p(7, 0)));
     // At its destination it holds the position.
     st.units[foe].pos = p(7, 0);
     assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
