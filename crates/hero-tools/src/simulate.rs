@@ -194,7 +194,7 @@ thread_local! {
     static LAST_PANIC: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
-fn take_panic_message() -> String {
+pub(crate) fn take_panic_message() -> String {
     LAST_PANIC
         .with(|p| p.borrow_mut().take())
         .unwrap_or_else(|| "panic without a message".into())
@@ -202,10 +202,10 @@ fn take_panic_message() -> String {
 
 /// While alive, panics are recorded for the report instead of being printed by the default
 /// hook; dropping it restores the default hook.
-struct QuietPanics;
+pub(crate) struct QuietPanics;
 
 impl QuietPanics {
-    fn install() -> QuietPanics {
+    pub(crate) fn install() -> QuietPanics {
         panic::set_hook(Box::new(|info| {
             let payload = info.payload();
             let msg = payload
