@@ -75,8 +75,10 @@ loads the top pack from there) together with every pack it `extends`, each at th
 `extends` names; a parent that would land on `data/base/` itself (`extends = "../base"`) is an error
 (see [MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). The site's copies
 of the fonts keep only the Hanja the game can show (those in the packs' text files and in the wasm's
-own strings), about 0.7 MB less to download (gzip); without fontTools they are copied whole, with a
-warning (the Pages workflow passes `--require-font-subset`, which makes that an error). Open `http://localhost:8080/`, or
+own strings), about 0.8 MB less to download (gzip); without fontTools they are copied whole, with a
+warning (the Pages workflow passes `--require-font-subset`, which makes that an error). So a Hanja
+the game's code shows must be written in a string literal (`"英傑傳"`), not as a `char` or a computed
+code point, or the web build draws it as a blank. Open `http://localhost:8080/`, or
 `http://localhost:8080/#gallery` for the UI gallery. Browsers refuse to load WebAssembly from
 `file://` URLs, so the folder has to be served.
 

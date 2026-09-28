@@ -9,7 +9,7 @@ docs/MODDING.md "Layered packs in the web build").
 
 The fonts are subset for the web: the pixel fonts hold about 6,800 Hanja, of which the game shows
 only those in the packs' text and the game's own strings, so the site's copies keep every other
-character but only those Hanja (about 0.7 MB less to download, gzip). This needs fontTools
+character but only those Hanja (about 0.8 MB less to download, gzip). This needs fontTools
 (`pip install fonttools`); without it the fonts are copied whole, with a warning, unless
 --require-font-subset (the GitHub Pages workflow) makes that an error.
 
@@ -138,15 +138,40 @@ def is_hanja(code: int) -> bool:
     return HANJA.fullmatch(chr(code)) is not None
 
 
+def toml_strings(value: object) -> list[str]:
+    """Every string (key or value) in parsed TOML."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for k, v in value.items() for s in (k, *toml_strings(v))]
+    if isinstance(value, list):
+        return [s for v in value for s in toml_strings(v)]
+    return []
+
+
 def shown_hanja(packs: list[Path], wasm: Path) -> set[int]:
-    """Hanja the game can show: those in the text files of `packs` and in the strings of `wasm`
-    (UTF-8 literals of the game's own code; stray matches only keep a glyph more)."""
+    """Hanja the game can show: those in the text files of `packs` (TOML strings as parsed, so a
+    `\\uXXXX` escape counts too) and in the strings of `wasm` (UTF-8 literals of the game's own
+    code; stray matches only keep a glyph more). The game's code must spell a Hanja it shows as
+    a string literal (not a char or a computed code point) for this scan to find it."""
     found: set[int] = set()
+
+    def add(text: str) -> None:
+        found.update(ord(c) for c in HANJA.findall(text))
+
     for pack in packs:
         for path in pack.rglob("*"):
-            if path.is_file() and (path.suffix in TEXT_SUFFIXES or path.name in TEXT_NAMES):
-                found.update(ord(c) for c in HANJA.findall(path.read_text(encoding="utf-8", errors="ignore")))
-    found.update(ord(c) for c in HANJA.findall(wasm.read_bytes().decode("utf-8", errors="ignore")))
+            if not path.is_file() or not (path.suffix in TEXT_SUFFIXES or path.name in TEXT_NAMES):
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            add(text)
+            if path.suffix == ".toml":
+                try:
+                    for s in toml_strings(tomllib.loads(text)):
+                        add(s)
+                except tomllib.TOMLDecodeError:
+                    pass  # the game reports it; the raw text was scanned above
+    add(wasm.read_bytes().decode("utf-8", errors="ignore"))
     return found
 
 
@@ -160,13 +185,13 @@ def subset_font(path: Path, keep_hanja: set[int]) -> tuple[int, int]:
     font = TTFont(path)
     keep = [c for c in font.getBestCmap() if not is_hanja(c) or c in keep_hanja]
     options = subset.Options()
-    # Keep everything but the dropped characters: names (the OFL family names), layout
-    # features, hinting and the glyph names.
+    # Keep the names (the OFL family names and licence, Windows records; fontTools drops the
+    # legacy Mac copies of them), every layout feature and the hinting. Glyph names are not
+    # kept: the game never reads them, and they are about 60 KB (gzip) per font.
     options.name_IDs = ["*"]
     options.name_languages = ["*"]
     options.layout_features = ["*"]
     options.notdef_outline = True
-    options.glyph_names = True
     options.hinting = True
     subsetter = subset.Subsetter(options)
     subsetter.populate(unicodes=keep)
@@ -175,22 +200,35 @@ def subset_font(path: Path, keep_hanja: set[int]) -> tuple[int, int]:
     return before, path.stat().st_size
 
 
-def subset_fonts(out: Path, plan: list[tuple[Path, str]], wasm: Path, required: bool) -> list[str]:
-    """Subset every copy of the game's fonts in the site; returns warnings."""
-    fonts = [out / site / f for _, site in plan for f in FONT_FILES if (out / site / f).is_file()]
-    if not fonts:
-        return []
+def has_fonttools() -> bool:
     try:
         import fontTools  # noqa: F401
     except ImportError:
-        if required:
-            raise AssembleError("fontTools is needed to subset the fonts: pip install fonttools") from None
-        return ["fontTools not found (pip install fonttools): the fonts are copied whole, about 0.7 MB more"]
-    keep = shown_hanja([source for source, _ in plan], wasm)
+        return False
+    return True
+
+
+def subset_fonts(out: Path, packs: list[tuple[Path, str]], wasm: Path, required: bool) -> list[str]:
+    """Subset the game's fonts of every pack of the chain (`packs`, site paths below `out`,
+    including a parent copied inside its child); returns warnings."""
+    fonts = [out / site / f for _, site in packs for f in FONT_FILES if (out / site / f).is_file()]
+    if not fonts:
+        return []
+    if not has_fonttools():
+        return ["fontTools not found (pip install fonttools): the fonts are copied whole, about 0.8 MB more"]
+    keep = shown_hanja([source for source, _ in packs], wasm)
+    warnings = []
     for font in fonts:
-        before, after = subset_font(font, keep)
-        print(f"{font.relative_to(out).as_posix()}: {before:,} -> {after:,} bytes ({len(keep)} Hanja kept)")
-    return []
+        name = font.relative_to(out).as_posix()
+        try:
+            before, after = subset_font(font, keep)
+        except Exception as e:  # noqa: BLE001 -- fontTools raises many kinds on a broken font
+            if required:
+                raise AssembleError(f"{name}: cannot subset the font: {e}") from e
+            warnings.append(f"{name}: cannot subset the font ({e}); it is copied whole")
+            continue
+        print(f"{name}: {before:,} -> {after:,} bytes ({len(keep)} Hanja kept)")
+    return warnings
 
 
 def assemble(wasm: Path, out: Path, data: Path, require_font_subset: bool = False) -> list[str]:
@@ -198,11 +236,15 @@ def assemble(wasm: Path, out: Path, data: Path, require_font_subset: bool = Fals
     warnings = []
     if not wasm.is_file():
         raise AssembleError(f"{wasm} not found: build hero-game for wasm32-unknown-unknown first")
+    if require_font_subset and not has_fonttools():
+        raise AssembleError("fontTools is needed to subset the fonts: pip install fonttools")
+    packs: list[tuple[Path, str]] = []
     plan: list[tuple[Path, str]] = []
     if data.is_dir():
         if not (data / "pack.toml").is_file():
             warnings.append(f"{data} has no pack.toml: only the UI gallery (#gallery) will work")
-        plan = copies(chain(data))
+        packs = chain(data)
+        plan = copies(packs)
         for source, _ in plan:
             if out == source or source in out.parents:
                 raise AssembleError(f"the output {out} lies inside the pack {source}")
@@ -220,7 +262,7 @@ def assemble(wasm: Path, out: Path, data: Path, require_font_subset: bool = Fals
     shutil.copy2(wasm, out / "eiketsuden.wasm")
     for source, site in plan:
         shutil.copytree(source, out / site, dirs_exist_ok=site == "data")
-    warnings += subset_fonts(out, plan, wasm, require_font_subset)
+    warnings += subset_fonts(out, packs, wasm, require_font_subset)
     return warnings
 
 
