@@ -648,7 +648,7 @@ fn unknown_fields_are_reported_across_the_chain() {
     );
     // Battle media indexes are linted in the first layer that has them, like the game reads
     // them: the parent's units.toml, the child's fx.toml (the parent's is not used).
-    // (With a byte-order mark, as Windows editors write it.)
+    // (With a byte-order mark, as Windows editors write it: read like every pack file.)
     files.insert(
         "../mini/gfx/units/units.toml".into(),
         "\u{feff}[sprites.archer]\nframe = [16, 16]\nanchor = [8, 15]\nanchr = [8, 15]\n".into(),
