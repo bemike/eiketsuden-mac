@@ -318,15 +318,17 @@ pub fn write_pack(
     pack_toml(&options.extends, edition.id, false, &[], false)
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
-    let mut output = Output::dir(out);
-    convert(
+    let mut output = Output::dir(out, PACK_FORMAT)?;
+    let index = convert(
         &install,
         edition,
         encoding,
         options,
         &mut output,
         &mut |_| {},
-    )
+    )?;
+    output.finish()?;
+    Ok(index)
 }
 
 /// An original-mode pack converted in memory ([`build_pack`]).
