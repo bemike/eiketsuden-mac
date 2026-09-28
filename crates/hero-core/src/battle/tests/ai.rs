@@ -366,6 +366,31 @@ fn advance_holds_its_destination_like_a_post() {
     assert!(
         matches!(last(&st.ai_actions(&pack, foe)), Action::Attack { target, .. } if *target == liu),
     );
+    // A better action near the post beats a weaker one from the destination: the sure kill
+    // next to it over a full-HP unit next to the destination.
+    st.units[liu].hp = 1;
+    let full = add(&mut st, &pack, Side::Player, "infantry", 1, p(7, 1));
+    let plan = st.ai_actions(&pack, foe);
+    assert!(
+        matches!(last(&plan), Action::Attack { target, .. } if *target == liu),
+        "{plan:?} (not {full})"
+    );
+}
+
+#[test]
+fn advance_near_its_destination_threatens_only_the_posts_radius() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    st.units[foe].ai = AiMode::Advance;
+    st.units[foe].ai_pos = Some(p(1, 1));
+    // A careful unit one hit from defeat approaches as close as it safely can: 5 tiles from
+    // the post (the advance unit acts from within 3 tiles of it and strikes 1 tile further),
+    // not 6 as it would keep from a unit free to use its whole move of 4.
+    let me = brawler(&mut st, &pack, Side::Player, p(6, 4));
+    st.units[me].hp = 1;
+    let to = move_target(&st.ai_actions(&pack, me)).expect("approaches");
+    assert_eq!(to.manhattan(p(1, 1)), 5, "{to:?}");
 }
 
 #[test]
