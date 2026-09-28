@@ -324,7 +324,7 @@ impl MediaCheck {
                             "drawn from the tileset, this {}×{} map with {tile}-pixel tiles takes {} MB of texture memory in battle (more than {} MB): use a smaller tile_size or split the map",
                             map.width,
                             map.height,
-                            area * 4 / (1024 * 1024),
+                            (area * 4).div_ceil(1024 * 1024),
                             CACHE_BUDGET * 4 / (1024 * 1024)
                         ),
                     );

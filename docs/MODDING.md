@@ -1104,9 +1104,12 @@ commander, `survive_turns`/`turn_start` with turn 0, `hp_below` outside 1..=100,
 `give_item` items, `set_flag` without a name, `set_terrain` to an unknown terrain or with an image that
 is not a media key. W: `survive_turns` or `turn_start` after `turn_limit`, events without actions,
 `adjacent` naming the same unit twice, `set_ai` to `advance` without `ai_pos`, `level_up` by 0, an event
-`stage` that no `set_stage` reaches, a `when` flag that nothing sets, a `defeat_all` battle with an enemy
-on the map that no attack range touches from anywhere walkable from the deployment slots (walkable: any
-class of the pack can enter the tile, before or after a `set_terrain` changes it).
+`stage` that no `set_stage` reaches, a `when` flag that nothing sets, a battle won only by `defeat_all`
+(no other victory condition, no `victory` event) with an enemy on the map that can never be attacked: no
+tile it can walk to is within an attack range or a damage strategy's reach (with its area) of anywhere
+walkable from the first `deploy.max` deployment slots or the start tiles of player and allied units
+(walkable: any class of the pack can enter the tile, before or after a `set_terrain` changes it; enemies a
+`retreat` event removes are left out).
 
 **Dramas** — E: `@join`/`@leave` of unknown officers, `@item` of unknown items, speakers that look like
 ids but name no officer. W: scenes of the pack itself that no campaign node or battle plays (in a
