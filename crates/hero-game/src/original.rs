@@ -200,15 +200,103 @@ impl Conversion {
         }
         Some(match handle.join() {
             Ok(result) => result,
-            Err(panic) => {
-                let why = panic
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| panic.downcast_ref::<&str>().copied())
-                    .unwrap_or("unknown panic");
-                Err(format!("the conversion crashed: {why}"))
-            }
+            Err(panic) => Err(format!(
+                "the conversion crashed: {}",
+                panic_message(&*panic)
+            )),
         })
+    }
+}
+
+/// The message a worker thread panicked with.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> &str {
+    panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&str>().copied())
+        .unwrap_or("unknown panic")
+}
+
+// ----- background reads ----------------------------------------------------------------------
+
+/// A folder read on a worker thread. Listing, identifying or even testing a path can stall for
+/// as long as the file system does (an unresponsive network share, `\\server\share`, only
+/// gives up after its timeout), so the folder browser reads through this, keeps drawing and
+/// lets the player cancel. A cancelled read is dropped: its thread ends on its own once the
+/// file system answers, and its result is thrown away.
+pub struct Background<T> {
+    running: Option<JoinHandle<T>>,
+    /// The error when the thread could not be started.
+    failed: Option<String>,
+}
+
+impl<T: Send + 'static> Background<T> {
+    pub fn spawn(work: impl FnOnce() -> T + Send + 'static) -> Background<T> {
+        match std::thread::Builder::new()
+            .name("folder-read".into())
+            .spawn(work)
+        {
+            Ok(handle) => Background {
+                running: Some(handle),
+                failed: None,
+            },
+            Err(e) => Background {
+                running: None,
+                failed: Some(format!("cannot start reading: {e}")),
+            },
+        }
+    }
+
+    /// The result once the read has finished (returned once); `Err` when the worker could not
+    /// start or panicked.
+    pub fn poll(&mut self) -> Option<Result<T, String>> {
+        if let Some(e) = self.failed.take() {
+            return Some(Err(e));
+        }
+        let handle = self.running.take()?;
+        if !handle.is_finished() {
+            self.running = Some(handle);
+            return None;
+        }
+        Some(
+            handle
+                .join()
+                .map_err(|panic| format!("reading crashed: {}", panic_message(&*panic))),
+        )
+    }
+}
+
+/// What the folder browser shows at a place, read by [`look`].
+#[derive(Debug, Clone)]
+pub struct Listing {
+    pub place: Place,
+    /// The folders, or why the place cannot be read.
+    pub folders: Result<Vec<Folder>, String>,
+    /// The place's own edition, when it looks like an install.
+    pub check: Option<FolderCheck>,
+    /// Not an install itself, but the one subfolder that is one the original mode can play
+    /// (a DOSBox package's `GAME`).
+    pub child: Option<Folder>,
+}
+
+/// Read everything the browser shows at `place` (blocking: run it through [`Background`]).
+pub fn look(place: Place) -> Listing {
+    let folders = list(&place);
+    let check = match &place {
+        Place::Dir(dir) if looks_like_install(dir) => Some(check_folder(dir)),
+        _ => None,
+    };
+    let child = match (&place, &check, &folders) {
+        (Place::Dir(_), None, Ok(folders)) => sole_install(folders)
+            .filter(|f| check_folder(&f.path).is_supported())
+            .cloned(),
+        _ => None,
+    };
+    Listing {
+        place,
+        folders,
+        check,
+        child,
     }
 }
 
@@ -413,6 +501,57 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// Poll a background read until it finishes.
+    fn wait<T: Send + 'static>(mut job: Background<T>) -> Result<T, String> {
+        loop {
+            if let Some(done) = job.poll() {
+                assert!(job.poll().is_none(), "a result is returned once");
+                return done;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn background_reads_report_their_result_or_crash() {
+        assert_eq!(wait(Background::spawn(|| 7)), Ok(7));
+        let crashed: Result<(), String> = wait(Background::spawn(|| panic!("disk on fire")));
+        assert_eq!(crashed, Err("reading crashed: disk on fire".to_string()));
+    }
+
+    #[test]
+    fn a_look_reads_what_the_browser_shows() {
+        let tmp = TempDir::new("look");
+        std::fs::create_dir_all(tmp.0.join("game")).unwrap();
+        std::fs::create_dir_all(tmp.0.join("other")).unwrap();
+        std::fs::write(tmp.0.join("game/disk1.r3i"), b"x").unwrap();
+        let listing = wait(Background::spawn({
+            let dir = tmp.0.clone();
+            move || look(Place::Dir(dir))
+        }))
+        .unwrap();
+        assert_eq!(listing.place, Place::Dir(tmp.0.clone()));
+        let names: Vec<_> = listing
+            .folders
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|f| (f.name.as_str(), f.install))
+            .collect();
+        assert_eq!(names, [("game", true), ("other", false)]);
+        // Not an install itself; the one install-looking subfolder is not a playable edition,
+        // so it is not offered.
+        assert!(listing.check.is_none());
+        assert!(listing.child.is_none());
+        // Inside it: its own (unplayable) edition, nothing listed.
+        let inner = look(Place::Dir(tmp.0.join("game")));
+        assert!(matches!(inner.check, Some(FolderCheck::Unsupported(_))));
+        assert_eq!(inner.folders.as_deref(), Ok(&[][..]));
+        // A folder that is gone: the error, no check.
+        let gone = look(Place::Dir(tmp.0.join("missing")));
+        assert!(gone.folders.is_err() && gone.check.is_none() && gone.child.is_none());
     }
 
     #[test]
