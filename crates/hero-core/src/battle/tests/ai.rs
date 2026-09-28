@@ -337,6 +337,38 @@ fn advance_heads_for_its_position() {
 }
 
 #[test]
+fn advance_holds_its_destination_like_a_post() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(7, 0));
+    st.units[foe].ai = AiMode::Advance;
+    st.units[foe].ai_pos = Some(p(7, 0));
+    // A hostile unit within move range (4) but beyond the post's 3 tiles is not chased: it
+    // could only be attacked from (4, 1) or (3, 0), 4 tiles from the post.
+    let liu = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 1));
+    enemy_phase(&mut st);
+    assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
+    // One near the post is fought from a tile near it.
+    st.units[liu].pos = p(5, 2);
+    let plan = st.ai_actions(&pack, foe);
+    let tile = move_target(&plan).unwrap_or(p(7, 0));
+    assert!(tile.manhattan(p(7, 0)) <= 3, "{plan:?}");
+    assert!(
+        matches!(last(&plan), Action::Attack { target, .. } if *target == liu),
+        "{plan:?}"
+    );
+    // After the sortie, with the enemy gone, it goes back instead of wandering.
+    st.units[foe].pos = p(5, 1);
+    st.units[liu].pos = p(0, 7);
+    assert_eq!(move_target(&st.ai_actions(&pack, foe)), Some(p(7, 0)));
+    // With the enemy still next to it, it fights on rather than walking back first.
+    st.units[liu].pos = p(4, 1);
+    assert!(
+        matches!(last(&st.ai_actions(&pack, foe)), Action::Attack { target, .. } if *target == liu),
+    );
+}
+
+#[test]
 fn player_side_simulation_uses_healing_items() {
     let pack = pack(OPEN_MAP);
     let mut st = state(&pack);
