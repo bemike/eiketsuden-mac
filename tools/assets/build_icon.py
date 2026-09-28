@@ -14,7 +14,8 @@ Outputs (committed, in crates/hero-game/icon/):
 * ``icon_256.png`` — for documentation and packaging.
 
 Run ``python tools/assets/build_icon.py`` to rebuild, ``--check`` to compare with the committed
-files (the build is deterministic).
+files. The pixels are deterministic; the PNG bytes are not (zlib builds differ between Pillow
+wheels), so ``--check`` compares the decoded pixels and the ICO directory.
 """
 
 from __future__ import annotations
@@ -129,6 +130,35 @@ def outputs() -> dict[str, bytes]:
     }
 
 
+def pixels(data: bytes) -> tuple[tuple[int, int], bytes]:
+    """Size and RGBA pixels of a PNG."""
+    img = Image.open(io.BytesIO(data)).convert("RGBA")
+    return img.size, img.tobytes()
+
+
+def ico_content(data: bytes) -> list[tuple[bytes, tuple[tuple[int, int], bytes]]]:
+    """The directory fields (without sizes and offsets) and the pixels of every ICO entry."""
+    _, _, count = struct.unpack_from("<HHH", data)
+    out = []
+    for i in range(count):
+        entry = data[6 + 16 * i : 6 + 16 * (i + 1)]
+        length, offset = struct.unpack_from("<II", entry, 8)
+        out.append((entry[:8], pixels(data[offset : offset + length])))
+    return out
+
+
+def same(name: str, committed: bytes, built: bytes) -> bool:
+    """Whether a committed output matches a fresh build: the pixels for images."""
+    try:
+        if name.endswith(".ico"):
+            return ico_content(committed) == ico_content(built)
+        if name.endswith(".png"):
+            return pixels(committed) == pixels(built)
+    except (OSError, struct.error, ValueError):
+        return False
+    return committed == built
+
+
 def main(argv: list[str]) -> int:
     out = Path(argv[argv.index("--out") + 1]) if "--out" in argv else OUT
     check = "--check" in argv
@@ -137,7 +167,7 @@ def main(argv: list[str]) -> int:
     for name, data in files.items():
         path = out / name
         if check:
-            if not path.is_file() or path.read_bytes() != data:
+            if not path.is_file() or not same(name, path.read_bytes(), data):
                 stale.append(name)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)

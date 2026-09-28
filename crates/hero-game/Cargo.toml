@@ -24,7 +24,8 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 
-# The Windows executable's icon resource (build.rs); only built on Windows hosts.
+# The Windows executable's icon resource (build.rs); only built on Windows hosts, so a build for
+# Windows cross-compiled elsewhere has the window icon but no icon resource.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 

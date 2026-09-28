@@ -20,7 +20,10 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         println!("cargo:rerun-if-changed=icon/eiketsuden.ico");
         let mut resource = winresource::WindowsResource::new();
-        resource.set_icon("icon/eiketsuden.ico");
+        resource
+            .set_icon("icon/eiketsuden.ico")
+            .set("FileDescription", "Eiketsuden Reloaded")
+            .set("ProductName", "Eiketsuden Reloaded");
         if let Err(e) = resource.compile() {
             panic!("cannot embed icon/eiketsuden.ico into the executable: {e}");
         }
