@@ -66,13 +66,13 @@ tools/web/build.sh --serve 8080                 # Linux / macOS
 ```
 
 Both scripts build `eiketsuden.wasm` (release; `-Dev` / `--dev` for the debug profile), assemble
-`target/web-dist/` with `index.html`, `mq_js_bundle.js`, `hero_web.js`, the wasm and `data/base/` (the
-same layout the GitHub Pages workflow publishes) and, with a port, serve it through
+`target/web-dist/` with `tools/web/assemble.py` (Python 3.11+; the same step the GitHub Pages workflow
+runs): `index.html`, `mq_js_bundle.js`, `hero_web.js`, the wasm and `data/base/`, and, with a port, serve it through
 `tools/web/serve.py` — `python -m http.server` with caching disabled, so a reload always picks up a
-rebuilt wasm. `-Data` / `--data` copies another pack to `<out>/data/base/`: the web build always
-loads the top pack from `data/base/`, and the scripts copy only that one directory, never the packs it
-`extends` — for a layered pack, copy each parent next to it by hand (see
-[MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). Open `http://localhost:8080/`, or
+rebuilt wasm. `-Data` / `--data` copies another pack to `<out>/data/base/` (the web build always
+loads the top pack from there) together with every pack it `extends`, each at the path its child's
+`extends` names; a parent that would land on `data/base/` itself (`extends = "../base"`) is an error
+(see [MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). Open `http://localhost:8080/`, or
 `http://localhost:8080/#gallery` for the UI gallery. Browsers refuse to load WebAssembly from
 `file://` URLs, so the folder has to be served.
 
@@ -166,15 +166,17 @@ animation (walk cycles, blinking cursors, the credits scroll) they must be ident
 
 Three workflows live in `.github/workflows`: `ci.yml` (format, clippy native and wasm, tests, pack
 validation, battle simulation, the wasm build, and the asset pipeline's lint and unit tests — including
-the font Hanja coverage check — on every push and pull request), `pages.yml` (the web demo) and
-`release.yml` (release archives).
+the font Hanja coverage check, the web build scripts' tests and the JS plugin version check — on every
+push and pull request), `pages.yml` (the web demo, deployed only after CI passed on a push to `main`)
+and `release.yml` (release archives, built only after the rules tests and the base pack validation
+pass).
 
 **Web demo, one-time setup.** In the GitHub repository open **Settings → Pages → Build and
 deployment** and set **Source** to **GitHub Actions**. Until then the *Web demo (GitHub Pages)*
 workflow stops at its first step (`actions/configure-pages`) with an error saying Pages is not enabled;
 the default `GITHUB_TOKEN` cannot turn it on by itself. After changing the setting, re-run the workflow
-(**Actions → Web demo (GitHub Pages) → Run workflow**) or push to `main`. Every push to `main` then
-publishes the demo at `https://<owner>.github.io/<repository>/`
+(**Actions → Web demo (GitHub Pages) → Run workflow**) or push to `main`. Every push to `main` whose
+CI passes then publishes the demo at `https://<owner>.github.io/<repository>/`
 (<https://jeiel85.github.io/eiketsuden-reloaded/> for the main repository).
 
 **Releases.** First set `version` in `[workspace.package]` of the root `Cargo.toml` (shown on the

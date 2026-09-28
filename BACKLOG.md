@@ -79,21 +79,6 @@
   - 왜: 지금은 기본 팩만 CI 폰트 테스트로 확인한다.
   - 영향 범위: hero-core/hero-tools, 폰트 cmap 파서
 
-## 배포 · CI
-
-- [ ] **웹 사이트 조립 로직 단일화**
-  - 무엇을: `pages.yml`, `build.sh`, `build.ps1` 세 곳에 중복된 조립 로직을 하나로 모은다. `--data`로 extends 팩을 복사할 때 부모 팩도 형제 디렉터리로 복사하거나 경고한다.
-  - 왜: 세 곳이 서로 어긋날 수 있다.
-  - 영향 범위: `tools/web`, `.github/workflows/pages.yml`
-- [ ] **Pages 배포를 CI 성공에 연동**
-  - 무엇을: `workflow_run`으로 CI가 성공했을 때만 Pages를 배포한다. 릴리스 빌드에도 `cargo test -p hero-core`와 validate를 넣는다.
-  - 왜: 지금은 CI가 실패해도 배포된다.
-  - 영향 범위: `.github/workflows`
-- [ ] **JS 플러그인 버전 일치 검사**
-  - 무엇을: `hero_web.js`의 `version`과 `HERO_WEB_VERSION`이 같은지 CI에서 검사한다.
-  - 왜: 지금은 사람이 기억해서 맞춰야 한다.
-  - 영향 범위: `.github/workflows/ci.yml`
-
 ## 게임 · 콘텐츠
 
 - [ ] **캠페인을 따라가는 밸런스 시뮬레이션**
