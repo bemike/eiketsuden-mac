@@ -137,12 +137,12 @@ impl MediaCheck {
             for side in SIDES {
                 let rel = format!("gfx/units/{key}_{side}.png");
                 self.require(Severity::Error, &ctx, &rel, "unit sprite sheet");
-                // The battle cuts frames by `frame`, the camp and gallery by the sheet size
-                // (4 columns × 6 rows): both must agree.
+                // The battle cuts frames by `frame`, the camp by the sheet size (4 columns × 6
+                // rows): both must agree. (Computed wide, so a huge `frame` cannot wrap around.)
                 if let (Some(def), Some(path)) = (def, self.find(&rel)) {
-                    let want = (4 * def.frame[0], 6 * def.frame[1]);
+                    let want = (4 * u64::from(def.frame[0]), 6 * u64::from(def.frame[1]));
                     match png_size(&path) {
-                        Ok(size) if size == want => {}
+                        Ok((w, h)) if (u64::from(w), u64::from(h)) == want => {}
                         Ok((w, h)) => self.push(
                             Severity::Error,
                             &ctx,

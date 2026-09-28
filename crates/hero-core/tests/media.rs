@@ -329,6 +329,35 @@ fn unit_sheets_match_their_frame_size() {
         "gfx/units/archer_enemy.png is 96×144 pixels; with frame = [16, 16] in gfx/units/units.toml a sheet of 4 × 6 frames is 64×96",
     );
     assert_eq!(issues.len(), 1, "{}", format_issues(&issues));
+
+    // Not a PNG: an error, not a panic; a frame so big 4 × 6 of it overflows 32 bits: a plain
+    // mismatch, not a panic or a wrapped-around match.
+    write(&dir.0, "gfx/units/archer_enemy.png", "");
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "class archer",
+        "not a readable PNG",
+    );
+    write(&dir.0, "gfx/units/archer_enemy.png", png_head(4, 96));
+    let units = std::fs::read_to_string(dir.0.join("gfx/units/units.toml")).unwrap();
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        units.replacen(
+            "[sprites.archer]\nframe = [16, 16]",
+            "[sprites.archer]\nframe = [1073741825, 16]",
+            1,
+        ),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "class archer",
+        "a sheet of 4 × 6 frames is 4294967300×96",
+    );
 }
 
 #[test]
