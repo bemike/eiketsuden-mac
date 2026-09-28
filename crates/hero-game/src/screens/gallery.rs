@@ -803,14 +803,33 @@ impl GalleryScreen {
         .enumerate()
         {
             let facing = (i as u32) % 4;
-            draw_sprite(
-                ctx,
-                key,
-                vec2(16.0, 16.0),
-                (facing, walk),
-                vec2(s.x + 12.0 + i as f32 * 34.0, s.y + 24.0),
-                false,
-            );
+            // The frame size of the pack's sheets (24×24 in the base pack), cut and shrunk as the
+            // camp does (frames taller than 32 pixels by a whole factor), so they fit the slots.
+            let pos = vec2(s.x + 12.0 + i as f32 * 34.0, s.y + 24.0);
+            let texture = ctx.media.texture(key);
+            let frame = texture.as_ref().map_or(vec2(16.0, 16.0), |t| {
+                crate::ui::art::unit_frame_size(t.width(), t.height())
+            });
+            let divisor = crate::ui::art::unit_icon_divisor(frame.y);
+            match texture {
+                Some(t) if divisor > 1.0 => draw_texture_ex(
+                    &t,
+                    pos.x,
+                    pos.y,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some((frame / divisor).round()),
+                        source: Some(Rect::new(
+                            facing as f32 * frame.x,
+                            walk as f32 * frame.y,
+                            frame.x,
+                            frame.y,
+                        )),
+                        ..Default::default()
+                    },
+                ),
+                _ => draw_sprite(ctx, key, frame, (facing, walk), pos, false),
+            }
         }
         let img = Rect::new(right, s.bottom() + 6.0, 154.0, 64.0);
         draw_window_ex(img, WindowStyle::Panel, 1.0);
