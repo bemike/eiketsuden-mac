@@ -687,6 +687,25 @@ mod tests {
             );
         }
 
+        // The terrain rules follow the player's MAIN.EXE and the maps use the closed gate.
+        assert_eq!(
+            json["assets"]["rules"]["status"], "extracted",
+            "{:#?}",
+            json["assets"]["rules"]
+        );
+        let manifest = std::fs::read_to_string(out.join("pack.toml")).unwrap();
+        assert!(
+            manifest.contains(
+                "[rules]
+terrain = \"rules/terrain.toml\""
+            ),
+            "{manifest}"
+        );
+        assert!(pack
+            .terrain
+            .iter()
+            .any(|t| t.id.as_str() == hero_import::pack::CLOSED_GATE));
+
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
         let battles = json["battles"].as_array().unwrap();

@@ -960,7 +960,9 @@ pub struct ExeFixture<'a> {
 /// 3), every move type entering the terrain its code allows but the river, cliff and fire and
 /// flood (4 is the bridge); horses cannot enter forest.
 pub fn fixture_move_rules() -> MoveRules {
-    let class_move = vec![0, 0, 0, 0, 0, 0, 1, 1, 1, 3, 3, 3, 2, 3, 3, 0, 3, 0, 2];
+    // An arbitrary arrangement (not the game's): only the synthetic pack test's classes
+    // (0, 6, 9, 12) matter.
+    let class_move = vec![0, 1, 2, 3, 0, 1, 1, 2, 3, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0];
     let mut cost = vec![vec![1u8; TERRAIN_COUNT]; MOVE_TYPES];
     for row in &mut cost {
         for code in [3, 9, 18, 19] {

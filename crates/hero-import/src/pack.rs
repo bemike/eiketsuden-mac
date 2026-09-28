@@ -2457,7 +2457,7 @@ fn convert_maps(
     for (number, map) in &battle {
         let number = *number;
         let set = tables.chip_set_for(number);
-        let converted = map_rows(map, set, &chips, &known).and_then(|(rows, legend, stand_ins)| {
+        let converted = map_rows(map, set, &chips, known).and_then(|(rows, legend, stand_ins)| {
             let image = maps::render_tiles(&map.chips, map.width, map.height, &banks[&set])
                 .map_err(|e| e.to_string())?;
             let png = encode_png(&image, pal, false).map_err(|e| e.to_string())?;
