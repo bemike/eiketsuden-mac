@@ -17,6 +17,7 @@
 //! The file format is documented for modders in `docs/MODDING.md`.
 
 mod chain;
+mod cmap;
 mod lint;
 #[cfg(not(target_arch = "wasm32"))]
 mod media;

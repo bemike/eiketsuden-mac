@@ -35,7 +35,8 @@ impl Pack {
     /// and `sfx/<key>.(ogg|wav)` of dramas, a `gfx/tiles/terrain.toml` tile for every terrain,
     /// `gfx/fx/fx.toml` entries and strips for strategy effects, `gfx/ui/icons.toml` keys
     /// of item icons (warnings), and the picture layers `gfx/maps/<key>.png` of maps, whose
-    /// size must be the map's size in tiles times the tileset's `tile_size`.
+    /// size must be the map's size in tiles times the tileset's `tile_size`; and (warnings) that
+    /// the fonts hold every Hanja of the pack's text.
     pub fn missing_media(&self, root: &Path) -> Vec<Issue> {
         let mut dirs: Vec<PathBuf> = self.layers.iter().map(|l| root.join(&l.dir)).collect();
         if dirs.is_empty() {
@@ -54,6 +55,7 @@ impl Pack {
         m.map_pictures(self);
         m.effects(self);
         m.icons(self);
+        m.hanja();
         m.issues
     }
 }
@@ -424,6 +426,95 @@ impl MediaCheck {
                     Severity::Warning,
                     &format!("item {}", item.id),
                     format!("{ICONS_TOML} has no icon `{}`", item.icon),
+                );
+            }
+        }
+    }
+}
+
+/// The fonts the game draws text with (`FontId::file` in hero-game).
+const FONT_FILES: [&str; 2] = ["fonts/Galmuri11.ttf", "fonts/Galmuri9.ttf"];
+
+/// A CJK ideograph (extension A, unified, compatibility), as `tools/assets/build_fonts.py`
+/// collects them for the base pack's fonts.
+fn is_hanja(c: char) -> bool {
+    matches!(c, '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}')
+}
+
+/// Every text file of the pack directory `dir` whose characters are shown: rules, battles,
+/// maps and the other `.toml` files, dramas and `credits.txt` (licence texts are not shown).
+fn text_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            text_files(&path, out);
+        } else {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let shown = name == "credits.txt"
+                || matches!(
+                    path.extension().and_then(|e| e.to_str()),
+                    Some("toml" | "drama")
+                );
+            if shown {
+                out.push(path);
+            }
+        }
+    }
+}
+
+impl MediaCheck {
+    /// Hanja of the pack's text files (every layer) that a font lacks: the game draws them as
+    /// blanks. The base pack's fonts hold only the Hanja its own text needs.
+    fn hanja(&mut self) {
+        let mut files = Vec::new();
+        for dir in &self.dirs {
+            text_files(dir, &mut files);
+        }
+        let mut needed: BTreeSet<char> = BTreeSet::new();
+        for f in files {
+            if let Ok(text) = std::fs::read_to_string(&f) {
+                needed.extend(text.chars().filter(|&c| is_hanja(c)));
+            }
+        }
+        if needed.is_empty() {
+            return;
+        }
+        for font in FONT_FILES {
+            let Some(path) = self.find(font) else {
+                continue; // a missing font is reported when the game loads the pack
+            };
+            let coverage = match std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|b| super::cmap::coverage(&b))
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    self.push(Severity::Warning, font, format!("{}: {e}", path.display()));
+                    continue;
+                }
+            };
+            let missing: Vec<char> = needed
+                .iter()
+                .copied()
+                .filter(|&c| !coverage.contains(c))
+                .collect();
+            if !missing.is_empty() {
+                let shown: String = missing.iter().take(40).collect();
+                let more = if missing.len() > 40 {
+                    format!(" and {} more", missing.len() - 40)
+                } else {
+                    String::new()
+                };
+                self.push(
+                    Severity::Warning,
+                    font,
+                    format!(
+                        "lacks {} Hanja the pack's text uses, drawn as blanks: {shown}{more} (add them to the font; the base pack's fonts are built by tools/assets/build_fonts.py)",
+                        missing.len()
+                    ),
                 );
             }
         }

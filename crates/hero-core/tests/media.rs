@@ -361,6 +361,36 @@ fn unit_sheets_match_their_frame_size() {
 }
 
 #[test]
+fn hanja_the_fonts_lack_are_reported() {
+    let dir = TempDir::new("media-hanja");
+    complete_media(&dir.0);
+    // The base pack's real fonts: they hold only the Hanja the base pack's text uses.
+    let fonts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base/fonts");
+    for f in ["Galmuri11.ttf", "Galmuri9.ttf"] {
+        write(
+            &dir.0,
+            &format!("fonts/{f}"),
+            std::fs::read(fonts.join(f)).unwrap(),
+        );
+    }
+    let issues = load_fixture().missing_media(&dir.0);
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+
+    // A drama line with Hanja the fonts do not have (鼂 and 龘), and one they have (劉).
+    write(&dir.0, "dramas/extra.drama", "== x\n@say 유비: 劉 鼂 龘\n");
+    let issues = load_fixture().missing_media(&dir.0);
+    for font in ["fonts/Galmuri11.ttf", "fonts/Galmuri9.ttf"] {
+        assert_issue(
+            &issues,
+            Severity::Warning,
+            font,
+            "lacks 2 Hanja the pack's text uses, drawn as blanks: 鼂龘",
+        );
+    }
+    assert_eq!(issues.len(), 2, "{}", format_issues(&issues));
+}
+
+#[test]
 fn index_files_are_read_with_the_games_schema() {
     let dir = TempDir::new("media-schema");
     // Entries the game cannot read: a sprite without its anchor, an effect without its frame

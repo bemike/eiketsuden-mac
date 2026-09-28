@@ -1135,7 +1135,8 @@ branch loops, battles no campaign node uses.
   `terrain.png`), terrain without a `[tiles.<key>]` entry, a `tile_size` of 0, strategy effects without an
   `fx.toml` entry or strip, a map picture (`image`) that is missing, is not a PNG or is not exactly the
   map's size in tiles times `tile_size`. W for missing portraits (the `_unknown` portrait is shown), a
-  missing `icons.toml` or unknown icon keys. `icons.toml` is checked for TOML syntax and its keys only.
+  missing `icons.toml` or unknown icon keys, Hanja in the pack's text (`.toml`, `.drama`, `credits.txt` of
+  every pack of the chain) that a font lacks (drawn as blanks). `icons.toml` is checked for TOML syntax and its keys only.
   In all index files, values that are legal but odd (a zero frame size, `fps = 0`) are not reported, so
   check a new index in the game.
 
