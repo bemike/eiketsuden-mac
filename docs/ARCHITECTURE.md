@@ -71,12 +71,10 @@ and the reasoning in [DECISIONS.md](DECISIONS.md) (D8).
 ### Original mode (partly implemented)
 
 The long-term goal, like OpenRCT2 with RCT2's data, is an **original mode** that shows the game with
-the original's own assets, read from the player's legally owned copy. It is a layered pack:
-the importer (`hero-import`, driven by `hero-tools original pack`) writes a pack into a local folder
-next to the base pack — `data/original/`, which is git-ignored — whose `pack.toml` says
-`extends = "../base"` and `[presentation] canvas = [640, 480]` (the original's VGA screen) and which lists
-or ships only what has been converted from the original. Everything not converted yet keeps coming
-from the base pack through the chain, so the mode can grow asset by asset:
+the original's own assets, read from the player's legally owned copy. It is a layered pack whose
+`pack.toml` says `extends = "../base"` and `[presentation] canvas = [640, 480]` (the original's VGA
+screen) and which ships only what has been converted from the original. Everything not converted yet
+keeps coming from the base pack through the chain, so the mode can grow asset by asset:
 
 ```
 data/original/pack.toml    extends = "../base", canvas 640x480, lists what was converted
@@ -85,10 +83,21 @@ data/original/pack.toml    extends = "../base", canvas 640x480, lists what was c
 data/base/pack.toml        the complete, license-clean base pack
 ```
 
-Today the pack holds officer portraits, unit sheets and a 32-px terrain tileset learned from the
-original battle maps (mapping rules in `crates/hero-import/src/pack.rs` and ORIGINAL_DATA.md §4.5);
-map layouts, rules, scenario, UI and music still come from the base pack. The separate media overlay
-(`--original <dir>`, D6) remains for looking at the raw extraction.
+The player picks the install folder in the game (title → 원작 데이터, `hero-game`
+`screens/original.rs`); the folder is kept in the settings. At every launch the loading screen loads
+the base pack, converts the install **in memory** on a worker thread (`hero_import::pack::build_pack`,
+`hero-game` `original.rs`) and mounts the files at `<data>/original` (`platform/memfs.rs`): every file
+read (`assets.rs` `fetch`) and existence check (`DataRoot::path`) inside that directory is served from
+memory, paths outside it are read from disk with `..` resolved lexically, so the chain loads exactly
+as it would from disk. Nothing is written; `hero-import` is a native-only dependency of the game
+(D10). `hero-tools original pack` writes the same pack to `data/original/` (git-ignored) for
+inspection and validation.
+
+Today the pack holds officer portraits, unit sheets, a 32-px terrain tileset learned from the
+original battle maps and the 58 original battle maps as map files (mapping rules in
+`crates/hero-import/src/pack.rs` and ORIGINAL_DATA.md §4.5); battles, rules, scenario, UI and music
+still come from the base pack. The separate media overlay (`--original <dir>`, D6) remains for looking
+at the raw extraction.
 
 ## Determinism and testing
 

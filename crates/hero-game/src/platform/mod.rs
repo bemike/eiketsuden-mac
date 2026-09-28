@@ -15,10 +15,16 @@
 //!   `hero-tools original extract` from the player's own copy of the original game, chosen with
 //!   `--original <dir>` or the `EIKETSUDEN_ORIGINAL` environment variable. Media files are looked
 //!   up there first ([`DataRoot::media_paths`]), then in the pack(s). The web build has no overlay.
+//! * The **original mode** (native only): the player picks the folder of their own copy in the
+//!   game (`crate::screens::original`), the choice is kept in the settings, and at every launch
+//!   the loading screen converts it into a pack held in memory ([`memfs`]) that extends the
+//!   base pack ([`DataRoot::memory_pack`]). An explicit `--data` / `EIKETSUDEN_DATA` wins over
+//!   it ([`explicit_data`]).
 //! * [`unix_now`] — wall clock time for save timestamps.
 //! * [`storage`] — key/value persistence for saves and settings (files natively,
 //!   `localStorage` on the web).
 
+pub mod memfs;
 pub mod storage;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod web;
@@ -204,6 +210,30 @@ impl DataRoot {
         }
     }
 
+    /// The root of a pack held in memory ([`memfs`]) that extends the pack of `self`: its
+    /// directory is `name` next to this pack's directory (so `<data>/original` for
+    /// `<data>/base`), and it returns `(root, extends)` with the `extends` the pack must declare
+    /// (`../base`). `display` names the pack in messages. `None` when this pack's directory has
+    /// no name to stand next to (a drive or file system root).
+    pub fn memory_pack(&self, name: &str, display: &str) -> Option<(DataRoot, String)> {
+        let dir = memfs::normalize(&self.prefix);
+        let (parent, base) = match dir.rsplit_once('/') {
+            Some((parent, base)) => (format!("{parent}/"), base),
+            None => (String::new(), dir.as_str()),
+        };
+        if base.is_empty() || base == ".." || base.ends_with(':') {
+            return None;
+        }
+        let root = DataRoot {
+            prefix: format!("{parent}{name}/"),
+            display: display.to_string(),
+            candidates: vec![display.to_string()],
+            parents: Vec::new(),
+            media_overlay: self.media_overlay.clone(),
+        };
+        Some((root, format!("../{base}")))
+    }
+
     /// The same root with an original-data overlay folder whose media files take precedence.
     pub fn with_media_overlay(mut self, dir: &Path) -> DataRoot {
         self.media_overlay = Some(dir_prefix(dir));
@@ -257,12 +287,12 @@ impl DataRoot {
         let rel = rel.trim_start_matches('/');
         let top = self.in_pack("", rel);
         #[cfg(not(target_arch = "wasm32"))]
-        if !self.parents.is_empty() && !Path::new(&top).is_file() {
+        if !self.parents.is_empty() && !memfs::is_file(&top) {
             if let Some(found) = self
                 .parents
                 .iter()
                 .map(|dir| self.in_pack(dir, rel))
-                .find(|p| Path::new(p).is_file())
+                .find(|p| memfs::is_file(p))
             {
                 return found;
             }
@@ -289,6 +319,12 @@ impl DataRoot {
         self.media_overlay.as_deref()
     }
 
+    /// Directory (or URL prefix) of the top pack, ending with a separator (empty for the
+    /// current directory).
+    pub fn top_dir(&self) -> &str {
+        &self.prefix
+    }
+
     /// Where the pack is, for messages.
     pub fn display(&self) -> &str {
         &self.display
@@ -297,6 +333,20 @@ impl DataRoot {
     /// Every location that was considered, first match first.
     pub fn candidates(&self) -> &[String] {
         &self.candidates
+    }
+}
+
+/// Whether the data pack was chosen explicitly (`--data` or [`DATA_ENV`]); the original mode
+/// chosen in the game then does not apply. Always `false` on the web.
+pub fn explicit_data(opts: &LaunchOptions) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        opts.data_dir.is_some() || std::env::var_os(DATA_ENV).is_some_and(|v| !v.is_empty())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = opts;
+        false
     }
 }
 
@@ -624,5 +674,42 @@ mod tests {
         );
         let trailing = DataRoot::from_dir(Path::new("base/"), &[]);
         assert_eq!(trailing.path("pack.toml"), "base/pack.toml");
+    }
+
+    #[test]
+    fn memory_pack_stands_next_to_the_base_pack() {
+        let base = DataRoot::from_dir(Path::new(r"D:\games\hero\data\base"), &[]);
+        let (root, extends) = base.memory_pack("original", "원작").unwrap();
+        assert_eq!(extends, "../base");
+        assert_eq!(root.display(), "원작");
+        assert_eq!(
+            root.path("pack.toml"),
+            "D:/games/hero/data/original/pack.toml"
+        );
+        let root = root.with_parent_packs([extends]);
+        assert_eq!(
+            root.media_paths("gfx/ui/title.png"),
+            [
+                "D:/games/hero/data/original/gfx/ui/title.png",
+                "D:/games/hero/data/original/../base/gfx/ui/title.png"
+            ]
+        );
+
+        let relative = DataRoot::from_dir(Path::new("data/base"), &[]);
+        let (root, extends) = relative.memory_pack("original", "원작").unwrap();
+        assert_eq!(
+            (root.path("a"), extends.as_str()),
+            ("data/original/a".to_string(), "../base")
+        );
+        let bare = DataRoot::from_dir(Path::new("base"), &[]);
+        assert_eq!(
+            bare.memory_pack("original", "원작").unwrap().0.path("a"),
+            "original/a"
+        );
+
+        for rootless in ["/", "D:/", ".."] {
+            let r = DataRoot::from_dir(Path::new(rootless), &[]);
+            assert!(r.memory_pack("original", "원작").is_none(), "{rootless}");
+        }
     }
 }

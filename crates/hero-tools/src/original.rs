@@ -5,9 +5,8 @@ use hero_core::pack::Severity;
 use hero_import::edition::{Edition, EditionId};
 use hero_import::extract::{self, Index, KindReport, Options, Selection, Status};
 use hero_import::install::lies_inside;
-use hero_import::pack::{self, BaseOfficer, BaseTerrain, PackIndex, PackOptions};
+use hero_import::pack::{self, PackIndex, PackOptions};
 use hero_import::probe::{self, Manifest};
-use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -259,30 +258,7 @@ pub fn run_pack(
     };
     let parent = crate::load_pack(&base)?;
     let extends = relative_dir(out, &base)?;
-    let sprites: BTreeSet<String> = parent.classes.values().map(|c| c.sprite.clone()).collect();
-    let options = PackOptions {
-        edition,
-        extends,
-        officers: parent
-            .officers
-            .values()
-            .map(|o| BaseOfficer {
-                id: o.id.to_string(),
-                name: o.name.clone(),
-                hanja: o.hanja.clone(),
-                portrait: o.portrait.clone().unwrap_or_else(|| o.id.to_string()),
-            })
-            .collect(),
-        terrain: parent
-            .terrain
-            .iter()
-            .map(|t| BaseTerrain {
-                id: t.id.to_string(),
-                tile: t.tile_key().to_string(),
-            })
-            .collect(),
-        sprites: sprites.into_iter().collect(),
-    };
+    let options = PackOptions::for_pack(&parent, extends, edition);
     let index = pack::write_pack(dir, out, &options).map_err(|e| e.to_string())?;
     print!("{}", render_pack(dir, out, &index));
     let written = crate::load_pack(out)?;

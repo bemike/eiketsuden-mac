@@ -2,7 +2,9 @@
 //! back to the title screen, or quit.
 //!
 //! [`ErrorScreen::fatal`] is used when loading fails (retry restarts the loading screen);
-//! [`ErrorScreen::recoverable`] for problems during play (back to the title screen).
+//! [`ErrorScreen::recoverable`] for problems during play (back to the title screen);
+//! [`ErrorScreen::original`] when the original mode cannot start (retry, pick another folder,
+//! or continue with the base pack — native only).
 //! Details are shown in both Korean and the raw technical text so bug reports are useful even
 //! when the Korean font itself is what failed to load.
 
@@ -20,13 +22,21 @@ use macroquad::prelude::*;
 enum Action {
     Retry(Target),
     Title,
+    /// Load everything again ([`Flow::Reload`]), converting the original install anew.
+    Reload,
+    /// Pick another original folder.
+    ChooseOriginal,
+    /// Switch the original mode off and load the base pack.
+    BasePack,
     Quit,
 }
 
 /// Area of the detail text on a `canvas` sized canvas: 24 pixels in from the sides, below the
-/// heading and above the menu (70 pixels are kept free at the bottom).
-fn text_rect(canvas: Vec2) -> Rect {
-    Rect::new(24.0, 52.0, canvas.x - 48.0, canvas.y - 122.0)
+/// heading and above a menu `menu_h` pixels high (at least 70 pixels are kept free at the
+/// bottom).
+fn text_rect(canvas: Vec2, menu_h: f32) -> Rect {
+    let bottom = (menu_h + 20.0).max(70.0);
+    Rect::new(24.0, 52.0, canvas.x - 48.0, canvas.y - 52.0 - bottom)
 }
 
 pub struct ErrorScreen {
@@ -62,13 +72,25 @@ impl ErrorScreen {
         ErrorScreen::build(title, details, actions)
     }
 
+    /// The original mode cannot start: retry, pick another folder, continue with the base pack
+    /// (which switches the original mode off in the settings), or quit.
+    pub fn original(title: &str, details: Vec<String>) -> ErrorScreen {
+        let mut actions = vec![Action::Reload, Action::ChooseOriginal, Action::BasePack];
+        if crate::platform::can_quit() {
+            actions.push(Action::Quit);
+        }
+        ErrorScreen::build(title, details, actions)
+    }
+
     fn build(title: &str, details: Vec<String>, actions: Vec<Action>) -> ErrorScreen {
         let items = actions
             .iter()
             .map(|a| {
                 MenuItem::new(match a {
-                    Action::Retry(_) => "다시 시도 (Retry)",
+                    Action::Retry(_) | Action::Reload => "다시 시도 (Retry)",
                     Action::Title => "타이틀로 (Title)",
+                    Action::ChooseOriginal => "다른 폴더 고르기",
+                    Action::BasePack => "기본 팩으로 계속",
                     Action::Quit => "종료 (Quit)",
                 })
             })
@@ -82,7 +104,7 @@ impl ErrorScreen {
             scroll: 0,
             actions,
             menu,
-            text_rect: text_rect(crate::gfx::DEFAULT_CANVAS),
+            text_rect: text_rect(crate::gfx::DEFAULT_CANVAS, 0.0),
         }
     }
 
@@ -102,7 +124,7 @@ impl Screen for ErrorScreen {
             ctx.sfx(sfx::ERROR);
         }
         let canvas = ctx.gfx.size();
-        self.text_rect = text_rect(canvas);
+        self.text_rect = text_rect(canvas, self.menu.rect().h);
         self.wrapped = self
             .details
             .iter()
@@ -140,6 +162,13 @@ impl Screen for ErrorScreen {
             MenuEvent::Selected(i) => match self.actions[i] {
                 Action::Retry(target) => Transition::replace(LoadingScreen::new(target)),
                 Action::Title => Transition::Flow(Flow::Title),
+                Action::Reload => Transition::Flow(Flow::Reload),
+                Action::ChooseOriginal => choose_original(),
+                Action::BasePack => {
+                    ctx.settings.original_mode = false;
+                    ctx.commit_settings();
+                    Transition::Flow(Flow::Reload)
+                }
                 Action::Quit => Transition::Quit,
             },
             _ => Transition::None,
@@ -197,5 +226,17 @@ impl Screen for ErrorScreen {
             );
         }
         self.menu.draw(ctx);
+    }
+}
+
+/// Open the folder browser of the original-data screen (native only).
+fn choose_original() -> Transition {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Transition::push(super::original::OriginalScreen::browse())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        Transition::None
     }
 }

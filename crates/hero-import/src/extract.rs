@@ -284,19 +284,45 @@ pub(crate) fn output_error(path: &Path, e: impl fmt::Display) -> ExtractError {
     }
 }
 
-/// Files written into the output folder.
+/// Files written into the output folder, or kept in memory when `memory` is set (the game
+/// converts the original mode at launch without writing anything, `pack::build_pack`).
 pub(crate) struct Output {
+    /// The output folder; with `memory`, only used to name files in error messages.
     pub(crate) root: PathBuf,
     pub(crate) files: Vec<String>,
+    /// File contents by relative path, instead of writing them to `root`.
+    pub(crate) memory: Option<BTreeMap<String, Vec<u8>>>,
 }
 
 impl Output {
-    pub(crate) fn write(&mut self, rel: &str, bytes: &[u8]) -> Result<(), ExtractError> {
-        let path = self.root.join(rel);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| output_error(parent, e))?;
+    /// Files written into the folder `root`.
+    pub(crate) fn dir(root: &Path) -> Output {
+        Output {
+            root: root.to_path_buf(),
+            files: Vec::new(),
+            memory: None,
         }
-        std::fs::write(&path, bytes).map_err(|e| output_error(&path, e))?;
+    }
+
+    /// Files kept in memory; `name` stands for the folder in error messages.
+    pub(crate) fn in_memory(name: &str) -> Output {
+        Output {
+            root: PathBuf::from(name),
+            files: Vec::new(),
+            memory: Some(BTreeMap::new()),
+        }
+    }
+
+    pub(crate) fn write(&mut self, rel: &str, bytes: &[u8]) -> Result<(), ExtractError> {
+        if let Some(files) = self.memory.as_mut() {
+            files.insert(rel.to_string(), bytes.to_vec());
+        } else {
+            let path = self.root.join(rel);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| output_error(parent, e))?;
+            }
+            std::fs::write(&path, bytes).map_err(|e| output_error(&path, e))?;
+        }
         self.files.push(rel.to_string());
         Ok(())
     }
@@ -397,10 +423,7 @@ pub fn extract(source: &Path, out: &Path, options: &Options) -> Result<Index, Ex
         Some(s) => (s, true),
         None => (Selection::all(), false),
     };
-    let mut output = Output {
-        root: out.to_path_buf(),
-        files: Vec::new(),
-    };
+    let mut output = Output::dir(out);
     let mut assets = BTreeMap::new();
     if selection.text {
         let (names, bakdata) = extract_names(&install, encoding, &mut output, requested)?;

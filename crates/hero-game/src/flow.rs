@@ -28,13 +28,15 @@
 //! instead of replaying the ending.
 
 use crate::app::{Ctx, Screen};
-use crate::platform::unix_now;
+use crate::assets::Media;
+use crate::platform::{memfs, unix_now, DataRoot};
 use crate::saves::{self, SaveSlot};
 use crate::screens::camp::CampScreen;
 use crate::screens::credits::CreditsScreen;
 use crate::screens::drama::DramaScreen;
 use crate::screens::error::ErrorScreen;
 use crate::screens::gameover::GameOverScreen;
+use crate::screens::loading::{LoadingScreen, Target};
 use crate::screens::title::TitleScreen;
 use hero_core::battle::{BattleState, Outcome};
 use hero_core::campaign::{CampaignError, CampaignState, Node};
@@ -63,6 +65,9 @@ pub enum Flow {
     GameOver,
     /// The campaign reached an ending: ending credits, then the title screen.
     Ending { title: String },
+    /// Load the data pack again from the start (ends the session): the original mode was
+    /// switched on or off, or its folder changed. Drops the pack converted in memory.
+    Reload,
 }
 
 /// The campaign being played.
@@ -206,6 +211,15 @@ pub fn enter(flow: Flow, ctx: &mut Ctx) -> Box<dyn Screen> {
         Flow::Ending { title } => {
             ctx.session = None;
             Box::new(CreditsScreen::ending(title))
+        }
+        Flow::Reload => {
+            ctx.session = None;
+            ctx.pack = None;
+            ctx.audio.stop_bgm();
+            memfs::unmount();
+            ctx.data_root = DataRoot::resolve(&ctx.options);
+            ctx.media = Media::new(ctx.data_root.clone());
+            Box::new(LoadingScreen::new(Target::Game))
         }
     }
 }
