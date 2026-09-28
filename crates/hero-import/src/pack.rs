@@ -1111,7 +1111,7 @@ pub const CLASS_SPRITES: [&str; 19] = [
 
 /// `HEXZCHR` entry `2k + PLAYER_ICON` (the orange one) is drawn for the player's and allied
 /// units, entry `2k + 1 - PLAYER_ICON` (the green / teal one) for enemies: `MAIN.EXE` picks
-/// `class × 2 + 1` for a unit off the player's side (unit slots 15–29) and `class × 2` for the
+/// `class × 2 + 1` for a unit off the player's side (unit slots 15–44) and `class × 2` for the
 /// player's side (slots 0–14, allies included), see docs/reverse-engineering/FORMATS.md §8.
 pub const PLAYER_ICON: usize = 0;
 
@@ -2512,7 +2512,16 @@ mod tests {
             ls11::build(&[&a.encode(), &b.encode(), &names]),
         )
         .unwrap();
-        let icons: Vec<Vec<u8>> = (0..47).map(|_| testutil::cells(8)).collect();
+        // Odd entries (the enemy colour) are blank, so the sheets show which entry they came from.
+        let icons: Vec<Vec<u8>> = (0..47)
+            .map(|i| {
+                if i % 2 == 0 {
+                    testutil::cells(8)
+                } else {
+                    vec![0; 8 * 128]
+                }
+            })
+            .collect();
         let refs: Vec<&[u8]> = icons.iter().map(Vec::as_slice).collect();
         std::fs::write(dir.join("HEXZCHR.R3"), ls11::build(&refs)).unwrap();
     }
@@ -2625,6 +2634,19 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(pack.join(PACK_INDEX)).unwrap()).unwrap();
         assert_eq!(json["format"], PACK_FORMAT);
+        // The player's side (player and allies) is drawn with the even entry, enemies with the odd.
+        let drawn = |f: &str| {
+            let mut decoder =
+                png::Decoder::new(std::io::Cursor::new(std::fs::read(pack.join(f)).unwrap()));
+            decoder.set_transformations(png::Transformations::IDENTITY);
+            let mut reader = decoder.read_info().unwrap();
+            let mut buf = vec![0; reader.output_buffer_size()];
+            reader.next_frame(&mut buf).unwrap();
+            buf.iter().any(|&b| b != 0)
+        };
+        assert!(drawn("gfx/units/short_infantry_player.png"));
+        assert!(drawn("gfx/units/short_infantry_ally.png"));
+        assert!(!drawn("gfx/units/short_infantry_enemy.png"));
 
         // Both maps, with their names, sizes and chip sets; the pictures are 16 px per chip.
         let summary: Vec<(&str, &str, [usize; 2], usize)> = index
