@@ -469,6 +469,15 @@ impl MediaCheck {
     /// Hanja of the pack's text files (every layer) that a font lacks: the game draws them as
     /// blanks. The base pack's fonts hold Galmuri's own Hanja plus the ones its text needs.
     fn hanja(&mut self) {
+        // Without a font the game falls back to a Latin-only one: every Korean text is blank.
+        for font in FONT_FILES {
+            self.require(
+                Severity::Error,
+                "fonts",
+                font,
+                "font; the game falls back to one without Hangul or Hanja",
+            );
+        }
         let mut files = Vec::new();
         for dir in &self.dirs {
             text_files(dir, &mut files);
@@ -484,7 +493,7 @@ impl MediaCheck {
         }
         for font in FONT_FILES {
             let Some(path) = self.find(font) else {
-                continue; // a missing font is reported when the game loads the pack
+                continue; // reported above
             };
             let coverage = match std::fs::read(&path)
                 .map_err(|e| e.to_string())
