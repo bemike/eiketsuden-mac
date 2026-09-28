@@ -188,6 +188,23 @@ Frames larger than the tile overhang it upwards and sideways around the anchor. 
 uses 24×24 frames (the chariot 32×24, anchor `[16, 23]`); a 16×16 frame with anchor `[8, 15]` fits a 16-pixel
 tile exactly. On `T`-pixel tiles the anchor lands on the tile pixel `(T/2, T−1)`.
 
+**Officers' own sprites.** An `[officers.<officer id>]` table draws that officer with another sprite key in
+battle: its keys are the sprite key of the class the officer is (`*` for any class), its values sprite keys
+with sheets and a `[sprites.…]` entry like a class's. The camp keeps showing the class sprite. The original
+mode uses it for the original's own icons of Liu Bei (per class), Lü Bu and Cao Cao:
+
+```toml
+[officers.liu_bei]
+short_infantry = "officer_liu_bei_short_infantry"   # drawn with this sheet while he is 단병
+[officers.lu_bu]
+"*" = "officer_lu_bu"                                # whatever his class
+```
+
+`hero-tools validate` reports an officer or class sprite key the pack does not have (warning) and a
+missing sheet or entry of the sprite drawn instead (error). Like the rest of `units.toml`, the table
+belongs to the index a layered pack replaces as a whole: a child with its own `units.toml` keeps
+officers' own sprites only if it copies the `[officers]` tables.
+
 ## Portraits — `gfx/portraits/<key>.png`
 
 Any resolution with a **4:5 aspect** (recommended 192×240), head-and-shoulders, drawn into a 64×80 virtual box.

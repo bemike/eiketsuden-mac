@@ -58,7 +58,7 @@ use hero_core::geom::Pos;
 use hero_core::pack::Pack;
 use macroquad::prelude::*;
 use player::{Command, Mode, PlayerUi, Request};
-use sprites::{FxDef, SpriteDef};
+use sprites::{FxDef, UnitsFile};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use tileset::{MapRenderer, Tileset, DEFAULT_TILE};
@@ -86,7 +86,7 @@ struct Meta {
     /// Texture key of the map's picture layer (`maps/<image>`) until the map is built from it,
     /// or given up for the tileset.
     picture: Option<String>,
-    sprites: BTreeMap<String, SpriteDef>,
+    units: UnitsFile,
     fx: BTreeMap<String, FxDef>,
     /// Media key per effect (`fx/<key>`), so drawing does not format strings.
     fx_textures: BTreeMap<String, String>,
@@ -431,7 +431,28 @@ impl BattleScreen {
         }
         if let Some(r) = request_text(&mut self.meta.units_req) {
             match r.and_then(|s| sprites::parse_units(&s)) {
-                Ok(s) => self.meta.sprites = s,
+                Ok(units) => {
+                    // Officers' own sprites (the original's Liu Bei, Lü Bu, Cao Cao) of the
+                    // units in this battle: their sheets load now.
+                    let mut textures = Vec::new();
+                    for u in &self.state.units {
+                        let Some(own) = u.officer.as_deref().and_then(|o| units.officers.get(o))
+                        else {
+                            continue;
+                        };
+                        for key in own.values() {
+                            let keys = self.sheets.entry(key.clone()).or_insert_with(|| {
+                                [Side::Player, Side::Ally, Side::Enemy]
+                                    .map(|side| sprites::sheet_key(key, side))
+                            });
+                            textures.extend(keys.iter().cloned());
+                        }
+                    }
+                    textures.sort();
+                    textures.dedup();
+                    ctx.media.preload_textures(&textures);
+                    self.meta.units = units;
+                }
                 Err(e) => macroquad::logging::warn!(
                     "{} unavailable, using 16x16 frames: {}",
                     sprites::UNITS_FILE,
@@ -531,6 +552,13 @@ impl BattleScreen {
         self.map = MapRenderer::new(&self.state.map, tile);
         self.camera = Camera::new(self.camera.viewport, self.map.size, tile);
         self.camera.snap_to(self.cursor);
+    }
+
+    /// Sprite key a unit of `officer` (if any) and `class` is drawn with: the officer's own
+    /// (`units.toml` `[officers]`), else the class's.
+    fn unit_sprite<'a>(&'a self, officer: Option<&str>, class: &'a str) -> &'a str {
+        let class_sprite = self.sprite_of.get(class).map_or(class, |s| s.as_str());
+        self.meta.units.sprite_for(officer, class_sprite)
     }
 
     /// Texture key of a unit sheet.

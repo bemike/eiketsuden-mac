@@ -133,6 +133,67 @@ fn complete_media(root: &Path) {
 }
 
 #[test]
+fn officers_own_sprites_are_checked() {
+    let dir = TempDir::new("media-officers");
+    complete_media(&dir.0);
+    let units = std::fs::read_to_string(dir.0.join("gfx/units/units.toml")).unwrap();
+    // Liu Bei's own sprite while he is 단병, with its sheets and entry: fine.
+    for side in ["player", "ally", "enemy"] {
+        write(
+            &dir.0,
+            &format!("gfx/units/liu_bei_flag_{side}.png"),
+            png_head(64, 96),
+        );
+    }
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        format!(
+            "{units}[sprites.liu_bei_flag]\nframe = [16, 16]\nanchor = [8, 15]\n\n\
+             [officers.liu_bei]\nshort_infantry = \"liu_bei_flag\"\n"
+        ),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+
+    // An unknown officer, an unknown class sprite key and a sprite without sheets or entry.
+    write(
+        &dir.0,
+        "gfx/units/units.toml",
+        format!(
+            "{units}[sprites.liu_bei_flag]\nframe = [16, 16]\nanchor = [8, 15]\n\n\
+             [officers.liu_bei]\nshort_infantry = \"liu_bei_flag\"\nnaval = \"liu_bei_flag\"\n\n\
+             [officers.nobody]\n\"*\" = \"red_hare\"\n"
+        ),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "gfx/units/units.toml officer liu_bei",
+        "`naval` is no class's sprite key",
+    );
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "gfx/units/units.toml officer nobody",
+        "names no officer of the pack",
+    );
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "gfx/units/units.toml officer nobody",
+        "missing gfx/units/red_hare_player.png",
+    );
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "gfx/units/units.toml officer nobody",
+        "has no [sprites.red_hare] entry",
+    );
+}
+
+#[test]
 fn complete_media_has_no_issues() {
     let dir = TempDir::new("media-complete");
     complete_media(&dir.0);
