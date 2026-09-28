@@ -8,7 +8,7 @@
 
 use crate::Failure;
 use hero_core::battle::{BattleState, DefeatReason, Outcome};
-use hero_core::battledef::{BattleDef, Condition, EventAction, Trigger};
+use hero_core::battledef::BattleDef;
 use hero_core::campaign::{CampaignState, Node};
 use hero_core::pack::{Pack, Severity};
 use std::cell::RefCell;
@@ -93,47 +93,8 @@ pub fn battle_order(pack: &Pack, only: Option<&str>) -> Result<Vec<String>, Stri
 /// Officers the battle refers to that must come from the player's army: references in
 /// conditions, events and AI targets that name an officer who is not a unit of the battle.
 pub fn player_needs(pack: &Pack, battle: &BattleDef) -> Vec<String> {
-    let mut refs: Vec<&str> = Vec::new();
-    let conditions = battle
-        .victory
-        .iter()
-        .chain(&battle.defeat)
-        .chain(battle.bonus.as_ref().map(|b| &b.condition));
-    for c in conditions {
-        match c {
-            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
-                refs.push(target)
-            }
-            Condition::Reach { who: Some(who), .. } => refs.push(who),
-            _ => {}
-        }
-    }
-    for e in &battle.events {
-        match &e.trigger {
-            Trigger::UnitDefeated { target } | Trigger::HpBelow { target, .. } => refs.push(target),
-            Trigger::Reach { who: Some(who), .. } => refs.push(who),
-            Trigger::Adjacent { a, b } => refs.extend([a.as_str(), b.as_str()]),
-            _ => {}
-        }
-        for a in &e.actions {
-            match a {
-                EventAction::SetAi {
-                    target, ai_target, ..
-                } => {
-                    refs.push(target);
-                    refs.extend(ai_target.as_deref());
-                }
-                EventAction::Retreat { target } | EventAction::LevelUp { target, .. } => {
-                    refs.push(target)
-                }
-                _ => {}
-            }
-        }
-    }
-    refs.extend(battle.units.iter().filter_map(|u| u.ai_target.as_deref()));
-
     let mut needs: Vec<String> = Vec::new();
-    for r in refs {
+    for (_, r) in battle.unit_refs() {
         let is_unit = battle
             .units
             .iter()

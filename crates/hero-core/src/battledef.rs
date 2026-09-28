@@ -396,6 +396,89 @@ pub struct BattleDef {
     pub outro: Option<String>,
 }
 
+/// A reference to a unit by spawn `tag` or officer id: `(field name, value)`.
+pub type UnitRef<'a> = (&'static str, &'a str);
+
+// The `unit_refs` methods match every variant without a catch-all arm, so a new variant that
+// names a unit cannot be forgotten by the validator or the simulator, which both use them.
+
+impl Condition {
+    /// The units this condition names.
+    pub fn unit_refs(&self) -> Vec<UnitRef<'_>> {
+        match self {
+            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
+                vec![("target", target)]
+            }
+            Condition::Reach { who, .. } => who.iter().map(|w| ("who", w.as_str())).collect(),
+            Condition::DefeatAll | Condition::DefeatCommander | Condition::SurviveTurns { .. } => {
+                Vec::new()
+            }
+        }
+    }
+}
+
+impl Trigger {
+    /// The units this trigger names.
+    pub fn unit_refs(&self) -> Vec<UnitRef<'_>> {
+        match self {
+            Trigger::UnitDefeated { target } | Trigger::HpBelow { target, .. } => {
+                vec![("target", target)]
+            }
+            Trigger::Reach { who, .. } => who.iter().map(|w| ("who", w.as_str())).collect(),
+            Trigger::Adjacent { a, b } => vec![("a", a), ("b", b)],
+            Trigger::TurnStart { .. } => Vec::new(),
+        }
+    }
+}
+
+impl EventAction {
+    /// The units this action names.
+    pub fn unit_refs(&self) -> Vec<UnitRef<'_>> {
+        match self {
+            EventAction::SetAi {
+                target, ai_target, ..
+            } => std::iter::once(("target", target.as_str()))
+                .chain(ai_target.iter().map(|t| ("ai_target", t.as_str())))
+                .collect(),
+            EventAction::Retreat { target } | EventAction::LevelUp { target, .. } => {
+                vec![("target", target)]
+            }
+            EventAction::Drama { .. }
+            | EventAction::Spawn { .. }
+            | EventAction::GiveItem { .. }
+            | EventAction::GiveGold { .. }
+            | EventAction::SetFlag { .. }
+            | EventAction::SetStage { .. }
+            | EventAction::SetTerrain { .. }
+            | EventAction::Victory
+            | EventAction::Defeat => Vec::new(),
+        }
+    }
+}
+
+impl BattleDef {
+    /// Every unit reference of the battle: victory, defeat and bonus conditions, event triggers
+    /// and actions, and the units' `ai_target`s (in that order, repeats kept).
+    pub fn unit_refs(&self) -> Vec<UnitRef<'_>> {
+        let conditions = self
+            .victory
+            .iter()
+            .chain(&self.defeat)
+            .chain(self.bonus.as_ref().map(|b| &b.condition));
+        let mut refs: Vec<UnitRef<'_>> = conditions.flat_map(Condition::unit_refs).collect();
+        for e in &self.events {
+            refs.extend(e.trigger.unit_refs());
+            refs.extend(e.actions.iter().flat_map(EventAction::unit_refs));
+        }
+        refs.extend(
+            self.units
+                .iter()
+                .filter_map(|u| u.ai_target.as_deref().map(|t| ("ai_target", t))),
+        );
+        refs
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

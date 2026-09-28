@@ -1199,6 +1199,9 @@ impl<'a> Validator<'a> {
         names: &BTreeSet<&str>,
     ) {
         let cctx = format!("{ctx} {what}");
+        for (field, name) in c.unit_refs() {
+            self.reference(&cctx, names, field, name);
+        }
         match c {
             Condition::DefeatAll => {
                 if !b
@@ -1214,18 +1217,8 @@ impl<'a> Validator<'a> {
                     self.error(&cctx, "defeat_commander, but no enemy unit is a commander");
                 }
             }
-            Condition::DefeatUnit { target } | Condition::UnitRetreated { target } => {
-                self.reference(&cctx, names, "target", target)
-            }
-            Condition::Reach {
-                who,
-                pos,
-                radius,
-                to,
-            } => {
-                if let Some(who) = who {
-                    self.reference(&cctx, names, "who", who);
-                }
+            Condition::DefeatUnit { .. } | Condition::UnitRetreated { .. } => {}
+            Condition::Reach { pos, radius, to, .. } => {
                 self.position(&cctx, map, *pos, *radius, *to);
             }
             Condition::SurviveTurns { turns } => {
@@ -1252,6 +1245,9 @@ impl<'a> Validator<'a> {
         map: Option<&BattleMap>,
         names: &BTreeSet<&str>,
     ) {
+        for (field, name) in t.unit_refs() {
+            self.reference(ctx, names, field, name);
+        }
         match t {
             Trigger::TurnStart { turn, .. } => {
                 if *turn == 0 {
@@ -1266,27 +1262,16 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
-            Trigger::UnitDefeated { target } => self.reference(ctx, names, "target", target),
-            Trigger::Reach {
-                who,
-                pos,
-                radius,
-                to,
-            } => {
-                if let Some(who) = who {
-                    self.reference(ctx, names, "who", who);
-                }
+            Trigger::UnitDefeated { .. } => {}
+            Trigger::Reach { pos, radius, to, .. } => {
                 self.position(ctx, map, *pos, *radius, *to);
             }
             Trigger::Adjacent { a, b } => {
-                self.reference(ctx, names, "a", a);
-                self.reference(ctx, names, "b", b);
                 if a == b {
                     self.warn(ctx, "adjacent trigger names the same unit twice");
                 }
             }
-            Trigger::HpBelow { target, pct } => {
-                self.reference(ctx, names, "target", target);
+            Trigger::HpBelow { pct, .. } => {
                 if !(1..=100).contains(pct) {
                     self.error(ctx, "hp_below pct must be within 1..=100");
                 }
@@ -1302,6 +1287,9 @@ impl<'a> Validator<'a> {
         names: &BTreeSet<&str>,
     ) {
         let pack = self.pack;
+        for (field, name) in a.unit_refs() {
+            self.reference(ctx, names, field, name);
+        }
         match a {
             EventAction::Drama { scene } => {
                 if pack.scene(scene).is_none() {
@@ -1310,15 +1298,11 @@ impl<'a> Validator<'a> {
             }
             EventAction::Spawn { .. } => {} // checked against the battle's groups by the caller
             EventAction::SetAi {
-                target,
                 ai,
                 ai_target,
                 ai_pos,
+                ..
             } => {
-                self.reference(ctx, names, "target", target);
-                if let Some(t) = ai_target {
-                    self.reference(ctx, names, "ai_target", t);
-                }
                 if let Some(p) = ai_pos {
                     self.position(ctx, map, *p, 0, None);
                 }
@@ -1335,9 +1319,8 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
-            EventAction::Retreat { target } => self.reference(ctx, names, "target", target),
-            EventAction::LevelUp { target, amount } => {
-                self.reference(ctx, names, "target", target);
+            EventAction::Retreat { .. } => {}
+            EventAction::LevelUp { amount, .. } => {
                 if *amount == 0 {
                     self.warn(ctx, "level_up by 0 levels does nothing");
                 }
