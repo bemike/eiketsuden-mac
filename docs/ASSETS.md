@@ -48,7 +48,11 @@ canvas = [640, 480]   # virtual canvas in pixels, each side within 320×200 ..= 
   a 270-pixel-high canvas and stretch vertically with the canvas height.
 * **Tile size.** The battle map, camera, cursor, range highlights, unit placement, floating numbers,
   effects and pointer hit-testing use the tileset's `tile_size`: one atlas pixel is one virtual
-  pixel. Maps are drawn with flat colours at 16 pixels per tile when the tileset is missing. Motion
+  pixel. Maps are drawn with flat colours at 16 pixels per tile when the tileset is missing. The
+  static layers of a tileset-drawn map are cached in textures of at most 2048 pixels a side, so any
+  map size works on every device; a map **picture** (`gfx/maps/<key>.png`) is one texture, and
+  `hero-tools validate` warns when it is over 4096 pixels a side (many phones draw such a texture
+  black). Motion
   of the battle animation (lunges, knock-back) is designed for 16-pixel tiles and scales with the
   tile size.
 * **Units.** A unit frame's `anchor` pixel is placed on the tile's bottom-centre pixel —

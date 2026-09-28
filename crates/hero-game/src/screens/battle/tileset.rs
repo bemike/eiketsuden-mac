@@ -174,8 +174,9 @@ struct AnimatedTile {
 
 /// What the static part of a map is drawn from.
 enum StaticMap {
-    /// The tileset's static layers (or flat colours), drawn once into a render target.
-    Cache(RenderTarget),
+    /// The tileset's static layers (or flat colours), drawn once into render targets of at most
+    /// [`CHUNK`] pixels a side, each with its offset in the padded cache.
+    Cache(Vec<(Vec2, RenderTarget)>),
     /// The map's picture layer, drawn as it is.
     Picture(Texture2D),
 }
@@ -192,6 +193,22 @@ pub struct MapRenderer {
 
 /// Padding (in tiles) around the cached map so overhanging objects on the edge are not cut.
 const PAD: f32 = 1.0;
+
+/// Largest side of one cache render target: a big map with big tiles is cached in pieces, so it
+/// stays within the texture size every WebGL device supports (2048; many mobile GPUs stop at
+/// 4096, and a bigger target comes out black).
+pub const CHUNK: u32 = 2048;
+
+/// The pieces a `w`×`h` cache is split into: `(x, y, width, height)` in cache pixels.
+fn chunks(w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
+    let mut out = Vec::new();
+    for y in (0..h.max(1)).step_by(CHUNK as usize) {
+        for x in (0..w.max(1)).step_by(CHUNK as usize) {
+            out.push((x, y, CHUNK.min(w.max(1) - x), CHUNK.min(h.max(1) - y)));
+        }
+    }
+    out
+}
 
 impl MapRenderer {
     /// A renderer for `map` with `tile` pixel tiles (the tileset's `tile_size`, or
@@ -227,10 +244,11 @@ impl MapRenderer {
         self.base = Some(StaticMap::Picture(picture));
     }
 
-    /// Draw the static layers into the cache render target. `atlas` is `None` when the tileset
-    /// or its texture is unavailable (flat colours are used then). The tiles are drawn at the
-    /// renderer's tile size, so a renderer for a tileset is made with its `tile_size`. Must be
-    /// called outside the canvas camera (during `update`); it restores the default camera.
+    /// Draw the static layers into the cache render targets ([`CHUNK`]). `atlas` is `None` when
+    /// the tileset or its texture is unavailable (flat colours are used then). The tiles are
+    /// drawn at the renderer's tile size, so a renderer for a tileset is made with its
+    /// `tile_size`. Must be called outside the canvas camera (during `update`); it restores the
+    /// default camera.
     pub fn build(
         &mut self,
         map: &BattleMap,
@@ -243,13 +261,36 @@ impl MapRenderer {
             ((map.width as f32 + 2.0 * PAD) * tile) as u32,
             ((map.height as f32 + 2.0 * PAD) * tile) as u32,
         );
-        let target = render_target(w.max(1), h.max(1));
-        target.texture.set_filter(FilterMode::Nearest);
-        let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, w as f32, h as f32));
-        camera.render_target = Some(target.clone());
-        set_camera(&camera);
-        clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
         self.animated.clear();
+        let mut pieces = Vec::new();
+        for (i, (x, y, cw, ch)) in chunks(w, h).into_iter().enumerate() {
+            let target = render_target(cw, ch);
+            target.texture.set_filter(FilterMode::Nearest);
+            // Each piece looks at its own rectangle of the whole cache, so tiles are drawn at
+            // their cache position and cut at the piece's edges.
+            let mut camera =
+                Camera2D::from_display_rect(Rect::new(x as f32, y as f32, cw as f32, ch as f32));
+            camera.render_target = Some(target.clone());
+            set_camera(&camera);
+            clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
+            self.draw_static(map, pack, tileset, atlas, i == 0);
+            pieces.push((vec2(x as f32, y as f32), target));
+        }
+        set_default_camera();
+        self.base = Some(StaticMap::Cache(pieces));
+    }
+
+    /// The static layers at their cache positions; with `collect`, also the tiles whose upper
+    /// layers animate (once per build).
+    fn draw_static(
+        &mut self,
+        map: &BattleMap,
+        pack: &Pack,
+        tileset: Option<&Tileset>,
+        atlas: Option<&Texture2D>,
+        collect: bool,
+    ) {
+        let tile = self.tile;
         let origin = vec2(PAD * tile, PAD * tile);
         for p in map.positions() {
             let terrain_id = map.terrain_at(p).unwrap_or("");
@@ -268,19 +309,19 @@ impl MapRenderer {
             };
             for (i, layer) in layers.iter().enumerate() {
                 if layer.is_animated() {
-                    self.animated.push(AnimatedTile {
-                        pos: p,
-                        key: key.clone(),
-                        first_layer: i,
-                    });
+                    if collect {
+                        self.animated.push(AnimatedTile {
+                            pos: p,
+                            key: key.clone(),
+                            first_layer: i,
+                        });
+                    }
                     break;
                 }
                 let cell = layer_cell(map, layer, i, p, 0);
                 draw_cell(atlas, ts.tile_size, tile, cell, at + layer.offset);
             }
         }
-        set_default_camera();
-        self.base = Some(StaticMap::Cache(target));
     }
 
     /// Draw the map with its top-left corner at `origin` (virtual pixels).
@@ -308,20 +349,22 @@ impl MapRenderer {
                 // A picture has no animated layers.
                 return;
             }
-            Some(StaticMap::Cache(cache)) => {
-                let tex = &cache.texture;
+            Some(StaticMap::Cache(pieces)) => {
                 let pad = vec2(PAD, PAD) * self.tile;
-                draw_texture_ex(
-                    tex,
-                    (origin.x - pad.x).round(),
-                    (origin.y - pad.y).round(),
-                    WHITE,
-                    DrawTextureParams {
-                        dest_size: Some(vec2(tex.width(), tex.height())),
-                        flip_y: true,
-                        ..Default::default()
-                    },
-                );
+                for (at, piece) in pieces {
+                    let tex = &piece.texture;
+                    draw_texture_ex(
+                        tex,
+                        (origin.x - pad.x + at.x).round(),
+                        (origin.y - pad.y + at.y).round(),
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(vec2(tex.width(), tex.height())),
+                            flip_y: true,
+                            ..Default::default()
+                        },
+                    );
+                }
             }
         }
         let (Some(ts), Some(atlas)) = (tileset, atlas) else {
@@ -363,6 +406,27 @@ fn draw_cell(atlas: &Texture2D, size: f32, tile: f32, cell: [u32; 2], at: Vec2) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn big_caches_are_split_into_pieces() {
+        assert_eq!(chunks(480, 320), [(0, 0, 480, 320)]);
+        assert_eq!(chunks(0, 0), [(0, 0, 1, 1)]);
+        let pieces = chunks(5000, 2100);
+        assert_eq!(
+            pieces,
+            [
+                (0, 0, 2048, 2048),
+                (2048, 0, 2048, 2048),
+                (4096, 0, 904, 2048),
+                (0, 2048, 2048, 52),
+                (2048, 2048, 2048, 52),
+                (4096, 2048, 904, 52),
+            ]
+        );
+        // The pieces cover the cache exactly.
+        let area: u32 = pieces.iter().map(|&(_, _, w, h)| w * h).sum();
+        assert_eq!(area, 5000 * 2100);
+    }
     use hero_core::data::TerrainDef;
 
     fn terrain(id: &str, glyph: char) -> TerrainDef {
