@@ -703,7 +703,7 @@ army is built from `officers.toml` and does not join it.
 | `stats` | `[str, int, lead]` | class `generic` | Stats of a generic unit. |
 | `pos` | position | required | Starting tile: inside the map, passable for the unit's move type, not shared with another starting unit or a deploy slot. |
 | `ai` | [AI mode](#ai-modes) | `aggressive` | Behaviour. |
-| `ai_target` | tag or officer id | none | Target for `ai = "target"`. |
+| `ai_target` | tag or officer id | none | Target for `ai = "target"` (and the destination of `march`). |
 | `ai_pos` | position | none | Destination for `advance`, centre for `guard` (default: the spawn tile). |
 | `commander` | bool | `false` | Enemy commander (for `defeat_commander`, extra EXP). |
 | `tag` | string | none | Name that conditions and events use for this unit; unique in the battle. |
@@ -726,6 +726,7 @@ the player's army (starting officers and everyone who joins through `@join`).
 | `target` | Heads for `ai_target` and attacks it. |
 | `advance` | Moves towards `ai_pos`, attacking targets of opportunity. |
 | `flee` | Moves away from hostile units. |
+| `march` | Heads for `ai_target`, else `ai_pos`, without attacking or using strategies; waits once there. |
 
 ### Conditions
 

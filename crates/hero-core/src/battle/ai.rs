@@ -398,7 +398,7 @@ impl<'a> Planner<'a> {
             })
             .collect();
         let focus = match me.ai {
-            AiMode::Target => me
+            AiMode::Target | AiMode::March => me
                 .ai_target
                 .as_deref()
                 .and_then(|r| st.units.iter().find(|u| u.is_active() && u.matches(r)))
@@ -491,6 +491,16 @@ impl<'a> Planner<'a> {
             AiMode::Flee => {
                 let tile = self.flee_tile(&reach);
                 self.act_at(tile)
+            }
+            AiMode::March => {
+                let goal = match self.focus {
+                    Some(target) => Some(self.st.units[target].pos),
+                    None => self.me.ai_pos,
+                };
+                match goal {
+                    Some(g) if g != origin => (self.approach(&[g], &reach), None),
+                    _ => (origin, None),
+                }
             }
         };
         let mut out = Vec::with_capacity(2);
@@ -1039,10 +1049,12 @@ impl<'a> Planner<'a> {
                 strongest[i].max(dmg)
             };
         };
+        // A marching AI unit never attacks (player units are commanded by a human).
         for h in st
             .units
             .iter()
             .filter(|h| h.is_active() && self.is_hostile(h.id))
+            .filter(|h| h.side == Side::Player || h.ai != AiMode::March)
         {
             if h.statuses
                 .iter()
