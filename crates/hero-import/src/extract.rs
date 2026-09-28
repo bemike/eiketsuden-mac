@@ -256,8 +256,9 @@ impl fmt::Display for ExtractError {
             ExtractError::OutputNotEmpty(path) => write!(
                 f,
                 "the output folder {} is not empty and holds no previous run of the importer \
-                 ({INDEX_FILE} of an extraction, {} of an original pack, or the {JOURNAL_FILE} \
-                 of an interrupted one); choose an empty or new folder",
+                 of the same kind ({INDEX_FILE} of an extraction, {} of an original pack, or the \
+                 {JOURNAL_FILE} of an interrupted one); choose an empty or new folder (a folder \
+                 left by an interrupted run of an older version: delete it and run again)",
                 path.display(),
                 crate::pack::PACK_INDEX
             ),
@@ -367,7 +368,7 @@ impl Output {
     }
 }
 
-/// A relative path from a previous index that stays inside the output folder.
+/// A relative path from a previous index or journal that stays inside the output folder.
 fn safe_relative(rel: &str) -> Option<PathBuf> {
     let path = Path::new(rel);
     let ok = !rel.is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)));
@@ -408,18 +409,24 @@ pub(crate) fn prepare_output(
     if entries.next().is_none() {
         return Ok(());
     }
+    // The journal is kept until the new run's `Output::dir` replaces it, so a run interrupted
+    // while cleaning up is still recognised by the next one.
     let journal = out.join(JOURNAL_FILE);
-    if let Ok(text) = std::fs::read_to_string(&journal) {
-        let mut lines = text.lines();
-        if lines.next() != Some(format) {
-            return Err(ExtractError::OutputNotEmpty(out.to_path_buf()));
+    match std::fs::read_to_string(&journal) {
+        Ok(text) => {
+            let mut lines = text.lines();
+            // An empty journal: the run stopped while creating it, before writing anything.
+            if !matches!(lines.next(), Some(f) if f == format) && !text.is_empty() {
+                return Err(ExtractError::OutputNotEmpty(out.to_path_buf()));
+            }
+            remove_listed(out, &journal, lines)?;
+            // An interrupted run removed the previous index first; nothing else to clean.
+            if !out.join(index_file).exists() {
+                return Ok(());
+            }
         }
-        remove_listed(out, &journal, lines)?;
-        std::fs::remove_file(&journal).map_err(|e| output_error(&journal, e))?;
-        // An interrupted run removed the previous index first; nothing else to clean.
-        if !out.join(index_file).exists() {
-            return Ok(());
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(output_error(&journal, e)),
     }
     let index_path = out.join(index_file);
     let previous: PreviousIndex = match std::fs::read(&index_path) {
@@ -430,6 +437,18 @@ pub(crate) fn prepare_output(
     if previous.format != format {
         return Err(ExtractError::OutputNotEmpty(out.to_path_buf()));
     }
+    // Journal the cleanup itself (the index last), so an interruption here is retried too.
+    let mut listed = format!("{format}\n");
+    for rel in previous
+        .files
+        .iter()
+        .map(String::as_str)
+        .chain([index_file])
+    {
+        listed.push_str(rel);
+        listed.push('\n');
+    }
+    std::fs::write(&journal, listed).map_err(|e| output_error(&journal, e))?;
     remove_listed(out, &index_path, previous.files.iter().map(String::as_str))?;
     std::fs::remove_file(&index_path).map_err(|e| output_error(&index_path, e))
 }
@@ -2801,6 +2820,22 @@ mod tests {
         assert!(out.path().join("mine.txt").is_file());
         assert!(!out.path().join(JOURNAL_FILE).exists());
         assert!(index.files.iter().all(|f| out.path().join(f).is_file()));
+        // Interrupted after the index was written but before the journal was removed: the
+        // journal names every file, the index included, and the next run starts over.
+        let files = index.files.clone();
+        let mut journal = format!("{FORMAT}\n");
+        for f in files.iter().map(String::as_str).chain([INDEX_FILE]) {
+            journal.push_str(f);
+            journal.push('\n');
+        }
+        std::fs::write(out.path().join(JOURNAL_FILE), journal).unwrap();
+        extract(src.path(), out.path(), &text_only).unwrap();
+        assert!(!out.path().join(JOURNAL_FILE).exists());
+        assert!(out.path().join(INDEX_FILE).is_file());
+        // Interrupted while creating the journal (empty): accepted as ours.
+        std::fs::remove_file(out.path().join(INDEX_FILE)).unwrap();
+        std::fs::write(out.path().join(JOURNAL_FILE), "").unwrap();
+        extract(src.path(), out.path(), &text_only).unwrap();
         // A journal of another output format (an original pack) is not ours to clean.
         std::fs::write(out.path().join(JOURNAL_FILE), "other-format\n").unwrap();
         std::fs::remove_file(out.path().join(INDEX_FILE)).unwrap();

@@ -2677,6 +2677,8 @@ mod tests {
         let pack = out.path().join("original");
         let index = write_pack(src.path(), &pack, &options()).unwrap();
         assert!(index.success(), "{:#?}", index.assets);
+        // A finished pack leaves no write journal behind.
+        assert!(!pack.join(crate::extract::JOURNAL_FILE).exists());
         assert_eq!(
             index.portraits,
             vec![PortraitMatch {

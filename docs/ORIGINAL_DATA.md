@@ -140,7 +140,7 @@ hero-tools original extract "D:/Games/영걸전/GAME" --out "D:/영걸전-원작
 * `--edition korean-dos|chinese-dos`는 식별을 건너뜁니다(식별 결과는 근거로 함께 기록됩니다).
 * 출력 폴더는 새 폴더·빈 폴더·이전 추출 결과(`index.json`) 중 하나여야 합니다. 이전 결과면
   `index.json`에 적힌 파일만 지우고 다시 씁니다. 다른 파일이 든 폴더는 거부합니다. 쓰는 동안에는 쓴 파일을
-  `.hero-import-partial`에 적어 두므로, 도중에 멈춘 실행은 다음 실행이 그 파일들만 지우고 이어받습니다.
+  `.hero-import-partial`에 적어 두므로, 도중에 멈춘 실행이 남긴 폴더는 다음 실행이 그 파일들만 지우고 처음부터 다시 씁니다.
 
 출력 구조 (미디어 오버레이):
 
