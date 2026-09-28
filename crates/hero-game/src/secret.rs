@@ -38,13 +38,14 @@ impl ForbiddenSecret {
             return SecretStep::None;
         }
         self.taps = self.taps.saturating_add(1);
+        // `>=`: a count past its mark (should it ever be missed) still gets there.
         if !self.armed {
-            if self.taps == ARM_TAPS {
+            if self.taps >= ARM_TAPS {
                 self.armed = true;
                 self.taps = 0;
                 return SecretStep::Chime;
             }
-        } else if self.taps == ASK_TAPS {
+        } else if self.taps >= ASK_TAPS {
             return SecretStep::Ask;
         }
         SecretStep::None
@@ -86,6 +87,17 @@ mod tests {
         s.answer(true);
         assert!(s.enabled());
         assert_eq!(taps(&mut s, 100), [], "done once enabled");
+    }
+
+    #[test]
+    fn an_unanswered_prompt_asks_again() {
+        let mut s = ForbiddenSecret::default();
+        assert_eq!(
+            taps(&mut s, ARM_TAPS + ASK_TAPS),
+            [SecretStep::Chime, SecretStep::Ask]
+        );
+        // The prompt closed without an answer: the next tap asks again.
+        assert_eq!(s.tap(), SecretStep::Ask);
     }
 
     #[test]

@@ -57,9 +57,10 @@ fn portrait_rect(canvas: Vec2) -> Rect {
     Rect::new(panel.x + 8.0, panel.y + 8.0, 96.0, 120.0)
 }
 
-/// The orb of the hidden command, in the top left corner as in the original.
+/// The orb of the hidden command, in the top left corner as in the original (left of the title,
+/// which starts at x 10).
 fn orb_rect() -> Rect {
-    Rect::new(1.0, 1.0, 12.0, 12.0)
+    Rect::new(0.0, 1.0, 10.0, 10.0)
 }
 
 /// The prompt of the hidden command (our wording; the original's warning is not reproduced).
@@ -363,26 +364,30 @@ impl OfficersScreen {
             let Some(session) = ctx.session.as_mut() else {
                 return true;
             };
+            let gold = session.campaign.gold;
             if let Some(lord) = session.campaign.forbidden_secret(&pack) {
                 let level = session.campaign.officer(&lord).map_or(0, |o| o.level);
+                // The gold the army actually got (the cap may cut it).
+                let gained = session.campaign.gold - gold;
                 ctx.sfx(sfx::LEVELUP);
                 ctx.toast(format!(
                     "금단의 비법: {} Lv {level} · 무력·지력·통솔 {} · 군자금 +{}",
                     officer_name(&pack, &lord),
                     hero_core::campaign::FORBIDDEN_SECRET_ABILITY,
-                    format::thousands(hero_core::campaign::FORBIDDEN_SECRET_GOLD),
+                    format::thousands(gained),
                 ));
             }
             return true;
         }
-        // A tap on the lord's portrait on its detail page counts.
-        let lord_page = self.detail.is_some_and(|i| {
-            ctx.session
-                .as_ref()
-                .and_then(|s| s.campaign.roster.get(i))
-                .and_then(|o| pack.officer(&o.id))
-                .is_some_and(|d| d.lord)
-        });
+        // A tap on the lord's portrait on its detail page counts, until the command is enabled.
+        let lord_page = !enabled
+            && self.detail.is_some_and(|i| {
+                ctx.session
+                    .as_ref()
+                    .and_then(|s| s.campaign.roster.get(i))
+                    .and_then(|o| pack.officer(&o.id))
+                    .is_some_and(|d| d.lord)
+            });
         if !lord_page || !ctx.input.tapped(portrait_rect(ctx.gfx.size())) {
             return false;
         }
@@ -407,11 +412,10 @@ impl OfficersScreen {
 
     fn draw_secret(&self, ctx: &Ctx) {
         if ctx.session.as_ref().is_some_and(|s| s.secret.enabled()) {
-            let r = orb_rect();
-            let c = r.center();
-            draw_circle(c.x, c.y, 5.0, Color::from_hex(0x10267a));
-            draw_circle(c.x, c.y, 4.0, Color::from_hex(0x3f7bff));
-            draw_circle(c.x - 1.5, c.y - 1.5, 1.5, Color::from_hex(0xcfe0ff));
+            let c = orb_rect().center();
+            draw_circle(c.x, c.y, 4.0, Color::from_hex(0x10267a));
+            draw_circle(c.x, c.y, 3.0, Color::from_hex(0x3f7bff));
+            draw_circle(c.x - 1.0, c.y - 1.0, 1.0, Color::from_hex(0xcfe0ff));
         }
         if let Some(prompt) = &self.prompt {
             fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.4));
