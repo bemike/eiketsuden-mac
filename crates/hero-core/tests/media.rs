@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use hero_core::pack::Severity;
+use hero_core::pack::{Issue, Severity};
 use std::path::{Path, PathBuf};
 
 /// A scratch directory removed on drop (also when the test fails).
@@ -46,6 +46,16 @@ fn png_head(w: u32, h: u32) -> Vec<u8> {
 /// Every media file the fixture pack refers to (the check looks at file names and the size of
 /// unit sheets, so empty files stand in for other images and audio).
 fn complete_media(root: &Path) {
+    // The base pack's real fonts (Galmuri's own Hanja plus the ones the base pack needs): the
+    // Hanja coverage check reads them.
+    let fonts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base/fonts");
+    for f in ["Galmuri11.ttf", "Galmuri9.ttf"] {
+        write(
+            root,
+            &format!("fonts/{f}"),
+            std::fs::read(fonts.join(f)).unwrap(),
+        );
+    }
     let sprites = [
         "short_infantry",
         "long_infantry",
@@ -256,6 +266,10 @@ fn layered_packs_find_media_in_any_layer_top_first() {
     std::fs::remove_file(parent.join("gfx/bg/field.png")).unwrap();
     write(&top, "gfx/bg/field.png", "");
     let issues = load().missing_media(&top);
+    // The fixture's text is scanned here (it lies in the pack directories), and its 鄧 (鄧茂)
+    // is not in the base pack's fonts: the Hanja check is right, and tested on its own.
+    let hanja = |i: &Issue| i.severity == Severity::Warning && i.msg.contains("鄧");
+    let issues: Vec<Issue> = issues.into_iter().filter(|i| !hanja(i)).collect();
     assert!(issues.is_empty(), "{}", format_issues(&issues));
 
     // A media index file of the child replaces the parent's as a whole.
@@ -379,6 +393,50 @@ fn big_tileset_caches_are_reported() {
         Severity::Warning,
         "battle b02",
         "this 9×7 map with 1024-pixel tiles takes 396 MB of texture memory in battle (more than 64 MB)",
+    );
+    // The largest tile size does not overflow the arithmetic.
+    write(
+        &dir.0,
+        "gfx/tiles/terrain.toml",
+        tiles.replacen("tile_size = 16", "tile_size = 4294967295", 1),
+    );
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "battle b02",
+        "this 9×7 map with 4294967295-pixel tiles takes",
+    );
+}
+
+#[test]
+fn hanja_the_fonts_lack_are_reported() {
+    let dir = TempDir::new("media-hanja");
+    complete_media(&dir.0);
+    let issues = load_fixture().missing_media(&dir.0);
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
+
+    // A drama line with Hanja the fonts do not have (鼂 and 龘), and one they have (劉).
+    write(&dir.0, "dramas/extra.drama", "== x\n@say 유비: 劉 鼂 龘\n");
+    let issues = load_fixture().missing_media(&dir.0);
+    for font in ["fonts/Galmuri11.ttf", "fonts/Galmuri9.ttf"] {
+        assert_issue(
+            &issues,
+            Severity::Warning,
+            font,
+            "lacks 2 Hanja the pack's text uses, drawn as blanks: 鼂龘",
+        );
+    }
+    assert_eq!(issues.len(), 2, "{}", format_issues(&issues));
+
+    // A missing font: every Korean text would be blank.
+    std::fs::remove_file(dir.0.join("fonts/Galmuri9.ttf")).unwrap();
+    let issues = load_fixture().missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "fonts",
+        "missing fonts/Galmuri9.ttf (font",
     );
 }
 

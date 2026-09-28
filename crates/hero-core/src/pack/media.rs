@@ -22,7 +22,7 @@ const ICONS_TOML: &str = "gfx/ui/icons.toml";
 const MOBILE_TEXTURE: u32 = 4096;
 /// Pixels of cache a map drawn from the tileset may take (the battle caches its static layers
 /// with one tile of padding, 4 bytes a pixel): 4096² is 64 MB.
-const CACHE_BUDGET: u64 = 4096 * 4096;
+const CACHE_BUDGET: u128 = 4096 * 4096;
 const UNKNOWN_PORTRAIT: &str = "gfx/portraits/_unknown.png";
 
 impl Pack {
@@ -41,7 +41,8 @@ impl Pack {
     /// and `sfx/<key>.(ogg|wav)` of dramas, a `gfx/tiles/terrain.toml` tile for every terrain,
     /// `gfx/fx/fx.toml` entries and strips for strategy effects, `gfx/ui/icons.toml` keys
     /// of item icons (warnings), and the picture layers `gfx/maps/<key>.png` of maps, whose
-    /// size must be the map's size in tiles times the tileset's `tile_size`.
+    /// size must be the map's size in tiles times the tileset's `tile_size`; and (warnings) that
+    /// the fonts hold every Hanja of the pack's text.
     pub fn missing_media(&self, root: &Path) -> Vec<Issue> {
         let mut dirs: Vec<PathBuf> = self.layers.iter().map(|l| root.join(&l.dir)).collect();
         if dirs.is_empty() {
@@ -60,6 +61,7 @@ impl Pack {
         m.map_pictures(self);
         m.effects(self);
         m.icons(self);
+        m.hanja();
         m.issues
     }
 }
@@ -311,8 +313,9 @@ impl MediaCheck {
             };
             if def.image.is_none() {
                 // Drawn from the tileset into a cache the size of the map (plus padding).
-                let tile = u64::from(self.tile_size);
-                let area = (map.width as u64 + 2) * tile * (map.height as u64 + 2) * tile;
+                // In u128: a huge tile_size times a big map overflows u64.
+                let tile = u128::from(self.tile_size);
+                let area = (map.width as u128 + 2) * tile * (map.height as u128 + 2) * tile;
                 if area > CACHE_BUDGET {
                     self.push(
                         Severity::Warning,
@@ -464,6 +467,104 @@ impl MediaCheck {
                     Severity::Warning,
                     &format!("item {}", item.id),
                     format!("{ICONS_TOML} has no icon `{}`", item.icon),
+                );
+            }
+        }
+    }
+}
+
+use super::FONT_FILES;
+
+/// A CJK ideograph (extension A, unified, compatibility), as `tools/assets/build_fonts.py`
+/// collects them for the base pack's fonts.
+fn is_hanja(c: char) -> bool {
+    matches!(c, '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}')
+}
+
+/// Every text file of the pack directory `dir` whose characters are shown: rules, battles,
+/// maps and the other `.toml` files, dramas and `credits.txt` (licence texts are not shown).
+fn text_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Not through symbolic links, which could loop.
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            text_files(&path, out);
+        } else {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let shown = name == "credits.txt"
+                || matches!(
+                    path.extension().and_then(|e| e.to_str()),
+                    Some("toml" | "drama")
+                );
+            if shown {
+                out.push(path);
+            }
+        }
+    }
+}
+
+impl MediaCheck {
+    /// Hanja of the pack's text files (every layer) that a font lacks: the game draws them as
+    /// blanks. The base pack's fonts hold Galmuri's own Hanja plus the ones its text needs.
+    fn hanja(&mut self) {
+        // Without a font the game falls back to a Latin-only one: every Korean text is blank.
+        for font in FONT_FILES {
+            self.require(
+                Severity::Error,
+                "fonts",
+                font,
+                "font; the game falls back to one without Hangul or Hanja",
+            );
+        }
+        let mut files = Vec::new();
+        for dir in &self.dirs {
+            text_files(dir, &mut files);
+        }
+        let mut needed: BTreeSet<char> = BTreeSet::new();
+        for f in files {
+            if let Ok(text) = std::fs::read_to_string(&f) {
+                needed.extend(text.chars().filter(|&c| is_hanja(c)));
+            }
+        }
+        if needed.is_empty() {
+            return;
+        }
+        for font in FONT_FILES {
+            let Some(path) = self.find(font) else {
+                continue; // reported above
+            };
+            let coverage = match std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|b| super::cmap::coverage(&b))
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    self.push(Severity::Warning, font, format!("{}: {e}", path.display()));
+                    continue;
+                }
+            };
+            let missing: Vec<char> = needed
+                .iter()
+                .copied()
+                .filter(|&c| !coverage.contains(c))
+                .collect();
+            if !missing.is_empty() {
+                let shown: String = missing.iter().take(40).collect();
+                let more = if missing.len() > 40 {
+                    format!(" and {} more", missing.len() - 40)
+                } else {
+                    String::new()
+                };
+                self.push(
+                    Severity::Warning,
+                    font,
+                    format!(
+                        "lacks {} Hanja the pack's text uses, drawn as blanks: {shown}{more} (add them to the font; the base pack's fonts are built by tools/assets/build_fonts.py)",
+                        missing.len()
+                    ),
                 );
             }
         }

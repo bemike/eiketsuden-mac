@@ -1272,10 +1272,13 @@ impl<'a> Validator<'a> {
                 || changed.iter().any(|&(q, t)| q == p && walkable(t))
         };
         let mut reached: BTreeSet<Pos> = BTreeSet::new();
+        // Only the slots the army can fill: setup places at most `deploy.max` officers, in
+        // slot order.
         let mut queue: Vec<Pos> = b
             .deploy
             .slots
             .iter()
+            .take(crate::battle::deploy_max(b))
             .copied()
             .chain(
                 b.units

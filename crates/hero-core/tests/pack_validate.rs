@@ -791,6 +791,24 @@ fn defeat_all_enemies_must_be_reachable() {
         "{}",
         format_issues(&issues)
     );
+    // A slot inside the castle opens it only when the army can fill it: setup uses the first
+    // `deploy.max` (3) slots.
+    let mut inside = files.clone();
+    edit(&mut inside, B02, "[5, 6], [4, 5]]", "[5, 6], [2, 2]]");
+    let issues = load(&inside).validate();
+    assert_issue(
+        &issues,
+        Severity::Warning,
+        "battle b02",
+        "defeat_all, but 성벽 궁병 at (2, 1) cannot be attacked",
+    );
+    edit(&mut inside, B02, "max = 3", "max = 4");
+    let issues = load(&inside).validate();
+    assert!(
+        !issues.iter().any(|i| i.msg.contains("cannot be attacked")),
+        "{}",
+        format_issues(&issues)
+    );
     // A wall tile that an event turns into castle floor opens the way.
     edit(
         &mut files,
