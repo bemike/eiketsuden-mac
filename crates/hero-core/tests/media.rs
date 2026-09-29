@@ -245,6 +245,45 @@ fn complete_media_has_no_issues() {
 }
 
 #[test]
+fn duel_backgrounds_are_checked_but_the_terrain_one() {
+    let dir = TempDir::new("media-duel");
+    complete_media(&dir.0);
+    for side in ["left", "right"] {
+        write(&dir.0, &format!("gfx/duel/{side}.png"), png_head(1440, 96));
+    }
+    let mut files = fixture_files();
+    append(
+        &mut files,
+        "dramas/story.drama",
+        "\n== duel_terrain\n@duel liu_bei guan_yu terrain\n@duel_end\n\
+         \n== duel_named\n@duel liu_bei guan_yu arena\n@duel_end\n",
+    );
+    let pack = load(&files);
+    let issues = pack.missing_media(&dir.0);
+    assert_issue(
+        &issues,
+        Severity::Error,
+        "scene duel_named",
+        "missing gfx/duel/arena.png (duel background)",
+    );
+    // The terrain's is looked up in the battle: nothing to require.
+    assert!(
+        !issues.iter().any(|i| i.msg.contains("terrain.png")),
+        "{}",
+        format_issues(&issues)
+    );
+    // A picture called `terrain` is hidden by the word.
+    write(&dir.0, "gfx/duel/terrain.png", png_head(416, 208));
+    let issues = pack.missing_media(&dir.0);
+    assert!(
+        issues.iter().any(|i| i.severity == Severity::Warning
+            && i.msg.contains("gfx/duel/terrain.png is never shown")),
+        "{}",
+        format_issues(&issues)
+    );
+}
+
+#[test]
 fn missing_media_is_reported() {
     let dir = TempDir::new("media-missing");
     let root = &dir.0;

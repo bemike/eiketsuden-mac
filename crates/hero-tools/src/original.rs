@@ -952,7 +952,16 @@ mod tests {
                 &pack.terrain,
             )
             .unwrap();
-            for t in &map.terrain_ids {
+            // And the terrain events change cells to (a gate opened, a bridge lowered).
+            let changed = battle
+                .events
+                .iter()
+                .flat_map(|e| &e.actions)
+                .filter_map(|a| match a {
+                    hero_core::battledef::EventAction::SetTerrain { terrain, .. } => Some(terrain),
+                    _ => None,
+                });
+            for t in map.terrain_ids.iter().chain(changed) {
                 assert!(
                     out.join(format!("gfx/duel/terrain_{t}.png")).is_file(),
                     "{} {t}",

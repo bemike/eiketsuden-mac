@@ -3206,6 +3206,7 @@ fn duel_pictures(
         // A terrain drawn as the code's (the gate, open or closed) and one standing in for
         // another (a road drawn as plain) get that code's.
         let mut written = BTreeSet::new();
+        let mut failed = Vec::new();
         for (code, &drawn) in TERRAIN_MAP.iter().enumerate() {
             let ids = [drawn, rules_terrain(code as u8)];
             let fallbacks = TILE_FALLBACK
@@ -3216,15 +3217,26 @@ fn duel_pictures(
             if ids.is_empty() {
                 continue;
             }
-            let png = stage(code)?;
+            // One terrain whose strips cannot be drawn leaves its duels on a plain stage.
+            let png = match stage(code) {
+                Ok(png) => png,
+                Err(e) => {
+                    failed.push(format!("duel background of terrain code {code}: {e}"));
+                    continue;
+                }
+            };
             for id in ids {
                 if written.insert(id) {
                     out.push((format!("gfx/duel/terrain_{id}.png"), png.clone()));
                 }
             }
         }
-        Ok(out)
-    })())
+        Ok((out, failed))
+    })()
+    .map(|(out, failed)| {
+        report.errors.extend(failed);
+        out
+    }))
 }
 
 // ----- portraits -----------------------------------------------------------------------------
