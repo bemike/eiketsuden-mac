@@ -117,7 +117,7 @@ cargo run --release -p hero-tools -- validate data/base
 | 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환·규칙 표·원작 UI·음악 |
 | 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
 
-남은 일: 루트마다 다른 원작 출진 설정, 전투 중 도착하는 아군 부대(4장 허창), 이야기 속 레벨·병종 변경, 전투 중의 삽화, 서장·1장 이야기의 원작 변환,
+남은 일: 루트마다 다른 원작 출진 설정, 전투 중 도착하는 아군 부대(4장 허창), 전투 중의 삽화, 서장·1장 이야기의 원작 변환,
 원작 모드 난이도 확인, 영어 번역([BACKLOG](BACKLOG.md)).
 
 ## 로드맵

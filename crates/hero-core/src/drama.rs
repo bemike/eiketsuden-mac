@@ -227,6 +227,21 @@ impl DramaRunner {
                     }
                     continue;
                 }
+                // (An officer not in the army is left as they are, as `@away` does.)
+                Cmd::Level { officer, levels } => {
+                    match campaign.add_levels(pack, officer, *levels) {
+                        Ok(()) | Err(CampaignError::NotInArmy(_)) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                    continue;
+                }
+                Cmd::Class { officer, class } => {
+                    match campaign.set_class(pack, officer, class) {
+                        Ok(()) | Err(CampaignError::NotInArmy(_)) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                    continue;
+                }
                 Cmd::Leave(officer) => {
                     match campaign.leave(officer) {
                         Ok(()) | Err(CampaignError::NotInArmy(_)) => {}
