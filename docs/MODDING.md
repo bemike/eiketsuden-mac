@@ -279,7 +279,7 @@ in every pack of the chain.
 
 ## rules/game.toml
 
-Global numbers. Every field is required except `affinity`.
+Global numbers. Every field is required except `affinity` and `strategy_formulas`.
 
 ```toml
 level_cap = 50
@@ -323,6 +323,7 @@ cavalry = 125
 | `counter_divisor` | integer > 0 | Counter-attack chance in percent = `STR * 100 / counter_divisor`. |
 | `counter_damage_pct` | integer ≥ 0 | Counter damage in percent of a normal attack. |
 | `weather.clear` / `.cloudy` / `.rain` | integers ≥ 0, sum 100 | Chance of each weather, rolled every turn. |
+| `strategy_formulas` | `"engine"` (default) or `"original"` | Which strategy formulas battles use: the engine's or the PC original's (support bonus, confusion hit and recovery, morale-down confusion, least damage; RULES.md §5–§6). The original mode's converted pack sets `"original"`. |
 
 ## rules/terrain.toml
 

@@ -51,8 +51,13 @@ pub enum UnitState {
 pub struct ActiveStatus {
     pub status: StatusKind,
     /// Remaining turns; decremented at the start of the owner's phase, removed at 0.
+    /// [`UNTIL_RECOVERED`] under the original strategy formulas.
     pub turns: u8,
 }
+
+/// `ActiveStatus::turns` of a confusion without a length (the original strategy formulas): it
+/// ends on a recovery roll at the start of the unit's phase (RULES.md §6).
+pub const UNTIL_RECOVERED: u8 = u8::MAX;
 
 /// Weather, re-rolled at the start of every turn. Rain blocks `fire` strategies and gives
 /// `water` strategies +25% damage.

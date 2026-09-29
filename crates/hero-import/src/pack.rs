@@ -71,7 +71,9 @@ use crate::planar::{self, CELL_BYTES, CELL_PX};
 use crate::sprites;
 use crate::text::TextEncoding;
 use crate::{ls11, table6};
-use hero_core::data::{Area, ClassDef, Effect, Learn, RangeSpec, StrategyDef, TerrainDef};
+use hero_core::data::{
+    Area, ClassDef, Effect, GameRules, Learn, RangeSpec, StrategyDef, StrategyFormulas, TerrainDef,
+};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -101,7 +103,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// battles), and dramas as a list.
 /// 16: the event pictures (`gfx/pictures/`, [`picture_key`]) and the stories' `@picture`.
 /// 17: `base_fingerprint` in the index ([`stale_pack`]).
-pub const PACK_FORMAT_VERSION: u32 = 17;
+/// 18: the game rules in `rules` ([`GAME_RULES`], the original strategy formulas).
+pub const PACK_FORMAT_VERSION: u32 = 18;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -192,6 +195,9 @@ pub struct PackOptions {
     pub class_defs: Vec<ClassDef>,
     /// The pack chain's strategies, which the original's strategy tables adjust.
     pub strategy_defs: Vec<StrategyDef>,
+    /// The pack chain's game rules, written again with the original strategy formulas when the
+    /// strategies are converted ([`GAME_RULES`]); `None`: left to the chain.
+    pub game_rules: Option<hero_core::data::GameRules>,
     /// Render the original's music ([`MUSIC_KEYS`]). It takes several seconds, so the game's
     /// conversion at every start leaves it out; `hero-tools original pack` sets it.
     pub music: bool,
@@ -268,6 +274,7 @@ impl PackOptions {
                 .collect(),
             class_defs: parent.classes.values().cloned().collect(),
             strategy_defs: parent.strategies.values().cloned().collect(),
+            game_rules: Some(parent.rules.clone()),
             music: false,
             campaign: Some(parent.campaign.clone()),
             base_fingerprint: None,
@@ -1544,6 +1551,8 @@ const REACH_NAMES: [&str; 4] = ["range8", "range12", "range20", "range28"];
 
 /// Where the strategy rules of the pack go.
 pub const STRATEGY_RULES: &str = "rules/strategies.toml";
+/// Game rules of the original mode: the chain's with the original strategy formulas.
+pub const GAME_RULES: &str = "rules/game.toml";
 
 /// The pack chain's strategies with the original's MP cost and reach for those of
 /// [`STRATEGY_IDS`], and the changes as notes. Everything else stays the chain's.
@@ -1785,6 +1794,21 @@ fn convert_rules(
                     notes.len()
                 ));
                 report.notes.extend(notes);
+                // The strategies' amounts are the original's: so are the formulas they go
+                // into (FORMATS §10.4).
+                if let Some(rules) = &options.game_rules {
+                    let rules = GameRules {
+                        strategy_formulas: StrategyFormulas::Original,
+                        ..rules.clone()
+                    };
+                    let body = toml::to_string(&rules).map_err(|e| {
+                        output_error(Path::new(GAME_RULES), std::io::Error::other(e))
+                    })?;
+                    out.write(GAME_RULES, (header("Game rules") + &body).as_bytes())?;
+                    report.outputs += 1;
+                    written.push(("game", GAME_RULES));
+                    summary.push("the original strategy formulas".into());
+                }
             }
             Err(e) => report.errors.push(format!("strategy rules: {e}")),
         }
@@ -5270,7 +5294,16 @@ mod tests {
         write_pack_install(src.path());
         let out = TempDir::new("pack-out");
         let pack = out.path().join("original");
-        let index = write_pack(src.path(), &pack, &options()).unwrap();
+        let game = hero_core::pack::Pack::load(&hero_core::pack::DirSource {
+            root: Path::new(env!("CARGO_MANIFEST_DIR")).join("../hero-core/tests/fixtures/mini"),
+        })
+        .unwrap()
+        .rules;
+        let with_game = PackOptions {
+            game_rules: Some(game.clone()),
+            ..options()
+        };
+        let index = write_pack(src.path(), &pack, &with_game).unwrap();
         assert!(index.success(), "{:#?}", index.assets);
         // The terrain rules follow the original's movement rules: horses do not enter forest,
         // its effect is the defence; the manifest lists the file.
@@ -5315,6 +5348,21 @@ mod tests {
         );
         assert!(
             manifest.contains("strategies = \"rules/strategies.toml\""),
+            "{manifest}"
+        );
+        // With the original strategies go the original formulas: the chain's game rules
+        // otherwise.
+        let text = std::fs::read_to_string(pack.join(GAME_RULES)).unwrap();
+        let rules: GameRules = toml::from_str(&text).unwrap();
+        assert_eq!(
+            rules,
+            GameRules {
+                strategy_formulas: StrategyFormulas::Original,
+                ..game
+            }
+        );
+        assert!(
+            manifest.contains("game = \"rules/game.toml\""),
             "{manifest}"
         );
         // A finished pack leaves no write journal behind.

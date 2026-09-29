@@ -297,6 +297,45 @@ fn confusion_counts_down_but_persists_while_morale_is_low() {
 }
 
 #[test]
+fn original_formulas_end_confusion_on_a_recovery_roll() {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.strategy_formulas = crate::data::StrategyFormulas::Original;
+    let mut st = state(&pack);
+    let bold = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    // (200 + 100) / 3 >= 100: always.
+    st.units[bold].lead = 200;
+    st.units[bold].statuses = vec![confused(crate::battle::UNTIL_RECOVERED)];
+    assert_eq!(
+        st.begin(&pack),
+        vec![
+            phase(Side::Player, 1),
+            BattleEvent::StatusExpired {
+                unit: bold,
+                status: StatusKind::Confused
+            },
+        ]
+    );
+    // (50 + 40) / 3 = 30 %, whatever the turns; kept as it was otherwise.
+    let mut recovered = 0;
+    for seed in 0..400 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let u = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        st.units[u].lead = 50;
+        st.units[u].morale = 40;
+        st.units[u].statuses = vec![confused(1)];
+        st.begin(&pack);
+        if st.units[u].statuses.is_empty() {
+            recovered += 1;
+        } else {
+            assert_eq!(st.units[u].statuses, vec![confused(1)]);
+        }
+    }
+    assert!((90..150).contains(&recovered), "{recovered} of 400");
+}
+
+#[test]
 fn low_morale_confuses_and_a_confused_unit_at_zero_morale_retreats() {
     let pack = pack(OPEN_MAP);
     let mut st = state(&pack);

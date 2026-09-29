@@ -748,9 +748,14 @@ mod tests {
         assert!(
             manifest.contains(
                 "[rules]\nterrain = \"rules/terrain.toml\"\nclasses = \"rules/classes.toml\"\n\
-                 strategies = \"rules/strategies.toml\"\n"
+                 strategies = \"rules/strategies.toml\"\ngame = \"rules/game.toml\"\n"
             ),
             "{manifest}"
+        );
+        // The original's strategy amounts go with its formulas.
+        assert_eq!(
+            pack.rules.strategy_formulas,
+            hero_core::data::StrategyFormulas::Original
         );
         assert!(pack
             .terrain

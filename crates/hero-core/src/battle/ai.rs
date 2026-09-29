@@ -988,7 +988,7 @@ impl<'a> Planner<'a> {
         let t = &st.units[u];
         let sign: i64 = if self.is_hostile(u) { 1 } else { -1 };
         let chance = match s.target {
-            TargetSide::Enemy => st.hit_chance(pack, self.id, u),
+            TargetSide::Enemy => st.hit_chance(pack, self.id, s, u),
             TargetSide::Ally => 100,
         } as i64;
         let level_factor = t.level as i64 + 10;
@@ -1018,7 +1018,7 @@ impl<'a> Planner<'a> {
                 }
                 Effect::Heal { power } => {
                     let heal = st
-                        .strategy_heal(self.id, *power, u)
+                        .strategy_heal(pack, self.id, *power, u)
                         .min(t.max_hp - hp)
                         .max(0);
                     v -= sign * heal as i64;
@@ -1026,7 +1026,7 @@ impl<'a> Planner<'a> {
                 }
                 Effect::Morale { amount } => {
                     let new = morale
-                        .saturating_add(st.morale_shift(self.id, u, *amount))
+                        .saturating_add(st.morale_shift(pack, self.id, u, *amount))
                         .clamp(0, 100);
                     // Morale enters ATK/DEF as `(level + 10) * morale / 10`.
                     let change = (new - morale) as i64 * level_factor / 10;
@@ -1329,7 +1329,7 @@ impl<'a> Planner<'a> {
                 _ => None,
             })
             .sum();
-        damage * st.hit_chance(pack, caster, target) as i64 / 100
+        damage * st.hit_chance(pack, caster, s, target) as i64 / 100
     }
 
     /// Expected damage taken on `tile` next phase (not capped at the unit's HP).

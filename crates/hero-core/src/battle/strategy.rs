@@ -6,7 +6,9 @@ use super::{
     Weather,
 };
 use crate::battledef::Side;
-use crate::data::{Area, Effect, ItemDef, StatusKind, StrategyDef, TargetSide, TerrainDef};
+use crate::data::{
+    Area, Effect, ItemDef, StatusKind, StrategyDef, StrategyFormulas, TargetSide, TerrainDef,
+};
 use crate::geom::{Dir, Pos};
 use crate::pack::Pack;
 
@@ -16,6 +18,29 @@ const FIRE: &str = "fire";
 const WATER: &str = "water";
 /// HP heals are halved on targets whose morale is below this (§5, *design*).
 const LOW_MORALE_HEAL: i32 = 30;
+/// Original formulas: a morale-down leaving the target's morale below this confuses it with
+/// [`MORALE_DOWN_CONFUSION`] percent (§6).
+const MORALE_DOWN_CONFUSES_BELOW: i32 = 30;
+const MORALE_DOWN_CONFUSION: i32 = 60;
+
+/// Whether `pack` plays the original's strategy formulas.
+pub(super) fn original_formulas(pack: &Pack) -> bool {
+    pack.rules.strategy_formulas == StrategyFormulas::Original
+}
+
+/// Whether `s` confuses (its hit roll then weighs the target's power twice as much under the
+/// original formulas).
+fn confuses(s: &StrategyDef) -> bool {
+    s.effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Status {
+                status: StatusKind::Confused,
+                ..
+            }
+        )
+    })
+}
 
 /// The INT/level term of the strategy formulas: `int * level / div + int`.
 pub(super) fn int_term(int: i32, level: u32, div: i64) -> i64 {
@@ -149,8 +174,14 @@ impl BattleState {
 
     /// Success chance (§5): `clamp(100 - 100 * power(target) / (4 * power(caster)), 0, 100)`
     /// with `power(u) = int * level / 100 + int` and the target's INT doubled for
-    /// `strategy_guard` classes.
-    pub(super) fn hit_chance(&self, pack: &Pack, caster: UnitId, target: UnitId) -> i32 {
+    /// `strategy_guard` classes; `2` instead of `4` for a confusion under the original formulas.
+    pub(super) fn hit_chance(
+        &self,
+        pack: &Pack,
+        caster: UnitId,
+        s: &StrategyDef,
+        target: UnitId,
+    ) -> i32 {
         let (c, t) = (&self.units[caster], &self.units[target]);
         let t_int = if self.class_of(pack, target).strategy_guard {
             t.int.max(0).saturating_mul(2)
@@ -162,10 +193,16 @@ impl BattleState {
         if pc <= 0 {
             return if pt <= 0 { 100 } else { 0 };
         }
-        (100 - 100 * pt / (4 * pc)).clamp(0, 100) as i32
+        let div = if original_formulas(pack) && confuses(s) {
+            2
+        } else {
+            4
+        };
+        (100 - 100 * pt / (div * pc)).clamp(0, 100) as i32
     }
 
-    /// Strategy damage without the random bonus: `max(1, raw)` (§5).
+    /// Strategy damage without the random bonus: `max(1, raw)` (§5; `max(0, raw)` under the
+    /// original formulas).
     pub(super) fn strategy_damage_base(
         &self,
         pack: &Pack,
@@ -188,23 +225,57 @@ impl BattleState {
         if self.class_of(pack, target).strategy_guard {
             raw /= 2;
         }
-        raw.clamp(1, i32::MAX as i64) as i32
+        let least = if original_formulas(pack) { 0 } else { 1 };
+        raw.clamp(least, i32::MAX as i64) as i32
     }
 
-    /// Strategy heal before capping at the missing HP (§5).
-    pub(super) fn strategy_heal(&self, caster: UnitId, power: i32, target: UnitId) -> i32 {
+    /// Strategy heal before capping at the missing HP and without the random bonus of the
+    /// original formulas (§5).
+    pub(super) fn strategy_heal(
+        &self,
+        pack: &Pack,
+        caster: UnitId,
+        power: i32,
+        target: UnitId,
+    ) -> i32 {
         let (c, t) = (&self.units[caster], &self.units[target]);
-        let mut amount = power as i64 + 2 * int_term(c.int, c.level, 50);
-        if t.morale < LOW_MORALE_HEAL {
-            amount /= 2;
-        }
+        let amount = if original_formulas(pack) {
+            power as i64 + c.level as i64 * c.int.max(0) as i64 / 20
+        } else {
+            let amount = power as i64 + 2 * int_term(c.int, c.level, 50);
+            if t.morale < LOW_MORALE_HEAL {
+                amount / 2
+            } else {
+                amount
+            }
+        };
         amount.clamp(0, i32::MAX as i64) as i32
     }
 
-    /// Morale change of a `Morale { amount }` effect: morale-down is shifted by
-    /// `caster.level / 10 - target.level / 10` (never turning into a gain).
-    pub(super) fn morale_shift(&self, caster: UnitId, target: UnitId, amount: i32) -> i32 {
+    /// Up to 10 % more of a support amount under the original formulas (their random bonus),
+    /// else nothing.
+    fn support_bonus(&mut self, pack: &Pack, amount: i32) -> i32 {
+        if original_formulas(pack) && amount >= 10 {
+            self.rng.range(0, amount / 10)
+        } else {
+            0
+        }
+    }
+
+    /// Morale change of a `Morale { amount }` effect without the random bonus of the original
+    /// formulas: morale-down is shifted by `caster.level / 10 - target.level / 10` (never
+    /// turning into a gain); under the original formulas a morale gain adds `caster.level / 10`.
+    pub(super) fn morale_shift(
+        &self,
+        pack: &Pack,
+        caster: UnitId,
+        target: UnitId,
+        amount: i32,
+    ) -> i32 {
         if amount >= 0 {
+            if original_formulas(pack) {
+                return amount.saturating_add((self.units[caster].level / 10) as i32);
+            }
             return amount;
         }
         let shift = (self.units[caster].level / 10) as i32 - (self.units[target].level / 10) as i32;
@@ -214,8 +285,10 @@ impl BattleState {
     /// Stored counter for a confusion of `turns` turns. The countdown runs at the start of
     /// the owner's phase before it acts, so a unit confused outside its own phase needs one
     /// extra count to actually miss `turns` of its phases.
-    fn confusion_counter(&self, target: UnitId, turns: u8) -> u8 {
-        if self.units[target].side == self.phase {
+    fn confusion_counter(&self, pack: &Pack, target: UnitId, turns: u8) -> u8 {
+        if original_formulas(pack) {
+            super::UNTIL_RECOVERED
+        } else if self.units[target].side == self.phase {
             turns
         } else {
             turns.saturating_add(1)
@@ -273,7 +346,7 @@ impl BattleState {
                         }
                         Effect::Heal { power } => {
                             let heal = self
-                                .strategy_heal(caster, *power, t)
+                                .strategy_heal(pack, caster, *power, t)
                                 .min(tu.max_hp - tu.hp)
                                 .max(0);
                             amount -= heal as i64;
@@ -284,7 +357,7 @@ impl BattleState {
                 StrategyForecast {
                     unit: t,
                     chance: match s.target {
-                        TargetSide::Enemy => self.hit_chance(pack, caster, t),
+                        TargetSide::Enemy => self.hit_chance(pack, caster, s, t),
                         TargetSide::Ally => 100,
                     },
                     amount: amount.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
@@ -341,7 +414,7 @@ impl BattleState {
         for &t in targets {
             let success = match s.target {
                 TargetSide::Enemy => {
-                    let chance = self.hit_chance(pack, caster, t);
+                    let chance = self.hit_chance(pack, caster, s, t);
                     self.rng.chance(chance)
                 }
                 TargetSide::Ally => true,
@@ -415,24 +488,40 @@ impl BattleState {
                     hit.morale -= loss;
                 }
                 Effect::Heal { power } => {
-                    let amount = self.strategy_heal(caster, *power, t);
+                    let amount = self.strategy_heal(pack, caster, *power, t);
+                    let amount = amount.saturating_add(self.support_bonus(pack, amount));
                     let u = &mut self.units[t];
                     let healed = amount.min(u.max_hp - u.hp).max(0);
                     u.hp += healed;
                     hit.healed += healed;
                 }
                 Effect::Morale { amount } => {
-                    let delta = self.morale_shift(caster, t, *amount);
+                    let mut delta = self.morale_shift(pack, caster, t, *amount);
+                    if delta > 0 {
+                        delta = delta.saturating_add(self.support_bonus(pack, delta));
+                    }
                     let u = &mut self.units[t];
                     let before = u.morale;
                     u.morale = u.morale.saturating_add(delta).clamp(0, 100);
                     hit.morale += u.morale - before;
+                    // The original: a morale-down leaving little morale may confuse.
+                    let low = u.morale < MORALE_DOWN_CONFUSES_BELOW;
+                    if delta < 0
+                        && low
+                        && original_formulas(pack)
+                        && self.rng.chance(MORALE_DOWN_CONFUSION)
+                    {
+                        if self.confuse(t, super::UNTIL_RECOVERED) {
+                            newly_confused.push(t);
+                        }
+                        hit.status = Some(StatusKind::Confused);
+                    }
                 }
                 Effect::Status {
                     status: StatusKind::Confused,
                     turns,
                 } => {
-                    let counter = self.confusion_counter(t, *turns);
+                    let counter = self.confusion_counter(pack, t, *turns);
                     if self.confuse(t, counter) {
                         newly_confused.push(t);
                     }

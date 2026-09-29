@@ -171,14 +171,32 @@ impl BattleState {
         }
     }
 
-    /// Status countdown (§1.2.3): confusion persists at 1 while morale is low.
+    /// Status countdown (§1.2.3): confusion persists at 1 while morale is low. Under the
+    /// original strategy formulas confusion has no length: it ends when
+    /// `rand(100) < (LEAD + morale) / 3` (§6).
     fn count_down_statuses(&mut self, pack: &Pack, side: Side, ev: &mut Vec<BattleEvent>) {
         let low = pack.rules.confuse_morale;
+        let original = super::strategy::original_formulas(pack);
         for id in 0..self.units.len() {
-            let u = &mut self.units[id];
+            let u = &self.units[id];
             if !u.is_active() || u.side != side {
                 continue;
             }
+            if original {
+                let chance = u.lead.max(0).saturating_add(u.morale.max(0)) / 3;
+                let confused = u.has_status(StatusKind::Confused);
+                if confused && self.rng.chance(chance) {
+                    self.units[id]
+                        .statuses
+                        .retain(|s| s.status != StatusKind::Confused);
+                    ev.push(BattleEvent::StatusExpired {
+                        unit: id,
+                        status: StatusKind::Confused,
+                    });
+                }
+                continue;
+            }
+            let u = &mut self.units[id];
             let keep = u.morale <= low;
             let mut expired = Vec::new();
             u.statuses.retain_mut(|s| {
@@ -213,7 +231,12 @@ impl BattleState {
             }
             let chance = (low - u.morale).saturating_mul(3).saturating_add(10);
             if self.rng.chance(chance) {
-                self.confuse(id, 1);
+                let turns = if super::strategy::original_formulas(pack) {
+                    super::UNTIL_RECOVERED
+                } else {
+                    1
+                };
+                self.confuse(id, turns);
                 ev.push(BattleEvent::Confused { unit: id });
                 self.retreat_if_beaten(id, ev);
             }
