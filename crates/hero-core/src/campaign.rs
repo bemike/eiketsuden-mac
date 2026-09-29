@@ -549,7 +549,8 @@ impl CampaignState {
         Ok(())
     }
 
-    /// `@level`: `officer` of the army gains `levels`, up to the level cap. Only the level
+    /// `@level`: `officer` of the army gains `levels`, up to the level cap (one already above
+    /// it keeps their level). Only the level
     /// changes: HP, MP and the strategies known follow from it in battle.
     pub fn add_levels(
         &mut self,
@@ -561,7 +562,7 @@ impl CampaignState {
         let state = self
             .officer_mut(officer)
             .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
-        state.level = state.level.saturating_add(levels).min(cap);
+        state.level = state.level.saturating_add(levels).min(cap).max(state.level);
         Ok(())
     }
 

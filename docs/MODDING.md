@@ -1059,8 +1059,8 @@ caught; write free names in Korean or with a capital letter.
 | `@set <flag> = n` / `+= n` / `-= n` | Change a [flag](#flags). |
 | `@join <officer id>` | The officer joins the army (a banner is shown; nothing happens if already in the army), or comes back from `@away`. |
 | `@leave <officer id>` | The officer leaves; their equipment returns to the inventory (nothing happens if not in the army). |
-| `@level <officer id> <levels>` | The officer of the army gains levels (at least 1, up to the level cap); HP, MP and known strategies follow from the level in the next battle. Nothing happens if not in the army. |
-| `@class <officer id> <class id>` | The officer of the army changes class (a story's change: no item or promotion level needed); equipment the new class family may not use goes back to the inventory. Nothing happens if not in the army. |
+| `@level <officer id> <levels>` | The officer of the army gains levels (at least 1, up to the level cap; one already above it keeps their level); HP, MP and known strategies follow from the level in the next battle. Nothing happens if not in the army. |
+| `@class <officer id> <class id>` | The officer of the army changes class (a story's change: no item or promotion level needed); equipment the new class family may not use goes back to the inventory; `fixed_class` does not stop it. Nothing happens if not in the army. |
 | `@away <officer id>` | The officer is away for a while: they stay in the army with their level, experience and equipment but cannot be deployed (the deploy screen marks them 부재). `@join` brings them back as they left. Nothing happens if not in the army. |
 | `@gold <±n>` | Give (or take) gold, clamped to `0..=gold_cap`. |
 | `@item <item id>` | Give one item. |

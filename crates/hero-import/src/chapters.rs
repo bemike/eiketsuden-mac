@@ -472,6 +472,8 @@ impl Writer<'_, '_> {
                 }
             }
             "add_levels" => match officer(get("person")) {
+                // A battle's setup changes its enemies too: nothing of the army's.
+                Some(id) if self.army_only && !names.player_officers.contains(&id) => {}
                 Some(id) => {
                     let _ = writeln!(out.text, "@level {id} {}", get("levels").max(1));
                 }
@@ -484,6 +486,7 @@ impl Writer<'_, '_> {
                 officer(get("person")),
                 names.classes.get(&(get("class") as u8)),
             ) {
+                (Some(id), _) if self.army_only && !names.player_officers.contains(&id) => {}
                 (Some(id), Some(class)) => {
                     let _ = writeln!(out.text, "@class {id} {class}");
                 }
@@ -964,12 +967,11 @@ pub fn before_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
         let _ = w.lines(&rec.code);
     }
     // Only flag checks around nothing: no scene.
-    if !w
-        .out
-        .text
-        .lines()
-        .any(|l| l.starts_with("@join ") || l.starts_with("@away "))
-    {
+    if !w.out.text.lines().any(|l| {
+        ["@join ", "@away ", "@level ", "@class "]
+            .iter()
+            .any(|p| l.starts_with(p))
+    }) {
         w.out.text.clear();
     }
     w.finish()
@@ -2100,6 +2102,25 @@ mod tests {
             vec![instr("dialogue", &[("text", 1)])],
         )]);
         assert!(before_scene(&b, &ctx(&names, &song_key)).text.is_empty());
+        // One that only makes an officer of the army stronger has one; an enemy's change is
+        // the battle's.
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("add_levels", &[("person", 9), ("levels", 2)]),
+                instr("add_levels", &[("person", 0), ("levels", 3)]),
+                instr("set_class", &[("person", 0), ("class", 1)]),
+            ],
+        )]);
+        let mut names = names;
+        names.player_officers.insert("yuan_shao".into());
+        names.classes.insert(1, "light_cavalry".into());
+        assert_eq!(
+            before_scene(&b, &ctx(&names, &song_key)).text,
+            "@level yuan_shao 2
+"
+        );
     }
 
     #[test]

@@ -206,6 +206,11 @@ fn a_story_raises_levels_and_changes_classes() {
         pack.rules.level_cap
     );
     assert!(campaign.officer("jian_yong").is_none());
+    // One already above the cap (a pack's cap lowered) keeps their level.
+    let cap = pack.rules.level_cap;
+    campaign.officer_mut("guan_yu").unwrap().level = cap + 5;
+    campaign.add_levels(&pack, "guan_yu", 1).unwrap();
+    assert_eq!(campaign.officer("guan_yu").unwrap().level, cap + 5);
 }
 
 #[test]

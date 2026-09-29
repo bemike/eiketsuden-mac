@@ -935,6 +935,16 @@ fn drama_checks() {
             "@class names unknown class `sage`",
         ),
         error(
+            &[(
+                STORY,
+                "@item bean",
+                "@item bean
+@class mi_zhu archer",
+            )],
+            "scene oath",
+            "@class names unknown officer `mi_zhu`",
+        ),
+        error(
             &[(BATTLE_DRAMAS, "zhang_bao: 덤벼라!", "zhang_liang: 덤벼라!")],
             "scene b01_duel",
             "speaker `zhang_liang` looks like an officer id",
