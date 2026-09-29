@@ -614,8 +614,9 @@ pub const MUSIC_KEYS: [(&str, &str, usize); 10] = [
     ("boss", "MUSIC.R3", 16),
 ];
 
-/// The original's songs of [`MUSIC_KEYS`] rendered (a single pass each, the in-game music loops
-/// it) as `bgm/<key>.wav`, which stand in for the base pack's `bgm/<key>.ogg`.
+/// The original's songs of [`MUSIC_KEYS`] rendered as `bgm/<key>.wav` (one pass of each song's
+/// loop, which the game repeats; see [`crate::music::render`]), standing in for the base pack's
+/// `bgm/<key>.ogg`.
 fn convert_music(
     install: &InstallDir,
     options: &PackOptions,
@@ -658,10 +659,22 @@ fn convert_music(
                 seconds += r.samples.len() as f64 / f64::from(MUSIC_RATE);
                 out.write(&format!("bgm/{key}.wav"), &r.wav())?;
                 report.outputs += 1;
-                report.notes.push(format!(
-                    "{key}: {file} song {index}, {:.0} s",
-                    r.samples.len() as f64 / f64::from(MUSIC_RATE)
-                ));
+                let length = r.samples.len() as f64 / f64::from(MUSIC_RATE);
+                let how = match (r.seamless, r.intro_seconds > 0.0) {
+                    (true, false) => String::new(),
+                    (true, true) => format!(
+                        "; its loop only, the {:.1} s intro before it left out",
+                        r.intro_seconds
+                    ),
+                    (false, _) => {
+                        "; its tracks loop from different places, so it is played once from \
+                         the start and repeats with a seam"
+                            .into()
+                    }
+                };
+                report
+                    .notes
+                    .push(format!("{key}: {file} song {index}, {length:.0} s{how}"));
             }
             Err(e) => report
                 .errors

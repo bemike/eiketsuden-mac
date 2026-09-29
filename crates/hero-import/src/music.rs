@@ -17,6 +17,8 @@ const TIMER_TICK: f64 = 4096.0 / 1_193_182.0;
 pub const TRACKS: usize = 7;
 /// Operator register offset of each channel's modulator.
 const OPERATOR: [u8; TRACKS] = [0x00, 0x01, 0x02, 0x08, 0x09, 0x0a, 0x10];
+/// Bytes of an instrument.
+const PATCH_LEN: usize = 22;
 /// F-number of each semitone of an octave.
 const FNUM: [u16; 12] = [
     0x157, 0x16b, 0x181, 0x198, 0x1b0, 0x1ca, 0x1e5, 0x202, 0x220, 0x241, 0x263, 0x287,
@@ -48,9 +50,11 @@ pub fn songs(file: &[u8]) -> Result<Vec<&[u8]>, String> {
                 .ok_or_else(|| format!("song {i}: the table is cut short"))?;
             let offset = u32::from_le_bytes(entry[..4].try_into().unwrap()) as usize;
             let len = usize::from(u16::from_le_bytes(entry[4..].try_into().unwrap()));
-            let start = base + offset;
-            file.get(start..start + len)
-                .ok_or_else(|| format!("song {i}: {len} bytes at {start} run past the file"))
+            base.checked_add(offset)
+                .and_then(|start| file.get(start..start.checked_add(len)?))
+                .ok_or_else(|| {
+                    format!("song {i}: {len} bytes at {base} + {offset} run past the file")
+                })
         })
         .collect()
 }
@@ -60,6 +64,12 @@ pub fn songs(file: &[u8]) -> Result<Vec<&[u8]>, String> {
 pub struct Rendered {
     pub rate: u32,
     pub samples: Vec<i16>,
+    /// Whether the samples are one pass of the song's loop, to be repeated without a seam: every
+    /// track loops from the same step. Otherwise they are the song played once from its start.
+    pub seamless: bool,
+    /// Seconds the song plays before its loop starts (0 without a loop point); not in `samples`
+    /// when they are [`seamless`](Self::seamless).
+    pub intro_seconds: f64,
 }
 
 impl Rendered {
@@ -86,9 +96,50 @@ impl Rendered {
     }
 }
 
-/// Play `song` once (its loop point is not followed) and render it at `rate` Hz, at most
-/// `max_seconds` long.
+/// Song steps a second at most (tempo 255 overflows the step accumulator on every timer tick).
+const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
+
+/// Render `song` at `rate` Hz for a player that repeats the samples, as the driver loops a song
+/// (`FF` goes back to the track's `FE`, or to its start). When every track loops from the same
+/// step the samples are one pass of the loop, taken from the second time round so the releases
+/// of its end ring into its start as they do in the game; the intro before the loop point is left
+/// out ([`Rendered::intro_seconds`]). Otherwise the song is played once from its start. Longer
+/// than `max_seconds` is an error.
 pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, String> {
+    // The driver alone first: where the tracks end and where they loop to.
+    let mut probe = Driver::new(song)?;
+    if !probe.playing() {
+        return Err("no track has any events".into());
+    }
+    let max_steps = (max_seconds * MAX_STEPS_PER_SECOND) as u64;
+    let unfinished = |d: &Driver| {
+        d.channels
+            .iter()
+            .any(|c| c.pos.is_some() && c.first_end.is_none())
+    };
+    while unfinished(&probe) {
+        probe.timer_tick();
+        probe.writes.clear();
+        if let Some(e) = probe.broken.take() {
+            return Err(e);
+        }
+        if probe.steps > max_steps {
+            return Err(format!("does not reach its end within {max_seconds} s"));
+        }
+    }
+    let tracks: Vec<&Channel> = probe.channels.iter().filter(|c| c.pos.is_some()).collect();
+    let end = tracks.iter().filter_map(|c| c.first_end).max().unwrap_or(0);
+    let loop_step = tracks[0].loop_step;
+    let seamless = tracks
+        .iter()
+        .all(|c| c.first_end == Some(end) && c.loop_step == loop_step);
+    // Recorded from the step `start` is reached until `stop` is.
+    let (start, stop) = if seamless {
+        (end, end + (end - loop_step))
+    } else {
+        (0, end)
+    };
+
     let mut driver = Driver::new(song)?;
     let mut chip = Opl2::new();
     for (reg, value) in driver.writes.drain(..) {
@@ -101,39 +152,63 @@ pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, Stri
     let mut chip_time = 0.0f64; // chip samples until the next timer tick
     let mut out_time = 0.0f64; // chip samples until the next output sample
     let limit = (max_seconds * f64::from(rate)) as usize;
-    // A short tail after the last note lets the releases ring out.
-    let mut tail = (0.5 * RATE) as u32;
-    while samples.len() < limit {
+    let mut recording = start == 0;
+    // Timer ticks, the one of the first song step, and the time from it to the loop's first.
+    let mut ticks = 0u64;
+    let mut first_step = None;
+    let mut intro_seconds = None;
+    loop {
         if chip_time <= 0.0 {
-            if driver.playing() {
-                driver.timer_tick();
-                for (reg, value) in driver.writes.drain(..) {
-                    chip.write(reg, value);
+            driver.timer_tick();
+            ticks += 1;
+            for (reg, value) in driver.writes.drain(..) {
+                chip.write(reg, value);
+            }
+            if let Some(e) = driver.broken.take() {
+                return Err(e);
+            }
+            if first_step.is_none() && driver.steps >= 1 {
+                first_step = Some(ticks);
+            }
+            if let (None, Some(first)) = (intro_seconds, first_step) {
+                if driver.steps >= loop_step {
+                    intro_seconds = Some((ticks - first) as f64 * TIMER_TICK);
                 }
             }
-            chip_time += ticks_per_sample;
-        }
-        if !driver.playing() {
-            if tail == 0 {
+            if driver.steps >= stop {
                 break;
             }
-            tail -= 1;
+            if !recording && driver.steps >= start {
+                recording = true;
+                (acc, n, out_time) = (0, 0, 0.0);
+            }
+            chip_time += ticks_per_sample;
         }
         acc += i64::from(chip.sample());
         n += 1;
         chip_time -= 1.0;
         out_time -= 1.0;
         if out_time <= 0.0 {
-            // A box filter over the chip samples of one output sample, doubled (one channel at
-            // full level is 13 bits).
-            let v = (acc * 2 / i64::from(n.max(1))).clamp(-32768, 32767);
-            samples.push(v as i16);
+            if recording {
+                // A box filter over the chip samples of one output sample, doubled (one
+                // channel at full level is 13 bits).
+                let v = (acc * 2 / i64::from(n.max(1))).clamp(-32768, 32767);
+                samples.push(v as i16);
+                if samples.len() > limit {
+                    return Err(format!("longer than {max_seconds} s"));
+                }
+            }
             acc = 0;
             n = 0;
             out_time += step;
         }
     }
-    Ok(Rendered { rate, samples })
+    Ok(Rendered {
+        rate,
+        samples,
+        seamless,
+        intro_seconds: intro_seconds.unwrap_or(0.0),
+    })
 }
 
 /// One music channel of the driver (its 0x30-byte record).
@@ -141,8 +216,12 @@ pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, Stri
 struct Channel {
     /// Position of the next event, `None` once the track has ended.
     pos: Option<usize>,
-    /// `FE`: where the track loops to.
+    /// `FE`: where the track loops to (its start without one).
     loop_point: usize,
+    /// The song step that first reads the event at `loop_point`.
+    loop_step: u64,
+    /// The song step that first reaches the track's `FF`.
+    first_end: Option<u64>,
     /// Bit 0x80 keyed on, 0x40 sounding, 0x20 tie, 0x08 LFO requested (`F8`), 0x04 the
     /// instrument has an LFO, 0x02 slide set, 0x01 not started.
     flags: u8,
@@ -189,6 +268,10 @@ struct Driver<'a> {
     frame: u16,
     random: u16,
     bd: u8,
+    /// Song steps played.
+    steps: u64,
+    /// Why the song cannot be played on.
+    broken: Option<String>,
     writes: Vec<(u8, u8)>,
 }
 
@@ -208,6 +291,9 @@ impl<'a> Driver<'a> {
             }
             *ch = Channel {
                 pos: (offset != 0).then_some(offset),
+                loop_point: offset,
+                // The first step reads the first events.
+                loop_step: 1,
                 flags: 0x01,
                 last_note: 0xff,
                 duration: 0x30,
@@ -226,8 +312,10 @@ impl<'a> Driver<'a> {
             song_acc: 0,
             fx_acc: 0,
             frame: 0,
-            random: 0,
+            random: 0x037d,
             bd: 0,
+            steps: 0,
+            broken: None,
             writes: vec![(0x01, 0x20), (0x08, 0x40), (0xbd, 0x00)],
         };
         for c in 0..TRACKS {
@@ -263,6 +351,7 @@ impl<'a> Driver<'a> {
         let (acc, step) = self.song_acc.overflowing_add(self.tempo_inc);
         self.song_acc = acc;
         if step {
+            self.steps += 1;
             for c in 0..TRACKS {
                 self.step(c);
             }
@@ -484,8 +573,17 @@ impl<'a> Driver<'a> {
                 0xf4 => {
                     let rel = i16::from_le_bytes([self.byte(next), self.byte(next + 1)]);
                     next += 2;
-                    let p = (pos as i64 + i64::from(rel)) as usize;
-                    self.load_patch(c, p);
+                    let p = pos as i64 + i64::from(rel);
+                    match usize::try_from(p) {
+                        Ok(p) if p + PATCH_LEN <= self.song.len() => self.load_patch(c, p),
+                        _ => {
+                            self.broken = Some(format!(
+                                "track {c}: the instrument at {p} is outside the song"
+                            ));
+                            self.channels[c].pos = None;
+                            return;
+                        }
+                    }
                 }
                 0xf6 | 0xf7 => {
                     let (depth, time) = (self.byte(next) as i8, self.byte(next + 1));
@@ -522,16 +620,26 @@ impl<'a> Driver<'a> {
                         next = chan.repeat_exit;
                     }
                 }
-                0xfe => self.channels[c].loop_point = next,
+                0xfe => {
+                    let steps = self.steps;
+                    let chan = &mut self.channels[c];
+                    chan.loop_point = next;
+                    if chan.first_end.is_none() {
+                        chan.loop_step = steps;
+                    }
+                }
                 0xff => {
-                    // Played once: the loop point is not followed.
-                    self.key_off(c);
-                    self.channels[c].pos = None;
-                    return;
+                    let steps = self.steps;
+                    let chan = &mut self.channels[c];
+                    chan.first_end.get_or_insert(steps);
+                    next = chan.loop_point;
                 }
             }
             self.channels[c].pos = Some(next);
         }
+        self.broken = Some(format!(
+            "track {c}: 100000 events without a note (a loop without notes?)"
+        ));
         self.channels[c].pos = None;
     }
 
@@ -583,12 +691,10 @@ impl<'a> Driver<'a> {
         chan.lfo_value = 0;
         chan.lfo_dir = 1;
         chan.flags |= 0x02;
-        if chan.flags & 0xc0 != 0 {
-            let freq = chan.freq;
-            self.write_freq(c, freq);
-            self.channels[c].amp = [0, 0];
-            self.apply_volume(c);
-        }
+        let freq = chan.freq;
+        self.write_freq(c, freq);
+        self.channels[c].amp = [0, 0];
+        self.apply_volume(c);
     }
 
     /// A note or rest (`0xd31`).
@@ -713,11 +819,9 @@ impl<'a> Driver<'a> {
             3 => {
                 let chan = &self.channels[c];
                 let period = (0x7fff / u32::from(chan.lfo_rate.max(1))) | 1;
-                if u32::from(chan.lfo_count) % period == 0 {
-                    self.random = ((i32::from(self.random) * 0x383) % 0x7fff) as u16;
-                    if self.random == 0 {
-                        self.random = 1;
-                    }
+                // Signed arithmetic, as the driver's `imul` / `idiv`.
+                if i32::from(chan.lfo_count as i16) % period as i32 == 0 {
+                    self.random = ((i32::from(self.random as i16) * 0x383) % 0x7fff) as i16 as u16;
                 }
                 i32::from(self.random as i16)
             }
@@ -833,7 +937,8 @@ impl<'a> Driver<'a> {
                         true
                     }
                     d => {
-                        chan.lfo_count = (u16::from(d) - 1) * 4;
+                        // The driver counts this frame too (it goes on to the count's `inc`).
+                        chan.lfo_count = (u16::from(d) - 1) * 4 + 1;
                         return;
                     }
                 }
@@ -854,7 +959,8 @@ impl<'a> Driver<'a> {
                         0
                     }
                 }
-                2 => value.abs(),
+                // The triangle's magnitude doubled (`shl ax, 1` after it in the driver).
+                2 => value.abs() * 2,
                 _ => value,
             };
             let amp_depth = self.byte(p + 0x11) as i8;
@@ -879,8 +985,8 @@ impl<'a> Driver<'a> {
 mod tests {
     use super::*;
 
-    /// A song: one track with an instrument, a volume, two notes and the end.
-    fn song() -> Vec<u8> {
+    /// A song of `tracks`, each given its events after an instrument and a volume.
+    fn song_of(tracks: &[&[u8]]) -> Vec<u8> {
         let mut s = vec![0u8; 14];
         let patch_at = s.len();
         // AM/VIB/EG/KSR/MULT ×2, FB/CON, waves ×2, TL ×2, AR/DR ×2, SL/RR ×2, transpose, LFO 0.
@@ -888,15 +994,28 @@ mod tests {
             0x21, 0x21, 0x01, 0, 0, 0x3f, 0x00, 0xf0, 0xf0, 0x0f, 0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0,
         ]);
-        let track = s.len();
-        s[0..2].copy_from_slice(&(track as u16).to_le_bytes());
-        let rel = (patch_at as i64 - track as i64) as i16;
-        s.push(0xf4);
-        s.extend(rel.to_le_bytes());
-        s.extend([0xf0, 0x00]);
-        // A4 (note 57) for 48 steps, then a rest, then the end.
-        s.extend([57, 48, 40, 0x00, 24, 0, 0xff]);
+        for (i, events) in tracks.iter().enumerate() {
+            let track = s.len();
+            s[i * 2..i * 2 + 2].copy_from_slice(&(track as u16).to_le_bytes());
+            let rel = (patch_at as i64 - track as i64) as i16;
+            s.push(0xf4);
+            s.extend(rel.to_le_bytes());
+            s.extend([0xf0, 0x00]);
+            s.extend(*events);
+        }
         s
+    }
+
+    /// A song: one track with an instrument, a volume, two notes and the end.
+    fn song() -> Vec<u8> {
+        // A4 (note 57) for 48 steps, then a rest, then the end.
+        song_of(&[&[57, 48, 40, 0x00, 24, 0, 0xff]])
+    }
+
+    /// Crossings of zero upwards a second in the first `seconds` of `samples`.
+    fn pitch(samples: &[i16], seconds: f64) -> f64 {
+        let tone = &samples[..(seconds * 22050.0) as usize];
+        tone.windows(2).filter(|w| w[0] < 0 && w[1] >= 0).count() as f64 / seconds
     }
 
     #[test]
@@ -915,13 +1034,13 @@ mod tests {
     #[test]
     fn a_song_plays_its_notes_for_their_steps() {
         let rendered = render(&song(), 22050, 10.0).unwrap();
-        // 72 steps at tempo 120 (≈ 96 a second) and a short tail.
+        // The whole song loops: 72 steps at tempo 120 (≈ 96 a second), no intro.
+        assert!(rendered.seamless);
+        assert_eq!(rendered.intro_seconds, 0.0);
         let seconds = rendered.samples.len() as f64 / 22050.0;
-        assert!((0.8..1.4).contains(&seconds), "{seconds}");
+        assert!((0.72..0.78).contains(&seconds), "{seconds}");
         // A4 sounds for 40 of the note's 48 steps: about 0.42 s of a 440 Hz tone.
-        let tone = &rendered.samples[..(0.3 * 22050.0) as usize];
-        let crossings = tone.windows(2).filter(|w| w[0] < 0 && w[1] >= 0).count();
-        let hz = crossings as f64 / 0.3;
+        let hz = pitch(&rendered.samples, 0.3);
         assert!((420.0..460.0).contains(&hz), "{hz}");
         // Silent at the end.
         let end = &rendered.samples[rendered.samples.len() - 200..];
@@ -948,10 +1067,56 @@ mod tests {
     }
 
     #[test]
+    fn the_loop_is_rendered_without_its_intro() {
+        // A4 for 24 steps, the loop point, C5 for 48 steps, the end.
+        let rendered = render(
+            &song_of(&[&[57, 24, 20, 0xfe, 60, 48, 40, 0xff]]),
+            22050,
+            10.0,
+        )
+        .unwrap();
+        assert!(rendered.seamless);
+        assert!(
+            (0.23..0.27).contains(&rendered.intro_seconds),
+            "{}",
+            rendered.intro_seconds
+        );
+        let seconds = rendered.samples.len() as f64 / 22050.0;
+        assert!((0.48..0.52).contains(&seconds), "{seconds}");
+        // The samples start with the loop's C5 (523 Hz), not the intro's A4.
+        let hz = pitch(&rendered.samples, 0.3);
+        assert!((500.0..545.0).contains(&hz), "{hz}");
+    }
+
+    #[test]
+    fn tracks_looping_from_different_steps_play_once() {
+        let rendered = render(
+            &song_of(&[&[57, 24, 20, 0xfe, 60, 48, 40, 0xff], &[45, 72, 60, 0xff]]),
+            22050,
+            10.0,
+        )
+        .unwrap();
+        assert!(!rendered.seamless);
+        let seconds = rendered.samples.len() as f64 / 22050.0;
+        assert!((0.72..0.78).contains(&seconds), "{seconds}");
+    }
+
+    #[test]
     fn broken_songs_are_errors() {
         assert!(render(&[0; 4], 22050, 1.0).is_err());
         let mut s = vec![0u8; 14];
         s[0..2].copy_from_slice(&100u16.to_le_bytes());
         assert!(render(&s, 22050, 1.0).unwrap_err().contains("track 0"));
+        // An instrument before the song's start.
+        let mut s = song();
+        s[37] = 0x00;
+        s[38] = 0x80;
+        assert!(render(&s, 22050, 1.0).unwrap_err().contains("instrument"));
+        // A loop without notes.
+        let e = render(&song_of(&[&[0xfe, 0xff]]), 22050, 1.0).unwrap_err();
+        assert!(e.contains("without a note"), "{e}");
+        // Too long for the limit.
+        let e = render(&song(), 22050, 0.5).unwrap_err();
+        assert!(e.contains("longer than"), "{e}");
     }
 }

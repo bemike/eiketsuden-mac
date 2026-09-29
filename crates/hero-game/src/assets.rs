@@ -861,6 +861,8 @@ mod tests {
             samples: (0..2205)
                 .map(|i| ((i % 50) * 500 - 12_000) as i16)
                 .collect(),
+            seamless: true,
+            intro_seconds: 0.0,
         };
         let bytes = rendered.wav();
         assert_eq!(prepare_sound(bytes.clone()), Ok(bytes.clone()));

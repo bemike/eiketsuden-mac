@@ -14,9 +14,10 @@ pub const RATE: f64 = 3_579_545.0 / 72.0;
 /// Frequency multipliers ×2 (0.5, 1, 2 … 15).
 const MULT2: [u32; 16] = [1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 20, 24, 24, 30, 30];
 
-/// Key scale levels at block 7 in 1/8 dB, by the top four bits of the F-number (6 dB/octave).
-const KSL_DB8: [u32; 16] = [
-    0, 72, 96, 111, 120, 129, 135, 141, 144, 150, 153, 156, 159, 162, 165, 168,
+/// Key scale level base by the top four bits of the F-number, in 3/4 dB (×4 is the
+/// attenuation at block 8, 6 dB an octave; the Nuked OPL3 project's `kslrom`).
+const KSL_ROM: [i32; 16] = [
+    0, 32, 40, 45, 48, 51, 53, 55, 56, 58, 59, 60, 61, 62, 63, 64,
 ];
 
 /// Envelope increments: eight steps per pattern (see [`eg_step`]).
@@ -317,15 +318,14 @@ impl Opl2 {
         let ksl = if op.ksl == 0 {
             0
         } else {
-            let db8 = i32::try_from(KSL_DB8[usize::from(fnum >> 6)]).unwrap_or(0)
-                - 48 * (7 - i32::from(block));
-            let db8 = db8.max(0) as u32;
-            // 1/8 dB → 3/16 dB steps, at 3, 1.5 or 6 dB/octave.
-            let steps = db8 * 2 / 3;
+            // In 3/16 dB steps at 6 dB an octave (up to 42 dB at block 7); the register's
+            // settings 1, 2 and 3 take a half, a quarter and all of it.
+            let full =
+                (KSL_ROM[usize::from(fnum >> 6)] * 4 - (8 - i32::from(block)) * 32).max(0) as u32;
             match op.ksl {
-                1 => steps >> 1,
-                2 => steps >> 2,
-                _ => steps,
+                1 => full >> 1,
+                2 => full >> 2,
+                _ => full,
             }
         };
         let att = u32::from(op.env) + u32::from(op.tl) * 4 + ksl + if op.am { tremolo } else { 0 };
@@ -508,5 +508,27 @@ mod tests {
         let (a, b) = (peak(&mut loud), peak(&mut quiet));
         let ratio = f64::from(a) / f64::from(b);
         assert!((1.9..2.1).contains(&ratio), "{a} / {b}");
+    }
+
+    #[test]
+    fn key_scaling_lowers_high_notes() {
+        let peak = |ksl: u8, fnum: u16, block: u8| {
+            let mut chip = Opl2::new();
+            sine(&mut chip, fnum, block);
+            chip.write(0x43, ksl << 6);
+            (0..5000).map(|_| chip.sample().abs()).max().unwrap()
+        };
+        let ratio = |ksl: u8, fnum: u16, block: u8| {
+            f64::from(peak(0, fnum, block)) / f64::from(peak(ksl, fnum, block))
+        };
+        // F-number 0x200 at block 4: 18 dB with setting 3, half of it with 1, a quarter with 2.
+        let full = ratio(3, 0x200, 4);
+        assert!((7.4..8.5).contains(&full), "{full}");
+        let half = ratio(1, 0x200, 4);
+        assert!((2.6..3.0).contains(&half), "{half}");
+        let quarter = ratio(2, 0x200, 4);
+        assert!((1.6..1.8).contains(&quarter), "{quarter}");
+        // Low notes are not lowered.
+        assert_eq!(ratio(3, 0x200, 1), 1.0);
     }
 }
