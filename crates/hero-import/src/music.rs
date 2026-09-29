@@ -122,8 +122,20 @@ pub fn render_cancellable(
     max_seconds: f64,
     cancel: &AtomicBool,
 ) -> Result<Rendered, String> {
-    let cancelled = || {
-        if cancel.load(Ordering::Relaxed) {
+    render_checking(song, rate, max_seconds, &mut || {
+        cancel.load(Ordering::Relaxed)
+    })
+}
+
+/// [`render_cancellable`] asking `cancelled` at every timer tick.
+fn render_checking(
+    song: &[u8],
+    rate: u32,
+    max_seconds: f64,
+    cancelled: &mut dyn FnMut() -> bool,
+) -> Result<Rendered, String> {
+    let mut cancelled = || {
+        if cancelled() {
             Err(CANCELLED.to_string())
         } else {
             Ok(())
@@ -1089,6 +1101,21 @@ mod tests {
         );
         cancel.store(false, Ordering::Relaxed);
         assert!(render_cancellable(&song(), 22050, 10.0, &cancel).is_ok());
+        // Cancelled while the samples are rendered (the last check of a whole render is in
+        // that loop, after the driver's first pass).
+        let mut checks = 0;
+        render_checking(&song(), 22050, 10.0, &mut || {
+            checks += 1;
+            false
+        })
+        .unwrap();
+        let mut asked = 0;
+        let cancelled = render_checking(&song(), 22050, 10.0, &mut || {
+            asked += 1;
+            asked == checks
+        });
+        assert_eq!(cancelled.unwrap_err(), CANCELLED);
+        assert_eq!(asked, checks);
     }
 
     #[test]

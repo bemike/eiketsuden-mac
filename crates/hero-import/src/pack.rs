@@ -793,9 +793,9 @@ fn render_songs(
 
 /// Render the original's songs of [`MUSIC_KEYS`] in the install at `source` one by one, calling
 /// `each` with the key and its `bgm/<key>.wav` file (or why it could not be made); `each` returns
-/// `false` to stop between songs, setting `cancel` (from another thread) stops within a song. For
-/// the game, which converts without music ([`PackOptions::music`]) and adds
-/// the songs while it runs.
+/// `false` to stop between songs, setting `cancel` (from another thread) stops within a song.
+/// For the game, which converts without music ([`PackOptions::music`]) and adds the songs while
+/// it runs.
 pub fn render_music(
     source: &Path,
     cancel: &AtomicBool,
@@ -823,6 +823,12 @@ pub fn render_music(
         Err("no music files in the install".into())
     }
 }
+
+/// Note of a song whose tracks loop from different places ([`crate::music::render`]).
+const SEAMED: &str = concat!(
+    "; its tracks loop from different places, so it is played once from the start and",
+    " repeats with a seam"
+);
 
 /// The original's songs of [`MUSIC_KEYS`] rendered as `bgm/<key>.wav` (one pass of each song's
 /// loop, which the game repeats; see [`crate::music::render`]), standing in for the base pack's
@@ -855,14 +861,13 @@ fn convert_music(
                     let length = r.samples.len() as f64 / f64::from(MUSIC_RATE);
                     seconds += length;
                     let how = match (r.seamless, r.intro_seconds > 0.0) {
-                    (true, false) => String::new(),
-                    (true, true) => format!(
-                        "; its loop only, the {:.1} s intro before it left out",
-                        r.intro_seconds
-                    ),
-                    (false, _) => "; its tracks loop from different places, so it is played once from the start and repeats with a seam"
-                        .into(),
-                };
+                        (true, false) => String::new(),
+                        (true, true) => format!(
+                            "; its loop only, the {:.1} s intro before it left out",
+                            r.intro_seconds
+                        ),
+                        (false, _) => SEAMED.into(),
+                    };
                     notes.push(format!("{key}: {file} song {index}, {length:.0} s{how}"));
                     written.push((format!("bgm/{key}.wav"), r.wav()));
                 }
