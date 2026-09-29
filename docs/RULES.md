@@ -165,8 +165,10 @@ strategies impossible and water strategies deal +25%. Battles may override the c
   `spawn` places every hidden unit of the group; if its tile is occupied or impassable for it, the nearest free
   passable tile (by manhattan distance, then row-major) is used.
 * **Victory** when any `victory` condition holds; **defeat** when any `defeat` condition holds, the lord retreats, or
-  the turn limit passes. Checked after every action and phase change; victory is checked before defeat, except that
-  the lord retreating always loses. On victory: `reward_gold` is added to `gold_found`, bonus EXP is granted,
+  the turn limit passes. A battle fought without the lord (the lord in `deploy.forbidden`: another troop's battle) is
+  also lost when every player unit on the map has retreated. Checked after every action and phase change; victory is
+  checked before defeat, except that the lord retreating (and a lordless troop having retreated) always loses, before
+  the events run. On victory: `reward_gold` is added to `gold_found`, bonus EXP is granted,
   `Victory` is emitted.
 * `defeat_all` counts only enemies that are on the map (hidden reinforcements do not count).
 * The bonus objective is checked like a victory condition; when it becomes true `bonus_done` is set and
@@ -188,7 +190,8 @@ strategies impossible and water strategies deal +25%. Battles may override the c
 ## 11. Retreat
 
 At 0 HP a unit retreats (`Retreated`) and leaves the map; it is not dead and fights again in the next battle.
-The lord retreating loses the battle immediately.
+The lord retreating loses the battle immediately; so does, in a battle without the lord, the last player unit on
+the map retreating.
 
 ## 12. AI
 

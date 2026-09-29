@@ -998,6 +998,23 @@ mod tests {
         };
         assert!(scene("c3_s4_b0_before").contains("@join guan_yu\n"));
         assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
+        // Chapter 4's detachment comes back as Xuchang's setup says.
+        assert!(scene("c4_s1_b6_before").contains("@join zhao_yun\n"));
+        // Saying yes to join ends the talk (no refusal after it).
+        assert!(story.contains("@goto rend_"), "{story}");
+        // A battle's events test the story's flags when it is fought (Xuchang's turn 12).
+        assert!(pack.battles["c4_s1_b6"]
+            .events
+            .iter()
+            .any(|e| e.when.iter().any(|c| c.flag == "orig_f89")));
+        // An officer the story has not brought in yet fights as an ally, not deployed.
+        let runan = &pack.battles["c2_s0_b16"];
+        assert!(!runan.deploy.required.iter().any(|o| o == "liu_pi"));
+        assert!(runan
+            .units
+            .iter()
+            .any(|u| u.officer.as_deref() == Some("liu_pi")
+                && u.side == hero_core::battledef::Side::Ally));
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

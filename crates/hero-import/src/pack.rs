@@ -1822,8 +1822,6 @@ pub const CHAPTER_FILES: [usize; 3] = [2, 3, 4];
 /// after it, instead of the node it went on to.
 pub const BASE_CAMPAIGN_LAST_BATTLE: &str = "c1_xuzhou2";
 
-/// A part of a chapter past the base campaign: its file, scene and part, and for a story its
-/// scene id and converted scene.
 /// Record kind of a person one talks to (FORMATS §13.2).
 const TALK_RECORD: u8 = 3;
 
@@ -1837,6 +1835,8 @@ type BattleJob<'a> = (
     Option<usize>,
 );
 
+/// A part of a chapter past the base campaign: its file, scene and part, and for a story its
+/// scene id and converted scene.
 type ChapterPart = (
     usize,
     usize,
@@ -2036,6 +2036,22 @@ fn convert_battles(
                         .filter_map(|c| c.operands.get("flag"))
                         .map(|f| f as u8),
                 );
+                // Officers the chapters bring into the army at some point: the others a
+                // battle's setup assigns are enemies.
+                let joining = scene.instructions().filter_map(|c| match c.mnemonic {
+                    "set_allegiance" if c.operands.get("army") == Some(0) => {
+                        c.operands.get("person")
+                    }
+                    "set_country" if c.operands.get("country") == Some(0) => {
+                        c.operands.get("person")
+                    }
+                    _ => None,
+                });
+                for person in joining {
+                    if let Some(id) = names.officers.get(&person) {
+                        names.player_officers.insert(id.clone());
+                    }
+                }
             }
         }
     }

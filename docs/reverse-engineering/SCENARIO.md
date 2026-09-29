@@ -96,7 +96,7 @@ hero-tools original extract <원작 GAME 폴더> --out <출력 폴더>
 | 소속 0 / 그 밖 | `@join` / `@away` |
 | 전투 블록 | 전투(`c<파일>_s<장면>_b<블록>`), 승리 스크립트와 에필로그는 전투의 `outro` |
 | 원작 플래그 `set_flag`·`if_flags` | 캠페인 플래그 `orig_f<번호>`(`@set`·`@if`, 장 전투의 이벤트도 같은 이름) |
-| 장소 레코드로 다른 블록에 감(마을 사이) | "어디로 갈까" 선택지(목적지 블록의 첫 자막이 이름) |
+| 장소 레코드로 다른 블록에 감(마을 사이) | "어디로 갈까" 선택지(목적지에서 만날 사람의 이름) |
 | 전투 중 설득 `set_country` | 플래그 `orig_join_<무장>` → 전투 outro의 `@join` |
 | 지고도 이어 가는 전투(`battle_lost`에 게임 오버 없음) | 캠페인 `on_defeat` → 패배 장면 → 다음 블록 |
 | `ending n` | 플래그 `orig_ending` → 엔딩 노드 `orig_ending_<n>` |

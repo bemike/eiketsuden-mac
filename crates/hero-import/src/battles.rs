@@ -1358,7 +1358,16 @@ impl EventWriter<'_, '_> {
                                 actions.push(spawn);
                             }
                         }
-                        Some(_) => {}
+                        Some(_) => {
+                            let note = format!(
+                                "record {record}: {} arrives without a unit of their own in the \
+                                 battle (the army's officer): only the scene is converted",
+                                self.names.person_label(person)
+                            );
+                            if !self.notes.contains(&note) {
+                                self.notes.push(note);
+                            }
+                        }
                         None => self.notes.push(format!(
                             "record {record}: {} joins but has no unit in the battle",
                             self.names.person_label(person)
