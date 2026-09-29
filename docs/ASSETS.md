@@ -239,7 +239,7 @@ in the spirit of the original PC version), so a pack only supplies:
 | `title.png` | title screen artwork (16:9, recommended 960×540; covers the canvas like drama backgrounds) |
 | `flags.png` | 16×16 animated banner, 4 frames horizontally, per side in rows: player, ally, enemy (drawn beside commanders) |
 
-## Audio — `bgm/<key>.ogg`, `sfx/<key>.(ogg|wav)`
+## Audio — `bgm/<key>.(ogg|wav)`, `sfx/<key>.(ogg|wav)`
 
 BGM keys used by the engine and base pack: `title`, `peace`, `tension`, `sad`, `camp`, `battle`, `enemy`,
 `boss`, `victory` (jingle), `defeat` (jingle), `ending`.

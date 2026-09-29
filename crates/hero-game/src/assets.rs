@@ -415,7 +415,8 @@ impl Media {
             // is a 404 in the browser console.
             vec![format!("sfx/{name}.wav"), format!("sfx/{name}.ogg")]
         } else {
-            vec![format!("{key}.ogg")]
+            // Music is Ogg Vorbis, or WAV (the original mode renders the original's songs).
+            vec![format!("{key}.ogg"), format!("{key}.wav")]
         };
         inner.sounds.insert(key.to_string(), Slot::Loading);
         inner.jobs.push_back(Job::new(
@@ -850,6 +851,24 @@ mod tests {
         ] {
             assert_eq!(prepare_sound(bytes.clone()), Ok(bytes));
         }
+    }
+
+    #[test]
+    fn the_original_modes_rendered_music_plays() {
+        // The WAV the original-mode converter writes for the original's songs.
+        let rendered = hero_import::music::Rendered {
+            rate: hero_import::pack::MUSIC_RATE,
+            samples: (0..2205)
+                .map(|i| ((i % 50) * 500 - 12_000) as i16)
+                .collect(),
+            seamless: true,
+            intro_seconds: 0.0,
+        };
+        let bytes = rendered.wav();
+        assert_eq!(prepare_sound(bytes.clone()), Ok(bytes.clone()));
+        assert!(!quad_snd_panics(&bytes));
+        let (channels, rate, samples) = decode(&bytes);
+        assert_eq!((channels, rate, samples.len()), (1, 22_050, 2205));
     }
 
     #[test]

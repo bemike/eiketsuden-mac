@@ -258,7 +258,11 @@ pub fn run_pack(
     };
     let parent = crate::load_pack(&base)?;
     let extends = relative_dir(out, &base)?;
-    let options = PackOptions::for_pack(&parent, extends, edition);
+    let options = PackOptions {
+        // Written once, so the music (several seconds to render) is worth it here.
+        music: true,
+        ..PackOptions::for_pack(&parent, extends, edition)
+    };
     let index = pack::write_pack(dir, out, &options).map_err(|e| e.to_string())?;
     print!("{}", render_pack(dir, out, &index));
     let written = crate::load_pack(out)?;
@@ -715,6 +719,15 @@ mod tests {
         let frame = pack.manifest.presentation.battle_frame.as_ref().unwrap();
         assert_eq!(frame.image, hero_import::pack::BATTLE_FRAME);
         assert!(out.join(format!("gfx/{}.png", frame.image)).is_file());
+        // The original's songs stand in for the base pack's music (rendered by the CLI).
+        assert_eq!(
+            json["assets"]["music"]["status"], "extracted",
+            "{:#?}",
+            json["assets"]["music"]
+        );
+        for (key, _, _) in hero_import::pack::MUSIC_KEYS {
+            assert!(out.join(format!("bgm/{key}.wav")).is_file(), "{key}");
+        }
         let camp = pack.manifest.presentation.camp_frame.as_ref().unwrap();
         assert_eq!(camp.image, hero_import::pack::CAMP_FRAME);
         assert!(out.join(format!("gfx/{}.png", camp.image)).is_file());
