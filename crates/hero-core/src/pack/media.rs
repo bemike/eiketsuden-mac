@@ -9,7 +9,7 @@ use crate::media_index::{
     self, FxFile, TilesetFile, UnitsFile, ANY_CLASS, DEFAULT_TILE, FX_FILE as FX_TOML,
     TILESET_FILE as TILES_TOML, UNITS_FILE as UNITS_TOML,
 };
-use crate::script::Cmd;
+use crate::script::{Cmd, DUEL_TERRAIN};
 use serde::de::DeserializeOwned;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -300,7 +300,23 @@ impl MediaCheck {
                         "picture",
                     ),
                     Cmd::Duel { left, right, bg } => {
-                        if let Some(bg) = bg {
+                        // The terrain's background is looked up in the battle (and may be
+                        // missing: a plain stage); a picture named after the word is never shown.
+                        let hidden = format!("gfx/duel/{DUEL_TERRAIN}.png");
+                        if bg.as_deref() == Some(DUEL_TERRAIN)
+                            && self.exists(&hidden)
+                            && self.reported.insert(hidden.clone())
+                        {
+                            self.push(
+                                Severity::Warning,
+                                &ctx,
+                                format!(
+                                    "{hidden} is never shown: `@duel ... {DUEL_TERRAIN}` is the \
+                                     background of the terrain under the fighters"
+                                ),
+                            );
+                        }
+                        if let Some(bg) = bg.as_ref().filter(|b| *b != DUEL_TERRAIN) {
                             self.require(
                                 Severity::Error,
                                 &ctx,

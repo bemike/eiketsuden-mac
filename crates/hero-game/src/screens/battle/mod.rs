@@ -734,7 +734,8 @@ impl BattleScreen {
                             session.campaign.merge_battle_flags(&self.state);
                         }
                         self.waiting = Some(Waiting::Drama);
-                        out = Transition::push(DramaScreen::overlay(ctx, &scene));
+                        let terrain = officer_terrain(&self.pack, &self.state);
+                        out = Transition::push(DramaScreen::battle_overlay(ctx, &scene, terrain));
                     } else {
                         macroquad::logging::warn!("battle drama scene `{}` not found", scene);
                         self.events.resume();
@@ -1877,10 +1878,72 @@ impl Screen for BattleScreen {
     }
 }
 
+/// The terrain id under each officer of `state` on the map, for the duels of its scenes
+/// (`@duel ... terrain`). Retreated officers count at their last cell, after the ones on the
+/// map: a duel's loser retreats in the actions of the same event, which have all been applied
+/// when its scene plays (one that retreated turns earlier counts too, a case the converted
+/// duels do not have).
+fn officer_terrain(pack: &Pack, state: &BattleState) -> BTreeMap<String, String> {
+    let mut terrain = BTreeMap::new();
+    for on_map in [true, false] {
+        for u in &state.units {
+            let wanted = if on_map {
+                u.is_active()
+            } else {
+                u.state == hero_core::battle::UnitState::Retreated
+            };
+            let (Some(officer), true) = (u.officer.as_ref(), wanted) else {
+                continue;
+            };
+            if let Some(t) = state.terrain_at(pack, u.pos) {
+                terrain
+                    .entry(officer.to_string())
+                    .or_insert_with(|| t.id.to_string());
+            }
+        }
+    }
+    terrain
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::screens::drama::OVERLAY_TOOL_TOP;
+    use hero_core::battle::UnitState;
+
+    #[test]
+    fn duels_see_the_terrain_under_the_officers_and_under_those_just_gone() {
+        let (pack, mut state) = testutil::sishui();
+        let officers: Vec<usize> = state
+            .units
+            .iter()
+            .filter(|u| u.officer.is_some() && u.is_active())
+            .map(|u| u.id)
+            .take(2)
+            .collect();
+        assert_eq!(officers.len(), 2);
+        let names: Vec<String> = officers
+            .iter()
+            .map(|&id| state.units[id].officer.as_ref().unwrap().to_string())
+            .collect();
+        let name = |id: usize| names[officers.iter().position(|&o| o == id).unwrap()].clone();
+        let under = |state: &BattleState, id: usize| {
+            state
+                .terrain_at(&pack, state.units[id].pos)
+                .unwrap()
+                .id
+                .to_string()
+        };
+        let map = officer_terrain(&pack, &state);
+        assert_eq!(map[&name(officers[0])], under(&state, officers[0]));
+        // Retreated by the event that plays the duel: still at their last cell.
+        state.units[officers[1]].state = UnitState::Retreated;
+        let map = officer_terrain(&pack, &state);
+        assert_eq!(map[&name(officers[1])], under(&state, officers[1]));
+        // Not yet on the map: not there.
+        state.units[officers[1]].state = UnitState::Hidden;
+        assert!(!officer_terrain(&pack, &state).contains_key(&name(officers[1])));
+    }
 
     /// The default (and smallest allowed), VGA and the largest allowed canvas.
     const CANVASES: [Vec2; 3] = [

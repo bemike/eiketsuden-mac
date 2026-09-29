@@ -759,8 +759,9 @@ const RUN: u8 = 0;
 const BATTLE_WON: u8 = 7;
 const BATTLE_LOST: u8 = 8;
 const UNIT_IN_AREA: u8 = 11;
-/// Background of the converted duels (`gfx/duel/field.png`: the plain's sky and ground).
-pub const DUEL_BACKGROUND: &str = "field";
+/// `@duel` background of the converted duels: the terrain under the fighters, as the original
+/// picks it (`pack::duel_pictures` writes one per terrain).
+pub const DUEL_BACKGROUND: &str = hero_core::script::DUEL_TERRAIN;
 
 /// The `@duel_act` moves of a `duel_action` code (MAIN.EXE's duel routine, FORMATS §13.6): 0, 1,
 /// 6 and 7 charge and strike (attack frames 4, 6, 4, 6), 2 strikes with frames 8, 3 falls, 4
@@ -3217,7 +3218,7 @@ item = "wine"
             c.drama,
             "\n== orig_b_9\n@narr 다리가 내려왔다.\n@hide all\n\
              \n== orig_b_10\nguan_yu: 첫 줄\n    둘째 줄\nboss: 덤벼라\n전령갑: 큰일입니다\n\
-             @duel guan_yu boss field\n@duel_act left charge\n@duel_act left strike 4\n\
+             @duel guan_yu boss terrain\n@duel_act left charge\n@duel_act left strike 4\n\
              @duel_act right flee\n@duel_end\n@hide all\n"
         );
         let scenes = hero_core::script::parse_drama("t", &c.drama).unwrap();

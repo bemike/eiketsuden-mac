@@ -936,12 +936,38 @@ mod tests {
         assert!(pack.scene("orig_c1_xuzhou2_4").is_some());
         // Xiapi's duels are duel scenes with the original's riders.
         assert!(
-            drama.contains("@duel liu_bei wei_xu field\n")
+            drama.contains("@duel liu_bei wei_xu terrain\n")
                 && drama.contains("@duel_act right flee\n"),
             "{drama}"
         );
-        for key in ["left", "right", "field", "guan_yu", "zhang_fei", "lu_bu"] {
+        for key in ["left", "right", "guan_yu", "zhang_fei", "lu_bu"] {
             assert!(out.join(format!("gfx/duel/{key}.png")).is_file(), "{key}");
+        }
+        // A background for the terrain of every cell of the battles (the original picks it by
+        // the terrain the fighters stand on).
+        for battle in pack.battles.values() {
+            let map = hero_core::map::BattleMap::parse(
+                &battle.map.rows,
+                &battle.map.legend,
+                &pack.terrain,
+            )
+            .unwrap();
+            // And the terrain events change cells to (a gate opened, a bridge lowered).
+            let changed = battle
+                .events
+                .iter()
+                .flat_map(|e| &e.actions)
+                .filter_map(|a| match a {
+                    hero_core::battledef::EventAction::SetTerrain { terrain, .. } => Some(terrain),
+                    _ => None,
+                });
+            for t in map.terrain_ids.iter().chain(changed) {
+                assert!(
+                    out.join(format!("gfx/duel/terrain_{t}.png")).is_file(),
+                    "{} {t}",
+                    battle.id
+                );
+            }
         }
         // Chapter 2 (SNR2): its battles and its story continue the base campaign after Xuzhou,
         // and a wrong answer at Yuan Shao's hall ends the game. Xinye's siege (block 3), which

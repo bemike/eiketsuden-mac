@@ -104,7 +104,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 16: the event pictures (`gfx/pictures/`, [`picture_key`]) and the stories' `@picture`.
 /// 17: `base_fingerprint` in the index ([`stale_pack`]).
 /// 18: the game rules in `rules` ([`GAME_RULES`], the original strategy formulas).
-pub const PACK_FORMAT_VERSION: u32 = 18;
+/// 19: duel backgrounds per terrain (`gfx/duel/terrain_<id>.png`, `@duel … terrain`).
+pub const PACK_FORMAT_VERSION: u32 = 19;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -3088,8 +3089,6 @@ pub const DUEL_SIDE_SETS: [(&str, usize); 2] = [("left", 0), ("right", 1)];
 /// `BAKDATA` persons with a rider set of their own (MAIN.EXE's table at DS 0x5048 for persons
 /// 1, 2 and 4, and two persons it tests by number): `(person, set)`.
 pub const DUEL_RIDERS: [(u16, usize); 5] = [(1, 2), (2, 3), (4, 4), (372, 2), (373, 3)];
-/// Terrain code whose sky and ground strips are the duel background ([`battles::DUEL_BACKGROUND`]).
-pub const DUEL_TERRAIN: usize = 0;
 /// Size of the duel stage in pixels (the battle frame's map hole: 26 × 13 cells).
 pub const DUEL_STAGE: (usize, usize) = (416, 208);
 
@@ -3097,8 +3096,9 @@ pub const DUEL_STAGE: (usize, usize) = (416, 208);
 type DuelPictures = Result<Vec<(String, Vec<u8>)>, String>;
 
 /// The pictures of the converted duels: a sheet of [`DUEL_FRAMES`] 96×96 frames per side and per
-/// officer with riders of their own (`gfx/duel/<key>.png`), and the background: the left
-/// [`DUEL_STAGE`] of terrain [`DUEL_TERRAIN`]'s sky strip over its ground strip.
+/// officer with riders of their own (`gfx/duel/<key>.png`), and a background for every pack
+/// terrain of an original terrain code (`gfx/duel/terrain_<id>.png`, [`battles::DUEL_BACKGROUND`]):
+/// the left [`DUEL_STAGE`] of the code's sky strip over its ground strip.
 fn duel_pictures(
     install: &InstallDir,
     exe: &Exe,
@@ -3179,34 +3179,64 @@ fn duel_pictures(
             let (w, h) = kind.cells();
             maps::render_tiles(data, w, h, bank).map_err(|e| format!("HEXBMAP.R3 entry {i}: {e}"))
         };
-        let sky = strip(
-            tables.backdrop.get(DUEL_TERRAIN),
-            maps::SceneStrip::Backdrop,
-        )?;
-        let ground = strip(tables.ground.get(DUEL_TERRAIN), maps::SceneStrip::Ground)?;
-        let (w, h) = DUEL_STAGE;
-        if sky.width < w || ground.width < w || sky.height + ground.height != h {
-            return Err(format!(
-                "the sky ({}×{}) and ground ({}×{}) strips do not make a {w}×{h} stage",
-                sky.width, sky.height, ground.width, ground.height
-            ));
-        }
-        let mut stage = IndexedImage {
-            width: w,
-            height: h,
-            pixels: Vec::with_capacity(w * h),
+        let stage = |code: usize| -> Result<Vec<u8>, String> {
+            let sky = strip(tables.backdrop.get(code), maps::SceneStrip::Backdrop)?;
+            let ground = strip(tables.ground.get(code), maps::SceneStrip::Ground)?;
+            let (w, h) = DUEL_STAGE;
+            if sky.width < w || ground.width < w || sky.height + ground.height != h {
+                return Err(format!(
+                    "the sky ({}×{}) and ground ({}×{}) strips do not make a {w}×{h} stage",
+                    sky.width, sky.height, ground.width, ground.height
+                ));
+            }
+            let mut stage = IndexedImage {
+                width: w,
+                height: h,
+                pixels: Vec::with_capacity(w * h),
+            };
+            for part in [&sky, &ground] {
+                for y in 0..part.height {
+                    stage
+                        .pixels
+                        .extend_from_slice(&part.pixels[y * part.width..y * part.width + w]);
+                }
+            }
+            encode_png(&stage, &pal, false).map_err(|e| e.to_string())
         };
-        for part in [&sky, &ground] {
-            for y in 0..part.height {
-                stage
-                    .pixels
-                    .extend_from_slice(&part.pixels[y * part.width..y * part.width + w]);
+        // A terrain drawn as the code's (the gate, open or closed) and one standing in for
+        // another (a road drawn as plain) get that code's.
+        let mut written = BTreeSet::new();
+        let mut failed = Vec::new();
+        for (code, &drawn) in TERRAIN_MAP.iter().enumerate() {
+            let ids = [drawn, rules_terrain(code as u8)];
+            let fallbacks = TILE_FALLBACK
+                .iter()
+                .filter(|(_, stand_in)| Some(*stand_in) == drawn)
+                .map(|(id, _)| Some(*id));
+            let ids: Vec<&str> = ids.into_iter().chain(fallbacks).flatten().collect();
+            if ids.is_empty() {
+                continue;
+            }
+            // One terrain whose strips cannot be drawn leaves its duels on a plain stage.
+            let png = match stage(code) {
+                Ok(png) => png,
+                Err(e) => {
+                    failed.push(format!("duel background of terrain code {code}: {e}"));
+                    continue;
+                }
+            };
+            for id in ids {
+                if written.insert(id) {
+                    out.push((format!("gfx/duel/terrain_{id}.png"), png.clone()));
+                }
             }
         }
-        let png = encode_png(&stage, &pal, false).map_err(|e| e.to_string())?;
-        out.push((format!("gfx/duel/{}.png", battles::DUEL_BACKGROUND), png));
-        Ok(out)
-    })())
+        Ok((out, failed))
+    })()
+    .map(|(out, failed)| {
+        report.errors.extend(failed);
+        out
+    }))
 }
 
 // ----- portraits -----------------------------------------------------------------------------
