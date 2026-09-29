@@ -708,6 +708,9 @@ pub fn original_classes(
             maps::CLASSES
         ));
     }
+    if let Some((strategies, _)) = learn {
+        check_strategy_tables(strategies)?;
+    }
     let mut out = Vec::with_capacity(classes.len());
     let mut notes = Vec::new();
     for c in classes {
@@ -3766,6 +3769,15 @@ mod tests {
         let mut short = rules.clone();
         short.learn[3].pop();
         assert!(original_strategies(&short, &strategies).is_err());
+        let known: BTreeSet<&str> = ["scorch"].into();
+        let archer = [class_def(
+            "archer",
+            "archer",
+            6,
+            RangeSpec::Named("archer".into()),
+        )];
+        let learn = Some((&short, &known));
+        assert!(original_classes(&maps::fixture_class_rules(), learn, &archer).is_err());
 
         // Class `i % 19` learns strategy `i` at `1 + i`, and class 1 strategy 0 at 5. Only the
         // chain's strategies are listed.
