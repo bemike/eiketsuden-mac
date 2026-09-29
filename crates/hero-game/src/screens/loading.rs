@@ -453,6 +453,20 @@ impl LoadingScreen {
                         ctx.toast(format!("이전 기록을 옮기지 못했습니다: {e}"));
                     }
                 }
+                // A written original pack in the chain on disk (`--data data/original`, or a mod
+                // on top of one) copies from the pack it extends. The game's own original mode
+                // (`Mounted`) is converted at every launch.
+                #[cfg(not(target_arch = "wasm32"))]
+                if matches!(self.original, Original::Off) {
+                    let dir = std::path::Path::new(ctx.data_root.top_dir());
+                    for (layer, why) in hero_import::pack::stale_packs(dir, &pack) {
+                        macroquad::logging::warn!("original pack {}: {}", layer.display(), why);
+                        ctx.toast(format!(
+                            "원작 팩을 다시 변환하세요 (hero-tools original pack): {}",
+                            layer.display()
+                        ));
+                    }
+                }
                 ctx.pack = Some(Rc::new(pack));
                 let sounds: Vec<String> = sfx::ALL
                     .iter()

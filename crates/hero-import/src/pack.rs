@@ -99,7 +99,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 15: the chapters past the base campaign (`campaign.toml`, [`CHAPTER_DRAMA_FILE`], their
 /// battles), and dramas as a list.
 /// 16: the event pictures (`gfx/pictures/`, [`picture_key`]) and the stories' `@picture`.
-pub const PACK_FORMAT_VERSION: u32 = 16;
+/// 17: `base_fingerprint` in the index ([`stale_pack`]).
+pub const PACK_FORMAT_VERSION: u32 = 17;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -196,6 +197,10 @@ pub struct PackOptions {
     /// The pack chain's campaign, which the original's chapters past it continue
     /// ([`CHAPTER_FILES`]); `None`: those chapters are not converted.
     pub campaign: Option<hero_core::campaign::CampaignDef>,
+    /// [`base_fingerprint`] of the pack chain, recorded in the index so that [`stale_pack`] can
+    /// tell when the chain changed after the pack was written; `None` for a pack converted in
+    /// memory (converted again at every launch).
+    pub base_fingerprint: Option<String>,
 }
 
 impl PackOptions {
@@ -264,6 +269,7 @@ impl PackOptions {
             strategy_defs: parent.strategies.values().cloned().collect(),
             music: false,
             campaign: Some(parent.campaign.clone()),
+            base_fingerprint: None,
         }
     }
 }
@@ -312,6 +318,9 @@ pub struct PackIndex {
     pub edition: Edition,
     pub extends: String,
     pub canvas: [u32; 2],
+    /// [`PackOptions::base_fingerprint`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_fingerprint: Option<String>,
     /// By asset kind: `battles`, `maps`, `portraits`, `tiles`, `units`.
     pub assets: BTreeMap<String, KindReport>,
     pub portraits: Vec<PortraitMatch>,
@@ -369,6 +378,113 @@ impl Exe {
                 .map_err(|e| format!("MAIN.EXE strategy rules: {e}")),
         })
     }
+}
+
+/// Fingerprint of the pack chain `parent` (read through `source`): the SHA-256 of every
+/// `pack.toml` of its layers and every text file it loaded, with their paths. The pack copies
+/// from the chain (rules, battles, campaign …), so a written pack whose chain has another
+/// fingerprint no longer matches it ([`stale_pack`]).
+pub fn base_fingerprint(
+    parent: &hero_core::pack::Pack,
+    source: &dyn hero_core::pack::FileSource,
+) -> Result<String, hero_core::pack::PackError> {
+    let mut paths: BTreeSet<String> = parent.layers.iter().map(|l| l.manifest_path()).collect();
+    paths.extend(parent.files.all().iter().map(|f| f.source_path()));
+    let mut all = Vec::new();
+    for path in paths {
+        all.extend_from_slice(path.as_bytes());
+        all.push(0);
+        all.extend_from_slice(source.read_text(&path)?.as_bytes());
+        all.push(0);
+    }
+    Ok(crate::sha256_hex(&all))
+}
+
+/// What [`stale_pack`] reads of an index.
+#[derive(serde::Deserialize)]
+struct WrittenIndex {
+    format: String,
+    format_version: u32,
+    extends: String,
+    base_fingerprint: Option<String>,
+}
+
+/// Why the original pack written in `dir` should be converted again, or `None` when it is up to
+/// date or `dir` holds no written original pack: the converter's pack format changed since
+/// (the pack lacks what this version converts), or the pack chain it extends changed (the
+/// pack's copies of its rules files hide the chain's new classes, fields and strategies, D8).
+/// An error when the index or the chain cannot be read.
+pub fn stale_pack(dir: &Path) -> Result<Option<String>, String> {
+    let path = dir.join(PACK_INDEX);
+    let text = match std::fs::read(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let index: WrittenIndex =
+        serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    if index.format != PACK_FORMAT {
+        return Ok(None);
+    }
+    const AGAIN: &str = concat!(
+        "convert it again (`hero-tools original pack <install> --out <folder>`",
+        " with the `--base` it was written with)"
+    );
+    if index.format_version != PACK_FORMAT_VERSION {
+        return Ok(Some(format!(
+            "written by another version of the converter (pack format {}, this one writes \
+             {PACK_FORMAT_VERSION}): {AGAIN}",
+            index.format_version
+        )));
+    }
+    let base = dir.join(&index.extends);
+    let source = hero_core::pack::DirSource { root: base.clone() };
+    let parent = hero_core::pack::Pack::load(&source)
+        .map_err(|e| format!("cannot load the pack it extends ({}): {e}", base.display()))?;
+    let now = base_fingerprint(&parent, &source)
+        .map_err(|e| format!("cannot read the pack it extends ({}): {e}", base.display()))?;
+    Ok(match index.base_fingerprint {
+        Some(written) if written == now => None,
+        Some(_) => Some(format!(
+            "the pack it extends ({}) changed after it was written, and its copies of that \
+             pack's rules hide the changes: {AGAIN}",
+            index.extends
+        )),
+        None => Some(format!(
+            "written without a record of the pack it extends: {AGAIN}"
+        )),
+    })
+}
+
+/// [`stale_pack`] of every pack of the chain `pack` loaded from `dir` (a mod may extend a
+/// written original pack): `(the pack's directory, why)` of each one that should be converted
+/// again, or whose check failed.
+pub fn stale_packs(dir: &Path, pack: &hero_core::pack::Pack) -> Vec<(std::path::PathBuf, String)> {
+    pack.layers
+        .iter()
+        .filter_map(|layer| {
+            // `data/mod` and `../original`: `data/original`, as the chain resolves it (D8).
+            let mut layer_dir = dir.to_path_buf();
+            for part in Path::new(&layer.dir).components() {
+                match part {
+                    std::path::Component::ParentDir
+                        if matches!(
+                            layer_dir.components().next_back(),
+                            Some(std::path::Component::Normal(_))
+                        ) =>
+                    {
+                        layer_dir.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    other => layer_dir.push(other),
+                }
+            }
+            match stale_pack(&layer_dir) {
+                Ok(None) => None,
+                Ok(Some(why)) | Err(why) => Some((layer_dir, why)),
+            }
+        })
+        .collect()
 }
 
 /// Convert the install in `source` into an original-mode pack in `out`.
@@ -597,6 +713,7 @@ fn convert(
         edition,
         extends: options.extends.clone(),
         canvas: CANVAS,
+        base_fingerprint: options.base_fingerprint.clone(),
         assets,
         portraits: matches,
         maps: map_records,

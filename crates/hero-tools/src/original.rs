@@ -1,7 +1,7 @@
 //! `hero-tools original probe|extract|pack`: the experimental importer for a legally owned copy of
 //! the original game (see `docs/ORIGINAL_DATA.md` and the `hero-import` crate).
 
-use hero_core::pack::Severity;
+use hero_core::pack::{DirSource, Severity};
 use hero_import::edition::{Edition, EditionId};
 use hero_import::extract::{self, Index, KindReport, Options, Selection, Status};
 use hero_import::install::lies_inside;
@@ -258,9 +258,12 @@ pub fn run_pack(
     };
     let parent = crate::load_pack(&base)?;
     let extends = relative_dir(out, &base)?;
+    let fingerprint = pack::base_fingerprint(&parent, &DirSource { root: base.clone() })
+        .map_err(|e| format!("cannot read the base pack {}: {e}", base.display()))?;
     let options = PackOptions {
         // Written once, so the music (several seconds to render) is worth it here.
         music: true,
+        base_fingerprint: Some(fingerprint),
         ..PackOptions::for_pack(&parent, extends, edition)
     };
     let index = pack::write_pack(dir, out, &options).map_err(|e| e.to_string())?;
@@ -471,6 +474,50 @@ mod tests {
         let pack = crate::load_pack(&out).unwrap();
         assert_eq!(pack.layers.len(), 2);
         assert_eq!(pack.manifest.presentation.canvas, [640, 400]);
+        // Written from the base pack as it is: up to date, until the base pack changes.
+        assert_eq!(pack::stale_pack(&out), Ok(None));
+        let stale = |issues: &[hero_core::pack::Issue]| {
+            issues
+                .iter()
+                .any(|i| i.context.ends_with(pack::PACK_INDEX) && i.severity == Severity::Warning)
+        };
+        assert!(!stale(&crate::validate::check(&out, &pack).unwrap()));
+        let base_manifest = tmp.0.join("data/base/pack.toml");
+        let mut text = std::fs::read_to_string(&base_manifest).unwrap();
+        text.push_str("\n# changed\n");
+        std::fs::write(&base_manifest, text).unwrap();
+        let why = pack::stale_pack(&out).unwrap().unwrap();
+        assert!(why.contains("changed after it was written"), "{why}");
+        assert!(stale(&crate::validate::check(&out, &pack).unwrap()));
+        // A mod on top of the original pack: the original pack in its chain is checked too.
+        let modded = tmp.0.join("data/mod");
+        std::fs::create_dir_all(&modded).unwrap();
+        std::fs::write(
+            modded.join("pack.toml"),
+            "id = \"mod\"\nname = \"mod\"\nversion = \"1\"\nextends = \"../original\"\n",
+        )
+        .unwrap();
+        let mod_pack = crate::load_pack(&modded).unwrap();
+        let found = pack::stale_packs(&modded, &mod_pack);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].0, tmp.0.join("data/original"), "{found:?}");
+        let issues = crate::validate::check(&modded, &mod_pack).unwrap();
+        assert!(
+            issues.iter().any(|i| i.severity == Severity::Warning
+                && i.context.ends_with(pack::PACK_INDEX)
+                && i.msg.contains("changed after it was written")),
+            "{issues:?}"
+        );
+        // An index of another pack format: written by another converter.
+        let index_path = out.join(pack::PACK_INDEX);
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
+        json["format_version"] = (pack::PACK_FORMAT_VERSION - 1).into();
+        std::fs::write(&index_path, serde_json::to_vec(&json).unwrap()).unwrap();
+        let why = pack::stale_pack(&out).unwrap().unwrap();
+        assert!(why.contains("another version of the converter"), "{why}");
+        // Not an original pack: nothing to say.
+        assert_eq!(pack::stale_pack(&tmp.0.join("data/base")), Ok(None));
         let index = pack::write_pack(
             &game,
             &out,
