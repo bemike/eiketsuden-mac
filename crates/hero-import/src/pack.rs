@@ -2278,14 +2278,26 @@ fn convert_battles(
             }
             // Events of a stage no converted event moves the battle to never fire (the part of
             // the original that led there was not converted): they are left out.
-            let reached: BTreeSet<u32> = std::iter::once(0)
-                .chain(converted.battle.events.iter().flat_map(|e| {
-                    e.actions.iter().filter_map(|a| match a {
+            // From stage 0, following only the events of stages already reached.
+            let mut reached: BTreeSet<u32> = BTreeSet::from([0]);
+            loop {
+                let more: Vec<u32> = converted
+                    .battle
+                    .events
+                    .iter()
+                    .filter(|e| e.stage.is_none_or(|s| reached.contains(&s)))
+                    .flat_map(|e| &e.actions)
+                    .filter_map(|a| match a {
                         hero_core::battledef::EventAction::SetStage { stage } => Some(*stage),
                         _ => None,
                     })
-                }))
-                .collect();
+                    .filter(|s| !reached.contains(s))
+                    .collect();
+                if more.is_empty() {
+                    break;
+                }
+                reached.extend(more);
+            }
             let (kept, dropped): (Vec<_>, Vec<_>) = std::mem::take(&mut converted.battle.events)
                 .into_iter()
                 .partition(|e| e.stage.is_none_or(|s| reached.contains(&s)));
