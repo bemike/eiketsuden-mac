@@ -80,13 +80,8 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
         .collect();
     let battle_map = all()
         .filter(|c| c.instr.mnemonic == "load_map")
-        .any(|c| get(c, "map") & 0xf000 == 0x3000);
-    let sets_up = all().any(|c| {
-        matches!(
-            c.instr.mnemonic,
-            "battle_setup" | "battle_roster" | "begin_battle"
-        )
-    });
+        .any(|c| get(c, "map") & 0xf000 == crate::battles::BATTLE_MAP);
+    let sets_up = all().any(|c| story::sets_up_battle(&c.instr));
     let kind = if battle_map && sets_up {
         "전투"
     } else if sets_up {
@@ -243,8 +238,9 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                     break;
                 }
                 "if_answer" => {
-                    let skip = usize::from(get(c, "skip"));
-                    let guarded = &r.code[at + 1..(at + 1 + skip).min(r.code.len())];
+                    // (The count as the script gives it, for the listing.)
+                    let skip = get(c, "skip");
+                    let guarded = story::guarded(&r.code, at);
                     let sortie = story::starts_battle(guarded);
                     let then: Vec<&str> = guarded
                         .iter()

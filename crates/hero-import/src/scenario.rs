@@ -453,6 +453,15 @@ pub mod story {
         })
     }
 
+    /// Whether an instruction sets a battle up (its setup, rosters, or its start): a block
+    /// with one is a battle, or a battle's preparation when the battle map comes later.
+    pub fn sets_up_battle(instr: &Instr) -> bool {
+        matches!(
+            instr.mnemonic,
+            "battle_setup" | "battle_roster" | "begin_battle"
+        )
+    }
+
     /// Whether instructions an answer guards start a battle (`op_3d`, a battle's setup).
     pub fn starts_battle<I: AsRef<Instr>>(guarded: &[I]) -> bool {
         guarded.iter().any(|g| {
@@ -484,6 +493,7 @@ pub mod story {
             && group_progresses
             && !leaves_parallel(code)
             && !changes_state(code)
+            // A talk that asks leads to the records of its options.
             && !code.iter().any(|c| c.as_ref().mnemonic == "choice")
             && !asks_sortie(code)
     }

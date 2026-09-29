@@ -63,12 +63,7 @@ pub fn parts(scene: &Scene) -> Vec<Part> {
             .filter_map(|c| c.operands.get("map"))
             .find(|m| m & 0xf000 == BATTLE_MAP);
         // The setup may come in the block before (with the camp's story).
-        let sets_up = code().any(|c| {
-            matches!(
-                c.mnemonic,
-                "battle_setup" | "battle_roster" | "begin_battle"
-            )
-        });
+        let sets_up = code().any(story::sets_up_battle);
         match battle_map {
             Some(m) if sets_up => out.push(Part::Battle {
                 block: i,
@@ -640,7 +635,6 @@ impl<'c, 'a> Writer<'c, 'a> {
             .filter(|r| leaves(r))
             .map(|r| r.trigger.group)
             .collect();
-        // (A talk that asks leads to the records of its options.)
         let chatter = |r: &Record| {
             story::is_chatter(
                 r.trigger.kind,
