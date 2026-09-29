@@ -686,8 +686,9 @@ const RANGE_NAMES: [&str; 5] = ["adjacent4", "adjacent8", "archer", "crossbow", 
 /// original class's sprite (when several share it, the one named after it), and the changes as
 /// notes. With the strategy tables, such a class also learns the original's strategies at the
 /// original's levels, those of [`STRATEGY_IDS`] the chain has (`strategies`); a promoted class
-/// still knows its predecessors' lists too (the engine's rule), which is noted where the
-/// original's list for it lacks one. Everything else stays the chain's.
+/// still knows every earlier class's list too (the engine's rule), which is noted where that
+/// gives it a strategy the original's list for it lacks or has at a higher level. Everything
+/// else stays the chain's.
 pub fn original_classes(
     rules: &maps::ClassRules,
     learn: Option<(&maps::StrategyRules, &BTreeSet<&str>)>,
@@ -803,19 +804,30 @@ pub fn original_classes(
         out.push(c2);
     }
     if learn.is_some() {
+        // The engine lets a promoted class know every earlier class's list too.
         for c in &out {
-            let Some(to) = c.promote.as_ref().map(|p| &p.to) else {
-                continue;
-            };
-            let Some(next) = out.iter().find(|n| &n.id == to) else {
-                continue;
-            };
-            for l in &c.strategies {
-                if !next.strategies.iter().any(|n| n.id == l.id) {
-                    notes.push(format!(
-                        "{}: also knows {} (from {}), which the original's list for it lacks",
-                        next.id, l.id, c.id
-                    ));
+            let mut earlier: Vec<&ClassDef> = Vec::new();
+            let mut at = c;
+            while let Some(prev) = out
+                .iter()
+                .find(|p| p.promote.as_ref().is_some_and(|pr| pr.to == at.id))
+            {
+                if prev.id == c.id || earlier.iter().any(|e| e.id == prev.id) {
+                    break; // a cycle, which validation reports
+                }
+                earlier.push(prev);
+                at = prev;
+            }
+            for prev in earlier.iter().rev() {
+                for l in &prev.strategies {
+                    let own = c.strategies.iter().find(|o| o.id == l.id).map(|o| o.level);
+                    if own.is_none_or(|own| own > l.level) {
+                        let listed = own.map_or("not".to_string(), |lv| format!("at level {lv}"));
+                        notes.push(format!(
+                            "{}: knows {} from level {} through {} (the original's list for it: {listed})",
+                            c.id, l.id, l.level, prev.id
+                        ));
+                    }
                 }
             }
         }
@@ -971,11 +983,7 @@ fn convert_rules(
                 report.outputs += 1;
                 written.push(("terrain", TERRAIN_RULES));
                 terrain_ids = Some(terrain.iter().map(|t| t.id.to_string()).collect());
-                summary.push(format!(
-                    "{} terrain ({} changed)",
-                    terrain.len(),
-                    notes.len()
-                ));
+                summary.push(format!("{} terrain ({} notes)", terrain.len(), notes.len()));
                 report.notes.extend(notes);
             }
             Err(e) => report.errors.push(format!("terrain rules: {e}")),
@@ -1010,11 +1018,7 @@ fn convert_rules(
                 out.write(CLASS_RULES, (header("Class rules") + &body).as_bytes())?;
                 report.outputs += 1;
                 written.push(("classes", CLASS_RULES));
-                summary.push(format!(
-                    "{} classes ({} changed)",
-                    classes.len(),
-                    notes.len()
-                ));
+                summary.push(format!("{} classes ({} notes)", classes.len(), notes.len()));
                 report.notes.extend(notes);
             }
             Err(e) => report.errors.push(format!("class rules: {e}")),
@@ -1042,7 +1046,7 @@ fn convert_rules(
                 report.outputs += 1;
                 written.push(("strategies", STRATEGY_RULES));
                 summary.push(format!(
-                    "{} strategies ({} changed)",
+                    "{} strategies ({} notes)",
                     strategies.len(),
                     notes.len()
                 ));
@@ -3813,14 +3817,15 @@ mod tests {
         assert_eq!(learns(&out[3]), [(31, "great_encourage".to_string())]);
         // The chariot still knows scorch through the long infantry (the engine's rule), which
         // the original's list for it does not have.
-        assert!(
-            notes.contains(
-                &"chariot: also knows scorch (from long_infantry), which the original's list \
-                  for it lacks"
-                    .to_string()
-            ),
-            "{notes:?}"
-        );
+        for note in [
+            "chariot: knows scorch from level 1 through short_infantry (the original's list \
+             for it: not)",
+            // Earlier through the class before it than the original's own list says.
+            "long_infantry: knows scorch from level 1 through short_infantry (the original's \
+             list for it: at level 5)",
+        ] {
+            assert!(notes.contains(&note.to_string()), "{notes:?}");
+        }
     }
 
     #[test]
