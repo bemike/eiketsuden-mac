@@ -166,10 +166,11 @@ impl Audio {
     }
 
     /// The file of music `key` was replaced (the original mode adds its songs while the game
-    /// runs): if it is playing, fade it out and start it again from the new file.
+    /// runs): if it is playing as music, fade it out and start it again from the new file. A
+    /// jingle plays on to its end (it is not started again).
     pub fn reload_bgm(&mut self, key: &str) {
         if let Some(track) = self.current.as_mut() {
-            if track.request.key == key {
+            if track.request.key == key && track.request.looped {
                 track.stale = true;
             }
         }

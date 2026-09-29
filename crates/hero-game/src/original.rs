@@ -249,8 +249,13 @@ impl MusicRender {
             .name("original-music".into())
             .spawn(move || {
                 // Stops when the game no longer listens (the data pack was reloaded).
-                let result = hero_import::pack::render_music(&install, &mut |key, wav| {
-                    send.send((key.to_string(), wav)).is_ok()
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hero_import::pack::render_music(&install, &mut |key, wav| {
+                        send.send((key.to_string(), wav)).is_ok()
+                    })
+                }))
+                .unwrap_or_else(|panic| {
+                    Err(format!("rendering crashed: {}", panic_message(&*panic)))
                 });
                 if let Err(e) = result {
                     let _ = send.send((String::new(), Err(e)));
@@ -277,6 +282,11 @@ impl MusicRender {
                         audio.reload_bgm(&key);
                         self.stale.push(key);
                         self.added += 1;
+                    } else {
+                        macroquad::logging::warn!(
+                            "original mode: music {}: no pack mounted to add it to",
+                            key
+                        );
                     }
                 }
                 Ok((key, Err(e))) if key.is_empty() => {

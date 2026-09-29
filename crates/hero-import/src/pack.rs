@@ -693,7 +693,8 @@ fn convert_music(
     if !options.music {
         report.status = Status::Unsupported;
         report.summary =
-            "not rendered with the pack (it takes several seconds): the game renders it while it runs, `hero-tools original pack` into the pack"
+            "not rendered with the pack (it takes several seconds): the game renders it in the \
+             background after it starts; `hero-tools original pack` writes it into the pack"
                 .into();
         return Ok(report);
     }
