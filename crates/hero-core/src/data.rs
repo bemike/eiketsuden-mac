@@ -75,8 +75,9 @@ pub enum StrategyFormulas {
     Engine,
     /// The PC original's (FORMATS §10.4): support bonus `LV × INT / 20` plus up to 10 %, morale
     /// support `+ LV / 10` plus up to 10 %, confusion hits against half the target's power and
-    /// lasts until a roll `rand(100) < (LEAD + morale) / 3` at the unit's phase start, a
-    /// morale-down under 30 confuses with 60 %, no minimum damage, the damage bonus below
+    /// lasts until a roll `rand(100) < (LEAD + morale) / 3` at the unit's phase start or as its
+    /// morale rises, morale falling below 30 (for any reason) confuses with 60 % and low morale
+    /// does not confuse at a phase start, no minimum damage, the damage bonus below
     /// `raw / 50` (the original's `rand`), healing items plus up to 10 % too.
     Original,
 }

@@ -897,3 +897,29 @@ fn original_formulas_add_a_random_tenth_to_healing_items() {
     assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
     assert!(raised.iter().all(|m| (30..=32).contains(m)), "{raised:?}");
 }
+
+#[test]
+fn original_formulas_roll_the_recovery_when_an_item_raises_morale() {
+    let pack = original_pack();
+    let mut st = state(&pack);
+    st.inventory.insert("wine".into(), 1);
+    let u = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.units[friend].lead = 300;
+    st.units[friend].morale = 50;
+    st.units[friend].statuses = vec![ActiveStatus {
+        status: StatusKind::Confused,
+        turns: crate::battle::UNTIL_RECOVERED,
+    }];
+    let ev = st.apply(&pack, use_item(u, "wine", friend)).unwrap();
+    assert!(matches!(ev[0], BattleEvent::ItemUsed { .. }), "{ev:?}");
+    assert_eq!(
+        ev[1],
+        BattleEvent::StatusExpired {
+            unit: friend,
+            status: StatusKind::Confused
+        }
+    );
+    assert!(st.units[friend].statuses.is_empty());
+}

@@ -235,6 +235,7 @@ impl BattleState {
             self.units[def].morale,
             d_pos,
         );
+        let before = self.units[def].morale;
         let loss = self.take_damage(pack, def, damage);
         ev.push(BattleEvent::Strike {
             attacker: att,
@@ -243,6 +244,8 @@ impl BattleState {
             morale_loss: loss,
             counter: false,
         });
+        let set = self.morale_set(pack, def, before);
+        ev.extend(Self::morale_set_event(def, set));
         let def_killed = self.units[def].hp == 0;
         self.retreat_if_beaten(def, ev);
 
@@ -253,6 +256,7 @@ impl BattleState {
             if self.rng.chance(chance) {
                 countered = true;
                 let damage = self.counter_damage(pack, def, self.units[def].morale, att);
+                let before = self.units[att].morale;
                 let loss = self.take_damage(pack, att, damage);
                 ev.push(BattleEvent::Strike {
                     attacker: def,
@@ -261,6 +265,8 @@ impl BattleState {
                     morale_loss: loss,
                     counter: true,
                 });
+                let set = self.morale_set(pack, att, before);
+                ev.extend(Self::morale_set_event(att, set));
                 att_killed = self.units[att].hp == 0;
                 self.retreat_if_beaten(att, ev);
             }

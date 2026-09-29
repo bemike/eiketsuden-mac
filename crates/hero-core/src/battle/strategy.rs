@@ -18,10 +18,19 @@ const FIRE: &str = "fire";
 const WATER: &str = "water";
 /// HP heals are halved on targets whose morale is below this (§5, *design*).
 const LOW_MORALE_HEAL: i32 = 30;
-/// Original formulas: a morale-down leaving the target's morale below this confuses it with
+/// Original formulas: morale falling below this (for any reason) confuses the unit with
 /// [`MORALE_DOWN_CONFUSION`] percent (§6).
 pub(super) const MORALE_DOWN_CONFUSES_BELOW: i32 = 30;
 pub(super) const MORALE_DOWN_CONFUSION: i32 = 60;
+
+/// What the original's morale setter did to a unit's confusion ([`BattleState::morale_set`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum MoraleSet {
+    Unchanged,
+    /// Confused (again, when it already was).
+    Confused,
+    Recovered,
+}
 
 /// Whether `pack` plays the original's strategy formulas.
 pub(super) fn original_formulas(pack: &Pack) -> bool {
@@ -291,6 +300,57 @@ impl BattleState {
         amount.saturating_sub(shift).min(0)
     }
 
+    /// Under the original strategy formulas, what the original's morale setter (MAIN.EXE
+    /// 0x1cb6:0x898C) does after unit `id`'s morale went from `before` to what it is now:
+    /// falling below [`MORALE_DOWN_CONFUSES_BELOW`] confuses with [`MORALE_DOWN_CONFUSION`]
+    /// percent, rising (or being set to 100) rolls the recovery of a confusion
+    /// ([`BattleState::recovery_roll`]). Nothing (and no roll) under the engine's formulas.
+    pub(super) fn morale_set(&mut self, pack: &Pack, id: UnitId, before: i32) -> MoraleSet {
+        // (A unit the blow defeated is not confused on its way out.)
+        if !original_formulas(pack) || self.units[id].hp == 0 {
+            return MoraleSet::Unchanged;
+        }
+        let now = self.units[id].morale;
+        if now < before {
+            if now < MORALE_DOWN_CONFUSES_BELOW && self.rng.chance(MORALE_DOWN_CONFUSION) {
+                self.confuse(id, super::UNTIL_RECOVERED);
+                return MoraleSet::Confused;
+            }
+        } else if (now > before || now == 100) && self.recovery_roll(id) {
+            return MoraleSet::Recovered;
+        }
+        MoraleSet::Unchanged
+    }
+
+    /// The original's recovery from a confusion without a length (MAIN.EXE 0x1cb6:0x8130): a
+    /// confused unit recovers with `(LEAD + morale) / 3` percent. Whether it recovered.
+    pub(super) fn recovery_roll(&mut self, id: UnitId) -> bool {
+        let u = &self.units[id];
+        if !u.has_status(StatusKind::Confused) {
+            return false;
+        }
+        let chance = u.lead.max(0).saturating_add(u.morale.max(0)) / 3;
+        if !self.rng.chance(chance) {
+            return false;
+        }
+        self.units[id]
+            .statuses
+            .retain(|s| s.status != StatusKind::Confused);
+        true
+    }
+
+    /// The events of a [`MoraleSet`] of unit `id`.
+    pub(super) fn morale_set_event(id: UnitId, set: MoraleSet) -> Option<BattleEvent> {
+        match set {
+            MoraleSet::Unchanged => None,
+            MoraleSet::Confused => Some(BattleEvent::Confused { unit: id }),
+            MoraleSet::Recovered => Some(BattleEvent::StatusExpired {
+                unit: id,
+                status: StatusKind::Confused,
+            }),
+        }
+    }
+
     /// Stored counter for a confusion of `turns` turns. The countdown runs at the start of
     /// the owner's phase before it acts, so a unit confused outside its own phase needs one
     /// extra count to actually miss `turns` of its phases.
@@ -419,7 +479,7 @@ impl BattleState {
         }
         self.units[caster].acted = true;
         let mut hits = Vec::with_capacity(targets.len());
-        let mut newly_confused = Vec::new();
+        let mut status_events = Vec::new();
         for &t in targets {
             let success = match s.target {
                 TargetSide::Enemy => {
@@ -437,7 +497,7 @@ impl BattleState {
                 status: None,
             };
             if success {
-                self.apply_effects(pack, caster, s, t, &mut hit, &mut newly_confused);
+                self.apply_effects(pack, caster, s, t, &mut hit, &mut status_events);
             }
             hits.push(hit);
         }
@@ -447,9 +507,7 @@ impl BattleState {
             target: aim,
             hits: hits.clone(),
         });
-        for &unit in &newly_confused {
-            ev.push(BattleEvent::Confused { unit });
-        }
+        ev.extend(status_events);
         let mut defeated = Vec::new();
         for h in &hits {
             if self.units[h.unit].is_active() && self.units[h.unit].hp == 0 {
@@ -481,7 +539,7 @@ impl BattleState {
         s: &StrategyDef,
         t: UnitId,
         hit: &mut StrategyHit,
-        newly_confused: &mut Vec<UnitId>,
+        status_events: &mut Vec<BattleEvent>,
     ) {
         let terrain = self.terrain_at(pack, self.units[t].pos);
         for e in &s.effects {
@@ -499,9 +557,15 @@ impl BattleState {
                         self.rng.range(0, base / 50)
                     };
                     let damage = base.saturating_add(bonus);
+                    let before = self.units[t].morale;
                     let loss = self.take_damage(pack, t, damage);
                     hit.damage += damage;
                     hit.morale -= loss;
+                    let set = self.morale_set(pack, t, before);
+                    if set == MoraleSet::Confused {
+                        hit.status = Some(StatusKind::Confused);
+                    }
+                    status_events.extend(Self::morale_set_event(t, set));
                 }
                 Effect::Heal { power } => {
                     let amount = self.strategy_heal(pack, caster, *power, t);
@@ -520,18 +584,12 @@ impl BattleState {
                     let before = u.morale;
                     u.morale = u.morale.saturating_add(delta).clamp(0, 100);
                     hit.morale += u.morale - before;
-                    // The original: a morale-down leaving little morale may confuse.
-                    let low = u.morale < MORALE_DOWN_CONFUSES_BELOW;
-                    if delta < 0
-                        && low
-                        && original_formulas(pack)
-                        && self.rng.chance(MORALE_DOWN_CONFUSION)
-                    {
-                        if self.confuse(t, super::UNTIL_RECOVERED) {
-                            newly_confused.push(t);
-                        }
+                    // The original: little morale left may confuse, more may end a confusion.
+                    let set = self.morale_set(pack, t, before);
+                    if set == MoraleSet::Confused {
                         hit.status = Some(StatusKind::Confused);
                     }
+                    status_events.extend(Self::morale_set_event(t, set));
                 }
                 Effect::Status {
                     status: StatusKind::Confused,
@@ -539,7 +597,7 @@ impl BattleState {
                 } => {
                     let counter = self.confusion_counter(pack, t, *turns);
                     if self.confuse(t, counter) {
-                        newly_confused.push(t);
+                        status_events.push(BattleEvent::Confused { unit: t });
                     }
                     hit.status = Some(StatusKind::Confused);
                 }
@@ -657,6 +715,7 @@ impl BattleState {
                 let (from, to) = (user.pos, t.pos);
                 self.consume(item);
                 let (mut healed, mut morale) = (0, 0);
+                let before = self.units[target].morale;
                 for e in &def.effects {
                     // The original formulas add up to a tenth, as for the support strategies.
                     let bonus = match e {
@@ -696,6 +755,15 @@ impl BattleState {
                     healed,
                     morale,
                 });
+                // The original sets the morale of a morale item (a recovery roll).
+                if def
+                    .effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Morale { .. }))
+                {
+                    let set = self.morale_set(pack, target, before);
+                    ev.extend(Self::morale_set_event(target, set));
+                }
             }
             BattleItem::Scroll(s) => {
                 let valid = match s.area {

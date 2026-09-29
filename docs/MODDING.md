@@ -323,7 +323,7 @@ cavalry = 125
 | `counter_divisor` | integer > 0 | Counter-attack chance in percent = `STR * 100 / counter_divisor`. |
 | `counter_damage_pct` | integer ≥ 0 | Counter damage in percent of a normal attack. |
 | `weather.clear` / `.cloudy` / `.rain` | integers ≥ 0, sum 100 | Chance of each weather, rolled every turn. |
-| `strategy_formulas` | `"engine"` (default) or `"original"` | Which strategy formulas battles use: the engine's or the PC original's (support bonus, confusion hit and recovery, morale-down confusion, least damage, the damage bonus below `raw / 50`, healing items' random tenth; RULES.md §5–§6, §10). The original mode's converted pack sets `"original"`. |
+| `strategy_formulas` | `"engine"` (default) or `"original"` | Which strategy formulas battles use: the engine's or the PC original's (support bonus, confusion hit and recovery, confusion when morale falls below 30 instead of at a phase start, least damage, the damage bonus below `raw / 50`, healing items' random tenth; RULES.md §5–§6, §10). The original mode's converted pack sets `"original"`. |
 
 ## rules/terrain.toml
 
