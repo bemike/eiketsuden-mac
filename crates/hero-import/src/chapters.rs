@@ -210,6 +210,7 @@ impl Writer<'_, '_> {
 
     /// End a branch of a choice or question by `flow`: `retry` asks again at label `ask`.
     fn close(&mut self, flow: Flow, retry: bool, ask: usize, after: usize) {
+        self.close_picture();
         match flow {
             f @ (Flow::GameOver | Flow::Ending(_)) => self.stop(f),
             Flow::Goto(b) if b == self.ctx.block => {
@@ -222,6 +223,15 @@ impl Writer<'_, '_> {
             Flow::Continue => {
                 let _ = writeln!(self.out.text, "@goto after_{after}");
             }
+        }
+    }
+
+    /// Close the picture shown, if any (anything but a narration after it closes it: an
+    /// instruction, a choice, the end of a branch).
+    fn close_picture(&mut self) {
+        if self.picture {
+            let _ = writeln!(self.out.text, "@picture none");
+            self.picture = false;
         }
     }
 
@@ -259,9 +269,8 @@ impl Writer<'_, '_> {
             let get = |name: &str| instr.operands.get(name).unwrap_or(0);
             // A picture stays for the narration after it; the next other instruction closes it
             // (FORMATS §13.3 `show_picture`).
-            if self.picture && !matches!(instr.mnemonic, "narration" | "show_picture") {
-                let _ = writeln!(self.out.text, "@picture none");
-                self.picture = false;
+            if !matches!(instr.mnemonic, "narration" | "show_picture") {
+                self.close_picture();
             }
             match instr.mnemonic {
                 "goto_block" => return Flow::Goto(usize::from(get("block"))),
@@ -622,6 +631,7 @@ impl<'c, 'a> Writer<'c, 'a> {
                         })
                 });
                 let (ask, after) = (self.label(), self.label());
+                self.close_picture();
                 let _ = writeln!(self.out.text, "@label ask_{ask}\n@choice");
                 for (k, option) in options.iter().enumerate() {
                     let _ = writeln!(
@@ -677,11 +687,8 @@ impl Writer<'_, '_> {
     fn walk(&mut self, block: &Block, walks: &[usize]) {
         let ctx = self.ctx;
         let (ask, after) = (self.label(), self.label());
-        let _ = writeln!(
-            self.out.text,
-            "@label ask_{ask}
-@choice"
-        );
+        self.close_picture();
+        let _ = writeln!(self.out.text, "@label ask_{ask}\n@choice");
         let mut options = Vec::new();
         for &k in walks {
             let to = block.records[k]
@@ -1945,6 +1952,28 @@ mod tests {
             .iter()
             .any(|n| n.contains("pictures the pack does not have")));
         parses(&s.text);
+        // Before a choice: it closes before the question (no branch goes on under it).
+        let b = block(vec![
+            record(
+                1,
+                0,
+                vec![
+                    instr("show_picture", &[("picture", 12), ("variant", 1)]),
+                    instr("narration", &[("text", 11)]),
+                    instr("choice", &[("options", 10)]),
+                ],
+            ),
+            record(0, 0, vec![instr("dialogue", &[("text", 3)])]),
+            record(0, 0, vec![instr("dialogue", &[("text", 4)])]),
+        ]);
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert!(
+            s.text
+                .starts_with("@picture orig_12\n@narr 유비가 죽었다.\n@picture none\n@label ask_"),
+            "{}",
+            s.text
+        );
+        assert_eq!(s.text.matches("@picture none").count(), 1);
     }
 
     #[test]

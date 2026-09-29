@@ -1002,10 +1002,22 @@ fn convert_ui(
         (_, false) => Status::Partial,
     };
     let [cw, ch] = CANVAS;
-    report.summary = if written.is_empty() {
+    let frames_written: Vec<&str> = written
+        .iter()
+        .copied()
+        .filter(|w| *w != "event pictures")
+        .collect();
+    let mut parts = Vec::new();
+    if !frames_written.is_empty() {
+        parts.push(format!("{} (frames {cw}×{ch})", frames_written.join(", ")));
+    }
+    if pictures > 0 {
+        parts.push(format!("{pictures} event pictures (224×144)"));
+    }
+    report.summary = if parts.is_empty() {
         "no screen frame converted".into()
     } else {
-        format!("{} (frames {cw}×{ch})", written.join(", "))
+        parts.join(", ")
     };
     Ok((report, frames))
 }
