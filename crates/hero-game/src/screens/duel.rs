@@ -3,8 +3,9 @@
 //! facing right and the right one mirrored, over the background `gfx/duel/<bg>.png`.
 //!
 //! A fighter is drawn from a sheet of fifteen 96×96 frames in a row (docs/ASSETS.md): 0–3
-//! galloping, 4–11 attacking (pairs), 12 falling, 13 and 14 lying next to the horse (two poses). The sheet is
-//! `gfx/duel/<officer>.png` for the officer, else `gfx/duel/left.png` / `right.png` for the side.
+//! galloping, 4–11 attacking (pairs), 12 falling, 13 and 14 lying next to the horse (two poses).
+//! The sheet is `gfx/duel/<officer>.png` for the officer, else `gfx/duel/left.png` /
+//! `right.png` for the side.
 //! Without a sheet the fighter is not drawn (the scene still runs its timing).
 
 use crate::app::Ctx;
@@ -140,7 +141,6 @@ impl DuelView {
                 let mut n = 0u8;
                 while !off_stage(x) {
                     x -= toward;
-                    n = n.wrapping_add(1);
                     steps.push((
                         Pose {
                             x,
@@ -148,6 +148,7 @@ impl DuelView {
                         },
                         true,
                     ));
+                    n = n.wrapping_add(1);
                 }
                 Some(sfx::STEP)
             }

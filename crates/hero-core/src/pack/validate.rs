@@ -1480,12 +1480,13 @@ impl<'a> Validator<'a> {
         for scene in pack.scenes.values() {
             let ctx = format!("scene {}", scene.id);
             // A duel is open from its `@duel` to its `@duel_end` in the order the lines are
-            // written (jumps are not followed).
-            let mut duel_open = false;
+            // written. Jumps are not followed: a move before any `@duel` is an error, one after
+            // an `@duel_end` only a warning (a jump may lead there with the duel still open).
+            let (mut duel_open, mut duel_seen) = (false, false);
             for cmd in &scene.cmds {
                 match cmd {
                     Cmd::Duel { left, right, .. } => {
-                        duel_open = true;
+                        (duel_open, duel_seen) = (true, true);
                         for o in [left, right] {
                             if pack.officer(o).is_none() {
                                 self.error(&ctx, format!("@duel names unknown officer `{o}`"));
@@ -1498,7 +1499,16 @@ impl<'a> Validator<'a> {
                         } else {
                             "duel_act"
                         };
-                        self.error(&ctx, format!("@{word} outside a @duel"));
+                        if duel_seen {
+                            self.warn(
+                                &ctx,
+                                format!(
+                                    "@{word} after the duel's @duel_end (fails when played there;                                      fine if a jump reaches it with the duel open)"
+                                ),
+                            );
+                        } else {
+                            self.error(&ctx, format!("@{word} before any @duel"));
+                        }
                     }
                     Cmd::DuelEnd => duel_open = false,
                     Cmd::Join(o) | Cmd::Leave(o) => {

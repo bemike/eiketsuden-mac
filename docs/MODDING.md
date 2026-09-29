@@ -1043,7 +1043,9 @@ caught; write free names in Korean or with a capital letter.
 
 The duel scene is drawn in the battle frame's map area during a battle (when the pack has a battle frame),
 otherwise in the middle of the screen; the rider sheets are described in [ASSETS.md](ASSETS.md#duel-riders--gfxduelkeypng).
-`hero-tools validate` reports `@duel` fighters that are not officers and `@duel_act` / `@duel_end` before any `@duel`.
+`hero-tools validate` reports `@duel` fighters that are not officers and `@duel_act` / `@duel_end` before any `@duel`
+(errors) or after the duel's `@duel_end` (warnings). It follows the lines in written order, not jumps: when branches
+share a duel, close it once after they meet again (`@label after` / `@duel_end`).
 
 Labels are checked when the file is loaded: jumping to a missing label is an error. Jumps stay inside
 the scene. A scene that loops through `@goto` without showing anything for 10 000 commands is ended.
