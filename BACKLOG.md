@@ -39,6 +39,11 @@
   - 왜: macroquad 0.4 오디오는 파일째 반복만 해서, 지금은 루프 한 바퀴만 담아 battle 2.7초·defeat 0.8초·sad 0.4초의 인트로가 빠지고 `ending`은 이음새가 남는다(PR #49 리뷰, FORMATS §16).
   - 영향 범위: hero-game `audio.rs`, hero-import `music.rs`·`pack.rs`
 
+- [ ] **일기토 배경 지형을 드라마가 나온 순간의 상태로**
+  - 무엇을: 전투 이벤트의 동작은 한꺼번에 적용된 뒤 연출되므로, `[drama(일기토), set_terrain]` 순서면 일기토 배경이 바뀐 뒤의 지형으로 보인다(PR #65 Codex 지적). `BattleEvent::Drama`에 그때의 무장별 지형을 담거나, 연출기가 뒤따르는 `TerrainChanged`를 되돌려 본다. (같은 이벤트의 퇴각은 PR #65에서 마지막 칸으로 처리.)
+  - 왜: 지금 변환된 원작 일기토 23개에는 이런 순서가 없다(확인함). 모드나 다른 변환에서 생길 수 있다.
+  - 영향 범위: hero-core `battle/flow.rs`(`BattleEvent::Drama`), hero-game `screens/battle`
+
 - [ ] **`advance`의 목표 칸 초소 동작을 직접 플레이로 확인**
   - 무엇을: 서주1(`c1_xuzhou1`)·계교를 직접 플레이해 PR #33의 동작(목표 칸 3칸 안에서 guard처럼 지킴)의 난이도를 확인한다.
   - 왜: 시뮬레이터로만 비교했다(서주1 평균 패배 턴 11.2 → 14.5).
