@@ -61,6 +61,7 @@ impl Pack {
         m.map_pictures(self);
         m.effects(self);
         m.icons(self);
+        m.battle_frame(self);
         m.hanja();
         m.issues
     }
@@ -497,6 +498,37 @@ impl MediaCheck {
                 &format!("gfx/fx/{}.png", s.fx),
                 "effect strip",
             );
+        }
+    }
+
+    /// The battle frame's picture: the size of the canvas (the game lays the battle screen out
+    /// without the frame otherwise).
+    fn battle_frame(&mut self, pack: &Pack) {
+        let presentation = &pack.manifest.presentation;
+        let Some(frame) = &presentation.battle_frame else {
+            return;
+        };
+        let ctx = "presentation.battle_frame";
+        let rel = format!("gfx/{}.png", frame.image);
+        let Some(path) = self.find(&rel) else {
+            self.require(Severity::Warning, ctx, &rel, "battle frame");
+            return;
+        };
+        let [cw, ch] = presentation.canvas;
+        match png_size(&path) {
+            Ok((w, h)) if (w, h) == (cw, ch) => {}
+            Ok((w, h)) => self.push(
+                Severity::Warning,
+                ctx,
+                format!(
+                    "{rel} is {w}×{h} pixels, the canvas {cw}×{ch}: the battle screen is laid out without the frame"
+                ),
+            ),
+            Err(e) => self.push(
+                Severity::Warning,
+                ctx,
+                format!("{}: not a readable PNG: {e}", path.display()),
+            ),
         }
     }
 

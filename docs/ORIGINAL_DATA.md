@@ -204,7 +204,7 @@ eiketsuden --data data/original
 ```
 
 * 기본 팩을 확장하는 **레이어드 팩**(8절)을 씁니다: `pack.toml`(`id = "original"`, `extends` = 기본 팩까지의 상대 경로,
-  `canvas = [640, 480]`), 변환 기록 `original-pack.json`, 그리고 변환된 미디어만. `--base`를 생략하면 `--out` 옆의
+  `canvas = [640, 400]`, 원작 전투 화면 틀 `[presentation.battle_frame]`), 변환 기록 `original-pack.json`, 그리고 변환된 미디어만. `--base`를 생략하면 `--out` 옆의
   `base` 폴더를 기본 팩으로 씁니다. 두 폴더는 같은 드라이브에 있어야 합니다(`extends`는 상대 경로만 허용).
 * 쓴 뒤에 `hero-tools validate`와 같은 검사를 돌려 결과를 보여 주고, 변환에 실패한 종류가 있거나 팩에 오류가 있으면
   종료 코드 1을 돌려줍니다. 출력 폴더는 새 폴더·빈 폴더·이전에 이 명령이 쓴 팩(`original-pack.json`)만 허용합니다(도중에 멈춘 실행은
@@ -221,6 +221,7 @@ eiketsuden --data data/original
   | 지형 규칙 | `MAIN.EXE`(병종 → 이동 종류, 이동 종류 × 지형 비용, 지형 효과 표) | `rules/terrain.toml`(`pack.toml`의 `[rules] terrain`) | 팩 체인의 지형 규칙에서 원작 지형 코드가 있는 지형의 이동 비용(255 = 들어갈 수 없음)과 방어(지형 효과)를 원작 값으로 바꾼다. 원작의 이동 종류 넷은 같은 병종들에게 팩이 준 이동 종류 이름을 따르고, 팩이 원작이 묶은 병종들을 다른 이동 종류로 나누면 변환하지 않는다. 원작의 성문(코드 10)은 닫힌 성문이라, 기본 팩의 열린 `gate`는 그대로 두고 그 복사본인 `closed_gate`(성문 타일, 체인이 쓰지 않는 글리프, 예: `K`)를 더해 전투 맵의 규칙 격자에 쓴다(규칙 변환이 실패하면 성문이 있는 맵은 변환하지 않아 기본 전투가 남는다). 원작 이동 종류 둘이 비용이 다른데 팩에서 같은 이름이면 변환하지 않는다. 기본 팩과 다른 값은 `original-pack.json`에 적는다. 원작에 없는 지형(길)과 그 밖의 필드는 팩 것 |
   | 병종 규칙 | `MAIN.EXE`(공격·방어 계수, 이동력, 공격 범위, 병력·병력 성장 표) | `rules/classes.toml`(`pack.toml`의 `[rules] classes`) | 팩 체인의 병종 중 원작 병종의 스프라이트로 그리는 병종(여럿이면 그중 스프라이트와 같은 id인 병종, 그런 병종이 없으면 그 스프라이트의 병종 모두)의 `atk`·`def`(계수 ÷ 5), `move`, `hp`(표 × 100)·`hp_growth`(표 × 10), `range`(0 `adjacent4`, 1 `adjacent8`, 2 `archer`, 3 `crossbow`, 4 `catapult`, 255 없음)를 원작 값으로 바꾼다. 기본 팩과 다른 값은 `original-pack.json`에 적는다. 습득 목록은 책략 규칙 행, 그 밖의 필드는 팩 것 |
   | 책략 규칙 | `MAIN.EXE`(책략 도달·MP 표, 책략 × 병종 습득 레벨 행렬) | `rules/strategies.toml`(`[rules] strategies`), `rules/classes.toml`의 `strategies` | 원작 책략 36개를 순서대로 기본 팩 id(`STRATEGY_IDS`)로 옮겨 MP와 도달(0 `range8`, 1 `range12`, 2 `range20`, 3 `range28`)을 원작 값으로 바꾼다. 병종 규칙의 대상 병종은 습득 목록을 원작 행렬대로 다시 쓴다(체인에 있는 책략만). 승급한 병종은 엔진 규칙대로 앞 병종들의 목록도 알고, 그래서 원작 목록에 없거나 더 이른 레벨의 책략이 생기면 적는다(한국어판에는 없음). 위력·효과 범위·설명과 원작에 없는 책략(기본 팩의 폭파)은 팩 것 |
+  | 전투 화면 틀 | `PACKGRP` 1번 + `MAIN.EXE`(팔레트) | `gfx/ui/orig_battle_frame.png`(640×400), `pack.toml`의 `[presentation.battle_frame]` | 원작 전투 화면 틀을 전투 맵과 같은 팔레트 슬롯으로 그린다(틀은 맵과 함께 화면에 있어 색 8–15가 맵의 팔레트를 따른다, [추론]). 맵 구멍(416×352, 32px 칸 13×11)·오른쪽 파란 패널·위 제목 칸·오른쪽 위 검은 칸의 좌표는 틀에서 잰 값이고, 변환할 때 맵 구멍이 비어 있는지(색 0) 확인해 다르면 틀을 쓰지 않는다. 엔진은 맵을 구멍에, 유닛·지형·예측 창을 패널에, 전투 이름·턴·국면을 제목 칸에, 날씨·금을 검은 칸에 그린다(DECISIONS D15). 기능·아군·적군 버튼은 아직 그림일 뿐이다 |
   | 전투 중 이벤트 | `SNR0D`·`SNR1D` 트리거 레코드 + `SNR0M`·`SNR1M` + `MAIN.EXE`(칸 변경 표) | 전투 파일의 `[[events]]`, `dramas/original_battles.drama`(대사 장면 45개), `gfx/maps/hexz_NN_X_Y_OP.png`(바뀐 칸 7개) | 전투 블록의 그룹 3부터를 **단계**로 보고(FORMATS §13.2), 레코드마다 트리거(턴·인접·칸·영역·격파)와 동작을 옮긴다: 대사·안내문·일기토 → 대사 장면(화자 = 같은 이름의 기본 팩 무장, 아니면 원작 이름), 합류 → `spawn`, AI 변경 → `set_ai`, 레벨 → `level_up`, 퇴장 → `retreat`, 금·아이템, 성문·적교 → `set_terrain`(바뀐 칩으로 그린 칸 그림), `battle_end` → 승리, 단계 넘김 → `set_stage`. 경로 플래그(계교)와 한 번만 실행하는 플래그는 변환할 때 판정하고, 한 레코드가 켜고 다른 레코드가 검사하는 플래그(하비의 세 장수, 계교의 군량고)는 전투 플래그 `orig_<전투>_<번호>`와 `when` 조건이 되고, 그 플래그가 성립하지 않을 때 스크립트가 하는 일은 `unless` 조건의 이벤트가 된다. 원작 목표 문구 변경은 `set_objective`가 된다. 기본 팩이 같은 계기의 이벤트를 유지하면(대부분의 일기토 등) 그 이벤트가 이야기를 맡고 원작의 나머지 동작(퇴장·단계 넘김)을 더한다(DECISIONS D12) |
   | 전투 맵 | `HEXZMAP` + `HEXZCHP` + `MAIN.EXE`(칩 뱅크 목록) | `maps/original.toml`의 `[[map]]` 58개(id `hexz_00`–`hexz_57`) + 맵마다 그림 층 `gfx/maps/hexz_NN.png` | **그림 층** = 맵의 칩 격자를 게임과 같은 뱅크(FORMATS §10.2)로 그대로 그린 것(16 px 칩, 32 px 타일 = 2×2 칩 칸). **규칙 층** = 칸마다의 지형 바이트(칩 통계가 아님). 행의 글자는 원작 지형 코드의 36진수(`0`–`9`, `a`–`h`, FORMATS §10.4 표 그대로)이고 `legend`가 기본 팩 지형 id를 정함(코드 10 문만 원작 모드 지형 `closed_gate`, 지형 규칙 행). 팩 지형이 없는 코드(화염·탁류, 문서에 없는 코드)는 **그 칸의 칩이 다른 맵들에서 가장 많이 쓰인 지형**으로, 맵 밖을 뜻하는 코드 255(실물에서는 맵 32의 한 칸)는 원작에서 이동으로 들어갈 수 없으므로 절벽으로 대신하고 `original-pack.json`과 맵 파일 주석에 기록. id의 번호는 시나리오가 맵을 가리키는 번호. `name`은 이름 항목의 원문(`신야1`처럼 숫자 포함) |
 
@@ -310,7 +311,7 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   가상 캔버스 크기를 적을 수 있습니다(기본 480×270, 480×270..1280×800, 자식이 적지 않으면 상속).
 * **구현됨 (4.5절)**: `hero-tools original pack`이 사용자의 정품에서 읽은 결과를 기본 팩 옆의 로컬 폴더
   `data/original/`(`.gitignore`에 등록)에 **팩**으로 씁니다. 그 `pack.toml`은 `extends = "../base"`와
-  `[presentation] canvas = [640, 480]`(원작의 VGA 화면)을 적고, 변환에 성공한 것만 담습니다: 무장 얼굴, 19병종의
+  `[presentation] canvas = [640, 400]`(원작 화면 틀의 크기)을 적고, 변환에 성공한 것만 담습니다: 무장 얼굴, 19병종의
   유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋(기본 팩 전투 21개가 모두 원작 맵 그림으로 다시 짜여
   있어, 그 칸들은 원작 맵이 없는 전투(원작 모드 위에 모드가 더한 기본 맵 전투)나 전투 변환·맵 그림을 읽지 못해
   대신 그릴 때만 쓰임. `tile_size`(32)는 그림 층 크기 확인에 늘 쓰임), 원작 전투 맵 58개(맵 파일: 칩 격자 = 그림 층,
@@ -423,7 +424,7 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   A missing folder, an unsupported edition or a failed conversion ends on an error screen that offers retry, another
   folder, or the base pack. An explicit `--data` / `EIKETSUDEN_DATA` wins over the setting. See DECISIONS D10.
 * **Original mode pack as files (development)**: `hero-tools original pack <dir> --out data/original` writes the same
-  layered pack (`id = "original"`, `extends` the base pack, `canvas = [640, 480]`, git-ignored) holding what can be mapped
+  layered pack (`id = "original"`, `extends` the base pack, `canvas = [640, 400]`, git-ignored) holding what can be mapped
   onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. It holds officer
   portraits (matched to the base pack's officers by name, with five spelling aliases and one reading used to tell
   two officers of the same name apart; 108 of 118 on the verified copy), unit sheets of all 19 classes from the

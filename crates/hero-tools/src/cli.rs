@@ -56,7 +56,8 @@ USAGE:
         EXPERIMENTAL. Write the original mode: a data pack that extends the base pack
         (default: the `base` folder next to <pack_dir>, e.g. --out data/original) with the
         original art the base pack's keys can be mapped to — officer portraits, unit sheets
-        and a 32-px battle-map tileset learned from the original maps — on a 640×480 canvas.
+        and a 32-px battle-map tileset learned from the original maps, and the original's
+        battle screen frame — on a 640×400 canvas.
         Play it with `eiketsuden --data <pack_dir>`. The folder must be new, empty or a
         previous pack of this command, and outside the install; the written pack is then
         validated. Exits with 1 when a kind failed or the pack does not validate.

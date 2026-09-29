@@ -55,7 +55,7 @@ use camera::{edge_direction, Camera, EDGE_PAN_SPEED};
 use hero_core::battle::{Action, BattleEvent, BattleState, MapImage, Outcome, UnitId};
 use hero_core::battledef::{EventAction, Side};
 use hero_core::geom::Pos;
-use hero_core::pack::Pack;
+use hero_core::pack::{BattleFrame, Pack};
 use macroquad::prelude::*;
 use player::{Command, Mode, PlayerUi, Request};
 use sprites::{FxDef, UnitsFile};
@@ -63,9 +63,18 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use tileset::{MapRenderer, Tileset, DEFAULT_TILE};
 
-/// Screen area of the map on a `canvas` sized canvas: everything below the top bar.
-fn viewport(canvas: Vec2) -> Rect {
-    Rect::new(0.0, hud::TOP_BAR_H, canvas.x, canvas.y - hud::TOP_BAR_H)
+/// Screen area of the map on a `canvas` sized canvas: the battle frame's map area, otherwise
+/// everything below the top bar.
+fn viewport(canvas: Vec2, frame: Option<&BattleFrame>) -> Rect {
+    match frame {
+        Some(f) => frame_rect(f.map),
+        None => Rect::new(0.0, hud::TOP_BAR_H, canvas.x, canvas.y - hud::TOP_BAR_H),
+    }
+}
+
+/// An `[x, y, width, height]` area of a battle frame.
+fn frame_rect([x, y, w, h]: [u32; 4]) -> Rect {
+    Rect::new(x as f32, y as f32, w as f32, h as f32)
 }
 /// Seconds the title card stays up.
 const TITLE_SECONDS: f32 = 2.6;
@@ -200,6 +209,8 @@ struct RightDrag {
 /// The battle screen. See the module docs.
 pub struct BattleScreen {
     pack: Rc<Pack>,
+    /// The pack's battle frame: the screen is drawn in it (`[presentation.battle_frame]`).
+    frame: Option<BattleFrame>,
     state: BattleState,
     /// A new battle (title card, objective, `begin`) rather than a resumed save.
     fresh: bool,
@@ -305,7 +316,8 @@ impl BattleScreen {
     /// size; [`BattleScreen::use_tile_size`] switches to the tileset's once it has loaded.
     fn new(pack: Rc<Pack>, state: BattleState, fresh: bool, canvas: Vec2) -> BattleScreen {
         let map = MapRenderer::new(&state.map, DEFAULT_TILE as f32);
-        let mut camera = Camera::new(viewport(canvas), map.size, map.tile);
+        let frame = pack.manifest.presentation.battle_frame.clone();
+        let mut camera = Camera::new(viewport(canvas, frame.as_ref()), map.size, map.tile);
         let scene = Scene::new(&state);
         let cursor = state
             .units
@@ -331,6 +343,7 @@ impl BattleScreen {
         }
         BattleScreen {
             pack,
+            frame,
             fresh,
             stage: Stage::Title { age: 0.0 },
             meta: Meta::default(),
@@ -391,6 +404,7 @@ impl BattleScreen {
             .as_ref()
             .map(|key| format!("maps/{key}"));
         textures.extend(self.meta.picture.iter().cloned());
+        textures.extend(self.frame.iter().map(|f| f.image.clone()));
         for e in &self.def().events {
             for a in &e.actions {
                 if let EventAction::SetTerrain {
@@ -1657,13 +1671,28 @@ impl Screen for BattleScreen {
         for f in &self.scene.floats {
             hud::draw_float(&ctx.gfx, self.camera.map_to_screen(f.at), self.tile(), f);
         }
-        hud::draw_top_bar(
-            ctx,
-            &self.def().name,
-            &self.scene.hud,
-            self.state.turn_limit,
-            ctx.session.as_ref().map_or(0, |s| s.campaign.gold),
-        );
+        let gold = ctx.session.as_ref().map_or(0, |s| s.campaign.gold);
+        match &self.frame {
+            Some(f) => {
+                hud::draw_battle_frame(ctx, ctx.media.texture(&f.image).as_ref(), vp);
+                hud::draw_frame_title(
+                    ctx,
+                    frame_rect(f.title),
+                    frame_rect(f.status),
+                    &self.def().name,
+                    &self.scene.hud,
+                    self.state.turn_limit,
+                    gold,
+                );
+            }
+            None => hud::draw_top_bar(
+                ctx,
+                &self.def().name,
+                &self.scene.hud,
+                self.state.turn_limit,
+                gold,
+            ),
+        }
 
         match &self.stage {
             Stage::Title { age } => {
@@ -1765,7 +1794,7 @@ mod tests {
     #[test]
     fn top_bar_leaves_room_for_the_drama_overlay_toolbar() {
         for canvas in CANVASES {
-            let top_bar_bottom = viewport(canvas).y;
+            let top_bar_bottom = viewport(canvas, None).y;
             assert_eq!(top_bar_bottom, hud::TOP_BAR_H);
             assert!(
                 top_bar_bottom + 4.0 <= OVERLAY_TOOL_TOP,
@@ -1778,11 +1807,11 @@ mod tests {
     #[test]
     fn viewport_and_unit_tabs_follow_the_canvas() {
         // The base pack's layout.
-        let vp = viewport(crate::gfx::DEFAULT_CANVAS);
+        let vp = viewport(crate::gfx::DEFAULT_CANVAS, None);
         assert_eq!(vp, Rect::new(0.0, 16.0, 480.0, 254.0));
         assert_eq!(unit_tab_rect(vp, 0), Rect::new(94.0, 22.0, 58.0, 19.0));
         for canvas in CANVASES {
-            let vp = viewport(canvas);
+            let vp = viewport(canvas, None);
             assert_eq!((vp.right(), vp.bottom()), (canvas.x, canvas.y));
             let (first, last) = (unit_tab_rect(vp, 0), unit_tab_rect(vp, 2));
             // The tabs sit inside the centred unit list.
