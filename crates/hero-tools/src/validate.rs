@@ -23,6 +23,15 @@ pub fn check(dir: &Path, pack: &Pack) -> Result<Vec<Issue>, String> {
     let mut issues = pack.validate();
     issues.extend(Pack::unknown_fields(&src).map_err(|e| e.to_string())?);
     issues.extend(pack.missing_media(dir));
+    // A written original pack copies from the pack it extends: warn when that one changed.
+    match hero_import::pack::stale_pack(dir) {
+        Ok(None) => {}
+        Ok(Some(why)) | Err(why) => issues.push(Issue {
+            severity: Severity::Warning,
+            context: hero_import::pack::PACK_INDEX.into(),
+            msg: why,
+        }),
+    }
     Ok(issues)
 }
 
