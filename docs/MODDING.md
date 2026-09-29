@@ -177,7 +177,8 @@ picture (like the original's status window) instead of the table, centred in the
 army is shown a page at a time, one officer per slot, and the chosen officer on the side; its areas are
 `[x, y, width, height]` in the **picture's** pixels. Taps choose an officer (a second tap opens the detail
 page, as does confirm), the arrow keys move (up and down by a row of slots), the top or bottom half of
-`pager` turns the page back or forward, and `close` or cancel leaves. The same rules as the other frames
+`pager` turns the page back or forward, and `close` or cancel leaves. With a camp frame the picture should fit the
+frame's `view` (the rest is covered by the frame's picture). The same rules as the other frames
 apply to the picture (warned when missing or not `size`), the areas (inside the picture) and inheritance:
 
 | field | meaning |

@@ -155,7 +155,7 @@ fn status_tap(layout: &StatusLayout, p: Vec2, cursor: usize, count: usize) -> St
         return StatusAction::Choose(to * per);
     }
     match layout.slot_at(p).map(|k| page * per + k) {
-        Some(i) if i == cursor => StatusAction::Open,
+        Some(i) if i == cursor && i < count => StatusAction::Open,
         Some(i) if i < count => StatusAction::Choose(i),
         _ => StatusAction::None,
     }
@@ -448,9 +448,10 @@ impl OfficersScreen {
                 Dir::Up => -(layout.columns() as i32),
                 Dir::Down => layout.columns() as i32,
             };
-            let to = (cursor as i32 + step).clamp(0, count.saturating_sub(1) as i32) as usize;
-            if to != cursor {
-                action = StatusAction::Choose(to);
+            // A step off the army (or off the top or bottom row) goes nowhere.
+            let to = cursor as i32 + step;
+            if (0..count as i32).contains(&to) {
+                action = StatusAction::Choose(to as usize);
             }
         } else if ctx.input.confirm_key() && count > 0 {
             action = StatusAction::Open;
@@ -494,10 +495,16 @@ impl OfficersScreen {
         }
         let value = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
         let line = gfx.line_height(FontId::Main, 1);
-        // Text centred on a box's height, `pad` in from its sides.
+        // Text centred on a box's height, up to 3 px in from its sides as far as it fits;
+        // text wider than the box is cut short.
         let put = |text: &str, r: Rect, align: Align, style: TextStyle| {
+            let mut shown = text.to_string();
+            while !shown.is_empty() && gfx.text_width(&shown, FontId::Main, 1) > r.w {
+                shown.pop();
+            }
+            let pad = ((r.w - gfx.text_width(&shown, FontId::Main, 1)) / 2.0).clamp(0.0, 3.0);
             let y = (r.y + (r.h - line) / 2.0).round();
-            gfx.text_aligned(text, r.x + 3.0, y, r.w - 6.0, align, style);
+            gfx.text_aligned(&shown, r.x + pad, y, r.w - 2.0 * pad, align, style);
         };
         put(
             "무장 정보",
@@ -594,7 +601,8 @@ impl OfficersScreen {
         // Equipment, then the strategies with their MP, as far as the box holds them.
         let info = inset(layout.rect(frame.info), 4.0);
         let small = gfx.line_height(FontId::Small, 1);
-        let mut lines: Vec<(String, Color)> = Vec::new();
+        // Each line with its colour and whether it is an entry (not a heading).
+        let mut lines: Vec<(String, Color, bool)> = Vec::new();
         for (slot, id) in [
             (ItemKind::Weapon, o.equip.weapon.as_ref()),
             (ItemKind::Armor, o.equip.armor.as_ref()),
@@ -603,21 +611,22 @@ impl OfficersScreen {
             let item = id
                 .and_then(|id| pack.item(id))
                 .map_or("—", |i| i.name.as_str());
-            lines.push((format!("{} {item}", slot_name(slot)), theme::TEXT));
+            lines.push((format!("{} {item}", slot_name(slot)), theme::TEXT, true));
         }
         let strategies = strategy_list(pack, o);
-        lines.push(("책략".to_string(), theme::TEXT_DIM));
+        lines.push(("책략".to_string(), theme::TEXT_DIM, false));
         if strategies.is_empty() {
-            lines.push(("없음".to_string(), theme::TEXT_DIM));
+            lines.push(("없음".to_string(), theme::TEXT_DIM, false));
         }
         for (name, mp) in strategies {
-            lines.push((format!("{name} {mp}"), theme::TEXT));
+            lines.push((format!("{name} {mp}"), theme::TEXT, true));
         }
         let fit = ((info.h / small).floor() as usize).max(1);
         let overflow = lines.len() > fit;
-        for (n, (text, color)) in lines.iter().take(fit).enumerate() {
+        for (n, (text, color, _)) in lines.iter().take(fit).enumerate() {
             let text = if overflow && n + 1 == fit {
-                format!("외 {}개", lines.len() - fit + 1)
+                let hidden = lines[n..].iter().filter(|(_, _, entry)| *entry).count();
+                format!("외 {hidden}개")
             } else {
                 text.clone()
             };
@@ -736,7 +745,12 @@ impl Screen for OfficersScreen {
             return Transition::None;
         }
         let count = ctx.session.as_ref().map_or(0, |s| s.campaign.roster.len());
-        let back = back_tapped(ctx);
+        let pack = ctx.pack.clone();
+        let status = pack
+            .as_deref()
+            .and_then(|p| p.manifest.presentation.status_frame.as_ref());
+        // The back button is not drawn on the status window: it takes no taps there.
+        let back = (self.detail.is_some() || status.is_none()) && back_tapped(ctx);
         if let Some(i) = self.detail {
             // Keys page through the army; a tap on the left or right half does the same.
             let mut step = match ctx.input.nav() {
@@ -761,11 +775,7 @@ impl Screen for OfficersScreen {
             }
             return Transition::None;
         }
-        let pack = ctx.pack.clone();
-        if let Some(frame) = pack
-            .as_deref()
-            .and_then(|p| p.manifest.presentation.status_frame.as_ref())
-        {
+        if let Some(frame) = status {
             return self.update_status(ctx, frame, count);
         }
         if back {
@@ -910,6 +920,11 @@ mod tests {
         );
         assert_eq!(
             status_tap(&layout, at(400.0, 250.0), 3, 10),
+            StatusAction::None
+        );
+        // Without officers nothing opens.
+        assert_eq!(
+            status_tap(&layout, at(20.0, 70.0), 0, 0),
             StatusAction::None
         );
     }
