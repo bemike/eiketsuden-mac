@@ -225,6 +225,10 @@ impl DeployScreen {
 }
 
 impl Screen for DeployScreen {
+    fn in_camp_frame(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &'static str {
         "camp-deploy"
     }

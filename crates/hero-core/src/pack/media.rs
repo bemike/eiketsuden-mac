@@ -501,27 +501,41 @@ impl MediaCheck {
         }
     }
 
-    /// The battle frame's picture: the size of the canvas (the game lays the battle screen out
-    /// without the frame otherwise).
+    /// The frames' pictures: the size of the canvas (the game fills the frame plainly
+    /// otherwise).
     fn battle_frame(&mut self, pack: &Pack) {
         let presentation = &pack.manifest.presentation;
-        let Some(frame) = &presentation.battle_frame else {
-            return;
-        };
-        let ctx = "presentation.battle_frame";
-        let rel = format!("gfx/{}.png", frame.image);
+        let frames = [
+            (
+                "presentation.battle_frame",
+                presentation.battle_frame.as_ref().map(|f| f.image.clone()),
+            ),
+            (
+                "presentation.camp_frame",
+                presentation.camp_frame.as_ref().map(|f| f.image.clone()),
+            ),
+        ];
+        for (ctx, image) in frames {
+            if let Some(image) = image {
+                self.frame_picture(ctx, &image, presentation.canvas);
+            }
+        }
+    }
+
+    fn frame_picture(&mut self, ctx: &str, image: &str, canvas: [u32; 2]) {
+        let rel = format!("gfx/{image}.png");
         let Some(path) = self.find(&rel) else {
-            self.require(Severity::Warning, ctx, &rel, "battle frame");
+            self.require(Severity::Warning, ctx, &rel, "frame picture");
             return;
         };
-        let [cw, ch] = presentation.canvas;
+        let [cw, ch] = canvas;
         match png_size(&path) {
             Ok((w, h)) if (w, h) == (cw, ch) => {}
             Ok((w, h)) => self.push(
                 Severity::Warning,
                 ctx,
                 format!(
-                    "{rel} is {w}×{h} pixels, the canvas {cw}×{ch}: the battle screen is laid out without the frame"
+                    "{rel} is {w}×{h} pixels, the canvas {cw}×{ch}: the frame is filled plainly"
                 ),
             ),
             Err(e) => self.push(

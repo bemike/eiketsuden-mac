@@ -169,6 +169,25 @@ pub trait Screen {
     fn is_overlay(&self) -> bool {
         false
     }
+
+    /// A camp screen: with the pack's camp frame it is laid out in the frame's view as if that
+    /// were the whole canvas, and the frame is drawn around it (`screens::camp::frame`).
+    fn in_camp_frame(&self) -> bool {
+        false
+    }
+}
+
+/// The loaded pack's camp frame's view, where camp screens are laid out
+/// ([`Screen::in_camp_frame`]).
+fn camp_view(ctx: &Ctx) -> Option<Rect> {
+    let frame = ctx
+        .pack
+        .as_deref()?
+        .manifest
+        .presentation
+        .camp_frame
+        .as_ref()?;
+    Some(crate::screens::camp::frame::area(frame.view))
 }
 
 enum Fade {
@@ -240,7 +259,18 @@ impl App {
             }
             Fade::Idle => {
                 if let Some(top) = self.stack.last_mut() {
-                    let transition = top.update(&mut self.ctx);
+                    let view = camp_view(&self.ctx).filter(|_| top.in_camp_frame());
+                    let ctx = &mut self.ctx;
+                    let canvas = ctx.gfx.canvas.full_size();
+                    if let Some(v) = view {
+                        ctx.gfx.canvas.set_view(Some(v));
+                        ctx.input.enter_view(v);
+                    }
+                    let transition = top.update(ctx);
+                    if let Some(v) = view {
+                        ctx.input.leave_view(v, canvas);
+                        ctx.gfx.canvas.set_view(None);
+                    }
                     self.handle(transition);
                 }
             }
@@ -322,17 +352,30 @@ impl App {
         ctx.input.consume();
     }
 
-    fn draw(&self) {
-        let ctx = &self.ctx;
+    fn draw(&mut self) {
+        let ctx = &mut self.ctx;
+        let stack = &self.stack;
         ctx.gfx.canvas.begin();
         clear_background(BLACK);
-        let base = self
-            .stack
-            .iter()
-            .rposition(|s| !s.is_overlay())
-            .unwrap_or(0);
-        for screen in &self.stack[base..] {
-            screen.draw(ctx);
+        let base = stack.iter().rposition(|s| !s.is_overlay()).unwrap_or(0);
+        for screen in &stack[base..] {
+            let frame = ctx
+                .pack
+                .clone()
+                .and_then(|p| p.manifest.presentation.camp_frame.clone());
+            match frame {
+                Some(frame) if screen.in_camp_frame() => {
+                    ctx.gfx
+                        .canvas
+                        .set_view(Some(crate::screens::camp::frame::area(frame.view)));
+                    ctx.gfx.canvas.begin();
+                    screen.draw(ctx);
+                    ctx.gfx.canvas.set_view(None);
+                    ctx.gfx.canvas.begin();
+                    crate::screens::camp::frame::draw_camp_frame(ctx, &frame);
+                }
+                _ => screen.draw(ctx),
+            }
         }
         ctx.toasts.draw(&ctx.gfx);
 

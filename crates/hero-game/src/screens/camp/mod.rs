@@ -20,6 +20,7 @@
 
 pub mod deploy;
 pub mod equip;
+pub mod frame;
 pub mod officers;
 pub mod shop;
 pub mod stats;
@@ -537,6 +538,10 @@ impl CampScreen {
 }
 
 impl Screen for CampScreen {
+    fn in_camp_frame(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &'static str {
         "camp"
     }

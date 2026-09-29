@@ -313,6 +313,10 @@ impl ToolsScreen {
 }
 
 impl Screen for ToolsScreen {
+    fn in_camp_frame(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &'static str {
         "camp-tools"
     }

@@ -311,6 +311,10 @@ pub fn equip_error(pack: &Pack, e: &CampaignError) -> String {
 }
 
 impl Screen for EquipScreen {
+    fn in_camp_frame(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &'static str {
         "camp-equip"
     }

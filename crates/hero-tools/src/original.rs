@@ -715,6 +715,9 @@ mod tests {
         let frame = pack.manifest.presentation.battle_frame.as_ref().unwrap();
         assert_eq!(frame.image, hero_import::pack::BATTLE_FRAME);
         assert!(out.join(format!("gfx/{}.png", frame.image)).is_file());
+        let camp = pack.manifest.presentation.camp_frame.as_ref().unwrap();
+        assert_eq!(camp.image, hero_import::pack::CAMP_FRAME);
+        assert!(out.join(format!("gfx/{}.png", camp.image)).is_file());
         let maps = std::fs::read_to_string(out.join("maps/original.toml")).unwrap();
         assert!(
             maps.contains("\"a\" = \"closed_gate\""),
