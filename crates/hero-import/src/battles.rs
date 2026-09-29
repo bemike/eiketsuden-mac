@@ -1145,9 +1145,13 @@ impl EventWriter<'_, '_> {
                         all_clear,
                     } = &instr.operands
                     {
-                        // Shared flags become conditions of the event; the others are decided
-                        // now.
-                        let shared = |f: &&u8| self.shared_flags.contains(*f);
+                        // Shared flags become conditions of the event, and so do, in a chapter's
+                        // battle, the flags the story set before it (campaign flags the battle
+                        // starts with); the others are decided now.
+                        let shared = |f: &&u8| {
+                            self.shared_flags.contains(*f)
+                                || (self.chapter && !self.local_flags.contains(*f))
+                        };
                         let (set_shared, set_now): (Vec<u8>, Vec<u8>) =
                             all_set.iter().partition(shared);
                         let (clear_shared, clear_now): (Vec<u8>, Vec<u8>) =

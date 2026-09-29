@@ -957,6 +957,13 @@ mod tests {
             hero_core::battledef::Condition::UnitRetreated { target } if target == "guan_yu"
         )));
         assert!(!maicheng.events.is_empty());
+        // Its troop joins as the setup says, before the camp, and leaves when it is over.
+        assert!(matches!(
+            pack.campaign.node("c3_s4_b0_before"),
+            Some(hero_core::campaign::Node::Drama { next, .. }) if next == "c3_s4_b0_camp"
+        ));
+        // The re-staged Xuzhou keeps the slots under units arriving later.
+        assert_eq!(pack.battles["c1_xuzhou2"].deploy.max, 9);
         // Losing Yiling goes on to the original's ending 4; the last scene ends in one of three.
         assert!(matches!(
             pack.campaign.node("c3_s4_b6_battle"),
@@ -983,7 +990,14 @@ mod tests {
             story.contains("@if orig_join_jiang_wei == 0 -> army_0\n@join jiang_wei\n"),
             "{story}"
         );
-        assert!(story.contains(" 쪽으로 간다 -> "), "{story}");
+        assert!(story.contains("에게 간다 -> "), "{story}");
+        let scene = |id: &str| {
+            let head = format!("== {id}\n");
+            let start = story.find(&head).unwrap_or_else(|| panic!("{id}")) + head.len();
+            story[start..].split("\n== ").next().unwrap().to_string()
+        };
+        assert!(scene("c3_s4_b0_before").contains("@join guan_yu\n"));
+        assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

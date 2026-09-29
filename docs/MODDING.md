@@ -763,7 +763,7 @@ A map file entry has the fields of a battle's [Map](#map) except `use`, plus `id
 |---|---|---|---|
 | `max` | integer ≥ 1 | required | Most player officers that may be deployed; at most the number of `slots`. |
 | `required` | list of officer ids | `[]` | Officers that must be deployed. The lord is always deployed (unless forbidden) and need not be listed. |
-| `forbidden` | list of officer ids | `[]` | Officers that may not be deployed. Forbidding the lord fights the battle without them (another troop's battle): losing the lord cannot lose it then, so give it a `defeat` condition of its own. |
+| `forbidden` | list of officer ids | `[]` | Officers that may not be deployed. Forbidding the lord fights the battle without them (another troop's battle): it is lost when every player unit has retreated, and can have `defeat` conditions of its own (the troop's leader retreating). |
 | `slots` | list of positions | required | Deployment tiles, filled in order (required officers first). Each must be inside the map, passable for `foot` and unique. |
 
 The player's officers normally come from the army through the deploy screen and are not listed in

@@ -1824,6 +1824,9 @@ pub const BASE_CAMPAIGN_LAST_BATTLE: &str = "c1_xuzhou2";
 
 /// A part of a chapter past the base campaign: its file, scene and part, and for a story its
 /// scene id and converted scene.
+/// Record kind of a person one talks to (FORMATS §13.2).
+const TALK_RECORD: u8 = 3;
+
 /// A battle to convert: its id, pairing, the base battle, the outro of a chapter's battle with
 /// its reward gold, and a chapter battle's block (a map may be fought in several blocks).
 type BattleJob<'a> = (
@@ -2014,10 +2017,35 @@ fn convert_battles(
              after: the original's later chapters are not converted"
         ));
     }
+    // The original's flags some script of the chapters sets (the others are always clear).
+    let mut settable = BTreeSet::new();
+    for &file in CHAPTER_FILES.iter().filter(|_| continues) {
+        let Some(count) = scenarios[&file]
+            .as_deref()
+            .and_then(|bytes| ls11::Archive::parse(bytes).ok())
+            .map(|a| a.len())
+        else {
+            continue;
+        };
+        for scene_index in 0..count {
+            if let Ok((scene, _)) = load(file, scene_index) {
+                settable.extend(
+                    scene
+                        .instructions()
+                        .filter(|c| c.mnemonic == "set_flag")
+                        .filter_map(|c| c.operands.get("flag"))
+                        .map(|f| f as u8),
+                );
+            }
+        }
+    }
     // The parts in the order the campaign plays them.
     let mut chapter: Vec<ChapterPart> = Vec::new();
     // The scenes of the chapters' battles the original goes on after losing, by part.
     let mut defeats: BTreeMap<(usize, usize, usize), (String, chapters::StoryScene)> =
+        BTreeMap::new();
+    // The army's changes the setups of the chapters' battles make, by part.
+    let mut befores: BTreeMap<(usize, usize, usize), (String, chapters::StoryScene)> =
         BTreeMap::new();
     let song_key = |song: u16| {
         MUSIC_KEYS
@@ -2049,19 +2077,16 @@ fn convert_battles(
                     continue;
                 }
             };
-            // What each block is called (its first caption): the places one walks to.
+            // Whom one meets in each block (the first person to talk to): the places one walks
+            // to are named after them.
             let places: Vec<Option<String>> = scene
                 .blocks
                 .iter()
                 .map(|b| {
                     b.records
                         .iter()
-                        .flat_map(|r| &r.code)
-                        .find(|c| c.mnemonic == "caption")
-                        .and_then(|c| c.operands.get("text"))
-                        .and_then(|t| text.string(t).ok())
-                        .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
-                        .filter(|t| !t.is_empty())
+                        .find(|r| r.trigger.kind == TALK_RECORD)
+                        .and_then(|r| names.person_names.get(&r.trigger.word(0)).cloned())
                 })
                 .collect();
             for part in chapters::parts(&scene) {
@@ -2077,6 +2102,7 @@ fn convert_battles(
                     block,
                     route_flag: &route_flag,
                     places: &places,
+                    settable: &settable,
                 };
                 let story = match part {
                     chapters::Part::Story { block } => Some((
@@ -2097,9 +2123,16 @@ fn convert_battles(
                 };
                 if let chapters::Part::Battle { block, .. } = part {
                     let fought = battles::battle_block(&scene, block);
+                    let battle = chapter_battle_id(file, scene_index, block);
                     if let Some(d) = chapters::defeat_scene(&fought, &ctx) {
-                        let id = format!("{}_defeat", chapter_battle_id(file, scene_index, block));
-                        defeats.insert((file, scene_index, block), (id, d));
+                        defeats.insert((file, scene_index, block), (format!("{battle}_defeat"), d));
+                    }
+                    let before = chapters::before_scene(&fought, &ctx);
+                    if !before.text.is_empty() {
+                        befores.insert(
+                            (file, scene_index, block),
+                            (format!("{battle}_before"), before),
+                        );
                     }
                 }
                 chapter.push((file, scene_index, part, story));
@@ -2139,11 +2172,38 @@ fn convert_battles(
         }
         kept
     });
-    for (_, _, _, story) in &chapter {
-        for line in story.iter().flat_map(|(_, s)| s.text.lines()) {
-            if let Some(id) = line.strip_prefix("@join ") {
-                names.player_officers.insert(id.to_string());
+    // When officers first join in the chapters' story, in the order the campaign plays it: part
+    // `i`'s setup changes at `3 i`, its battle at `3 i + 1`, its scenes after at `3 i + 2`. An
+    // officer who never joins there is in the army from the base campaign.
+    let mut first_join: BTreeMap<String, usize> = BTreeMap::new();
+    let mut battle_time: BTreeMap<(usize, usize, usize), usize> = BTreeMap::new();
+    for (i, (file, scene, part, story)) in chapter.iter().enumerate() {
+        let (chapters::Part::Story { block } | chapters::Part::Battle { block, .. }) = *part;
+        let place = (*file, *scene, block);
+        if matches!(part, chapters::Part::Battle { .. }) {
+            battle_time.insert(place, 3 * i + 1);
+        }
+        let timed = [
+            (3 * i, befores.get(&place).map(|(_, s)| s)),
+            (3 * i + 2, story.as_ref().map(|(_, s)| s)),
+            (3 * i + 2, defeats.get(&place).map(|(_, s)| s)),
+        ];
+        for (time, s) in timed {
+            for line in s.iter().flat_map(|s| s.text.lines()) {
+                if let Some(id) = line.strip_prefix("@join ") {
+                    first_join.entry(id.to_string()).or_insert(time);
+                }
             }
+        }
+    }
+    let joining_scenes = chapter
+        .iter()
+        .filter_map(|(_, _, _, story)| story.as_ref().map(|(_, s)| s))
+        .chain(befores.values().map(|(_, s)| s))
+        .chain(defeats.values().map(|(_, s)| s));
+    for line in joining_scenes.flat_map(|s| s.text.lines()) {
+        if let Some(id) = line.strip_prefix("@join ") {
+            names.player_officers.insert(id.to_string());
         }
     }
 
@@ -2278,16 +2338,48 @@ fn convert_battles(
                     // Who fights it: the officers the setup names for their slots, without Liu
                     // Bei when he has none (Guan Yu's troop at Maicheng), and the battle is lost
                     // when the officer it names retreats.
+                    // An officer the story has not brought into the army yet fights at their
+                    // slot as an ally.
                     let lord = names.officers.get(&battles::LIU_BEI);
-                    let fixed = original
+                    let now = block.and_then(|b| battle_time.get(&(file, scene_index, b)));
+                    let in_army = |id: &String| {
+                        first_join
+                            .get(id)
+                            .is_none_or(|&t| now.is_none_or(|&n| t < n))
+                    };
+                    for u in original
                         .player
                         .iter()
                         .filter(|u| u.requires_flag.is_none() && u.other.get(2) != Some(&1))
                         .filter(|u| {
                             u.person != battles::LIU_BEI && u.person != battles::ANY_OFFICER
                         })
-                        .filter_map(|u| names.officers.get(&u.person).cloned());
-                    b.deploy.required.extend(fixed);
+                    {
+                        let Some(id) = names.officers.get(&u.person) else {
+                            continue;
+                        };
+                        if in_army(id) {
+                            b.deploy.required.push(id.clone());
+                        } else {
+                            b.units.push(hero_core::battledef::UnitSpawn {
+                                side: hero_core::battledef::Side::Ally,
+                                officer: Some(id.clone()),
+                                name: None,
+                                class: None,
+                                level: None,
+                                stats: None,
+                                pos: hero_core::geom::Pos::new(i32::from(u.x), i32::from(u.y)),
+                                ai: hero_core::battledef::AiMode::Aggressive,
+                                ai_target: None,
+                                ai_pos: None,
+                                commander: false,
+                                tag: None,
+                                group: None,
+                                equip: None,
+                                drop: None,
+                            });
+                        }
+                    }
                     if !original.player.iter().any(|u| u.person == battles::LIU_BEI) {
                         b.deploy.forbidden.extend(lord.cloned());
                     }
@@ -2301,6 +2393,10 @@ fn convert_battles(
                             .push(hero_core::battledef::Condition::UnitRetreated {
                                 target: officer.clone(),
                             });
+                        // It needs them on the map.
+                        if in_army(officer) && !b.deploy.required.contains(officer) {
+                            b.deploy.required.push(officer.clone());
+                        }
                     }
                     made = b;
                     &made
@@ -2331,9 +2427,15 @@ fn convert_battles(
                         .and_then(|costs| costs.get(usize::from(code)))
                         .is_none_or(|&c| c == 255)
                 };
-                // A unit of the original stands on some (the base pack's slots never overlap).
-                let occupied: Vec<hero_core::geom::Pos> =
-                    converted.battle.units.iter().map(|u| u.pos).collect();
+                // A unit of the original on the map from the start stands on some (the base
+                // pack's slots never overlap; the engine keeps later arrivals off taken tiles).
+                let occupied: Vec<hero_core::geom::Pos> = converted
+                    .battle
+                    .units
+                    .iter()
+                    .filter(|u| u.group.is_none())
+                    .map(|u| u.pos)
+                    .collect();
                 let slots = &mut converted.battle.deploy.slots;
                 let before = slots.len();
                 slots.retain(|p| !blocked(p) && !occupied.contains(p));
@@ -2575,6 +2677,13 @@ fn convert_battles(
                         battle: id,
                         title,
                         shop: shop.clone(),
+                        before: befores.get(&(*file, *scene, *block)).map(|(id, b)| {
+                            let _ = write!(story, "\n== {id}\n{}", b.text);
+                            for note in &b.notes {
+                                report.notes.push(format!("{id}: {note}"));
+                            }
+                            id.clone()
+                        }),
                         defeat: defeats.get(&(*file, *scene, *block)).map(|(id, d)| {
                             let _ = write!(story, "\n== {id}\n{}", d.text);
                             for note in &d.notes {

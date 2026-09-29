@@ -233,6 +233,7 @@ impl Drop for QuietPanics {
 fn defeat_name(reason: DefeatReason) -> &'static str {
     match reason {
         DefeatReason::LordRetreated => "lord retreated",
+        DefeatReason::ArmyRetreated => "army retreated",
         DefeatReason::TurnLimit => "turn limit",
         DefeatReason::Condition => "defeat condition",
         DefeatReason::Event => "event",

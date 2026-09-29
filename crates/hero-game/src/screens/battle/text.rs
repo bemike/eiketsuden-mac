@@ -102,6 +102,7 @@ pub fn defeat_text(reason: DefeatReason, lord: Option<&str>) -> String {
             Some(l) => format!("{} 퇴각했다", subject(l)),
             None => "총대장이 퇴각했다".into(),
         },
+        DefeatReason::ArmyRetreated => "아군이 모두 퇴각했다".into(),
         DefeatReason::TurnLimit => "제한 턴이 지났다".into(),
         DefeatReason::Condition => "패배 조건을 충족했다".into(),
         DefeatReason::Event => "전황이 기울었다".into(),

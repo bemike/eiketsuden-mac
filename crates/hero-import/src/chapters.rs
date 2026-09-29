@@ -132,7 +132,11 @@ pub struct StoryContext<'a> {
     pub block: usize,
     /// The campaign flag the scene sets for its routes.
     pub route_flag: &'a str,
-    /// What each block of the scene is called (its first caption): where one can walk to.
+    /// The original's flags some script sets (`set_flag`): a test of any other one is decided
+    /// now (it is always clear).
+    pub settable: &'a BTreeSet<u8>,
+    /// Whom one meets in each block of the scene (the first person to talk to): the places one
+    /// can walk to are named after them.
     pub places: &'a [Option<String>],
 }
 
@@ -159,6 +163,11 @@ struct Writer<'c, 'a> {
     routes: Vec<(i64, usize)>,
     /// Gold the script gives is the battle's reward (an outro), not a `@gold` line.
     gold_as_reward: bool,
+    /// Inside a record of the story: the label ending it (`rend_<n>`) once a jump uses it (a
+    /// `goto_block` to the block itself inside a question or a flag check ends the record).
+    rec_end: Option<Option<usize>>,
+    /// Write only the army's changes (a battle's setup, [`before_scene`]).
+    army_only: bool,
 }
 
 impl Writer<'_, '_> {
@@ -212,6 +221,32 @@ impl Writer<'_, '_> {
         }
     }
 
+    /// Jump to the end of the record being written (a `goto_block` to the block itself: the
+    /// original runs the block again, whose record has had its turn); `false` outside a record.
+    fn end_record(&mut self) -> bool {
+        let n = match self.rec_end {
+            None => return false,
+            Some(Some(n)) => n,
+            Some(None) => {
+                let n = self.label();
+                self.rec_end = Some(Some(n));
+                n
+            }
+        };
+        let _ = writeln!(self.out.text, "@goto rend_{n}");
+        true
+    }
+
+    /// Write record `code` of the story: its lines, then the end label when a jump uses it.
+    fn record(&mut self, code: &[Instr]) -> Flow {
+        self.rec_end = Some(None);
+        let flow = self.lines(code);
+        if let Some(Some(n)) = self.rec_end.take() {
+            let _ = writeln!(self.out.text, "@label rend_{n}");
+        }
+        flow
+    }
+
     /// Write the lines of `code`; returns how it ends.
     fn lines(&mut self, code: &[Instr]) -> Flow {
         let mut i = 0;
@@ -240,12 +275,16 @@ impl Writer<'_, '_> {
                         self.out.text,
                         "@label ask_{ask}\n@choice\n- 예 -> yes_{ask}\n- 아니오 -> after_{after}\n@label yes_{ask}"
                     );
-                    let flow = match self.lines(guarded) {
-                        // Back to the block itself: the story goes on here.
-                        Flow::Goto(b) if b == self.ctx.block => Flow::Continue,
-                        flow => flow,
-                    };
-                    self.close(flow, false, ask, after);
+                    match self.lines(guarded) {
+                        // Back to the block itself: the record ends (outside one, the story
+                        // goes on here).
+                        Flow::Goto(b) if b == self.ctx.block => {
+                            if !self.end_record() {
+                                self.close(Flow::Continue, false, ask, after);
+                            }
+                        }
+                        flow => self.close(flow, false, ask, after),
+                    }
                     let _ = writeln!(self.out.text, "@label after_{after}");
                     i = end;
                     continue;
@@ -261,17 +300,30 @@ impl Writer<'_, '_> {
                     } = &instr.operands
                     {
                         let end = (i + 1 + usize::from(*skip)).min(code.len());
+                        // A flag no script sets is always clear.
+                        if all_set.iter().any(|f| !self.ctx.settable.contains(f)) {
+                            i = end;
+                            continue;
+                        }
+                        let all_clear: Vec<u8> = all_clear
+                            .iter()
+                            .copied()
+                            .filter(|f| self.ctx.settable.contains(f))
+                            .collect();
                         let k = self.label();
                         for f in all_set {
                             let _ = writeln!(self.out.text, "@if {} == 0 -> skip_{k}", flag(*f));
                         }
-                        for f in all_clear {
+                        for f in &all_clear {
                             let _ = writeln!(self.out.text, "@if {} != 0 -> skip_{k}", flag(*f));
                         }
                         match self.lines(&code[i + 1..end]) {
                             f @ (Flow::GameOver | Flow::Ending(_)) => self.stop(f),
                             Flow::Goto(b) if b != self.ctx.block => self.route(b),
-                            _ => {}
+                            Flow::Goto(_) => {
+                                self.end_record();
+                            }
+                            Flow::Continue => {}
                         }
                         let _ = writeln!(self.out.text, "@label skip_{k}");
                         i = end;
@@ -287,6 +339,9 @@ impl Writer<'_, '_> {
 
     /// One instruction that is not a jump.
     fn effect(&mut self, instr: &Instr) {
+        if self.army_only && !matches!(instr.mnemonic, "set_allegiance" | "set_country") {
+            return;
+        }
         let ctx = self.ctx;
         let names = ctx.names;
         let officer = |person: u16| names.officers.get(&person).cloned();
@@ -329,6 +384,20 @@ impl Writer<'_, '_> {
                     self.skipped.insert("songs the pack has no music key for");
                 }
             },
+            "set_country" => match officer(get("person")) {
+                Some(id) if get("country") == 0 => {
+                    let _ = writeln!(out.text, "@join {id}");
+                }
+                // A battle's setup assigns its enemies too: they have no army to leave.
+                Some(id) if self.army_only && !names.player_officers.contains(&id) => {}
+                Some(id) => {
+                    let _ = writeln!(out.text, "@away {id}");
+                }
+                None => {
+                    self.skipped
+                        .insert("allegiances of persons without a pack officer");
+                }
+            },
             "set_allegiance" => match officer(get("person")) {
                 // Army 0 is Liu Bei's; an officer of the army moved to another (or to none, 14)
                 // is away for a while and keeps their progress (the original brings officers
@@ -336,6 +405,8 @@ impl Writer<'_, '_> {
                 Some(id) if get("army") == 0 => {
                     let _ = writeln!(out.text, "@join {id}");
                 }
+                // A battle's setup assigns its enemies too: they have no army to leave.
+                Some(id) if self.army_only && !names.player_officers.contains(&id) => {}
                 Some(id) => {
                     let _ = writeln!(out.text, "@away {id}");
                 }
@@ -450,6 +521,8 @@ impl<'c, 'a> Writer<'c, 'a> {
             labels: 0,
             routes: Vec::new(),
             gold_as_reward,
+            rec_end: None,
+            army_only: false,
         }
     }
 
@@ -565,7 +638,7 @@ impl<'c, 'a> Writer<'c, 'a> {
                 // A game over that no choice leads to (a failed errand): not part of the story.
                 continue;
             }
-            match self.lines(&rec.code) {
+            match self.record(&rec.code) {
                 Flow::Continue => {}
                 f @ (Flow::GameOver | Flow::Ending(_)) => {
                     self.stop(f);
@@ -606,10 +679,13 @@ impl Writer<'_, '_> {
             }
             let place = to
                 .and_then(|b| ctx.places.get(b).cloned().flatten())
-                .unwrap_or_else(|| "다른 곳".to_string());
+                .map_or_else(
+                    || "다른 곳으로 간다".to_string(),
+                    |p| format!("{p}에게 간다"),
+                );
             let _ = writeln!(
                 self.out.text,
-                "- {} 쪽으로 간다 -> opt_{ask}_{k}",
+                "- {} -> opt_{ask}_{k}",
                 place.replace("->", "→")
             );
             options.push(k);
@@ -645,7 +721,6 @@ const DATA_GOLD: u16 = 2;
 /// the battle's reward ([`StoryScene::gold`]), shown with the battle's result.
 pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
     let mut w = Writer::new(ctx, true);
-    let watched = |r: &&Record| BATTLE_KINDS.contains(&r.trigger.kind);
     let won = block
         .records
         .iter()
@@ -665,20 +740,36 @@ pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
         }
     }
     if w.out.next == Next::Default && !w.out.game_over && w.out.endings.is_empty() {
-        let last_stage = block
-            .records
-            .iter()
-            .filter(watched)
-            .map(|r| r.trigger.group)
-            .max();
-        if let Some(last) = last_stage {
-            let from = block
-                .records
-                .iter()
-                .position(|r| r.trigger.group > last)
-                .unwrap_or(block.records.len());
+        if let Some(from) = epilogue(block) {
             w.story(block, from);
         }
+    }
+    w.finish()
+}
+
+/// What the original changes in the army as it sets a battle of `block` up (the setup's
+/// `set_allegiance`, behind its flag checks): officers joining for it (Guan Yu's troop at
+/// Maicheng) or coming back (chapter 4's detachment). Played before the battle's camp; empty
+/// when the setup changes nothing.
+pub fn before_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
+    let mut w = Writer::new(ctx, false);
+    w.army_only = true;
+    for rec in block
+        .records
+        .iter()
+        .filter(|r| r.trigger.group < battles::FIRST_PHASE_GROUP)
+    {
+        // The setup goes on to the battle: its jumps are not the story's.
+        let _ = w.lines(&rec.code);
+    }
+    // Only flag checks around nothing: no scene.
+    if !w
+        .out
+        .text
+        .lines()
+        .any(|l| l.starts_with("@join ") || l.starts_with("@away "))
+    {
+        w.out.text.clear();
     }
     w.finish()
 }
@@ -710,7 +801,31 @@ pub fn defeat_scene(block: &Block, ctx: &StoryContext) -> Option<StoryScene> {
         f @ (Flow::GameOver | Flow::Ending(_)) => w.stop(f),
         _ => {}
     }
+    // The epilogue runs after a lost battle too (Maicheng's troop leaves the army).
+    if w.out.next == Next::Default && !w.out.game_over && w.out.endings.is_empty() {
+        if let Some(from) = epilogue(block) {
+            w.story(block, from);
+        }
+    }
     Some(w.finish())
+}
+
+/// The first record of the groups after a battle block's last stage (its epilogue, which runs
+/// when the battle is over), if it has stages.
+fn epilogue(block: &Block) -> Option<usize> {
+    let last = block
+        .records
+        .iter()
+        .filter(|r| BATTLE_KINDS.contains(&r.trigger.kind))
+        .map(|r| r.trigger.group)
+        .max()?;
+    Some(
+        block
+            .records
+            .iter()
+            .position(|r| r.trigger.group > last)
+            .unwrap_or(block.records.len()),
+    )
 }
 
 /// A base for re-staging a battle the base pack does not have: the original's name and
@@ -822,6 +937,8 @@ pub enum StepKind {
         title: String,
         shop: Vec<String>,
         defeat: Option<Defeat>,
+        /// The scene of the army's changes the battle's setup makes, played before its camp.
+        before: Option<String>,
     },
 }
 
@@ -840,6 +957,10 @@ impl Step {
     fn first_node(&self) -> String {
         match &self.kind {
             StepKind::Story { scene } => scene.clone(),
+            StepKind::Battle {
+                before: Some(scene),
+                ..
+            } => scene.clone(),
             StepKind::Battle { battle, .. } => format!("{battle}_camp"),
         }
     }
@@ -1007,7 +1128,16 @@ pub fn continue_campaign(
                 title,
                 shop,
                 defeat,
+                before,
             } => {
+                let camp = format!("{battle}_camp");
+                if let Some(scene) = before {
+                    nodes.push(Node::Drama {
+                        id: scene.clone(),
+                        scene: scene.clone(),
+                        next: camp.clone(),
+                    });
+                }
                 let next = checked(&mut nodes, battle, &step.ends, next);
                 let on_defeat = defeat.as_ref().map(|d| {
                     let after = target(i, &after_defeat(step.at, &d.next));
@@ -1021,7 +1151,7 @@ pub fn continue_campaign(
                 });
                 let fight = format!("{battle}_battle");
                 nodes.push(Node::Camp {
-                    id: first,
+                    id: camp,
                     title: title.clone(),
                     shop: shop.clone(),
                     battle: Some(battle.clone()),
@@ -1166,6 +1296,10 @@ mod tests {
 
     const RUN: u8 = 0;
 
+    /// Flags the test scenarios set.
+    static SETTABLE: std::sync::LazyLock<BTreeSet<u8>> =
+        std::sync::LazyLock::new(|| BTreeSet::from([7, 150]));
+
     fn if_flags(skip: u8, all_set: Vec<u8>, all_clear: Vec<u8>) -> Instr {
         Instr {
             offset: 0,
@@ -1240,6 +1374,7 @@ mod tests {
             block: 2,
             route_flag: "route",
             places: &[],
+            settable: &SETTABLE,
         }
     }
 
@@ -1546,6 +1681,7 @@ mod tests {
                     title: "연주 — 출진 준비".into(),
                     shop: vec!["bean".into()],
                     defeat: None,
+                    before: None,
                 },
                 next: Next::Default,
                 ends: Ends::default(),
@@ -1631,6 +1767,7 @@ mod tests {
                         next: Next::Default,
                         ends: Ends::default(),
                     }),
+                    before: Some("yiling_before".into()),
                 },
                 next: Next::Block(8),
                 ends: Ends::default(),
@@ -1661,6 +1798,11 @@ mod tests {
             if next == "s2" && on_defeat.as_deref() == Some("yiling_defeat"))
         );
         assert!(matches!(node("yiling_defeat"), Some(Node::Drama { next, .. }) if next == "s1"));
+        // The setup's changes to the army play before the camp.
+        assert!(
+            matches!(node("yiling_before"), Some(Node::Drama { next, .. })
+            if next == "yiling_camp")
+        );
         assert!(matches!(node("s1"), Some(Node::Drama { next, .. }) if next == "s1_ending3"));
         assert!(
             matches!(node("s1_ending3"), Some(Node::Branch { flag, value: 4, then, .. })
@@ -1685,6 +1827,73 @@ mod tests {
         assert!(node(&ending_node(2)).is_none());
         let text = toml::to_string(&c).unwrap();
         assert_eq!(toml::from_str::<CampaignDef>(&text).unwrap(), c);
+    }
+
+    #[test]
+    fn a_jump_back_to_the_block_ends_the_record() {
+        // "Join us?" Yes: the officer joins and the block runs again (the original leaves the
+        // record there); no: the refusal. A flag check that jumps back ends it too.
+        let b = block(vec![record(
+            TALK,
+            0,
+            vec![
+                if_flags(2, vec![7], vec![]),
+                instr("dialogue", &[("text", 5)]),
+                instr("goto_block", &[("block", 2)]),
+                instr("dialogue", &[("text", 2)]),
+                instr("if_answer", &[("answer", 0), ("skip", 2)]),
+                instr("set_allegiance", &[("person", 9), ("army", 0)]),
+                instr("goto_block", &[("block", 2)]),
+                instr("dialogue", &[("text", 4)]),
+                instr("leave_parallel", &[]),
+            ],
+        )]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(
+            s.text,
+            "@if orig_f7 == 0 -> skip_1\n손건: 돌아왔습니다.\n@goto rend_2\n@label skip_1\n\
+             yuan_shao: 흥.\nliu_bei: 무슨 일입니까?\n\
+             @label ask_3\n@choice\n- 예 -> yes_3\n- 아니오 -> after_4\n@label yes_3\n\
+             @join yuan_shao\n@goto rend_2\n@label after_4\n\
+             yuan_shao: 실례했소.\n@label rend_2\n"
+        );
+        parses(&s.text);
+    }
+
+    #[test]
+    fn a_battles_setup_changes_the_army_before_its_camp() {
+        let b = block(vec![
+            record(
+                RUN,
+                0,
+                vec![
+                    instr("set_allegiance", &[("person", 9), ("army", 0)]),
+                    instr("dialogue", &[("text", 1)]),
+                ],
+            ),
+            record(RUN, 1, vec![instr("begin_battle", &[])]),
+            // A stage's change is the battle's, not the setup's.
+            record(
+                9,
+                3,
+                vec![instr("set_allegiance", &[("person", 9), ("army", 5)])],
+            ),
+        ]);
+        let song_key = |_: u16| None;
+        let names = names();
+        assert_eq!(
+            before_scene(&b, &ctx(&names, &song_key)).text,
+            "@join yuan_shao\n"
+        );
+        // A setup that changes nothing has no scene.
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![instr("dialogue", &[("text", 1)])],
+        )]);
+        assert!(before_scene(&b, &ctx(&names, &song_key)).text.is_empty());
     }
 
     #[test]
