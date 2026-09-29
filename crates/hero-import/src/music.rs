@@ -10,6 +10,7 @@
 //! advances the effects (LFOs, slides) on its overflow (≈ 61 Hz).
 
 use crate::opl::{Opl2, RATE};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Seconds between two driver timer ticks.
 const TIMER_TICK: f64 = 4096.0 / 1_193_182.0;
@@ -96,6 +97,9 @@ impl Rendered {
     }
 }
 
+/// Error of a render whose `cancel` was set ([`render_cancellable`]).
+pub(crate) const CANCELLED: &str = "cancelled";
+
 /// Song steps a second at most (tempo 255 overflows the step accumulator on every timer tick).
 const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
 
@@ -106,6 +110,37 @@ const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
 /// out ([`Rendered::intro_seconds`]). Otherwise the song is played once from its start. Longer
 /// than `max_seconds` is an error.
 pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, String> {
+    render_cancellable(song, rate, max_seconds, &AtomicBool::new(false))
+}
+
+/// [`render`], giving up with an error as soon as `cancel` is set (checked at every timer
+/// tick, so a song stops within a fraction of a second: the game drops a render it no longer
+/// needs).
+pub fn render_cancellable(
+    song: &[u8],
+    rate: u32,
+    max_seconds: f64,
+    cancel: &AtomicBool,
+) -> Result<Rendered, String> {
+    render_checking(song, rate, max_seconds, &mut || {
+        cancel.load(Ordering::Relaxed)
+    })
+}
+
+/// [`render_cancellable`] asking `cancelled` at every timer tick.
+fn render_checking(
+    song: &[u8],
+    rate: u32,
+    max_seconds: f64,
+    cancelled: &mut dyn FnMut() -> bool,
+) -> Result<Rendered, String> {
+    let mut cancelled = || {
+        if cancelled() {
+            Err(CANCELLED.to_string())
+        } else {
+            Ok(())
+        }
+    };
     // The driver alone first: where the tracks end and where they loop to.
     let mut probe = Driver::new(song)?;
     if !probe.playing() {
@@ -118,6 +153,7 @@ pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, Stri
             .any(|c| c.pos.is_some() && c.first_end.is_none())
     };
     while unfinished(&probe) {
+        cancelled()?;
         probe.timer_tick();
         probe.writes.clear();
         if let Some(e) = probe.broken.take() {
@@ -159,6 +195,7 @@ pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, Stri
     let mut intro_seconds = None;
     loop {
         if chip_time <= 0.0 {
+            cancelled()?;
             driver.timer_tick();
             ticks += 1;
             for (reg, value) in driver.writes.drain(..) {
@@ -1053,6 +1090,32 @@ mod tests {
         let wav = rendered.wav();
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(wav.len(), 44 + rendered.samples.len() * 2);
+    }
+
+    #[test]
+    fn a_cancelled_render_stops() {
+        let cancel = AtomicBool::new(true);
+        assert_eq!(
+            render_cancellable(&song(), 22050, 10.0, &cancel).unwrap_err(),
+            CANCELLED
+        );
+        cancel.store(false, Ordering::Relaxed);
+        assert!(render_cancellable(&song(), 22050, 10.0, &cancel).is_ok());
+        // Cancelled while the samples are rendered (the last check of a whole render is in
+        // that loop, after the driver's first pass).
+        let mut checks = 0;
+        render_checking(&song(), 22050, 10.0, &mut || {
+            checks += 1;
+            false
+        })
+        .unwrap();
+        let mut asked = 0;
+        let cancelled = render_checking(&song(), 22050, 10.0, &mut || {
+            asked += 1;
+            asked == checks
+        });
+        assert_eq!(cancelled.unwrap_err(), CANCELLED);
+        assert_eq!(asked, checks);
     }
 
     #[test]

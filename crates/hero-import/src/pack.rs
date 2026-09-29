@@ -76,6 +76,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Index file of a written pack.
 pub const PACK_INDEX: &str = "original-pack.json";
@@ -755,10 +756,12 @@ pub type WavResult = Result<Vec<u8>, String>;
 
 /// Render the original's songs of [`MUSIC_KEYS`] in `install` one after another, calling `each`
 /// with the key, the file and song number, and the song (or why it could not be rendered);
-/// `each` returns `false` to stop. `Ok(false)`: none of the music files is there.
+/// `each` returns `false` to stop, and setting `cancel` stops within the song being rendered
+/// (`each` is not called for it). `Ok(false)`: none of the music files is there.
 fn render_songs(
     install: &InstallDir,
     report: &mut KindReport,
+    cancel: &AtomicBool,
     each: &mut dyn FnMut(&str, &str, usize, SongResult) -> bool,
 ) -> Result<bool, ExtractError> {
     let mut files: BTreeMap<&str, Option<Vec<u8>>> = BTreeMap::new();
@@ -778,10 +781,10 @@ fn render_songs(
                 let song = songs
                     .get(index)
                     .ok_or_else(|| format!("{file} has no song {index}"))?;
-                crate::music::render(song, MUSIC_RATE, 600.0)
+                crate::music::render_cancellable(song, MUSIC_RATE, 600.0, cancel)
             }),
         };
-        if !each(key, file, index, rendered) {
+        if cancel.load(Ordering::Relaxed) || !each(key, file, index, rendered) {
             break;
         }
     }
@@ -790,22 +793,29 @@ fn render_songs(
 
 /// Render the original's songs of [`MUSIC_KEYS`] in the install at `source` one by one, calling
 /// `each` with the key and its `bgm/<key>.wav` file (or why it could not be made); `each` returns
-/// `false` to stop. For the game, which converts without music ([`PackOptions::music`]) and adds
-/// the songs while it runs.
+/// `false` to stop between songs; setting `cancel` (from another thread) stops within a song.
+/// For the game, which converts without music ([`PackOptions::music`]) and adds the songs while
+/// it runs.
 pub fn render_music(
     source: &Path,
+    cancel: &AtomicBool,
     each: &mut dyn FnMut(&str, WavResult) -> bool,
 ) -> Result<(), String> {
     let install = InstallDir::open(source).map_err(|e| e.to_string())?;
     let mut report = KindReport::new(Status::Extracted, false, "");
-    let found = render_songs(&install, &mut report, &mut |key, file, index, rendered| {
-        each(
-            key,
-            rendered
-                .map(|r| r.wav())
-                .map_err(|e| format!("{file} song {index}: {e}")),
-        )
-    })
+    let found = render_songs(
+        &install,
+        &mut report,
+        cancel,
+        &mut |key, file, index, rendered| {
+            each(
+                key,
+                rendered
+                    .map(|r| r.wav())
+                    .map_err(|e| format!("{file} song {index}: {e}")),
+            )
+        },
+    )
     .map_err(|e| e.to_string())?;
     if found {
         Ok(())
@@ -813,6 +823,12 @@ pub fn render_music(
         Err("no music files in the install".into())
     }
 }
+
+/// Note of a song whose tracks loop from different places ([`crate::music::render`]).
+const SEAMED: &str = concat!(
+    "; its tracks loop from different places, so it is played once from the start and",
+    " repeats with a seam"
+);
 
 /// The original's songs of [`MUSIC_KEYS`] rendered as `bgm/<key>.wav` (one pass of each song's
 /// loop, which the game repeats; see [`crate::music::render`]), standing in for the base pack's
@@ -835,27 +851,31 @@ fn convert_music(
     let mut written = Vec::new();
     let mut failed = Vec::new();
     let mut notes = Vec::new();
-    let found = render_songs(install, &mut report, &mut |key, file, index, rendered| {
-        match rendered {
-            Ok(r) => {
-                let length = r.samples.len() as f64 / f64::from(MUSIC_RATE);
-                seconds += length;
-                let how = match (r.seamless, r.intro_seconds > 0.0) {
-                    (true, false) => String::new(),
-                    (true, true) => format!(
-                        "; its loop only, the {:.1} s intro before it left out",
-                        r.intro_seconds
-                    ),
-                    (false, _) => "; its tracks loop from different places, so it is played once from the start and repeats with a seam"
-                        .into(),
-                };
-                notes.push(format!("{key}: {file} song {index}, {length:.0} s{how}"));
-                written.push((format!("bgm/{key}.wav"), r.wav()));
+    let found = render_songs(
+        install,
+        &mut report,
+        &AtomicBool::new(false),
+        &mut |key, file, index, rendered| {
+            match rendered {
+                Ok(r) => {
+                    let length = r.samples.len() as f64 / f64::from(MUSIC_RATE);
+                    seconds += length;
+                    let how = match (r.seamless, r.intro_seconds > 0.0) {
+                        (true, false) => String::new(),
+                        (true, true) => format!(
+                            "; its loop only, the {:.1} s intro before it left out",
+                            r.intro_seconds
+                        ),
+                        (false, _) => SEAMED.into(),
+                    };
+                    notes.push(format!("{key}: {file} song {index}, {length:.0} s{how}"));
+                    written.push((format!("bgm/{key}.wav"), r.wav()));
+                }
+                Err(e) => failed.push(format!("{key}: {file} song {index}: {e}")),
             }
-            Err(e) => failed.push(format!("{key}: {file} song {index}: {e}")),
-        }
-        true
-    })?;
+            true
+        },
+    )?;
     if !found {
         report.status = Status::MissingSource;
         report.summary = "no music files".into();
@@ -5159,7 +5179,7 @@ mod tests {
         std::fs::write(src.path().join("MUSIC.R3"), music_file(20)).unwrap();
         std::fs::write(src.path().join("OPMUSIC.R3"), music_file(2)).unwrap();
         let mut got = Vec::new();
-        render_music(src.path(), &mut |key, wav| {
+        render_music(src.path(), &AtomicBool::new(false), &mut |key, wav| {
             got.push((key.to_string(), wav));
             true
         })
@@ -5174,15 +5194,33 @@ mod tests {
         }
         // The game stops listening: rendering stops.
         let mut calls = 0;
-        render_music(src.path(), &mut |_, _| {
+        render_music(src.path(), &AtomicBool::new(false), &mut |_, _| {
             calls += 1;
             false
         })
         .unwrap();
         assert_eq!(calls, 1);
+        // Cancelled while rendering the first song (the flag is set from another thread in the
+        // game): nothing more is handed over, and it is not an error.
+        let cancel = AtomicBool::new(false);
+        let mut calls = 0;
+        render_music(src.path(), &cancel, &mut |_, _| {
+            calls += 1;
+            cancel.store(true, Ordering::Relaxed);
+            true
+        })
+        .unwrap();
+        assert_eq!(calls, 1);
+        let mut calls = 0;
+        render_music(src.path(), &AtomicBool::new(true), &mut |_, _| {
+            calls += 1;
+            true
+        })
+        .unwrap();
+        assert_eq!(calls, 0);
         // No music at all.
         let empty = TempDir::new("pack-music-none");
-        assert!(render_music(empty.path(), &mut |_, _| true).is_err());
+        assert!(render_music(empty.path(), &AtomicBool::new(false), &mut |_, _| true).is_err());
     }
 
     #[test]

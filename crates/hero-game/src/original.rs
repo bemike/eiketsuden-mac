@@ -19,7 +19,7 @@ use hero_import::edition::{identify, Edition, EditionId};
 use hero_import::install::InstallDir;
 use hero_import::pack::{build_pack_with_progress, MemoryPack, PackOptions, BUILD_STEPS};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -234,10 +234,19 @@ type Song = (String, Result<Vec<u8>, String>);
 /// playing when its song arrives starts again with it.
 pub struct MusicRender {
     songs: Receiver<Song>,
+    /// Set when this render is dropped (the data pack was reloaded): the thread stops within
+    /// the song it is rendering.
+    cancel: Arc<AtomicBool>,
     /// Songs added whose cached sound could not be dropped yet (it was loading).
     stale: Vec<String>,
     added: usize,
     finished: bool,
+}
+
+impl Drop for MusicRender {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 impl MusicRender {
@@ -245,12 +254,15 @@ impl MusicRender {
     pub fn start(install: PathBuf) -> MusicRender {
         let (send, songs) = mpsc::channel::<Song>();
         let failed = send.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancelled = Arc::clone(&cancel);
         let spawned = std::thread::Builder::new()
             .name("original-music".into())
             .spawn(move || {
-                // Stops when the game no longer listens (the data pack was reloaded).
+                // Stops when the game no longer listens (the data pack was reloaded), within a song
+                // as `cancel` is set on drop.
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    hero_import::pack::render_music(&install, &mut |key, wav| {
+                    hero_import::pack::render_music(&install, &cancelled, &mut |key, wav| {
                         send.send((key.to_string(), wav)).is_ok()
                     })
                 }))
@@ -266,6 +278,7 @@ impl MusicRender {
         }
         MusicRender {
             songs,
+            cancel,
             stale: Vec::new(),
             added: 0,
             finished: false,
