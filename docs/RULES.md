@@ -41,7 +41,7 @@ Integer arithmetic: every division truncates towards zero unless stated otherwis
 | DEF | `(level + 10) * (morale + s(lead) + class.def * 10) / 10`, then `* best armor def_pct / 100` |
 | Move | `class.move + best accessory move_bonus` (0 while confused) |
 
-The ATK / DEF formula is the original's *(code: `MAIN.EXE` image 0x13A42 / 0x13B6C, FORMATS §10.4)*, which adds
+The ATK / DEF formula is the original's *(code: `MAIN.EXE` image 0x13A3E / 0x13B6C, FORMATS §10.4)*, which adds
 twice a class coefficient stored as `class.atk * 5`.
 
 *(community)* Worked example: Cao Cao Lv42, STR 75, LEAD 98, guard class (atk 16 / def 12), morale 100, weapon 120%,

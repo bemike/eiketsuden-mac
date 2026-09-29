@@ -757,7 +757,7 @@ const EFFECT_LOOKUP: Pattern = pat!(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClassRules {
     /// Attack coefficient: the attack formula adds twice this value, so it is five times the
-    /// class's `atk` (FORMATS §10.6).
+    /// class's `atk` (FORMATS §10.4).
     pub attack: Vec<u8>,
     /// Defence coefficient, the same way.
     pub defense: Vec<u8>,

@@ -659,17 +659,37 @@ type RulesResult = (
 /// Where the class rules of the pack go.
 pub const CLASS_RULES: &str = "rules/classes.toml";
 
+/// A range as the notes show it: its name, or its offsets.
+fn range_label(range: &RangeSpec) -> String {
+    match range {
+        RangeSpec::Named(name) => name.clone(),
+        RangeSpec::Offsets(offsets) => format!("{offsets:?}"),
+    }
+}
+
 /// Named attack range per original range code (0-4; 255 is none).
 const RANGE_NAMES: [&str; 5] = ["adjacent4", "adjacent8", "archer", "crossbow", "catapult"];
 
 /// The pack chain's classes with the original's attack and defence coefficients, movement
-/// points and attack range (`MAIN.EXE`, FORMATS §10.6) for the classes drawn with an
+/// points and attack range (`MAIN.EXE`, FORMATS §10.4) for the classes drawn with an
 /// original class's sprite (when several share it, the one named after it), and the changes as
 /// notes. Everything else stays the chain's.
 pub fn original_classes(
     rules: &maps::ClassRules,
     classes: &[ClassDef],
 ) -> Result<(Vec<ClassDef>, Vec<String>), String> {
+    let tables = [
+        &rules.attack,
+        &rules.defense,
+        &rules.move_points,
+        &rules.range,
+    ];
+    if tables.iter().any(|t| t.len() != maps::CLASSES) {
+        return Err(format!(
+            "the class tables do not have {} classes",
+            maps::CLASSES
+        ));
+    }
     let mut out = Vec::with_capacity(classes.len());
     let mut notes = Vec::new();
     for c in classes {
@@ -695,7 +715,12 @@ pub fn original_classes(
         c2.move_points = rules.move_points[k];
         c2.range = match rules.range[k] {
             255 => RangeSpec::Offsets(Vec::new()),
-            r => RangeSpec::Named(RANGE_NAMES[usize::from(r)].to_string()),
+            r => RangeSpec::Named(
+                RANGE_NAMES
+                    .get(usize::from(r))
+                    .ok_or_else(|| format!("the original's range code {r} of class {k}"))?
+                    .to_string(),
+            ),
         };
         if c.atk != c2.atk {
             notes.push(format!("{}: atk {} -> {}", c.id, c.atk, c2.atk));
@@ -710,7 +735,12 @@ pub fn original_classes(
             ));
         }
         if c.range != c2.range {
-            notes.push(format!("{}: range {:?} -> {:?}", c.id, c.range, c2.range));
+            notes.push(format!(
+                "{}: range {} -> {}",
+                c.id,
+                range_label(&c.range),
+                range_label(&c2.range)
+            ));
         }
         out.push(c2);
     }
@@ -3494,6 +3524,14 @@ mod tests {
         odd.attack[17] = 21;
         let err = original_classes(&odd, &classes).unwrap_err();
         assert!(err.contains("not a multiple of 5"), "{err}");
+        // Tables that are not the game's shape, or a range code it does not have.
+        let mut short = rules.clone();
+        short.range.pop();
+        assert!(original_classes(&short, &classes).is_err());
+        let mut bad = rules.clone();
+        bad.range[5] = 9;
+        let err = original_classes(&bad, &classes).unwrap_err();
+        assert!(err.contains("range code 9"), "{err}");
     }
 
     #[test]
