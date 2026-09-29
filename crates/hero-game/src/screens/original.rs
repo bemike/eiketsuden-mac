@@ -73,6 +73,9 @@ enum Done {
     Typed(Result<Listing, String>),
     /// Use `dir` if it (still) holds a playable install.
     Use(PathBuf, FolderCheck),
+    /// The clipboard's first line for the path line (`None`: no text), or why it could not be
+    /// read.
+    Pasted(Result<Option<String>, String>),
 }
 
 /// A read on a worker thread ([`original::Background`]): the file system can stall (a network
@@ -164,11 +167,42 @@ fn cmd_down(ctx: &Ctx) -> bool {
     ctx.input.key_down(KeyCode::LeftSuper) || ctx.input.key_down(KeyCode::RightSuper)
 }
 
-/// The first line of the clipboard, `None` when it holds no text.
-fn pasted() -> Option<String> {
-    macroquad::miniquad::window::clipboard_get()
-        .and_then(|s| s.lines().next().map(str::to_string))
+/// The first line of `text`, `None` when it has none.
+fn first_line(text: &str) -> Option<String> {
+    text.lines()
+        .next()
+        .map(str::to_string)
         .filter(|s| !s.trim().is_empty())
+}
+
+/// [`read_clipboard`] runs on a worker thread ([`OriginalScreen::paste`]). Defined with it: the
+/// Linux read must not run on the main thread and miniquad's must not run on another.
+#[cfg(target_os = "linux")]
+const READS_IN_BACKGROUND: bool = true;
+#[cfg(not(target_os = "linux"))]
+const READS_IN_BACKGROUND: bool = false;
+
+/// The first line of the clipboard, `None` when it holds no text. On Linux it runs on a worker
+/// thread with its own X11 connection, which gives up on a clipboard owner that does not answer
+/// (arboard waits 4 s for each of the six text formats it asks for, so up to about 24 s; Esc
+/// cancels meanwhile, and a timeout reads as an empty clipboard). miniquad's read waits for it
+/// forever on the main thread (docs/DECISIONS.md D14).
+#[cfg(target_os = "linux")]
+fn read_clipboard() -> Result<Option<String>, String> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| format!("클립보드를 열지 못했습니다: {e}"))?;
+    match clipboard.get_text() {
+        Ok(text) => Ok(first_line(&text)),
+        Err(arboard::Error::ContentNotAvailable) => Ok(None),
+        Err(e) => Err(format!("클립보드를 읽지 못했습니다: {e}")),
+    }
+}
+
+/// The first line of the clipboard, `None` when it holds no text (the platform's clipboard
+/// answers at once here).
+#[cfg(not(target_os = "linux"))]
+fn read_clipboard() -> Result<Option<String>, String> {
+    Ok(macroquad::miniquad::window::clipboard_get().and_then(|s| first_line(&s)))
 }
 
 /// Forget the characters typed before (macroquad keeps them until they are read).
@@ -268,6 +302,18 @@ impl OriginalScreen {
             what,
             skips_saved: false,
         });
+    }
+
+    /// Paste the clipboard's first line at the end of the path line (a new line when none is
+    /// being typed). Linux reads it in the background ([`read_clipboard`]).
+    fn paste(&mut self, ctx: &mut Ctx) {
+        if READS_IN_BACKGROUND {
+            self.start(ctx, true, "클립보드".into(), || {
+                Done::Pasted(read_clipboard())
+            });
+        } else {
+            self.finish(ctx, Ok(Done::Pasted(read_clipboard())));
+        }
     }
 
     /// Read `place` and show it, the cursor on `focus` when it is listed.
@@ -573,6 +619,19 @@ impl OriginalScreen {
                 self.typing = None;
                 self.show_place(ctx, listing, None);
             }
+            Done::Pasted(Ok(Some(p))) => {
+                let mut text = self.typing.take().unwrap_or_default();
+                text.push_str(&p);
+                self.typing = Some(capped(text));
+            }
+            Done::Pasted(Ok(None)) => {
+                ctx.sfx(sfx::ERROR);
+                ctx.toast("클립보드에 텍스트가 없습니다");
+            }
+            Done::Pasted(Err(e)) => {
+                ctx.sfx(sfx::ERROR);
+                ctx.toast(e);
+            }
             Done::Typed(Err(e)) => {
                 ctx.sfx(sfx::ERROR);
                 ctx.toast(e);
@@ -679,13 +738,13 @@ impl OriginalScreen {
                 text.pop();
             }
         }
-        if ctrl && ctx.input.key_pressed(KeyCode::V) {
-            match pasted() {
-                Some(p) => text.push_str(&p),
-                None => ctx.toast("클립보드에 텍스트가 없습니다"),
-            }
-        }
         let text = capped(text);
+        if ctrl && ctx.input.key_pressed(KeyCode::V) {
+            ctx.input.consume();
+            self.typing = Some(text);
+            self.paste(ctx);
+            return Transition::None;
+        }
         let frame = self.typing_frame(&ctx.gfx);
         let away = ctx.input.right_click() || ctx.input.tap().is_some_and(|p| !frame.contains(p));
         let escape = ctx.input.key_pressed(KeyCode::Escape) || away;
@@ -723,13 +782,7 @@ impl OriginalScreen {
             // Paste straight into a new path line.
             drain_chars();
             ctx.input.consume();
-            match pasted() {
-                Some(p) => self.typing = Some(capped(p)),
-                None => {
-                    ctx.sfx(sfx::ERROR);
-                    ctx.toast("클립보드에 텍스트가 없습니다");
-                }
-            }
+            self.paste(ctx);
             return Transition::None;
         }
         let up = original::parent(place);
@@ -962,6 +1015,17 @@ impl OriginalScreen {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_paste_takes_the_first_line() {
+        assert_eq!(first_line("C:\\GAME\r\nmore"), Some("C:\\GAME".to_string()));
+        assert_eq!(
+            first_line("/home/me/game\n"),
+            Some("/home/me/game".to_string())
+        );
+        assert_eq!(first_line(""), None);
+        assert_eq!(first_line("   \nsecond"), None);
+    }
+
     use super::*;
     use std::path::PathBuf;
 
