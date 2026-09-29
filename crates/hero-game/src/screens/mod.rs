@@ -6,6 +6,7 @@ pub mod battle;
 pub mod camp;
 pub mod credits;
 pub mod drama;
+pub mod duel;
 pub mod error;
 pub mod gallery;
 pub mod gameover;
