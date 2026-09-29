@@ -734,7 +734,12 @@ impl Writer<'_, '_> {
         };
         for &k in plans {
             let (proposal, _) = split(k);
-            let _ = self.lines(proposal);
+            // (A proposal only talks: a jump or an end in it would be left out.)
+            if self.lines(proposal) != Flow::Continue {
+                self.out.notes.push(format!(
+                    "record {k}: a jump or an end before its question is left out"
+                ));
+            }
         }
         let (ask, after) = (self.label(), self.label());
         self.close_picture();

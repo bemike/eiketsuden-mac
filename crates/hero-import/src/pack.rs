@@ -2075,6 +2075,11 @@ fn convert_battles(
     }
     // The original's flags some script of the chapters sets (the others are always clear).
     let mut settable = BTreeSet::new();
+    // Every flag the chapters' scripts set or test, and the battles that go on in another block:
+    // the flag those set ([`battles::CONTINUATION_FLAG`]) must be one of the original's unused,
+    // and one battle's only.
+    let mut flags_used = BTreeSet::new();
+    let mut continued: Vec<String> = Vec::new();
     for &file in CHAPTER_FILES.iter().filter(|_| continues) {
         let Some(count) = scenarios[&file]
             .as_deref()
@@ -2092,6 +2097,7 @@ fn convert_battles(
                         .filter_map(|c| c.operands.get("flag"))
                         .map(|f| f as u8),
                 );
+                flags_used.extend(battles::flags_used(&scene));
                 // Officers the chapters bring into the army at some point: the others a
                 // battle's setup assigns are enemies.
                 let joining = scene.instructions().filter_map(|c| match c.mnemonic {
@@ -2200,6 +2206,9 @@ fn convert_battles(
                 };
                 if let chapters::Part::Battle { block, .. } = part {
                     let fought = battles::battle_block(&scene, block);
+                    if battles::has_continuation(&scene, block) {
+                        continued.push(chapter_battle_id(file, scene_index, block));
+                    }
                     let battle = chapter_battle_id(file, scene_index, block);
                     if let Some(d) = chapters::defeat_scene(&fought, &ctx) {
                         defeats.insert((file, scene_index, block), (format!("{battle}_defeat"), d));
@@ -2215,6 +2224,14 @@ fn convert_battles(
                 chapter.push((file, scene_index, part, story));
             }
         }
+    }
+    if flags_used.contains(&battles::CONTINUATION_FLAG) || continued.len() > 1 {
+        report.errors.push(format!(
+            "the battles that go on in another block ({}) need scenario flag {} of their own, \
+             which the original's scripts must not use: the conversion has no such flag for them",
+            continued.join(", "),
+            battles::CONTINUATION_FLAG
+        ));
     }
     // Only the parts the story reaches: an alternative the conversion offers no choice for
     // (the original lets one pick it by whom one talks to) is left out.

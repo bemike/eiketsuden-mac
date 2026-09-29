@@ -596,6 +596,15 @@ impl CampaignState {
     ///   `give_item` events) and records the battle in `battles_won`.
     ///
     /// Apply each finished battle once: applying it again would take its items out again.
+    /// Put the flags `battle`'s events have set so far into the campaign's. A scene the battle
+    /// plays (an event's `drama`, the outro) runs on the campaign and sees them; the battle's
+    /// result merges them again at the end ([`CampaignState::apply_battle_result`]).
+    pub fn merge_battle_flags(&mut self, battle: &BattleState) {
+        for (flag, value) in &battle.flags {
+            self.flags.insert(flag.clone(), *value);
+        }
+    }
+
     pub fn apply_battle_result(&mut self, pack: &Pack, battle: &BattleState) {
         let mut copied: BTreeSet<&str> = BTreeSet::new();
         for unit in battle.units.iter().filter(|u| u.side == Side::Player) {
@@ -626,9 +635,7 @@ impl CampaignState {
             }
         }
 
-        for (flag, value) in &battle.flags {
-            self.flags.insert(flag.clone(), *value);
-        }
+        self.merge_battle_flags(battle);
 
         if battle.outcome == Some(Outcome::Victory) {
             self.add_gold(pack, battle.gold_found);

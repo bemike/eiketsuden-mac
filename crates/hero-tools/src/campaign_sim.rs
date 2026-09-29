@@ -212,6 +212,8 @@ impl Sim<'_> {
         loop {
             for e in events {
                 if let BattleEvent::Drama { scene } = e {
+                    // As the game does: the scene sees the flags the battle has set.
+                    campaign.merge_battle_flags(&state);
                     self.play_scene(campaign, &scene).map_err(End::Error)?;
                 }
             }

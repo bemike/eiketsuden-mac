@@ -287,11 +287,20 @@ pub fn part_of_earlier_battle(scene: &Scene, index: usize) -> bool {
         })
 }
 
-/// The flag a battle of `scene` sets as it goes on in its continuation block
-/// ([`continues_battle`]): the highest scenario flag no script of the scene uses. The story after
-/// the battle tells by it whether the battle got that far (its outro is the continuation's).
-pub fn continuation_flag(scene: &Scene) -> u8 {
-    let used: BTreeSet<u8> = scene
+/// The flag a battle sets as it goes on in its continuation block ([`continues_battle`]): a
+/// scenario flag no script of the original uses (they go up to 219; the pack's conversion checks
+/// that none uses it and that one battle at most needs it). The story after the battle tells by
+/// it whether the battle got that far (its outro is the continuation's).
+pub const CONTINUATION_FLAG: u8 = 255;
+
+/// [`CONTINUATION_FLAG`] (for a battle of `scene`).
+pub fn continuation_flag(_scene: &Scene) -> u8 {
+    CONTINUATION_FLAG
+}
+
+/// The scenario flags `scene`'s scripts set or test.
+pub fn flags_used(scene: &Scene) -> BTreeSet<u8> {
+    scene
         .instructions()
         .flat_map(|c| match &c.operands {
             Operands::Condition {
@@ -305,11 +314,7 @@ pub fn continuation_flag(scene: &Scene) -> u8 {
                 .collect(),
             _ => Vec::new(),
         })
-        .collect();
-    (0..=u8::MAX)
-        .rev()
-        .find(|f| !used.contains(f))
-        .unwrap_or(u8::MAX)
+        .collect()
 }
 
 /// Whether battle block `index` of `scene` goes on in a continuation block
