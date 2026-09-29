@@ -43,7 +43,8 @@
 //!   ([`TILE_FALLBACK`]).
 //! * **Battle maps.** Every map of `HEXZMAP.R3` becomes a map file entry: its chips drawn as they
 //!   are (the picture layer, 16-px chips, so a 32-px tile is one 2×2-chip cell) and its terrain
-//!   bytes as the rules grid ([`map_rows`]: the code in base 36, [`TERRAIN_MAP`] in the legend).
+//!   bytes as the rules grid ([`map_rows`]: the code in base 36, [`rules_terrain`] in the legend,
+//!   which is [`TERRAIN_MAP`] but for the closed gate).
 //!   A cell whose code has no pack terrain gets the terrain its chips are drawn with elsewhere
 //!   ([`ChipTerrain::code_of`]), an off-map code ([`OFF_MAP`]) an impassable one; both are listed
 //!   as stand-ins.
@@ -1636,7 +1637,8 @@ fn convert_units(
 // ----- terrain tileset -----------------------------------------------------------------------
 
 /// Base-pack terrain id of each original terrain code; `None` for fire and flood, which only
-/// tactics set at run time.
+/// tactics set at run time. The tiles and the chip statistics use it; a battle's rules grid uses
+/// [`rules_terrain`], which differs from it only for the gate ([`GATE_CODE`]).
 pub const TERRAIN_MAP: [Option<&str>; TERRAIN_COUNT] = [
     Some("plain"),
     Some("forest"),
@@ -1693,8 +1695,8 @@ pub const CONNECT: &[(&str, &[&str])] = &[
     ("river", &["river", "bridge"]),
     // The deck runs across the water, so a bridge follows the river beside it.
     ("bridge", &["river"]),
-    ("wall", &["wall", "gate"]),
-    ("castle", &["castle", "gate", "wall"]),
+    ("wall", &["wall", "gate", CLOSED_GATE]),
+    ("castle", &["castle", "gate", CLOSED_GATE, "wall"]),
     ("cliff", &["cliff"]),
     ("fence", &["fence"]),
 ];
@@ -1999,7 +2001,10 @@ fn tileset(
                 let joined: Vec<String> = connect_of(source)
                     .unwrap_or(&[])
                     .iter()
-                    .filter(|id| known.contains(*id))
+                    // The terrain rules add the closed gate to a chain with a gate.
+                    .filter(|id| {
+                        known.contains(*id) || (**id == CLOSED_GATE && known.contains("gate"))
+                    })
                     .map(|id| toml_str(id))
                     .collect();
                 let _ = writeln!(
@@ -2309,7 +2314,12 @@ pub fn map_rows(
             let id = rules_terrain(used).expect("stand-ins have a pack terrain");
             if !known.contains(id) {
                 return Err(format!(
-                    "terrain code {used} is `{id}`, which the pack's terrain does not have"
+                    "terrain code {used} is `{id}`, which the pack's terrain does not have{}",
+                    if id == CLOSED_GATE {
+                        " (the terrain rules add it: see the `rules` report)"
+                    } else {
+                        ""
+                    }
                 ));
             }
             let glyph = code_glyph(used).expect("terrain codes are below 36");

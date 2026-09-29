@@ -705,6 +705,11 @@ terrain = \"rules/terrain.toml\""
             .terrain
             .iter()
             .any(|t| t.id.as_str() == hero_import::pack::CLOSED_GATE));
+        let maps = std::fs::read_to_string(out.join("maps/original.toml")).unwrap();
+        assert!(
+            maps.contains("\"a\" = \"closed_gate\""),
+            "no map has a closed gate"
+        );
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
