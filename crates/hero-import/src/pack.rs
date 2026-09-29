@@ -767,7 +767,7 @@ pub const BATTLE_FRAME_STATUS: [u32; 4] = [448, 34, 78, 28];
 /// The frame's buttons (measured on the frame, with their black borders): 기능 (the battle
 /// menu), 아군 and 적군 (the unit lists), and the picture box right of them (the weather).
 pub const BATTLE_FRAME_MENU: [u32; 4] = [15, 7, 66, 18];
-pub const BATTLE_FRAME_ALLIES: [u32; 4] = [528, 31, 33, 34];
+pub const BATTLE_FRAME_ALLIES: [u32; 4] = [528, 31, 32, 34];
 pub const BATTLE_FRAME_ENEMIES: [u32; 4] = [560, 31, 33, 34];
 pub const BATTLE_FRAME_WEATHER: [u32; 4] = [594, 33, 28, 30];
 

@@ -1766,12 +1766,18 @@ impl Screen for BattleScreen {
                         vec2((r.center().x - 8.0).round(), (r.center().y - 8.0).round()),
                     );
                 }
-                // The buttons light up under the pointer while they can be used.
-                if matches!(self.ui.mode, Mode::Browse) {
-                    if let Some(p) = ctx.input.pointer() {
-                        for (_, r) in frame_buttons(f).filter(|(_, r)| r.contains(p)) {
-                            draw_highlight(r, false, ctx.time);
-                        }
+                // The button under the mouse lights up while the buttons can be used (touch
+                // leaves no pointer over them).
+                let usable = player_turn
+                    && matches!(self.panel, Panel::None)
+                    && self.dialog.is_none()
+                    && self.waiting.is_none()
+                    && self.mode_menu.is_none()
+                    && matches!(self.ui.mode, Mode::Browse)
+                    && !self.touch_seen;
+                if let Some(p) = ctx.input.pointer().filter(|_| usable) {
+                    if let Some((_, r)) = frame_buttons(f).find(|(_, r)| r.contains(p)) {
+                        draw_highlight(r, false, ctx.time);
                     }
                 }
             }

@@ -142,6 +142,22 @@ impl BattleFrame {
         ] {
             areas.extend(area.map(|a| (name, a)));
         }
+        // A button on the map would take the taps of its tiles.
+        let overlaps = |[ax, ay, aw, ah]: [u32; 4], [bx, by, bw, bh]: [u32; 4]| {
+            ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
+        };
+        for (name, area) in [
+            ("menu", self.menu),
+            ("allies", self.allies),
+            ("enemies", self.enemies),
+        ] {
+            if let Some(a) = area.filter(|&a| overlaps(a, self.map)) {
+                return Err(format!(
+                    "battle_frame.{name} {a:?} must not overlap battle_frame.map {:?}",
+                    self.map
+                ));
+            }
+        }
         check_frame("battle_frame", &self.image, &areas, canvas, "canvas")
     }
 }

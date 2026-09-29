@@ -110,6 +110,11 @@ fn a_battle_frame_is_read_and_checked_against_the_canvas() {
             "status = [448, 34, 78, 28]",
             "status = [448, 34, 78, 28]\nenemies = [630, 31, 33, 34]",
         ),
+        // A button on the map.
+        (
+            "status = [448, 34, 78, 28]",
+            "status = [448, 34, 78, 28]\nmenu = [100, 100, 32, 16]",
+        ),
     ] {
         match load_err(&with_presentation(&FRAME.replace(from, to))) {
             PackError::Parse { file, msg } => {

@@ -136,7 +136,7 @@ battle screen); every area is `[x, y, width, height]` in canvas pixels and must 
 | `info` | The unit window, and under it the terrain or forecast window, centred in this column. |
 | `title` | The battle's name, the turn and the phase. |
 | `status` | The weather, and under it the gold (when the area is at least 26 pixels high). |
-| `menu`, `allies`, `enemies` | Optional buttons drawn on the picture: a tap on the player's turn (with no command under way) opens the battle menu, the player's unit list or the enemy's. They light up under the pointer. |
+| `menu`, `allies`, `enemies` | Optional buttons drawn on the picture (not on `map`): a tap on the player's turn (with no command under way) opens the battle menu, the player's unit list or the enemy's. The one under the mouse lights up while they can be used. |
 | `weather` | Optional box for a picture of the weather (its icon, centred). |
 
 ```toml
