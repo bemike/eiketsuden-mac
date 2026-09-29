@@ -1058,7 +1058,7 @@ caught; write free names in Korean or with a capital letter.
 | `@goto <label>` | Jump. |
 | `@if <flag> [op value] -> <label>` | Jump when the condition holds. Operators `==`, `!=`, `<`, `<=`, `>`, `>=`; `@if flag -> label` means `flag != 0`. |
 | `@set <flag> = n` / `+= n` / `-= n` | Change a [flag](#flags). |
-| `@join <officer id>` | The officer joins the army (a banner is shown; nothing happens if already in the army), or comes back from `@away`. |
+| `@join <officer id>` | The officer joins the army (a banner is shown; nothing happens if already in the army), or comes back from `@away` (a quieter "{name} 복귀" banner instead of "{name} 합류!"). |
 | `@leave <officer id>` | The officer leaves; their equipment returns to the inventory (nothing happens if not in the army). |
 | `@away <officer id>` | The officer is away for a while: they stay in the army with their level, experience and equipment but cannot be deployed (the deploy screen marks them 부재). `@join` brings them back as they left. Nothing happens if not in the army. |
 | `@level <officer id> <levels>` | The officer of the army gains levels (at least 1, up to the level cap; one already above it keeps their level); HP, MP and known strategies follow from the level in the next battle. Nothing happens if not in the army. |

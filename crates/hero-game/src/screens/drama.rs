@@ -16,7 +16,7 @@
 //! | `Choice` | choice box above the last message ([`DramaRunner::choose`]) |
 //! | `Wait`, `FadeOut`, `FadeIn` | pause, fade the scene to black and back (text stays readable above the fade) |
 //! | `Music`, `Sound` | `ctx.audio` |
-//! | `Joined`, `Received` | banner (`관우 합류!`, `금 500 획득`) with a sound |
+//! | `Joined`, `Received` | banner (`관우 합류!` / `관우 복귀`, `금 500 획득`) with a sound |
 //!
 //! An overlay (battle intro/outro/event scene) starts without a background, so the battle map
 //! stays visible (slightly dimmed) until the scene sets one.
@@ -647,7 +647,8 @@ fn joined_notice(pack: &Pack, officer: &str, name: &str, returned: bool) -> Noti
         parts.join(" · ")
     });
     Notice {
-        // One back from `@away` returns with what they had (the story says so too).
+        // One back from `@away` returns with what they had (the story says so too): a quieter
+        // banner, without the exclamation mark.
         title: if returned {
             format!("{name} 복귀")
         } else {
