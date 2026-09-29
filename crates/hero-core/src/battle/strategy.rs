@@ -642,16 +642,27 @@ impl BattleState {
                 self.consume(item);
                 let (mut healed, mut morale) = (0, 0);
                 for e in &def.effects {
+                    // The original formulas add up to a tenth, as for the support strategies.
+                    let bonus = match e {
+                        Effect::Heal { power } => self.support_bonus(pack, *power),
+                        Effect::Morale { amount } if *amount > 0 => {
+                            self.support_bonus(pack, *amount)
+                        }
+                        _ => 0,
+                    };
                     let u = &mut self.units[target];
                     match e {
                         Effect::Heal { power } => {
-                            let h = (*power).min(u.max_hp - u.hp).max(0);
+                            let h = power.saturating_add(bonus).min(u.max_hp - u.hp).max(0);
                             u.hp += h;
                             healed += h;
                         }
                         Effect::Morale { amount } => {
                             let before = u.morale;
-                            u.morale = u.morale.saturating_add(*amount).clamp(0, 100);
+                            u.morale = u
+                                .morale
+                                .saturating_add(amount.saturating_add(bonus))
+                                .clamp(0, 100);
                             morale += u.morale - before;
                         }
                         // Rejected by `battle_item`.

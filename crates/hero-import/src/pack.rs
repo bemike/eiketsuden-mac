@@ -72,7 +72,8 @@ use crate::sprites;
 use crate::text::TextEncoding;
 use crate::{ls11, table6};
 use hero_core::data::{
-    Area, ClassDef, Effect, GameRules, Learn, RangeSpec, StrategyDef, StrategyFormulas, TerrainDef,
+    Area, ClassDef, Effect, GameRules, ItemDef, Learn, RangeSpec, StrategyDef, StrategyFormulas,
+    TerrainDef,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -105,7 +106,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 17: `base_fingerprint` in the index ([`stale_pack`]).
 /// 18: the game rules in `rules` ([`GAME_RULES`], the original strategy formulas).
 /// 19: duel backgrounds per terrain (`gfx/duel/terrain_<id>.png`, `@duel … terrain`).
-pub const PACK_FORMAT_VERSION: u32 = 19;
+/// 20: the item rules in `rules` ([`ITEM_RULES`], the original's healing amounts).
+pub const PACK_FORMAT_VERSION: u32 = 20;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -199,6 +201,9 @@ pub struct PackOptions {
     /// The pack chain's game rules, written again with the original strategy formulas when the
     /// strategies are converted ([`GAME_RULES`]); `None`: left to the chain.
     pub game_rules: Option<hero_core::data::GameRules>,
+    /// The pack chain's items, whose healing ones take the original's amounts
+    /// ([`ITEM_RULES`]).
+    pub item_defs: Vec<ItemDef>,
     /// Render the original's music ([`MUSIC_KEYS`]). It takes several seconds, so the game's
     /// conversion at every start leaves it out; `hero-tools original pack` sets it.
     pub music: bool,
@@ -276,6 +281,7 @@ impl PackOptions {
             class_defs: parent.classes.values().cloned().collect(),
             strategy_defs: parent.strategies.values().cloned().collect(),
             game_rules: Some(parent.rules.clone()),
+            item_defs: parent.items.values().cloned().collect(),
             music: false,
             campaign: Some(parent.campaign.clone()),
             base_fingerprint: None,
@@ -643,6 +649,9 @@ fn convert(
     progress(4);
     // The rules come first: the battle maps' rules grids use the terrain they add.
     let (rules, rule_terrain, rule_files) = convert_rules(
+        install,
+        encoding,
+        edition.id,
         &exe,
         options,
         output,
@@ -1554,6 +1563,38 @@ const REACH_NAMES: [&str; 4] = ["range8", "range12", "range20", "range28"];
 pub const STRATEGY_RULES: &str = "rules/strategies.toml";
 /// Game rules of the original mode: the chain's with the original strategy formulas.
 pub const GAME_RULES: &str = "rules/game.toml";
+/// Item rules of the original mode: the chain's, the healing ones with the original's amounts.
+pub const ITEM_RULES: &str = "rules/items.toml";
+/// The original's healing items (`BAKDATA` numbers, MAIN.EXE image 0x27A6F–0x27B4B): three of
+/// each kind, weakest first, used through the support strategies' healing routine without a
+/// caster (FORMATS §10.4): troops `(step + 1) × 600`, morale `(step + 3) × 10`.
+pub const HEALING_ITEMS: [(usize, bool, bool); 3] = [
+    // (first number, heals troops, raises morale)
+    (27, false, true),
+    (30, true, false),
+    (52, true, true),
+];
+
+/// The effects of the original's healing item `number`, or `None` for another item.
+pub fn original_item_effects(number: usize) -> Option<Vec<Effect>> {
+    let (first, troops, morale) = HEALING_ITEMS
+        .iter()
+        .copied()
+        .find(|&(first, _, _)| (first..first + 3).contains(&number))?;
+    let step = (number - first) as i32;
+    let mut effects = Vec::new();
+    if troops {
+        effects.push(Effect::Heal {
+            power: (step + 1) * 600,
+        });
+    }
+    if morale {
+        effects.push(Effect::Morale {
+            amount: (step + 3) * 10,
+        });
+    }
+    Some(effects)
+}
 
 /// The pack chain's strategies with the original's MP cost and reach for those of
 /// [`STRATEGY_IDS`], and the changes as notes. Everything else stays the chain's.
@@ -1683,10 +1724,72 @@ fn check_strategy_tables(rules: &maps::StrategyRules) -> Result<(), String> {
     Ok(())
 }
 
+/// The chain's items `chain` with the original's healing amounts ([`original_item_effects`])
+/// for those matched by name to the release's healing items `release`, and notes on what
+/// changed or could not be matched.
+fn original_items(
+    release: &[bakdata::Item],
+    chain: &[ItemDef],
+    edition: EditionId,
+) -> (Vec<ItemDef>, Vec<String>) {
+    let names = item_names(
+        &chain
+            .iter()
+            .map(|i| BaseItem {
+                id: i.id.to_string(),
+                name: i.name.clone(),
+                hanja: i.hanja.clone(),
+            })
+            .collect::<Vec<_>>(),
+        edition,
+    );
+    let mut items = chain.to_vec();
+    let mut notes = Vec::new();
+    for it in release {
+        let Some(effects) = original_item_effects(it.index) else {
+            continue;
+        };
+        let mut ids = names.iter().filter(|(_, name)| *name == it.name);
+        let id = match (ids.next(), ids.next()) {
+            (Some((id, _)), None) => id,
+            _ => {
+                notes.push(format!(
+                    "healing item {} ({}): no single item of the chain by that name",
+                    it.index, it.name
+                ));
+                continue;
+            }
+        };
+        let item = items
+            .iter_mut()
+            .find(|i| i.id.as_str() == id)
+            .expect("the names come from the chain's items");
+        if item.effects != effects {
+            notes.push(format!("{id}: {:?} -> {:?}", item.effects, effects));
+            // A description that gives the amount in brackets (`병력을 조금(400)`) follows it.
+            for (old, new) in item.effects.iter().zip(&effects) {
+                let amount = |e: &Effect| match e {
+                    Effect::Heal { power } => Some(*power),
+                    Effect::Morale { amount } => Some(*amount),
+                    _ => None,
+                };
+                if let (Some(old), Some(new)) = (amount(old), amount(new)) {
+                    item.desc = item.desc.replace(&format!("({old})"), &format!("({new})"));
+                }
+            }
+            item.effects = effects;
+        }
+    }
+    (items, notes)
+}
+
 /// The rules of the original mode: terrain rules from the movement rules and class rules from
 /// the class tables. Returns the report, the ids of the pack's terrain when the terrain rules
 /// were written (for the battle maps' rules grids) and the rule files written (`kind`, path).
 fn convert_rules(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    edition: EditionId,
     exe: &Exe,
     options: &PackOptions,
     out: &mut Output,
@@ -1812,6 +1915,29 @@ fn convert_rules(
                 }
             }
             Err(e) => report.errors.push(format!("strategy rules: {e}")),
+        }
+    }
+    if !options.item_defs.is_empty() {
+        match read_source(install, "BAKDATA.R3", &mut report)? {
+            None => report.errors.push("item rules: BAKDATA.R3 missing".into()),
+            Some(data) => match bakdata::parse(&data, encoding) {
+                Err(e) => report.errors.push(format!("item rules: BAKDATA.R3: {e}")),
+                Ok(bak) => {
+                    let (items, notes) = original_items(&bak.items, &options.item_defs, edition);
+                    #[derive(Serialize)]
+                    struct File<'a> {
+                        item: &'a [ItemDef],
+                    }
+                    let body = toml::to_string(&File { item: &items }).map_err(|e| {
+                        output_error(Path::new(ITEM_RULES), std::io::Error::other(e))
+                    })?;
+                    out.write(ITEM_RULES, (header("Item rules") + &body).as_bytes())?;
+                    report.outputs += 1;
+                    written.push(("items", ITEM_RULES));
+                    summary.push(format!("{} items ({} notes)", items.len(), notes.len()));
+                    report.notes.extend(notes);
+                }
+            },
         }
     }
     report.status = match (written.is_empty(), report.errors.is_empty()) {
@@ -4902,6 +5028,67 @@ mod tests {
         // Without any plain cell a missing terrain cannot be drawn.
         let only_river = learn_tiles(&[(&map(&[&[3]]), 1)]);
         assert!(tileset(&only_river, &terrain).is_err());
+    }
+
+    #[test]
+    fn healing_items_take_the_originals_amounts() {
+        assert_eq!(
+            original_item_effects(27),
+            Some(vec![Effect::Morale { amount: 30 }])
+        );
+        assert_eq!(
+            original_item_effects(32),
+            Some(vec![Effect::Heal { power: 1800 }])
+        );
+        assert_eq!(
+            original_item_effects(53),
+            Some(vec![
+                Effect::Heal { power: 1200 },
+                Effect::Morale { amount: 40 }
+            ])
+        );
+        assert_eq!(original_item_effects(33), None);
+        assert_eq!(original_item_effects(26), None);
+        let def = |id: &str, name: &str, desc: &str, effects| ItemDef {
+            id: id.into(),
+            name: name.into(),
+            desc: desc.into(),
+            effects,
+            ..toml::from_str::<ItemDef>(&format!(
+                "id = \"{id}\"\nname = \"{name}\"\nkind = \"consumable\"\nprice = 1\n"
+            ))
+            .unwrap()
+        };
+        let chain = vec![
+            def(
+                "bean",
+                "콩",
+                "병력을 조금(400) 회복한다.",
+                vec![Effect::Heal { power: 400 }],
+            ),
+            def("sword", "검", "", Vec::new()),
+        ];
+        let release = |index, name: &str| bakdata::Item {
+            index,
+            name: name.into(),
+            price: 0,
+            power: 0,
+            item_type: 3,
+            type_name: "consumable-or-special",
+        };
+        let (items, notes) = original_items(
+            &[release(30, "콩"), release(31, "없는것"), release(5, "검")],
+            &chain,
+            EditionId::KoreanDos,
+        );
+        assert_eq!(items[0].effects, [Effect::Heal { power: 600 }]);
+        assert_eq!(items[0].desc, "병력을 조금(600) 회복한다.");
+        assert_eq!(items[1], chain[1]);
+        assert!(notes.iter().any(|n| n.starts_with("bean:")), "{notes:?}");
+        assert!(
+            notes.iter().any(|n| n.contains("healing item 31")),
+            "{notes:?}"
+        );
     }
 
     #[test]

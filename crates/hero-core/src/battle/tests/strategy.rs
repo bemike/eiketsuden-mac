@@ -868,3 +868,31 @@ fn original_formulas_confuse_until_recovered_and_on_low_morale_downs() {
     st.apply(&pack, cast(c, "provoke", p(3, 4))).unwrap();
     assert!(st.units[foe].statuses.is_empty());
 }
+
+#[test]
+fn original_formulas_add_a_random_tenth_to_healing_items() {
+    let pack = original_pack();
+    let (mut healed, mut raised) = (Vec::new(), Vec::new());
+    for seed in 0..60 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        for item in ["bean", "wine"] {
+            st.inventory.insert(item.into(), 1);
+        }
+        let u = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+        let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        st.units[friend].hp = 1;
+        st.units[friend].max_hp = 1000;
+        st.units[friend].morale = 10;
+        let used = |ev: Vec<BattleEvent>| match &ev[0] {
+            BattleEvent::ItemUsed { healed, morale, .. } => (*healed, *morale),
+            other => panic!("{other:?}"),
+        };
+        healed.push(used(st.apply(&pack, use_item(u, "bean", friend)).unwrap()).0);
+        raised.push(used(st.apply(&pack, use_item(friend, "wine", friend)).unwrap()).1);
+    }
+    // 300 + rand(0..=30); 30 + rand(0..=3).
+    assert!(healed.iter().all(|h| (300..=330).contains(h)), "{healed:?}");
+    assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
+    assert!(raised.iter().all(|m| (30..=33).contains(m)), "{raised:?}");
+}

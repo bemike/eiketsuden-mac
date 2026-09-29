@@ -748,9 +748,24 @@ mod tests {
         assert!(
             manifest.contains(
                 "[rules]\nterrain = \"rules/terrain.toml\"\nclasses = \"rules/classes.toml\"\n\
-                 strategies = \"rules/strategies.toml\"\ngame = \"rules/game.toml\"\n"
+                 strategies = \"rules/strategies.toml\"\ngame = \"rules/game.toml\"\n\
+                 items = \"rules/items.toml\"\n"
             ),
             "{manifest}"
+        );
+        // The healing items heal the original's amounts (MAIN.EXE, FORMATS §10.4).
+        let item = |id: &str| pack.item(id).unwrap().effects.clone();
+        assert_eq!(item("bean"), [hero_core::data::Effect::Heal { power: 600 }]);
+        assert_eq!(
+            item("fine_wine"),
+            [hero_core::data::Effect::Morale { amount: 40 }]
+        );
+        assert_eq!(
+            item("tea"),
+            [
+                hero_core::data::Effect::Heal { power: 1800 },
+                hero_core::data::Effect::Morale { amount: 50 }
+            ]
         );
         // The original's strategy amounts go with its formulas.
         assert_eq!(
