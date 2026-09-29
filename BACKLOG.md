@@ -24,6 +24,16 @@
   - 왜: 로더가 규칙 파일을 통째로 덮어써서, 다시 변환하지 않은 팩은 기본 팩의 새 병종·필드·책략 변경을 가린다(PR #45 리뷰). 게임 안 변환은 매번 새로 하므로 디스크에 쓴 팩(`hero-tools original pack`)만 해당한다.
   - 영향 범위: hero-import `pack.rs`(색인), hero-tools `validate`
 
+- [ ] **원작 음악 곡 배정을 들어 보고 확인**
+  - 무엇을: `pack::MUSIC_KEYS`(title·ending·camp·peace·tension·sad·defeat·battle·enemy·boss에 원작 곡 번호)를 원작 게임에서 해당 장면의 곡과 들어 비교해 고친다. 전투 중 곡은 MAIN.EXE가 `int 65h` 쪽 경로로 고르므로(FORMATS §16) 그 코드를 따라가면 확정할 수 있다.
+  - 왜: 시나리오 `0x38`의 문맥으로 고른 추론이고, 특히 battle(18)·enemy(9)는 근거가 약하다. 렌더링 결과를 들어 본 적이 없다(에뮬레이터는 음 높이·감쇠·레벨만 시험).
+  - 영향 범위: hero-import `pack.rs`(`MUSIC_KEYS`), 원작 모드 체감
+
+- [ ] **게임 안 변환에서도 원작 음악**
+  - 무엇을: 실행마다 하는 게임 안 변환(D10)이 음악을 빼는 대신, 렌더링 결과를 원작 파일 해시로 캐시하거나 게임 시작 뒤 백그라운드로 렌더링해 붙인다.
+  - 왜: 렌더링이 약 9초·40 MB라 실행마다 할 수 없어서 지금은 `hero-tools original pack`으로 만든 팩에만 원작 음악이 있다(DECISIONS D16).
+  - 영향 범위: hero-game `original.rs`, hero-import `pack.rs`
+
 - [ ] **`advance`의 목표 칸 초소 동작을 직접 플레이로 확인**
   - 무엇을: 서주1(`c1_xuzhou1`)·계교를 직접 플레이해 PR #33의 동작(목표 칸 3칸 안에서 guard처럼 지킴)의 난이도를 확인한다.
   - 왜: 시뮬레이터로만 비교했다(서주1 평균 패배 턴 11.2 → 14.5).

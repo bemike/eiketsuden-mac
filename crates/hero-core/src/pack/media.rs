@@ -268,24 +268,25 @@ impl MediaCheck {
         }
     }
 
+    /// Music `key`: `bgm/<key>.ogg` or `bgm/<key>.wav`.
+    fn require_music(&mut self, context: &str, key: &str) {
+        let ogg = format!("bgm/{key}.ogg");
+        if !self.exists(&format!("bgm/{key}.wav")) {
+            self.require(Severity::Error, context, &ogg, "music");
+        }
+    }
+
     fn audio_and_backgrounds(&mut self, pack: &Pack) {
         for b in pack.battles.values() {
             for key in [&b.bgm, &b.bgm_enemy].into_iter().flatten() {
-                self.require(
-                    Severity::Error,
-                    &format!("battle {}", b.id),
-                    &format!("bgm/{key}.ogg"),
-                    "music",
-                );
+                self.require_music(&format!("battle {}", b.id), key);
             }
         }
         for scene in pack.scenes.values() {
             let ctx = format!("scene {}", scene.id);
             for cmd in &scene.cmds {
                 match cmd {
-                    Cmd::Bgm(Some(key)) => {
-                        self.require(Severity::Error, &ctx, &format!("bgm/{key}.ogg"), "music")
-                    }
+                    Cmd::Bgm(Some(key)) => self.require_music(&ctx, key),
                     Cmd::Bg(Some(key)) => self.require(
                         Severity::Error,
                         &ctx,

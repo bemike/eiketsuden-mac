@@ -89,7 +89,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 8: `ui` (the battle frame, [`BATTLE_FRAME`] and `[presentation.battle_frame]`); the canvas is
 /// 640×400.
 /// 9: the camp frame in `ui` ([`CAMP_FRAME`] and `[presentation.camp_frame]`).
-pub const PACK_FORMAT_VERSION: u32 = 9;
+/// 10: `music` (the original's songs rendered as `bgm/<key>.wav`, [`MUSIC_KEYS`]).
+pub const PACK_FORMAT_VERSION: u32 = 10;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -180,6 +181,9 @@ pub struct PackOptions {
     pub class_defs: Vec<ClassDef>,
     /// The pack chain's strategies, which the original's strategy tables adjust.
     pub strategy_defs: Vec<StrategyDef>,
+    /// Render the original's music ([`MUSIC_KEYS`]). It takes several seconds, so the game's
+    /// conversion at every start leaves it out; `hero-tools original pack` sets it.
+    pub music: bool,
 }
 
 impl PackOptions {
@@ -246,6 +250,7 @@ impl PackOptions {
                 .collect(),
             class_defs: parent.classes.values().cloned().collect(),
             strategy_defs: parent.strategies.values().cloned().collect(),
+            music: false,
         }
     }
 }
@@ -503,6 +508,12 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, false, "")),
     )?;
+    let music = convert_music(
+        install,
+        options,
+        output,
+        KindReport::new(Status::Extracted, false, ""),
+    )?;
     let (ui, ui_frames) = convert_ui(
         install,
         &exe,
@@ -561,6 +572,7 @@ fn convert(
     assets.insert("battles".to_string(), battles);
     assets.insert("rules".to_string(), rules);
     assets.insert("ui".to_string(), ui);
+    assets.insert("music".to_string(), music);
     let index = PackIndex {
         format: PACK_FORMAT.into(),
         format_version: PACK_FORMAT_VERSION,
@@ -577,6 +589,95 @@ fn convert(
     };
     output.write_json(PACK_INDEX, &index)?;
     Ok(index)
+}
+
+// ----- music ---------------------------------------------------------------------------------
+
+/// Sample rate of the rendered music.
+pub const MUSIC_RATE: u32 = 22_050;
+
+/// The base pack's music keys the original's songs stand in for: `(key, file, song)`. Chosen
+/// from where the scenarios play each song (docs/ORIGINAL_DATA.md): the council halls (5), the
+/// sortie preparations (12), the enemy camps' scenes (11), laments (2), the game over (4),
+/// strong enemies appearing (16) and enemy commanders' lines in battle (9); song 18, which no
+/// scenario plays, is taken for the battle music the game plays itself.
+pub const MUSIC_KEYS: [(&str, &str, usize); 10] = [
+    ("title", "OPMUSIC.R3", 0),
+    ("ending", "EDMUSIC.R3", 0),
+    ("camp", "MUSIC.R3", 12),
+    ("peace", "MUSIC.R3", 5),
+    ("tension", "MUSIC.R3", 11),
+    ("sad", "MUSIC.R3", 2),
+    ("defeat", "MUSIC.R3", 4),
+    ("battle", "MUSIC.R3", 18),
+    ("enemy", "MUSIC.R3", 9),
+    ("boss", "MUSIC.R3", 16),
+];
+
+/// The original's songs of [`MUSIC_KEYS`] rendered (a single pass each, the in-game music loops
+/// it) as `bgm/<key>.wav`, which stand in for the base pack's `bgm/<key>.ogg`.
+fn convert_music(
+    install: &InstallDir,
+    options: &PackOptions,
+    out: &mut Output,
+    mut report: KindReport,
+) -> Result<KindReport, ExtractError> {
+    if !options.music {
+        report.status = Status::Unsupported;
+        report.summary =
+            "not rendered here (it takes several seconds); `hero-tools original pack` renders it"
+                .into();
+        return Ok(report);
+    }
+    let mut files: BTreeMap<&str, Option<Vec<u8>>> = BTreeMap::new();
+    for (_, file, _) in MUSIC_KEYS {
+        if !files.contains_key(file) {
+            let data = read_source(install, file, &mut report)?;
+            files.insert(file, data);
+        }
+    }
+    if files.values().all(Option::is_none) {
+        report.status = Status::MissingSource;
+        report.summary = "no music files".into();
+        return Ok(report);
+    }
+    let mut seconds = 0.0;
+    for (key, file, index) in MUSIC_KEYS {
+        let Some(data) = files.get(file).and_then(Option::as_ref) else {
+            report.errors.push(format!("{key}: {file} missing"));
+            continue;
+        };
+        let rendered = crate::music::songs(data).and_then(|songs| {
+            let song = songs
+                .get(index)
+                .ok_or_else(|| format!("{file} has no song {index}"))?;
+            crate::music::render(song, MUSIC_RATE, 600.0)
+        });
+        match rendered {
+            Ok(r) => {
+                seconds += r.samples.len() as f64 / f64::from(MUSIC_RATE);
+                out.write(&format!("bgm/{key}.wav"), &r.wav())?;
+                report.outputs += 1;
+                report.notes.push(format!(
+                    "{key}: {file} song {index}, {:.0} s",
+                    r.samples.len() as f64 / f64::from(MUSIC_RATE)
+                ));
+            }
+            Err(e) => report
+                .errors
+                .push(format!("{key}: {file} song {index}: {e}")),
+        }
+    }
+    report.status = match (report.outputs, report.errors.is_empty()) {
+        (_, true) => Status::Extracted,
+        (0, false) => Status::Failed,
+        (_, false) => Status::Partial,
+    };
+    report.summary = format!(
+        "{} songs, {seconds:.0} s at {MUSIC_RATE} Hz",
+        report.outputs
+    );
+    Ok(report)
 }
 
 // ----- ui ------------------------------------------------------------------------------------
@@ -3636,6 +3737,59 @@ mod tests {
             ],
             ..PackOptions::default()
         }
+    }
+
+    /// A music file of `count` copies of a short song (an instrument, one note, the end).
+    fn music_file(count: usize) -> Vec<u8> {
+        let mut song = vec![0u8; 14];
+        song[..2].copy_from_slice(&36u16.to_le_bytes());
+        song.extend([
+            0x21, 0x21, 0x01, 0, 0, 0x3f, 0x00, 0xf0, 0xf0, 0x0f, 0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0,
+        ]);
+        // F4 back to the instrument at 14 (-22 from 36), a note of 24 steps, the end.
+        song.extend([0xf4, 0xea, 0xff, 57, 24, 20, 0xff]);
+        let mut file = (count as u16).to_le_bytes().to_vec();
+        for i in 0..count {
+            file.extend(((i * song.len()) as u32).to_le_bytes());
+            file.extend((song.len() as u16).to_le_bytes());
+        }
+        for _ in 0..count {
+            file.extend(&song);
+        }
+        file
+    }
+
+    #[test]
+    fn the_music_is_rendered_when_asked_for() {
+        let src = TempDir::new("pack-music-src");
+        write_pack_install(src.path());
+        std::fs::write(src.path().join("MUSIC.R3"), music_file(20)).unwrap();
+        std::fs::write(src.path().join("OPMUSIC.R3"), music_file(2)).unwrap();
+        std::fs::write(src.path().join("EDMUSIC.R3"), music_file(3)).unwrap();
+        let out = TempDir::new("pack-music-out");
+        // Left out by default (the game's conversion at every start).
+        let index = write_pack(src.path(), &out.path().join("a"), &options()).unwrap();
+        assert_eq!(index.assets["music"].status, Status::Unsupported);
+        let with_music = PackOptions {
+            music: true,
+            ..options()
+        };
+        let dir = out.path().join("b");
+        let index = write_pack(src.path(), &dir, &with_music).unwrap();
+        let music = &index.assets["music"];
+        assert_eq!(music.status, Status::Extracted, "{music:#?}");
+        assert_eq!(music.outputs, MUSIC_KEYS.len());
+        for (key, _, _) in MUSIC_KEYS {
+            let wav = std::fs::read(dir.join(format!("bgm/{key}.wav"))).unwrap();
+            assert_eq!(&wav[..4], b"RIFF", "{key}");
+        }
+        // A missing file fails the keys it serves only.
+        std::fs::remove_file(src.path().join("EDMUSIC.R3")).unwrap();
+        let index = write_pack(src.path(), &out.path().join("c"), &with_music).unwrap();
+        let music = &index.assets["music"];
+        assert_eq!(music.status, Status::Partial);
+        assert_eq!(music.outputs, MUSIC_KEYS.len() - 1);
     }
 
     #[test]

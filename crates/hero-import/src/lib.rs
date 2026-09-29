@@ -42,6 +42,8 @@ pub mod install;
 pub mod ippan;
 pub mod ls11;
 pub mod maps;
+pub mod music;
+pub mod opl;
 pub mod pack;
 pub mod palette;
 pub mod planar;
