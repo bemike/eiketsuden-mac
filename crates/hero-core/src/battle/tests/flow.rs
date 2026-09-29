@@ -1371,8 +1371,8 @@ fn a_troop_without_the_lord_loses_when_it_has_retreated() {
     let guan = st
         .units
         .iter()
-        .position(|u| u.side == Side::Player && u.pos == p(1, 0));
-    let guan = guan.unwrap_or(0);
+        .position(|u| u.officer.as_deref() == Some("guan_yu"))
+        .expect("guan_yu is deployed");
     let foe = add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(1, 1));
     add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(7, 7));
     st.units[guan].hp = 1;

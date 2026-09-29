@@ -287,6 +287,37 @@ pub fn part_of_earlier_battle(scene: &Scene, index: usize) -> bool {
         })
 }
 
+/// The flag a battle of `scene` sets as it goes on in its continuation block
+/// ([`continues_battle`]): the highest scenario flag no script of the scene uses. The story after
+/// the battle tells by it whether the battle got that far (its outro is the continuation's).
+pub fn continuation_flag(scene: &Scene) -> u8 {
+    let used: BTreeSet<u8> = scene
+        .instructions()
+        .flat_map(|c| match &c.operands {
+            Operands::Condition {
+                all_set, all_clear, ..
+            } => all_set.iter().chain(all_clear).copied().collect::<Vec<_>>(),
+            _ if c.mnemonic == "set_flag" => c
+                .operands
+                .get("flag")
+                .map(|f| f as u8)
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    (0..=u8::MAX)
+        .rev()
+        .find(|f| !used.contains(f))
+        .unwrap_or(u8::MAX)
+}
+
+/// Whether battle block `index` of `scene` goes on in a continuation block
+/// ([`continues_battle`]).
+pub fn has_continuation(scene: &Scene, index: usize) -> bool {
+    continuation(scene, &setup_and_battle(scene, index), index).is_some()
+}
+
 /// Battle block `index` of `scene`, joined with the block after it when that one fights it
 /// ([`fought_in_next_block`]; its groups one up, the setup block holding group 0).
 fn setup_and_battle(scene: &Scene, index: usize) -> Cow<'_, Block> {
@@ -322,18 +353,43 @@ pub fn battle_block(scene: &Scene, index: usize) -> Cow<'_, Block> {
             .map(|r| r.trigger.group)
             .max()
             .unwrap_or(0);
+        let flag = continuation_flag(scene);
         let mut owned = joined.into_owned();
         for r in &mut owned.records {
-            for c in &mut r.code {
+            let mut code = Vec::with_capacity(r.code.len() + 1);
+            for c in r.code.drain(..) {
                 if c.mnemonic == "goto_block" && c.operands.get("block") == Some(next as u16) {
-                    *c = Instr {
+                    // It sets the continuation's flag and moves the battle on.
+                    code.push(Instr {
+                        offset: c.offset,
+                        opcode: 0x14,
+                        mnemonic: "set_flag",
+                        operands: Operands::Fields {
+                            args: vec![
+                                crate::scenario::Arg {
+                                    name: "flag",
+                                    kind: crate::scenario::ArgKind::Flag,
+                                    value: u16::from(flag),
+                                },
+                                crate::scenario::Arg {
+                                    name: "clear",
+                                    kind: crate::scenario::ArgKind::Number,
+                                    value: 0,
+                                },
+                            ],
+                        },
+                    });
+                    code.push(Instr {
                         offset: c.offset,
                         opcode: 0x13,
                         mnemonic: "leave_parallel",
                         operands: Operands::Fields { args: Vec::new() },
-                    };
+                    });
+                } else {
+                    code.push(c);
                 }
             }
+            r.code = code;
         }
         owned
             .records

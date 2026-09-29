@@ -1082,7 +1082,7 @@ Flags are named integers stored in the save game, all 0 at the start. They conne
 pack:
 
 * dramas set them with `@set` and test them with `@if`;
-* battle events set them with `set_flag` (merged into the campaign when the battle ends, won or lost);
+* battle events set them with `set_flag` (merged into the campaign when the battle ends, won or lost; a scene the battle plays — an event's `drama`, the `outro` — already sees them);
 * campaign `branch` nodes choose the path with them.
 
 A flag that is tested somewhere but never set anywhere is always 0; `hero-tools validate` warns about it.

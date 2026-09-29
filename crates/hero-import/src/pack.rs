@@ -2184,8 +2184,12 @@ fn convert_battles(
                     )),
                     // What the original plays after the battle is won: its outro.
                     chapters::Part::Battle { block, .. } => {
-                        let outro =
-                            chapters::victory_scene(&battles::battle_block(&scene, block), &ctx);
+                        let outro = chapters::victory_scene_after(
+                            &battles::battle_block(&scene, block),
+                            &ctx,
+                            battles::has_continuation(&scene, block)
+                                .then(|| battles::continuation_flag(&scene)),
+                        );
                         (!outro.text.is_empty()).then(|| {
                             (
                                 format!("{}_outro", chapter_battle_id(file, scene_index, block)),

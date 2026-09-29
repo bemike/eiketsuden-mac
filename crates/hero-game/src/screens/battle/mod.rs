@@ -728,6 +728,13 @@ impl BattleScreen {
                 Cue::Terrain(pos) => self.show_terrain(pos),
                 Cue::Drama(scene) => {
                     if self.pack.scene(&scene).is_some() {
+                        // The scene runs on the campaign's state: it sees the flags the battle
+                        // has set so far (they would reach the campaign only when it is over).
+                        if let Some(session) = ctx.session.as_mut() {
+                            for (flag, value) in &self.state.flags {
+                                session.campaign.flags.insert(flag.clone(), *value);
+                            }
+                        }
                         self.waiting = Some(Waiting::Drama);
                         out = Transition::push(DramaScreen::overlay(ctx, &scene));
                     } else {

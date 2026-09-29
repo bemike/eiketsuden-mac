@@ -1001,6 +1001,10 @@ mod tests {
             let start = story.find(&head).unwrap_or_else(|| panic!("{id}")) + head.len();
             story[start..].split("\n== ").next().unwrap().to_string()
         };
+        // Jiangling's outro (and gold) is the second part's: only when the battle got there; won
+        // before (Chen Jiao defeated), the event's own gold only.
+        assert_eq!(pack.battles["c3_s0_b2"].reward_gold, 0);
+        assert!(scene("c3_s0_b2_outro").starts_with("@if orig_f255 == 0 -> outro_"));
         assert!(scene("c3_s4_b0_before").contains("@join guan_yu\n"));
         assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
         // Chapter 4's detachment comes back as Xuchang's setup says.
