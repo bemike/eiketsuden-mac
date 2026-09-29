@@ -100,6 +100,136 @@ impl Rendered {
 /// Error of a render whose `cancel` was set ([`render_cancellable`]).
 pub(crate) const CANCELLED: &str = "cancelled";
 
+/// Chip samples on each side of an output sample that the downsampling filter weighs.
+const HALF_TAPS: usize = 64;
+const TAPS: usize = 2 * HALF_TAPS;
+/// Fractional positions of the filter table between two chip samples (the table has one row
+/// more, for a position rounded up to the next chip sample).
+const PHASES: usize = 256;
+
+/// Turns chip samples (at [`RATE`]) into output samples: a low-pass filter (a Blackman-windowed
+/// sinc of [`TAPS`] chip samples, cut off below the output's Nyquist frequency so the FM
+/// overtones above it do not fold back into the audible band) read at every output sample's
+/// position. Output samples come [`HALF_TAPS`] chip samples late (once the samples after them
+/// are in).
+struct Downsampler {
+    /// Chip samples per output sample.
+    step: f64,
+    /// [`PHASES`] + 1 rows of [`TAPS`] weights, each row summing to `gain`.
+    table: Vec<f32>,
+    /// Chip samples from index `first` on.
+    hist: Vec<f32>,
+    first: u64,
+    /// Position (in chip samples) of the next output sample; infinite until [`Self::start`].
+    next: f64,
+    /// Output samples only before this position.
+    end: f64,
+}
+
+impl Downsampler {
+    /// For output samples at `rate` Hz (below the chip rate), multiplied by `gain`.
+    fn new(rate: u32, gain: f64) -> Downsampler {
+        let step = RATE / f64::from(rate);
+        // The filter's transition band is about 5.5 / TAPS of the chip rate wide (Blackman):
+        // centred so that it ends at the output's Nyquist frequency (and below the chip's).
+        let transition = 5.5 / TAPS as f64;
+        let cutoff = (0.5 / step - transition / 2.0)
+            .max(0.25 / step)
+            .min(0.5 - transition / 2.0);
+        let mut table = Vec::with_capacity((PHASES + 1) * TAPS);
+        for p in 0..=PHASES {
+            let frac = p as f64 / PHASES as f64;
+            let row: Vec<f64> = (0..TAPS)
+                .map(|j| {
+                    // Distance from the output position to tap j's chip sample.
+                    let d = frac + (HALF_TAPS - 1) as f64 - j as f64;
+                    let x = 2.0 * cutoff * d;
+                    let sinc = if x == 0.0 {
+                        1.0
+                    } else {
+                        (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
+                    };
+                    let w = (d + HALF_TAPS as f64) / TAPS as f64;
+                    let tau = 2.0 * std::f64::consts::PI;
+                    let window = 0.42 - 0.5 * (tau * w).cos() + 0.08 * (2.0 * tau * w).cos();
+                    sinc * window.max(0.0)
+                })
+                .collect();
+            let sum: f64 = row.iter().sum();
+            table.extend(row.iter().map(|v| (v * gain / sum) as f32));
+        }
+        Downsampler {
+            step,
+            table,
+            hist: Vec::new(),
+            first: 0,
+            next: f64::INFINITY,
+            end: f64::INFINITY,
+        }
+    }
+
+    /// Output samples from chip sample `at` on.
+    fn start(&mut self, at: u64) {
+        self.next = at as f64;
+    }
+
+    /// Output samples only before chip sample `at`.
+    fn stop(&mut self, at: u64) {
+        self.end = at as f64;
+    }
+
+    /// Whether every output sample before the stop is out.
+    fn done(&self) -> bool {
+        self.next >= self.end
+    }
+
+    /// Add the next chip sample, appending the output samples it completes to `out`.
+    fn push(&mut self, x: f32, out: &mut Vec<i16>) {
+        self.hist.push(x);
+        let last = self.first + self.hist.len() as u64 - 1;
+        while self.next < self.end && self.next.floor() as u64 + HALF_TAPS as u64 <= last {
+            let at = self.next.floor();
+            let phase = ((self.next - at) * PHASES as f64).round() as usize;
+            let weights = &self.table[phase * TAPS..(phase + 1) * TAPS];
+            // Tap 0 is chip sample `at - HALF_TAPS + 1`; before the first one there is silence.
+            let from = at as i64 - HALF_TAPS as i64 + 1;
+            let skip = (self.first as i64 - from).max(0) as usize;
+            let start = (from + skip as i64 - self.first as i64) as usize;
+            let y = dot(&weights[skip..], &self.hist[start..]);
+            out.push(y.round().clamp(-32768.0, 32767.0) as i16);
+            self.next += self.step;
+        }
+        // Drop, a few thousand at a time, the chip samples the next output sample no longer
+        // needs (before the start: all but the last TAPS).
+        let keep_from = if self.next.is_finite() {
+            (self.next.floor() as u64 + 1).saturating_sub(HALF_TAPS as u64)
+        } else {
+            (last + 1).saturating_sub(TAPS as u64)
+        };
+        let drop = keep_from.saturating_sub(self.first) as usize;
+        if drop >= 4096 {
+            self.hist.drain(..drop);
+            self.first += drop as u64;
+        }
+    }
+}
+
+/// The sum of `w[i] * x[i]` over the length of `w` (`x` at least as long), in eight lanes so
+/// that it vectorises.
+fn dot(w: &[f32], x: &[f32]) -> f32 {
+    let x = &x[..w.len()];
+    let mut lanes = [0f32; 8];
+    let (wc, xc) = (w.chunks_exact(8), x.chunks_exact(8));
+    let (wr, xr) = (wc.remainder(), xc.remainder());
+    for (w, x) in wc.zip(xc) {
+        for i in 0..8 {
+            lanes[i] += w[i] * x[i];
+        }
+    }
+    let rest: f32 = wr.iter().zip(xr).map(|(w, x)| w * x).sum();
+    lanes.iter().sum::<f32>() + rest
+}
+
 /// Song steps a second at most (tempo 255 overflows the step accumulator on every timer tick).
 const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
 
@@ -108,7 +238,7 @@ const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
 /// step the samples are one pass of the loop, taken from the second time round so the releases
 /// of its end ring into its start as they do in the game; the intro before the loop point is left
 /// out ([`Rendered::intro_seconds`]). Otherwise the song is played once from its start. Longer
-/// than `max_seconds` is an error.
+/// than `max_seconds` is an error, and so is a `rate` not below the chip's ([`RATE`]).
 pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, String> {
     render_cancellable(song, rate, max_seconds, &AtomicBool::new(false))
 }
@@ -141,6 +271,9 @@ fn render_checking(
             Ok(())
         }
     };
+    if f64::from(rate) >= RATE {
+        return Err(format!("{rate} Hz is not below the chip's {RATE:.0} Hz"));
+    }
     // The driver alone first: where the tracks end and where they loop to.
     let mut probe = Driver::new(song)?;
     if !probe.playing() {
@@ -181,14 +314,22 @@ fn render_checking(
     for (reg, value) in driver.writes.drain(..) {
         chip.write(reg, value);
     }
-    let ticks_per_sample = TIMER_TICK * RATE; // chip samples per timer tick
-    let step = RATE / f64::from(rate); // chip samples per output sample
+    // Chip samples per timer tick.
+    let ticks_per_sample = TIMER_TICK * RATE;
+    // Doubled (one channel at full level is 13 bits).
+    let mut down = Downsampler::new(rate, 2.0);
     let mut samples = Vec::new();
-    let (mut acc, mut n) = (0i64, 0u32);
     let mut chip_time = 0.0f64; // chip samples until the next timer tick
-    let mut out_time = 0.0f64; // chip samples until the next output sample
+    let mut chip_samples = 0u64;
     let limit = (max_seconds * f64::from(rate)) as usize;
     let mut recording = start == 0;
+    if recording {
+        down.start(0);
+    }
+    // The filter needs the chip samples after the last output sample: the song goes on past
+    // `stop` (into its loop again; for a song played once, into its tracks' own loop points,
+    // not quite what the player repeats) until they are in.
+    let mut stopped = false;
     // Timer ticks, the one of the first song step, and the time from it to the loop's first.
     let mut ticks = 0u64;
     let mut first_step = None;
@@ -212,32 +353,24 @@ fn render_checking(
                     intro_seconds = Some((ticks - first) as f64 * TIMER_TICK);
                 }
             }
-            if driver.steps >= stop {
-                break;
+            if !stopped && driver.steps >= stop {
+                stopped = true;
+                down.stop(chip_samples);
             }
             if !recording && driver.steps >= start {
                 recording = true;
-                (acc, n, out_time) = (0, 0, 0.0);
+                down.start(chip_samples);
             }
             chip_time += ticks_per_sample;
         }
-        acc += i64::from(chip.sample());
-        n += 1;
+        if stopped && down.done() {
+            break;
+        }
+        down.push(chip.sample() as f32, &mut samples);
+        chip_samples += 1;
         chip_time -= 1.0;
-        out_time -= 1.0;
-        if out_time <= 0.0 {
-            if recording {
-                // A box filter over the chip samples of one output sample, doubled (one
-                // channel at full level is 13 bits).
-                let v = (acc * 2 / i64::from(n.max(1))).clamp(-32768, 32767);
-                samples.push(v as i16);
-                if samples.len() > limit {
-                    return Err(format!("longer than {max_seconds} s"));
-                }
-            }
-            acc = 0;
-            n = 0;
-            out_time += step;
+        if samples.len() > limit {
+            return Err(format!("longer than {max_seconds} s"));
         }
     }
     Ok(Rendered {
@@ -1072,6 +1205,64 @@ mod tests {
         assert!(songs(&file).unwrap_err().contains("song 1"));
     }
 
+    /// Amplitude of the output of the downsampler for a sine of `hz` and amplitude 1000 at the
+    /// chip rate, measured on the second half (past the start).
+    fn filtered_amplitude(hz: f64) -> f64 {
+        let mut down = Downsampler::new(22050, 1.0);
+        down.start(0);
+        let mut out = Vec::new();
+        for i in 0..(RATE as usize) / 4 {
+            let t = i as f64 / RATE;
+            down.push(
+                (1000.0 * (2.0 * std::f64::consts::PI * hz * t).sin()) as f32,
+                &mut out,
+            );
+        }
+        let tail = &out[out.len() / 2..];
+        (2.0 * tail
+            .iter()
+            .map(|&y| f64::from(y) * f64::from(y))
+            .sum::<f64>()
+            / tail.len() as f64)
+            .sqrt()
+    }
+
+    #[test]
+    fn downsampling_keeps_the_audible_band_and_removes_what_would_fold_back() {
+        // One output sample per 49716 / 22050 chip samples.
+        let mut down = Downsampler::new(22050, 1.0);
+        down.start(0);
+        let mut out = Vec::new();
+        for _ in 0..(RATE as usize) {
+            down.push(500.0, &mut out);
+        }
+        // A second of DC: its level (after the filter's delay), about 22050 samples.
+        assert!((22000..=22050).contains(&out.len()), "{}", out.len());
+        assert!(out[1000..].iter().all(|&y| y == 500));
+        for hz in [440.0, 4000.0, 8000.0] {
+            let a = filtered_amplitude(hz);
+            assert!((980.0..1020.0).contains(&a), "{hz} Hz: {a}");
+        }
+        // Above the output's Nyquist frequency (11025 Hz): a box filter keeps a third of 15 kHz
+        // (folding it back to 7 kHz); the low-pass filter almost none.
+        for hz in [12000.0, 15000.0, 20000.0] {
+            let a = filtered_amplitude(hz);
+            assert!(a < 5.0, "{hz} Hz: {a}");
+        }
+        // Stopped: nothing from there on.
+        let mut down = Downsampler::new(22050, 1.0);
+        down.start(0);
+        down.stop(1000);
+        let mut out = Vec::new();
+        for _ in 0..2000 {
+            down.push(1.0, &mut out);
+        }
+        assert!(down.done());
+        assert_eq!(out.len(), (1000.0 / (RATE / 22050.0)).ceil() as usize);
+        // Only downsampling.
+        assert!(render(&song(), 50_000, 10.0).is_err());
+    }
+
     #[test]
     fn a_song_plays_its_notes_for_their_steps() {
         let rendered = render(&song(), 22050, 10.0).unwrap();
@@ -1083,8 +1274,12 @@ mod tests {
         // A4 sounds for 40 of the note's 48 steps: about 0.42 s of a 440 Hz tone.
         let hz = pitch(&rendered.samples, 0.3);
         assert!((420.0..460.0).contains(&hz), "{hz}");
-        // Silent at the end.
-        let end = &rendered.samples[rendered.samples.len() - 200..];
+        // Silent at the end, but for the last few samples: the filter hears the loop's start
+        // coming (HALF_TAPS chip samples, about 29 output samples), which is what the player
+        // plays next (for a seamless loop; a song played once hears its tracks' loop points
+        // instead, within the same 1.3 ms).
+        let n = rendered.samples.len();
+        let end = &rendered.samples[n - 200..n - 30];
         assert!(end.iter().all(|&s| s.abs() < 50));
         // A valid WAVE file.
         let wav = rendered.wav();
