@@ -31,7 +31,7 @@
 | 캠페인 맵 4개 | `MMAP` + 크기 표 | `campaign.json`, PNG | 행군로가 길과 겹침 |
 | 도시 12 / 궁궐 23 | `SMAP`, `PMAP` | `town.json`, PNG | 보행 격자가 길과 겹침 |
 | 메시지 | `SNR0M`–`SNR4M` | `text/snr<n>.json`·`.txt` | 모든 바이트 덮임 |
-| 시나리오 바이트코드 | `SNR0D`–`SNR4D` | 같은 파일(해독된 명령과 `resolved`) | 모든 바이트 설명, 서장 흐름이 공개 공략과 일치 |
+| 시나리오 바이트코드 | `SNR0D`–`SNR4D` | 같은 파일(해독된 명령과 `resolved`), 흐름 개요 `flow<n>.md`·`scenario_structure.md`([SCENARIO](SCENARIO.md)) | 모든 바이트 설명, 서장 흐름이 공개 공략과 일치 |
 | 마을 사람 대사 | `IPPAN0`, `IPPAN0M` | `townsfolk_talk.json`, `ippan0m.json` | 653개 빠짐없이 참조 |
 | 마스터 표 | `BAKDATA` | `officers/items/townsfolk.json` | 공개 능력치, 이름-얼굴 대조표 |
 

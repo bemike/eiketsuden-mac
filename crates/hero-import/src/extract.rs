@@ -13,6 +13,10 @@
 //! <out>/text/snr<n>.json                  chapter n: decoded event scripts of every scene with
 //!                                         the dialogues and strings they show (UTF-8)
 //! <out>/text/snr<n>.txt                   the same as a plain-text listing
+//! <out>/text/flow<n>.md                   chapter n's flow: per block what moves the story on,
+//!                                         with every record's lines (see [`crate::flow`])
+//! <out>/text/scenario_structure.md        the flow of every chapter without any original text
+//!                                         (docs/reverse-engineering/SCENARIO_FLOW.md)
 //! <out>/text/ippan0m.json                 the townspeople string pool
 //! <out>/text/townsfolk_talk.json          townspeople of every town with their lines
 //! <out>/text/officers.json, items.json,   BAKDATA.R3 master tables
@@ -598,17 +602,17 @@ struct PoolFile {
 }
 
 #[derive(Serialize)]
-struct ScenarioFile {
-    scenario: String,
-    messages: String,
+pub(crate) struct ScenarioFile {
+    pub(crate) scenario: String,
+    pub(crate) messages: String,
     encoding: &'static str,
     note: &'static str,
-    scenes: Vec<SceneOut>,
+    pub(crate) scenes: Vec<SceneOut>,
 }
 
 #[derive(Serialize)]
-struct SceneOut {
-    index: usize,
+pub(crate) struct SceneOut {
+    pub(crate) index: usize,
     /// Absolute offset of the scene's section in the message file.
     message_base: usize,
     dialogues: Vec<DialogueOut>,
@@ -616,7 +620,7 @@ struct SceneOut {
     /// Section bytes no instruction refers to (none in the verified copy).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unreferenced: Vec<TextBlock>,
-    blocks: Vec<BlockOut>,
+    pub(crate) blocks: Vec<BlockOut>,
 }
 
 #[derive(Serialize)]
@@ -645,29 +649,80 @@ struct StringOut {
 }
 
 #[derive(Serialize)]
-struct BlockOut {
-    index: usize,
+pub(crate) struct BlockOut {
+    pub(crate) index: usize,
     offset: usize,
-    records: Vec<RecordOut>,
+    pub(crate) records: Vec<RecordOut>,
 }
 
 #[derive(Serialize)]
-struct RecordOut {
-    index: usize,
+pub(crate) struct RecordOut {
+    pub(crate) index: usize,
     offset: usize,
-    trigger: scenario::Trigger,
+    pub(crate) trigger: scenario::Trigger,
     #[serde(skip_serializing_if = "Option::is_none")]
-    trigger_person: Option<String>,
+    pub(crate) trigger_person: Option<String>,
     code_offset: usize,
-    code: Vec<InstrOut>,
+    pub(crate) code: Vec<InstrOut>,
 }
 
 #[derive(Serialize)]
-struct InstrOut {
+pub(crate) struct InstrOut {
     #[serde(flatten)]
-    instr: scenario::Instr,
+    pub(crate) instr: scenario::Instr,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    resolved: BTreeMap<&'static str, String>,
+    pub(crate) resolved: BTreeMap<&'static str, String>,
+}
+
+#[cfg(test)]
+impl ScenarioFile {
+    /// A file of one scene whose blocks have `records` (for tests of its outlines).
+    pub(crate) fn for_test(blocks: Vec<Vec<RecordOut>>) -> ScenarioFile {
+        ScenarioFile {
+            scenario: "SNR9D.R3".into(),
+            messages: "SNR9M.R3".into(),
+            encoding: "test",
+            note: "",
+            scenes: vec![SceneOut {
+                index: 0,
+                message_base: 0,
+                dialogues: Vec::new(),
+                strings: Vec::new(),
+                unreferenced: Vec::new(),
+                blocks: blocks
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, records)| BlockOut {
+                        index,
+                        offset: 0,
+                        records,
+                    })
+                    .collect(),
+            }],
+        }
+    }
+}
+
+#[cfg(test)]
+impl RecordOut {
+    /// Record `index` with `trigger` and `code` (instructions with their resolved texts).
+    pub(crate) fn for_test(
+        index: usize,
+        trigger: scenario::Trigger,
+        code: Vec<(scenario::Instr, BTreeMap<&'static str, String>)>,
+    ) -> RecordOut {
+        RecordOut {
+            index,
+            offset: 0,
+            trigger,
+            trigger_person: None,
+            code_offset: 0,
+            code: code
+                .into_iter()
+                .map(|(instr, resolved)| InstrOut { instr, resolved })
+                .collect(),
+        }
+    }
 }
 
 /// Counters for the report.
@@ -1041,6 +1096,12 @@ fn instr_text(i: &scenario::Instr) -> String {
     s
 }
 
+/// The heading of `text/scenario_structure.md`.
+const STRUCTURE_HEAD: &str = "# 시나리오 흐름 (구조)\n\n\
+    `hero-tools original extract`가 사용자의 원작 파일에서 만든 개요입니다\
+    (`text/scenario_structure.md`). 원작의 대사·문구는 넣지 않습니다. 읽는 법은 저장소의 \
+    `docs/reverse-engineering/SCENARIO.md`에 있습니다.\n\n";
+
 fn extract_text(
     install: &InstallDir,
     encoding: TextEncoding,
@@ -1053,6 +1114,8 @@ fn extract_text(
     let mut counts = TextCounts::default();
     let (mut found, mut failed) = (0, 0);
     let mut pool_strings = 0;
+    // The flow of every chapter, without the original text.
+    let mut structure = String::new();
     if names.is_none() {
         report
             .notes
@@ -1127,13 +1190,35 @@ fn extract_text(
                     &format!("{TEXT_DIR}/{chapter}.txt"),
                     scenario_listing(&file).as_bytes(),
                 )?;
-                report.outputs += 2;
+                let number = chapter.trim_start_matches("snr");
+                out.write(
+                    &format!("{TEXT_DIR}/flow{number}.md"),
+                    format!(
+                        "# 시나리오 흐름: {} (원문 포함, 이 컴퓨터에만 둘 것)\n\n{}",
+                        file.scenario,
+                        crate::flow::chapter_flow(&file, crate::flow::Detail::Text)
+                    )
+                    .as_bytes(),
+                )?;
+                structure.push_str(&crate::flow::chapter_flow(
+                    &file,
+                    crate::flow::Detail::Structure,
+                ));
+                structure.push('\n');
+                report.outputs += 3;
             }
             Err(e) => {
                 failed += 1;
                 report.errors.push(e);
             }
         }
+    }
+    if !structure.is_empty() {
+        out.write(
+            &format!("{TEXT_DIR}/scenario_structure.md"),
+            format!("{STRUCTURE_HEAD}{structure}").as_bytes(),
+        )?;
+        report.outputs += 1;
     }
     report.settle(found, failed);
     if counts.unreferenced_bytes > 0 {
@@ -2453,7 +2538,9 @@ mod tests {
         // Text: SNR0 (messages raw), SNR1 (messages LS11-wrapped), IPPAN0M and BAKDATA.
         let text = &index.assets["text"];
         assert_eq!(text.status, Status::Extracted, "{text:#?}");
-        assert_eq!(text.outputs, 6);
+        // Per chapter .json, .txt and flow<n>.md, the pool, the townsfolk talk and the
+        // structure outline of every chapter.
+        assert_eq!(text.outputs, 9);
         assert!(text.notes.is_empty(), "{text:#?}");
         assert!(text.summary.contains("3 scenes"), "{}", text.summary);
         let snr0 = read_json(&target.join("text/snr0.json"));
@@ -2479,6 +2566,18 @@ mod tests {
             .starts_with("유비: 천하가"));
         let listing = std::fs::read_to_string(target.join("text/snr0.txt")).unwrap();
         assert!(listing.contains("38 play_music song=2"), "{listing}");
+        // The flow outlines: with the lines on this computer, without them for the repository.
+        let flow = std::fs::read_to_string(target.join("text/flow0.md")).unwrap();
+        assert!(
+            flow.contains("### 장면 0") && flow.contains("유비: 천하가"),
+            "{flow}"
+        );
+        let structure = std::fs::read_to_string(target.join("text/scenario_structure.md")).unwrap();
+        assert!(
+            structure.contains("## SNR0D.R3") && structure.contains("- **블록 0**"),
+            "{structure}"
+        );
+        assert!(!structure.contains("천하가"), "{structure}");
         let snr1 = read_json(&target.join("text/snr1.json"));
         assert_eq!(snr1["scenes"].as_array().unwrap().len(), 2);
         let pool = read_json(&target.join("text/ippan0m.json"));

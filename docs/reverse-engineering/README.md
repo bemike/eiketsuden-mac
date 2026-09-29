@@ -5,7 +5,9 @@
 > clean-room importer in `crates/hero-import`. [FORMATS.md](FORMATS.md) is the consolidated format
 > specification with a confidence mark on every item; [METHOD.md](METHOD.md) is a reusable playbook (order of
 > work, techniques, pitfalls, a checklist for other KOEI titles of the era such as Koumeiden or Sousouden);
-> [STATUS.md](STATUS.md) lists what is decoded, partly decoded and open, and the remaining steps to a
+> [SCENARIO.md](SCENARIO.md) explains how the scenario flows (blocks, choices, questions, jumps, officers joining and
+> leaving, battle blocks) chapter by chapter, with a block-level outline in [SCENARIO_FLOW.md](SCENARIO_FLOW.md) (no
+> original text); [STATUS.md](STATUS.md) lists what is decoded, partly decoded and open, and the remaining steps to a
 > playable original mode. The work followed strict rules: the owner's own copy only, read-only, nothing from
 > the install ever executed, static analysis for interoperability only, no KOEI bytes or data tables in the
 > repository or CI, and real-data tests gated behind `EIKETSU_ORIGINAL_DIR`. The user guide for the importer
@@ -21,6 +23,7 @@
 |---|---|---|
 | [FORMATS.md](FORMATS.md) | 파일·파일군별 형식 명세: 판본 식별, LS11/Ls11, 6바이트 테이블, TF-DCE, 팔레트, 평면 그래픽·스프라이트, 오프닝·엔딩, 맵, 메시지, 시나리오 바이트코드, `IPPAN0`, `BAKDATA`, `MAIN.EXE` 서명. 항목마다 신뢰도 표기 | 파서를 고치거나 새 판본·새 기능을 붙일 때 |
 | [METHOD.md](METHOD.md) | 작업 순서, 기법(구조 불변식 오라클, 바이트 패턴 검색, x86-16 정적 역어셈블, 로더 코드 추적, 컨택트 시트, 채널 순서 실험, 공개 공략 대조), 함정과 노트가 틀린 곳, 합성 픽스처 + 게이트 골든 테스트, 다른 KOEI 게임 체크리스트 | 새 형식을 분석하거나 다른 게임에 적용할 때 |
+| [SCENARIO.md](SCENARIO.md) | 시나리오의 흐름: 블록이 하는 일, 선택지·질문·블록 이동, 합류·이탈, 전투 블록의 짜임, 장별 구조와 원작 모드 변환과의 대응. 블록 단위 개요는 [SCENARIO_FLOW.md](SCENARIO_FLOW.md)(원문 없음) | 원작의 장을 변환하거나 이야기 흐름을 확인할 때 |
 | [STATUS.md](STATUS.md) | 해독 완료·부분·미해독 목록과 원작 모드까지 남은 단계 | 다음에 무엇을 할지 정할 때 |
 
 ## 범위
