@@ -457,7 +457,7 @@ Strategies and consumable items list their effects as inline tables with a `type
 | `{ type = "damage", power = 60 }` | `power` | strategy damage (RULES.md §5) | not allowed (give the item a `strategy`) |
 | `{ type = "heal", power = 100 }` | `power` | heal scaled by caster INT/level | restores exactly `power` HP |
 | `{ type = "morale", amount = 20 }` | `amount` (negative = morale down) | morale change (negative needs a hit) | morale change |
-| `{ type = "status", status = "confused", turns = 2 }` | `status`, `turns` | inflict a status on hit | not allowed |
+| `{ type = "status", status = "confused", turns = 2 }` | `status`, `turns` | inflict a status on hit (with `strategy_formulas = "original"` in `rules/game.toml` the `turns` are ignored: the confusion ends on a recovery roll, RULES.md §6) | not allowed |
 | `{ type = "promote" }` | — | not allowed | class-up item, used in camp |
 | `{ type = "change_class", to = "archer" }` | `to` (class id) | not allowed | class-change item, used in camp |
 

@@ -20,8 +20,8 @@ const WATER: &str = "water";
 const LOW_MORALE_HEAL: i32 = 30;
 /// Original formulas: a morale-down leaving the target's morale below this confuses it with
 /// [`MORALE_DOWN_CONFUSION`] percent (§6).
-const MORALE_DOWN_CONFUSES_BELOW: i32 = 30;
-const MORALE_DOWN_CONFUSION: i32 = 60;
+pub(super) const MORALE_DOWN_CONFUSES_BELOW: i32 = 30;
+pub(super) const MORALE_DOWN_CONFUSION: i32 = 60;
 
 /// Whether `pack` plays the original's strategy formulas.
 pub(super) fn original_formulas(pack: &Pack) -> bool {
