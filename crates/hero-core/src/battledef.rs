@@ -242,8 +242,13 @@ pub enum Trigger {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to: Option<Pos>,
     },
-    /// Two units stand orthogonally adjacent (typical duel trigger).
-    Adjacent { a: String, b: String },
+    /// Two units stand orthogonally adjacent (typical duel trigger); any player unit next to `b`
+    /// when `a` is absent.
+    Adjacent {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        a: Option<String>,
+        b: String,
+    },
     /// A unit's HP fell below `pct` percent of its max.
     HpBelow { target: String, pct: i32 },
 }
@@ -436,7 +441,11 @@ impl Trigger {
                 vec![("target", target)]
             }
             Trigger::Reach { who, .. } => who.iter().map(|w| ("who", w.as_str())).collect(),
-            Trigger::Adjacent { a, b } => vec![("a", a), ("b", b)],
+            Trigger::Adjacent { a, b } => a
+                .iter()
+                .map(|a| ("a", a.as_str()))
+                .chain([("b", b.as_str())])
+                .collect(),
             Trigger::TurnStart { .. } => Vec::new(),
         }
     }
@@ -566,7 +575,7 @@ actions = [{ type = "victory" }]
         let defeated = Trigger::UnitDefeated { target: "y".into() };
         assert_eq!(defeated.unit_refs(), [("target", "y")]);
         let fields: Vec<&str> = Trigger::Adjacent {
-            a: "x".into(),
+            a: Some("x".into()),
             b: "y".into(),
         }
         .unit_refs()

@@ -329,11 +329,12 @@ impl BattleState {
                 radius,
                 to,
             } => self.someone_near(who.as_deref(), *pos, *radius, *to),
-            Trigger::Adjacent { a, b } => self.matching(a).any(|x| {
-                self.units[x].is_active()
+            Trigger::Adjacent { a, b } => self.units.iter().any(|ux| {
+                ux.is_active()
+                    && a.as_deref()
+                        .map_or(ux.side == Side::Player, |a| ux.matches(a))
                     && self.matching(b).any(|y| {
-                        self.units[y].is_active()
-                            && self.units[x].pos.manhattan(self.units[y].pos) == 1
+                        self.units[y].is_active() && ux.pos.manhattan(self.units[y].pos) == 1
                     })
             }),
             Trigger::HpBelow { target, pct } => self.matching(target).any(|id| {

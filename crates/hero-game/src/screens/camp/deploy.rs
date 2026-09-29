@@ -101,6 +101,8 @@ pub fn initial_selection(pack: &Pack, def: &BattleDef, campaign: &CampaignState)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToggleError {
     NotInArmy,
+    /// Away from the army for now.
+    Away,
     Locked(DeployStatus),
     Forbidden,
     /// Already `max` officers deployed.
@@ -113,6 +115,7 @@ impl ToggleError {
         let topic = with_particle(name, Particle::EunNeun);
         match self {
             ToggleError::NotInArmy => format!("{topic} 아군에 없습니다."),
+            ToggleError::Away => format!("{topic} 지금 부재 중입니다."),
             ToggleError::Locked(DeployStatus::Lord) => {
                 format!("군주인 {topic} 반드시 출진합니다.")
             }
@@ -131,8 +134,10 @@ pub fn toggle(
     selection: &[Id],
     officer: &str,
 ) -> Result<Vec<Id>, ToggleError> {
-    if campaign.officer(officer).is_none() {
-        return Err(ToggleError::NotInArmy);
+    match campaign.officer(officer) {
+        None => return Err(ToggleError::NotInArmy),
+        Some(o) if o.away => return Err(ToggleError::Away),
+        Some(_) => {}
     }
     let status = deploy_status(pack, def, officer);
     if status.locked() {
@@ -330,7 +335,7 @@ impl Screen for DeployScreen {
                 vec2(row.x + 40.0, row.bottom() - 1.0),
                 i == self.menu.cursor(),
             );
-            let dim = status == DeployStatus::Forbidden;
+            let dim = status == DeployStatus::Forbidden || o.away;
             gfx.text(
                 class_name(pack, &o.class),
                 row.x + 12.0 + TAG_W + 52.0,
@@ -342,14 +347,21 @@ impl Screen for DeployScreen {
                 })
                 .shadow(theme::TEXT_SHADOW),
             );
-            if let Some(badge) = status.badge() {
+            // An officer away from the army is shown as such, whatever the battle says.
+            let badge = if o.away {
+                Some("부재")
+            } else {
+                status.badge()
+            };
+            if let Some(badge) = badge {
                 gfx.text(
                     badge,
                     row.x + 12.0 + TAG_W + 108.0,
                     row.y + 6.0,
-                    TextStyle::small(match status {
-                        DeployStatus::Forbidden => theme::TEXT_BAD,
-                        _ => theme::TEXT_NAME,
+                    TextStyle::small(if o.away || status == DeployStatus::Forbidden {
+                        theme::TEXT_BAD
+                    } else {
+                        theme::TEXT_NAME
                     }),
                 );
             }

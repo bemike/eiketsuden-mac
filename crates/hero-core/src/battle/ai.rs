@@ -257,10 +257,15 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
     }
     let def = st.def(pack);
     let named = |who: Option<&str>| who.map_or(me.side == Side::Player, |w| me.matches(w));
-    let partners = |reference: &str| -> Vec<Pos> {
+    // The positions of the other active units `who` names (any player unit when `None`).
+    let partners = |who: Option<&str>| -> Vec<Pos> {
         st.units
             .iter()
-            .filter(|u| u.is_active() && u.id != me.id && u.matches(reference))
+            .filter(|u| {
+                u.is_active()
+                    && u.id != me.id
+                    && who.map_or(u.side == Side::Player, |w| u.matches(w))
+            })
             .map(|u| u.pos)
             .collect()
     };
@@ -281,11 +286,11 @@ fn scripted_endings(st: &BattleState, pack: &Pack, me: &Unit) -> Vec<Scripted> {
         let place = match &e.trigger {
             Trigger::Adjacent { a, b } => {
                 let mut next_to = Vec::new();
-                if me.matches(a) {
-                    next_to.extend(partners(b));
+                if named(a.as_deref()) {
+                    next_to.extend(partners(Some(b)));
                 }
                 if me.matches(b) {
-                    next_to.extend(partners(a));
+                    next_to.extend(partners(a.as_deref()));
                 }
                 if next_to.is_empty() {
                     continue;

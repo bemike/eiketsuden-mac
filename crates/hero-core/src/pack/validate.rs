@@ -1382,7 +1382,7 @@ impl<'a> Validator<'a> {
                 self.position(ctx, map, *pos, *radius, *to);
             }
             Trigger::Adjacent { a, b } => {
-                if a == b {
+                if a.as_ref() == Some(b) {
                     self.warn(ctx, "adjacent trigger names the same unit twice");
                 }
             }
@@ -1511,12 +1511,12 @@ impl<'a> Validator<'a> {
                         }
                     }
                     Cmd::DuelEnd => duel_open = false,
-                    Cmd::Join(o) | Cmd::Leave(o) => {
+                    Cmd::Join(o) | Cmd::Leave(o) | Cmd::Away(o) => {
                         if pack.officer(o).is_none() {
-                            let word = if matches!(cmd, Cmd::Join(_)) {
-                                "join"
-                            } else {
-                                "leave"
+                            let word = match cmd {
+                                Cmd::Join(_) => "join",
+                                Cmd::Leave(_) => "leave",
+                                _ => "away",
                             };
                             self.error(&ctx, format!("@{word} names unknown officer `{o}`"));
                         }

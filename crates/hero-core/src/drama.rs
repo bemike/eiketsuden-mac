@@ -205,7 +205,7 @@ impl DramaRunner {
                     continue;
                 }
                 Cmd::Join(officer) => {
-                    if campaign.officer(officer).is_some() {
+                    if campaign.officer(officer).is_some_and(|o| !o.away) {
                         continue;
                     }
                     campaign.join(pack, officer)?;
@@ -216,6 +216,13 @@ impl DramaRunner {
                         officer: officer.clone(),
                         name,
                     }
+                }
+                Cmd::Away(officer) => {
+                    match campaign.set_away(officer) {
+                        Ok(()) | Err(CampaignError::NotInArmy(_)) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                    continue;
                 }
                 Cmd::Leave(officer) => {
                     match campaign.leave(officer) {

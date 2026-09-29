@@ -756,13 +756,13 @@ mod tests {
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
-        // (Then chapter 2's ten, made from the original battles.)
+        // (Then chapter 2's nine the story reaches, made from the original battles.)
         let battles = json["battles"].as_array().unwrap();
         let (later, restaged): (Vec<_>, Vec<_>) = battles
             .iter()
             .partition(|b| b["id"].as_str().unwrap().starts_with("c2_s"));
         assert_eq!(restaged.len(), 21, "{battles:#?}");
-        assert_eq!(later.len(), 10, "{battles:#?}");
+        assert_eq!(later.len(), 9, "{battles:#?}");
         let expect = [
             ("p1_sishui", "hexz_00", 30),
             ("p2_hulao", "hexz_01", 30),
@@ -890,16 +890,36 @@ mod tests {
         for key in ["left", "right", "field", "guan_yu", "zhang_fei", "lu_bu"] {
             assert!(out.join(format!("gfx/duel/{key}.png")).is_file(), "{key}");
         }
-        // Chapter 2 (SNR2): its ten battles and its story continue the base campaign after
-        // Xuzhou, and a wrong answer at Yuan Shao's hall ends the game.
+        // Chapter 2 (SNR2): its battles and its story continue the base campaign after Xuzhou,
+        // and a wrong answer at Yuan Shao's hall ends the game. Xinye's siege (block 3), which
+        // the original offers by answering Zhang Fei instead of Zhuge Liang, is not reached.
         let chapter: Vec<&str> = pack
             .battles
             .keys()
             .map(|k| k.as_str())
             .filter(|k| k.starts_with("c2_s"))
             .collect();
-        assert_eq!(chapter.len(), 10, "{chapter:?}");
+        assert_eq!(chapter.len(), 9, "{chapter:?}");
+        assert!(!pack.battles.contains_key("c2_s3_b3"));
         assert!(pack.battles["c2_s3_b7"].name.starts_with("장판파"));
+        // Gucheng is won by any unit's contact with the stranger (Zhang Fei), as the objective says.
+        assert!(pack.battles["c2_s0_b9"].events.iter().any(|e| matches!(
+            &e.trigger,
+            hero_core::battledef::Trigger::Adjacent { a: None, .. }
+        ) && e
+            .actions
+            .contains(&hero_core::battledef::EventAction::Victory)));
+        // The choice between Xiangyang and Jiangxia is a route: Jiangxia goes straight to
+        // Changban, Xiangyang fights Cai Mao first.
+        let route = pack
+            .campaign
+            .node("c2_s3_story5_route1")
+            .expect("the route branch");
+        assert!(
+            matches!(route, hero_core::campaign::Node::Branch { then, otherwise, .. }
+                if then == "c2_s3_b7_camp" && otherwise == "c2_s3_b6_camp"),
+            "{route:?}"
+        );
         let after = pack
             .campaign
             .node("c1_battle_xuzhou2")
@@ -914,6 +934,8 @@ mod tests {
             story.contains("@set orig_game_over = 1") && story.contains("yuan_shao: "),
             "{story}"
         );
+        // Zhuge Liang is asked again until the right answer.
+        assert!(story.contains("@goto ask_"), "{story}");
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

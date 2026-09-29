@@ -2037,24 +2037,64 @@ fn convert_battles(
                 }
             };
             for part in chapters::parts(&scene) {
+                let block = match part {
+                    chapters::Part::Story { block } | chapters::Part::Battle { block, .. } => block,
+                };
+                // The flag a route choice of the block sets for the campaign to branch on.
+                let route_flag = format!("orig_route_c{file}_s{scene_index}_b{block}");
+                let ctx = chapters::StoryContext {
+                    names: &names,
+                    text: text.as_ref(),
+                    song_key: &song_key,
+                    block,
+                    route_flag: &route_flag,
+                };
                 let story = match part {
-                    chapters::Part::Story { block } => {
-                        let story = chapters::story_scene(
-                            &scene.blocks[block],
-                            &chapters::StoryContext {
-                                names: &names,
-                                text: text.as_ref(),
-                                song_key: &song_key,
-                            },
-                        );
-                        Some((format!("c{file}_s{scene_index}_story{block}"), story))
+                    chapters::Part::Story { block } => Some((
+                        format!("c{file}_s{scene_index}_story{block}"),
+                        chapters::story_scene(&scene.blocks[block], &ctx),
+                    )),
+                    // What the original plays after the battle is won: its outro.
+                    chapters::Part::Battle { block, .. } => {
+                        let outro = chapters::victory_scene(&scene.blocks[block], &ctx);
+                        (!outro.text.is_empty()).then(|| {
+                            (
+                                format!("{}_outro", chapter_battle_id(file, scene_index, block)),
+                                outro,
+                            )
+                        })
                     }
-                    chapters::Part::Battle { .. } => None,
                 };
                 chapter.push((file, scene_index, part, story));
             }
         }
     }
+    // Only the parts the story reaches: an alternative the conversion offers no choice for
+    // (the original lets one pick it by whom one talks to) is left out.
+    let at: Vec<_> = chapter
+        .iter()
+        .map(|(file, scene, part, _)| {
+            let (chapters::Part::Story { block } | chapters::Part::Battle { block, .. }) = *part;
+            (*file, *scene, block)
+        })
+        .collect();
+    let next: Vec<_> = chapter
+        .iter()
+        .map(|(_, _, _, s)| s.as_ref().map(|(_, s)| s.next.clone()).unwrap_or_default())
+        .collect();
+    let reached = chapters::reachable(&at, &next);
+    let mut reached = reached.into_iter();
+    chapter.retain(|(file, scene, part, _)| {
+        let kept = reached.next().unwrap_or(true);
+        if !kept {
+            let (chapters::Part::Story { block } | chapters::Part::Battle { block, .. }) = *part;
+            report.notes.push(format!(
+                "SNR{file} scene {scene} block {block}: an alternative the converted story does \
+                 not reach (the original offers it by whom one talks to); left out"
+            ));
+        }
+        kept
+    });
     for (_, _, _, story) in &chapter {
         for line in story.iter().flat_map(|(_, s)| s.text.lines()) {
             if let Some(id) = line.strip_prefix("@join ") {
@@ -2064,18 +2104,20 @@ fn convert_battles(
     }
 
     // The battles: the base pack's that follow original ones, then the chapters' battles.
+    // (battle id, pairing, the base battle, the outro of a chapter's battle)
     let mut jobs: Vec<(
         String,
         battles::Pairing,
         Option<&hero_core::battledef::BattleDef>,
+        Option<String>,
     )> = wanted
         .iter()
         .map(|p| {
             let base = options.battles.iter().find(|b| b.id == p.battle);
-            (p.battle.to_string(), **p, base)
+            (p.battle.to_string(), **p, base, None)
         })
         .collect();
-    for (file, scene, part, _) in &chapter {
+    for (file, scene, part, outro) in &chapter {
         if let chapters::Part::Battle { block, map } = *part {
             jobs.push((
                 chapter_battle_id(*file, *scene, block),
@@ -2088,10 +2130,11 @@ fn convert_battles(
                     roles: &[],
                 },
                 None,
+                outro.as_ref().map(|(id, _)| id.clone()),
             ));
         }
     }
-    for (id, pairing, base) in &jobs {
+    for (id, pairing, base, outro) in &jobs {
         let (id, file, scene_index, map) = (id.as_str(), pairing.file, pairing.scene, pairing.map);
         let name = format!("SNR{file}D.R3");
         let result = (|| -> Result<(BattleRecord, String), String> {
@@ -2178,7 +2221,7 @@ fn convert_battles(
                         .map(|t| battles::objective_text(&t))
                         .filter(|t| !t.is_empty())
                         .unwrap_or_else(|| "적을 물리쳐라".to_string());
-                    made = chapters::chapter_base(
+                    let mut b = chapters::chapter_base(
                         id,
                         &format!("{map_name} 전투"),
                         &objective,
@@ -2186,6 +2229,8 @@ fn convert_battles(
                         original.header.defeat_to_win.is_some(),
                         names.officers.get(&battles::LIU_BEI).map(String::as_str),
                     );
+                    b.outro = outro.clone();
+                    made = b;
                     &made
                 }
             };
@@ -2217,6 +2262,11 @@ fn convert_battles(
                 let slots = &mut converted.battle.deploy.slots;
                 let before = slots.len();
                 slots.retain(|p| !blocked(p));
+                if slots.is_empty() && before > 0 {
+                    return Err(
+                        "every deploy slot is on terrain foot units cannot enter".to_string()
+                    );
+                }
                 if slots.len() < before {
                     converted.notes.push(format!(
                         "{} deploy slot(s) on terrain foot units cannot enter left out",
@@ -2340,45 +2390,88 @@ fn convert_battles(
     let mut story = String::from(
         "# The story of the original's chapters past the base campaign, converted from the\n\
          # scenario of the player's own copy by `hero-tools original pack` (do not edit; run the\n\
-         # importer again). Scene `c<file>_s<scene>_story<block>` is block <block> of the scene,\n\
-         # read in order (docs/ORIGINAL_DATA.md).\n",
+         # importer again). Scene `c<file>_s<scene>_story<block>` is block <block> of the scene\n\
+         # (docs/ORIGINAL_DATA.md).\n",
     );
-    let mut shop = Vec::new();
+    // What the camps sell: the original's shop stays until a block sets another, so the
+    // chapters start with the base campaign's last camp's.
+    let mut shop: Vec<String> = options
+        .campaign
+        .as_ref()
+        .and_then(|c| {
+            c.nodes.iter().find_map(|n| match n {
+                hero_core::campaign::Node::Camp {
+                    shop,
+                    battle: Some(battle),
+                    ..
+                } if battle == BASE_CAMPAIGN_LAST_BATTLE => Some(shop.clone()),
+                _ => None,
+            })
+        })
+        .unwrap_or_default();
+    // The camp title of a chapter's battle, when it was converted.
+    let battle_title = |id: &str| {
+        records.iter().find(|r| r.id == id).map(|r| {
+            let place = maps
+                .iter()
+                .find(|m| m.id == r.map)
+                .map_or(r.map.as_str(), |m| {
+                    m.name.trim_end_matches(|c: char| c.is_ascii_digit())
+                });
+            format!("{place} — 출진 준비")
+        })
+    };
     for (file, scene, part, converted_story) in &chapter {
         match (part, converted_story) {
-            (_, Some((id, s))) => {
-                let _ = write!(story, "\n== {id}\n{}", s.text);
+            (chapters::Part::Battle { block, .. }, outro) => {
+                let id = chapter_battle_id(*file, *scene, *block);
+                let Some(title) = battle_title(&id) else {
+                    report.notes.push(format!(
+                        "{id}: not converted; the campaign goes on without it"
+                    ));
+                    continue;
+                };
+                let mut next = chapters::Next::Default;
+                // Its outro (played by the battle) and what it sets up for the next camp.
+                if let Some((outro_id, s)) = outro {
+                    let _ = write!(story, "\n== {outro_id}\n{}", s.text);
+                    for note in &s.notes {
+                        report.notes.push(format!("{outro_id}: {note}"));
+                    }
+                    next = s.next.clone();
+                }
+                steps.push(chapters::Step {
+                    at: (*file, *scene, *block),
+                    kind: chapters::StepKind::Battle {
+                        battle: id,
+                        title,
+                        shop: shop.clone(),
+                    },
+                    next,
+                });
+                if let Some((_, s)) = outro.as_ref().filter(|(_, s)| !s.shop.is_empty()) {
+                    shop = s.shop.clone();
+                }
+            }
+            (chapters::Part::Story { block }, Some((id, s))) => {
                 if !s.shop.is_empty() {
                     shop = s.shop.clone();
                 }
                 for note in &s.notes {
                     report.notes.push(format!("{id}: {note}"));
                 }
-                steps.push(chapters::Step::Story {
-                    scene: id.clone(),
-                    game_over: s.game_over,
-                });
-            }
-            (chapters::Part::Battle { block, .. }, None) => {
-                let id = chapter_battle_id(*file, *scene, *block);
-                let Some(title) = records.iter().find(|r| r.id == id).map(|r| {
-                    let place = maps
-                        .iter()
-                        .find(|m| m.id == r.map)
-                        .map_or(r.map.as_str(), |m| {
-                            m.name.trim_end_matches(|c: char| c.is_ascii_digit())
-                        });
-                    format!("{place} — 출진 준비")
-                }) else {
-                    report.notes.push(format!(
-                        "{id}: not converted; the campaign goes on without it"
-                    ));
+                // A block with nothing to show and nowhere else to go is left out.
+                if s.text.trim().is_empty() && s.next == chapters::Next::Default {
                     continue;
-                };
-                steps.push(chapters::Step::Battle {
-                    battle: id,
-                    title,
-                    shop: std::mem::take(&mut shop),
+                }
+                let _ = write!(story, "\n== {id}\n{}", s.text);
+                steps.push(chapters::Step {
+                    at: (*file, *scene, *block),
+                    kind: chapters::StepKind::Story {
+                        scene: id.clone(),
+                        game_over: s.game_over,
+                    },
+                    next: s.next.clone(),
                 });
             }
             (chapters::Part::Story { .. }, None) => {}
@@ -2425,7 +2518,7 @@ fn convert_battles(
     let events: usize = records.iter().map(|r| r.events).sum();
     let later = steps
         .iter()
-        .filter(|s| matches!(s, chapters::Step::Battle { .. }))
+        .filter(|s| matches!(s.kind, chapters::StepKind::Battle { .. }))
         .count();
     let stories = steps.len() - later;
     report.summary = format!(

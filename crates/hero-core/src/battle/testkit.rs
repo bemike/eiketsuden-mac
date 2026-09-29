@@ -503,6 +503,7 @@ pub fn officer_state(pack: &Pack, id: &str) -> OfficerState {
         int: o.int,
         lead: o.lead,
         equip: o.equip.clone(),
+        away: false,
     }
 }
 

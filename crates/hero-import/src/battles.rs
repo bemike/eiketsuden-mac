@@ -430,7 +430,7 @@ pub fn trigger_of(
             target: named(word(0), unit)?,
         },
         4 => Trigger::Adjacent {
-            a: named(word(0), unit)?,
+            a: unit(word(0))?,
             b: named(word(1), unit)?,
         },
         other => return Err(format!("trigger kind {other} is not converted")),
@@ -633,7 +633,7 @@ fn same_occasion(a: &Trigger, b: &Trigger) -> bool {
     match (a, b) {
         (Trigger::TurnStart { turn: x, .. }, Trigger::TurnStart { turn: y, .. }) => x == y,
         (Trigger::Adjacent { a: a1, b: b1 }, Trigger::Adjacent { a: a2, b: b2 }) => {
-            (a1 == a2 && b1 == b2) || (a1 == b2 && b1 == a2)
+            (a1 == a2 && b1 == b2) || (a1.as_ref() == Some(b2) && a2.as_ref() == Some(b1))
         }
         _ => a == b,
     }
@@ -656,7 +656,7 @@ fn event_problem(e: &EventDef, gone: &BTreeSet<String>) -> Option<String> {
     match &e.trigger {
         Trigger::Reach { .. } => return Some("it fires on a tile of the base map".into()),
         Trigger::UnitDefeated { target } | Trigger::HpBelow { target, .. } => refs.push(target),
-        Trigger::Adjacent { a, b } => refs.extend([a.as_str(), b.as_str()]),
+        Trigger::Adjacent { a, b } => refs.extend(a.iter().map(String::as_str).chain([b.as_str()])),
         Trigger::TurnStart { .. } => {}
     }
     for action in &e.actions {
@@ -848,7 +848,7 @@ impl EventWriter<'_, '_> {
         };
         match trigger {
             Trigger::Adjacent { a, b } => Trigger::Adjacent {
-                a: canon(a),
+                a: a.as_ref().map(canon),
                 b: canon(b),
             },
             Trigger::UnitDefeated { target } => Trigger::UnitDefeated {
@@ -2489,9 +2489,21 @@ mod tests {
         assert_eq!(
             trigger_of(4, false, [1, 0, 5, 0, 0, 0], &mut named),
             Ok(Trigger::Adjacent {
-                a: "o1".into(),
+                a: Some("o1".into()),
                 b: "o5".into()
             })
+        );
+        // Any player unit next to one (고성: contact with ???).
+        assert_eq!(
+            trigger_of(4, false, [0, 4, 5, 0, 0, 0], &mut named),
+            Ok(Trigger::Adjacent {
+                a: None,
+                b: "o5".into()
+            })
+        );
+        assert!(
+            trigger_of(4, false, [1, 0, 0, 4, 0, 0], &mut named).is_err(),
+            "the second unit is named"
         );
         assert!(
             trigger_of(12, false, [0, 4, 0, 0, 0, 0], &mut named).is_err(),
