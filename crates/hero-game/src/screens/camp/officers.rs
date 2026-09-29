@@ -2,6 +2,10 @@
 //! with portrait, names, class, level and EXP, battle values, 무력/지력/통솔, known strategies,
 //! equipment and biography. Tapping the lord's portrait many times leads to the original's hidden
 //! command ([`crate::secret`]).
+//!
+//! A pack with a status window (`[presentation.status_frame]`, the original's) shows the army on
+//! it instead of the table: a page of officers in its slots (unit icon, level, troops) and the
+//! chosen one on the side; the detail page opens from there.
 
 use super::stats::officer_stats;
 use super::widgets::{back_button, back_tapped, content_rect, draw_back_button, help_y};
@@ -21,10 +25,12 @@ use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
-use crate::ui::window::{draw_divider, draw_icon, draw_window_ex, WindowStyle};
+use crate::ui::window::{
+    draw_divider, draw_highlight, draw_icon, draw_window_ex, inset, WindowStyle,
+};
 use hero_core::campaign::OfficerState;
 use hero_core::data::ItemKind;
-use hero_core::pack::Pack;
+use hero_core::pack::{Pack, StatusFrame};
 use macroquad::prelude::*;
 
 const ROW_H: f32 = 22.0;
@@ -66,6 +72,94 @@ fn orb_rect() -> Rect {
 /// The prompt of the hidden command (our wording; the original's warning is not reproduced).
 const SECRET_PROMPT: &str =
     "금단의 비법\n이 명령은 게임의 균형을 무너뜨립니다. 그래도 쓰시겠습니까?";
+
+/// The status window's picture placed in the camp screens' `area`: centred, whole pixels.
+struct StatusLayout<'a> {
+    frame: &'a StatusFrame,
+    origin: Vec2,
+}
+
+impl<'a> StatusLayout<'a> {
+    fn new(frame: &'a StatusFrame, area: Vec2) -> StatusLayout<'a> {
+        let [w, h] = frame.size;
+        StatusLayout {
+            frame,
+            origin: vec2(
+                ((area.x - w as f32) / 2.0).floor(),
+                ((area.y - h as f32) / 2.0).floor(),
+            ),
+        }
+    }
+
+    /// An area of the picture on screen.
+    fn rect(&self, [x, y, w, h]: [u32; 4]) -> Rect {
+        Rect::new(
+            self.origin.x + x as f32,
+            self.origin.y + y as f32,
+            w as f32,
+            h as f32,
+        )
+    }
+
+    fn per_page(&self) -> usize {
+        self.frame.slots.len()
+    }
+
+    /// Slots in a row (the ones level with the first).
+    fn columns(&self) -> usize {
+        let top = self.frame.slots[0].icon[1];
+        self.frame
+            .slots
+            .iter()
+            .take_while(|s| s.icon[1] == top)
+            .count()
+            .max(1)
+    }
+
+    /// The slot tapped at `p`: its icon, level or troops.
+    fn slot_at(&self, p: Vec2) -> Option<usize> {
+        self.frame.slots.iter().position(|s| {
+            [s.icon, s.level, s.troops]
+                .into_iter()
+                .any(|a| self.rect(a).contains(p))
+        })
+    }
+}
+
+/// What a tap or key on the status window does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatusAction {
+    /// Move the cursor to this officer.
+    Choose(usize),
+    /// Open the chosen officer's detail page.
+    Open,
+    Close,
+    None,
+}
+
+/// The status window's answer to a tap at `p` with `cursor` on officer `cursor` of `count`.
+fn status_tap(layout: &StatusLayout, p: Vec2, cursor: usize, count: usize) -> StatusAction {
+    let per = layout.per_page();
+    let page = cursor / per;
+    if layout.rect(layout.frame.close).contains(p) {
+        return StatusAction::Close;
+    }
+    let pager = layout.rect(layout.frame.pager);
+    if pager.contains(p) {
+        let pages = count.div_ceil(per).max(1);
+        let to = if p.y < pager.center().y {
+            (page + pages - 1) % pages
+        } else {
+            (page + 1) % pages
+        };
+        return StatusAction::Choose(to * per);
+    }
+    match layout.slot_at(p).map(|k| page * per + k) {
+        Some(i) if i == cursor => StatusAction::Open,
+        Some(i) if i < count => StatusAction::Choose(i),
+        _ => StatusAction::None,
+    }
+}
 
 /// The officer table and detail pages.
 pub struct OfficersScreen {
@@ -336,6 +430,206 @@ impl OfficersScreen {
 }
 
 impl OfficersScreen {
+    /// The officer list on the status window: taps, direction keys (left and right step, up and
+    /// down move by a row), confirm opens the detail page, cancel or the close button leaves.
+    fn update_status(&mut self, ctx: &mut Ctx, frame: &StatusFrame, count: usize) -> Transition {
+        let layout = StatusLayout::new(frame, ctx.gfx.size());
+        let cursor = self.menu.cursor().min(count.saturating_sub(1));
+        let mut action = StatusAction::None;
+        if let Some(p) = ctx.input.tap() {
+            action = status_tap(&layout, p, cursor, count);
+            if action != StatusAction::None {
+                ctx.input.consume();
+            }
+        } else if let Some(dir) = ctx.input.nav() {
+            let step = match dir {
+                Dir::Left => -1,
+                Dir::Right => 1,
+                Dir::Up => -(layout.columns() as i32),
+                Dir::Down => layout.columns() as i32,
+            };
+            let to = (cursor as i32 + step).clamp(0, count.saturating_sub(1) as i32) as usize;
+            if to != cursor {
+                action = StatusAction::Choose(to);
+            }
+        } else if ctx.input.confirm_key() && count > 0 {
+            action = StatusAction::Open;
+        } else if ctx.input.cancel() {
+            action = StatusAction::Close;
+        }
+        match action {
+            StatusAction::Choose(i) => {
+                ctx.sfx(sfx::CURSOR);
+                self.menu.set_cursor(i.min(count.saturating_sub(1)));
+            }
+            StatusAction::Open => {
+                ctx.sfx(sfx::CONFIRM);
+                self.detail = Some(cursor);
+            }
+            StatusAction::Close => {
+                ctx.sfx(sfx::CANCEL);
+                return Transition::Pop;
+            }
+            StatusAction::None => {}
+        }
+        Transition::None
+    }
+
+    fn draw_status(&self, ctx: &Ctx, pack: &Pack, roster: &[OfficerState], frame: &StatusFrame) {
+        let gfx = &ctx.gfx;
+        let layout = StatusLayout::new(frame, gfx.size());
+        let whole = layout.rect([0, 0, frame.size[0], frame.size[1]]);
+        match ctx.media.texture(&frame.image) {
+            Some(tex) => draw_texture_ex(
+                &tex,
+                whole.x,
+                whole.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(whole.size()),
+                    ..Default::default()
+                },
+            ),
+            None => draw_window_ex(whole, WindowStyle::Panel, 1.0),
+        }
+        let value = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
+        let line = gfx.line_height(FontId::Main, 1);
+        // Text centred on a box's height, `pad` in from its sides.
+        let put = |text: &str, r: Rect, align: Align, style: TextStyle| {
+            let y = (r.y + (r.h - line) / 2.0).round();
+            gfx.text_aligned(text, r.x + 3.0, y, r.w - 6.0, align, style);
+        };
+        put(
+            "무장 정보",
+            layout.rect(frame.title),
+            Align::Left,
+            TextStyle::main(theme::TEXT_NAME).shadow(theme::TEXT_SHADOW),
+        );
+        let per = layout.per_page();
+        let count = roster.len();
+        let cursor = self.menu.cursor().min(count.saturating_sub(1));
+        let page = cursor / per;
+        for (k, slot) in frame.slots.iter().enumerate() {
+            let i = page * per + k;
+            let Some(o) = roster.get(i) else {
+                continue;
+            };
+            let icon = layout.rect(slot.icon);
+            // The chosen officer's box lights up behind the unit.
+            if i == cursor {
+                draw_highlight(icon, true, ctx.time);
+            }
+            draw_officer_sprite(
+                ctx,
+                pack,
+                o,
+                vec2(icon.center().x, icon.bottom()),
+                i == cursor,
+            );
+            put(
+                &o.level.to_string(),
+                layout.rect(slot.level),
+                Align::Right,
+                value,
+            );
+            let troops = officer_stats(pack, o).map_or(0, |s| i64::from(s.hp));
+            put(
+                &format::thousands(troops),
+                layout.rect(slot.troops),
+                Align::Right,
+                value,
+            );
+        }
+        let pages = count.div_ceil(per).max(1);
+        put(
+            &format!("{}/{pages}", page + 1),
+            layout.rect(frame.page),
+            Align::Center,
+            value,
+        );
+        let rest = count.saturating_sub((page + 1) * per);
+        put(
+            &rest.to_string(),
+            layout.rect(frame.rest),
+            Align::Center,
+            value,
+        );
+
+        // The chosen officer.
+        let Some(o) = roster.get(cursor) else {
+            return;
+        };
+        draw_portrait_card(
+            ctx,
+            Some(portrait_key(pack, &o.id)),
+            layout.rect(frame.portrait),
+            1.0,
+            1.0,
+        );
+        put(
+            officer_name(pack, &o.id),
+            layout.rect(frame.name),
+            Align::Center,
+            value,
+        );
+        put(
+            &o.level.to_string(),
+            layout.rect(frame.level),
+            Align::Right,
+            value,
+        );
+        for (area, v) in [
+            (frame.lead, o.lead),
+            (frame.strength, o.strength),
+            (frame.intellect, o.int),
+        ] {
+            put(&v.to_string(), layout.rect(area), Align::Right, value);
+        }
+        put(
+            class_name(pack, &o.class),
+            layout.rect(frame.class),
+            Align::Center,
+            value,
+        );
+        // Equipment, then the strategies with their MP, as far as the box holds them.
+        let info = inset(layout.rect(frame.info), 4.0);
+        let small = gfx.line_height(FontId::Small, 1);
+        let mut lines: Vec<(String, Color)> = Vec::new();
+        for (slot, id) in [
+            (ItemKind::Weapon, o.equip.weapon.as_ref()),
+            (ItemKind::Armor, o.equip.armor.as_ref()),
+            (ItemKind::Accessory, o.equip.accessory.as_ref()),
+        ] {
+            let item = id
+                .and_then(|id| pack.item(id))
+                .map_or("—", |i| i.name.as_str());
+            lines.push((format!("{} {item}", slot_name(slot)), theme::TEXT));
+        }
+        let strategies = strategy_list(pack, o);
+        lines.push(("책략".to_string(), theme::TEXT_DIM));
+        if strategies.is_empty() {
+            lines.push(("없음".to_string(), theme::TEXT_DIM));
+        }
+        for (name, mp) in strategies {
+            lines.push((format!("{name} {mp}"), theme::TEXT));
+        }
+        let fit = ((info.h / small).floor() as usize).max(1);
+        let overflow = lines.len() > fit;
+        for (n, (text, color)) in lines.iter().take(fit).enumerate() {
+            let text = if overflow && n + 1 == fit {
+                format!("외 {}개", lines.len() - fit + 1)
+            } else {
+                text.clone()
+            };
+            gfx.text(
+                &text,
+                info.x,
+                info.y + n as f32 * small,
+                TextStyle::small(*color),
+            );
+        }
+    }
+
     /// The hidden command: its prompt, its orb and taps on the lord's portrait. Returns `true`
     /// when it took the input.
     fn update_secret(&mut self, ctx: &mut Ctx) -> bool {
@@ -467,6 +761,13 @@ impl Screen for OfficersScreen {
             }
             return Transition::None;
         }
+        let pack = ctx.pack.clone();
+        if let Some(frame) = pack
+            .as_deref()
+            .and_then(|p| p.manifest.presentation.status_frame.as_ref())
+        {
+            return self.update_status(ctx, frame, count);
+        }
         if back {
             return Transition::Pop;
         }
@@ -506,6 +807,11 @@ impl Screen for OfficersScreen {
                 );
             }
             None => {
+                if let Some(frame) = &pack.manifest.presentation.status_frame {
+                    self.draw_status(ctx, pack, &campaign.roster, frame);
+                    self.draw_secret(ctx);
+                    return;
+                }
                 draw_header(ctx, "무장 정보", campaign.gold);
                 self.draw_table(ctx, pack, &campaign.roster);
                 draw_help(ctx, "Z 자세히 · X 돌아가기");
@@ -521,6 +827,92 @@ mod tests {
     use super::*;
     use crate::screens::camp::test_pack;
     use hero_core::campaign::CampaignState;
+
+    /// The original's status window: 512×320, six slots in two columns.
+    fn status_frame() -> StatusFrame {
+        let slot = |x: u32, y: u32| hero_core::pack::StatusSlot {
+            icon: [x, y, 32, 32],
+            level: [x, y + 32, 32, 16],
+            troops: [x + 88, y + 8, 40, 16],
+        };
+        StatusFrame {
+            image: "ui/status".into(),
+            size: [512, 320],
+            title: [8, 8, 288, 32],
+            slots: [
+                (16, 64),
+                (160, 64),
+                (16, 128),
+                (160, 128),
+                (16, 192),
+                (160, 192),
+            ]
+            .into_iter()
+            .map(|(x, y)| slot(x, y))
+            .collect(),
+            portrait: [320, 16, 64, 80],
+            name: [400, 8, 80, 16],
+            level: [464, 32, 16, 16],
+            lead: [456, 64, 24, 16],
+            strength: [456, 96, 24, 16],
+            intellect: [456, 128, 24, 16],
+            class: [320, 112, 64, 32],
+            info: [314, 170, 188, 140],
+            page: [48, 272, 48, 32],
+            pager: [96, 272, 32, 32],
+            rest: [176, 272, 48, 32],
+            close: [240, 272, 48, 32],
+        }
+    }
+
+    #[test]
+    fn the_status_window_sits_in_the_camp_view_and_pages_the_army() {
+        let frame = status_frame();
+        // In the original's camp view (511×322) it lands where the original draws it.
+        let layout = StatusLayout::new(&frame, vec2(511.0, 322.0));
+        assert_eq!(layout.origin, vec2(-1.0, 1.0));
+        assert_eq!((layout.per_page(), layout.columns()), (6, 2));
+        let at = |x: f32, y: f32| layout.origin + vec2(x, y);
+        // A tap on another officer's slot moves to them; on the chosen one opens its page.
+        assert_eq!(
+            status_tap(&layout, at(170.0, 70.0), 0, 10),
+            StatusAction::Choose(1)
+        );
+        assert_eq!(
+            status_tap(&layout, at(20.0, 70.0), 0, 10),
+            StatusAction::Open
+        );
+        assert_eq!(
+            status_tap(&layout, at(120.0, 80.0), 0, 10),
+            StatusAction::Open
+        );
+        // Empty slots of the last page do nothing.
+        assert_eq!(
+            status_tap(&layout, at(170.0, 200.0), 6, 8),
+            StatusAction::None
+        );
+        // The pager: bottom half the next page, top half the previous (wrapping).
+        assert_eq!(
+            status_tap(&layout, at(100.0, 300.0), 0, 10),
+            StatusAction::Choose(6)
+        );
+        assert_eq!(
+            status_tap(&layout, at(100.0, 275.0), 0, 10),
+            StatusAction::Choose(6)
+        );
+        assert_eq!(
+            status_tap(&layout, at(100.0, 300.0), 7, 10),
+            StatusAction::Choose(0)
+        );
+        assert_eq!(
+            status_tap(&layout, at(260.0, 280.0), 3, 10),
+            StatusAction::Close
+        );
+        assert_eq!(
+            status_tap(&layout, at(400.0, 250.0), 3, 10),
+            StatusAction::None
+        );
+    }
 
     #[test]
     fn strategies_follow_class_and_level() {

@@ -878,6 +878,7 @@ mod tests {
             canvas: [w, h],
             battle_frame: None,
             camp_frame: None,
+            status_frame: None,
         };
         assert_eq!(canvas_size(&p(640, 480)), vec2(640.0, 480.0));
         assert_eq!(canvas_size(&p(1280, 800)), vec2(1280.0, 800.0));
