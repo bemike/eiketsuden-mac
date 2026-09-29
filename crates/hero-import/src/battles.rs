@@ -150,13 +150,13 @@ pub const ORIGINAL_BATTLES: &[Pairing] = &[
 ];
 
 /// Upper nibble of a `load_map` value that loads a battle map.
-const BATTLE_MAP: u16 = 0x3000;
+pub(crate) const BATTLE_MAP: u16 = 0x3000;
 /// Trigger kind `unit_at_cell`.
 const UNIT_AT_CELL: u8 = 6;
 /// Person value of trigger records meaning "any unit".
 const ANY_UNIT: u16 = 0x400;
 /// `BAKDATA` person of Liu Bei.
-const LIU_BEI: u16 = 0;
+pub(crate) const LIU_BEI: u16 = 0;
 /// Person value of setup slots that any deployed officer may take.
 const ANY_OFFICER: u16 = 0x400;
 /// `data` kinds: add gold / run the battle routine.
@@ -430,7 +430,7 @@ pub fn trigger_of(
             target: named(word(0), unit)?,
         },
         4 => Trigger::Adjacent {
-            a: named(word(0), unit)?,
+            a: unit(word(0))?,
             b: named(word(1), unit)?,
         },
         other => return Err(format!("trigger kind {other} is not converted")),
@@ -633,7 +633,7 @@ fn same_occasion(a: &Trigger, b: &Trigger) -> bool {
     match (a, b) {
         (Trigger::TurnStart { turn: x, .. }, Trigger::TurnStart { turn: y, .. }) => x == y,
         (Trigger::Adjacent { a: a1, b: b1 }, Trigger::Adjacent { a: a2, b: b2 }) => {
-            (a1 == a2 && b1 == b2) || (a1 == b2 && b1 == a2)
+            (a1 == a2 && b1 == b2) || (a1.as_ref() == Some(b2) && a2.as_ref() == Some(b1))
         }
         _ => a == b,
     }
@@ -656,7 +656,7 @@ fn event_problem(e: &EventDef, gone: &BTreeSet<String>) -> Option<String> {
     match &e.trigger {
         Trigger::Reach { .. } => return Some("it fires on a tile of the base map".into()),
         Trigger::UnitDefeated { target } | Trigger::HpBelow { target, .. } => refs.push(target),
-        Trigger::Adjacent { a, b } => refs.extend([a.as_str(), b.as_str()]),
+        Trigger::Adjacent { a, b } => refs.extend(a.iter().map(String::as_str).chain([b.as_str()])),
         Trigger::TurnStart { .. } => {}
     }
     for action in &e.actions {
@@ -692,7 +692,7 @@ fn event_problem(e: &EventDef, gone: &BTreeSet<String>) -> Option<String> {
 /// A drama speaker without an officer id: the name as the game shows it, without spaces
 /// (drama speakers are one word of at most 24 characters, and one that looks like an id must be
 /// an officer, which a free name is not).
-fn free_speaker(name: &str) -> String {
+pub(crate) fn free_speaker(name: &str) -> String {
     let name: String = name
         .chars()
         .filter(|c| !c.is_whitespace() && *c != ':')
@@ -708,9 +708,21 @@ fn free_speaker(name: &str) -> String {
     }
 }
 
+/// Remove scene `id` (its `== id` line and the lines up to the next scene) from a drama.
+pub(crate) fn remove_scene(drama: &mut String, id: &str) {
+    let head = format!("\n== {id}\n");
+    let Some(start) = drama.find(&head) else {
+        return;
+    };
+    let end = drama[start + head.len()..]
+        .find("\n== ")
+        .map_or(drama.len(), |i| start + head.len() + i);
+    drama.replace_range(start..end, "");
+}
+
 /// Append `text` to a drama as `head` (`speaker:` or `@narr`) and indented continuation lines;
 /// a line the drama parser would read as something else starts a new `head` line instead.
-fn push_text(out: &mut String, head: &str, text: &str) {
+pub(crate) fn push_text(out: &mut String, head: &str, text: &str) {
     let mut lines = text
         .split('\n')
         .map(|l| l.trim_end_matches('\r').trim())
@@ -836,7 +848,7 @@ impl EventWriter<'_, '_> {
         };
         match trigger {
             Trigger::Adjacent { a, b } => Trigger::Adjacent {
-                a: canon(a),
+                a: a.as_ref().map(canon),
                 b: canon(b),
             },
             Trigger::UnitDefeated { target } => Trigger::UnitDefeated {
@@ -939,10 +951,17 @@ impl EventWriter<'_, '_> {
         let taken = std::mem::take(&mut self.branches);
         let mut converted = Vec::new();
         let end = self.script(record, code, &mut converted, true);
-        if !std::mem::replace(&mut self.branches, taken).is_empty() {
+        let dropped = std::mem::replace(&mut self.branches, taken);
+        if !dropped.is_empty() {
             self.notes.push(format!(
                 "record {record}: its flag-guarded parts are left out (it runs between phases)"
             ));
+            // Their lines were written already: nothing plays them now.
+            for action in dropped.iter().flat_map(|b| &b.actions) {
+                if let EventAction::Drama { scene } = action {
+                    remove_scene(&mut self.drama, scene);
+                }
+            }
         }
         actions.extend(converted.iter().cloned());
         self.on_the_way.insert(record, (converted, end));
@@ -1350,7 +1369,7 @@ impl EventWriter<'_, '_> {
 
 /// An original objective text as one line: the original lists its conditions numbered on lines
 /// of their own (`1,적의 전멸\r2,유비가 …`) and marks names in brackets (`[여포]`).
-fn objective_text(raw: &str) -> String {
+pub(crate) fn objective_text(raw: &str) -> String {
     // A name in brackets followed by a space before its particle: `[여포] 의` is `여포의`.
     const PARTICLES: [&str; 11] = [
         "의", "을", "를", "이", "가", "은", "는", "와", "과", "에게", "에",
@@ -2470,9 +2489,21 @@ mod tests {
         assert_eq!(
             trigger_of(4, false, [1, 0, 5, 0, 0, 0], &mut named),
             Ok(Trigger::Adjacent {
-                a: "o1".into(),
+                a: Some("o1".into()),
                 b: "o5".into()
             })
+        );
+        // Any player unit next to one (고성: contact with ???).
+        assert_eq!(
+            trigger_of(4, false, [0, 4, 5, 0, 0, 0], &mut named),
+            Ok(Trigger::Adjacent {
+                a: None,
+                b: "o5".into()
+            })
+        );
+        assert!(
+            trigger_of(4, false, [1, 0, 0, 4, 0, 0], &mut named).is_err(),
+            "the second unit is named"
         );
         assert!(
             trigger_of(12, false, [0, 4, 0, 0, 0, 0], &mut named).is_err(),

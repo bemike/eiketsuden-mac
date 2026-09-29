@@ -192,6 +192,9 @@ pub enum Cmd {
     Join(String),
     /// Officer leaves the player's army.
     Leave(String),
+    /// Officer of the player's army goes away for now, keeping their progress (`@join` brings
+    /// them back).
+    Away(String),
     Gold(i64),
     /// Give an item to the army inventory.
     Item(String),
@@ -558,6 +561,7 @@ impl Parser<'_> {
             }
             "join" => Cmd::Join(need("an officer id")?),
             "leave" => Cmd::Leave(need("an officer id")?),
+            "away" => Cmd::Away(need("an officer id")?),
             "gold" => Cmd::Gold(
                 v_parse(arg).ok_or_else(|| self.err(line, "@gold needs an integer like +100"))?,
             ),

@@ -114,8 +114,8 @@ pub fn deploy_max(def: &BattleDef) -> usize {
 /// 2. the lord;
 /// 3. the chosen officers, in roster order;
 ///
-/// at most [`deploy_max`] officers. Officers who are not in the army or are forbidden in this
-/// battle are left out, and so are duplicates, so a list chosen for another battle can be
+/// at most [`deploy_max`] officers. Officers who are not in the army, are away or are forbidden
+/// in this battle are left out, and so are duplicates, so a list chosen for another battle can be
 /// passed as it is. The deploy screen shows this list; [`BattleState::new`] places it.
 pub fn normalize_deployment(
     pack: &Pack,
@@ -126,7 +126,7 @@ pub fn normalize_deployment(
     let forbidden = |id: &str| def.deploy.forbidden.iter().any(|f| f == id);
     let mut out: Vec<Id> = Vec::new();
     let mut add = |id: &Id| {
-        if campaign.officer(id).is_some() && !forbidden(id) && !out.contains(id) {
+        if campaign.officer(id).is_some_and(|o| !o.away) && !forbidden(id) && !out.contains(id) {
             out.push(id.clone());
         }
     };

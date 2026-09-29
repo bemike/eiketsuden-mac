@@ -177,7 +177,7 @@ fn duel_pack(extra: Vec<EventDef>) -> Pack {
     let mut def = battle(OPEN_MAP);
     def.events = vec![EventDef {
         trigger: Trigger::Adjacent {
-            a: "hero".into(),
+            a: Some("hero".into()),
             b: "boss".into(),
         },
         once: true,

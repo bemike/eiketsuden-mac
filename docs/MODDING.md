@@ -874,7 +874,7 @@ Triggers:
 | `turn_start` | `turn`, `side` (default `player`) | The phase of `side` starts on `turn`. |
 | `unit_defeated` | `target` | That unit retreated. |
 | `reach` | `who` (optional), `pos`, `radius` (default 0), `to` (optional) | The unit (any player unit without `who`) moved within `radius` of `pos`, or into the rectangle from `pos` to `to`. |
-| `adjacent` | `a`, `b` | Two units stand orthogonally adjacent (duels). |
+| `adjacent` | `a` (optional), `b` | Two units stand orthogonally adjacent (duels); without `a`, any player unit next to `b`. |
 | `hp_below` | `target`, `pct` (1..=100) | The unit's HP fell below `pct` percent of its maximum. |
 
 Actions:
@@ -1056,8 +1056,9 @@ caught; write free names in Korean or with a capital letter.
 | `@goto <label>` | Jump. |
 | `@if <flag> [op value] -> <label>` | Jump when the condition holds. Operators `==`, `!=`, `<`, `<=`, `>`, `>=`; `@if flag -> label` means `flag != 0`. |
 | `@set <flag> = n` / `+= n` / `-= n` | Change a [flag](#flags). |
-| `@join <officer id>` | The officer joins the army (a banner is shown; nothing happens if already in the army). |
+| `@join <officer id>` | The officer joins the army (a banner is shown; nothing happens if already in the army), or comes back from `@away`. |
 | `@leave <officer id>` | The officer leaves; their equipment returns to the inventory (nothing happens if not in the army). |
+| `@away <officer id>` | The officer is away for a while: they stay in the army with their level, experience and equipment but cannot be deployed (the deploy screen marks them 부재). `@join` brings them back as they left. Nothing happens if not in the army. |
 | `@gold <±n>` | Give (or take) gold, clamped to `0..=gold_cap`. |
 | `@item <item id>` | Give one item. |
 | `@duel <left> <right> [background]` | Open the duel scene: two mounted officers (officer ids) facing each other, `left` on the left, over `gfx/duel/<background>.png` (a plain dark stage without it). It stays on screen (messages show over it) until `@duel_end` or the end of the scene. |

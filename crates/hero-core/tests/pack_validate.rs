@@ -909,6 +909,11 @@ fn drama_checks() {
             "@join names unknown officer `mi_zhu`",
         ),
         error(
+            &[(STORY, "@join jian_yong", "@join jian_yong\n@away mi_zhu")],
+            "scene oath",
+            "@away names unknown officer `mi_zhu`",
+        ),
+        error(
             &[(STORY, "@item bean", "@item peach")],
             "scene oath",
             "@item names unknown item `peach`",

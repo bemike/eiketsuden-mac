@@ -34,6 +34,7 @@
 
 pub mod bakdata;
 pub mod battles;
+pub mod chapters;
 pub mod diskimage;
 pub mod edition;
 pub mod extract;

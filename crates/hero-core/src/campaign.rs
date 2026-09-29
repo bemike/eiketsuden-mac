@@ -114,6 +114,10 @@ pub struct OfficerState {
     pub int: i32,
     pub lead: i32,
     pub equip: Equipment,
+    /// Away from the army for now (`@away`): kept with all their progress but not deployed,
+    /// until `@join` brings them back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub away: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -163,6 +167,7 @@ impl OfficerState {
             int: def.int,
             lead: def.lead,
             equip: def.equip.clone(),
+            away: false,
         }
     }
 }
@@ -257,16 +262,29 @@ impl CampaignState {
         self.inventory.get(item).copied().unwrap_or(0)
     }
 
-    /// Add an officer to the army (no-op if already present). A (re)joining officer starts
-    /// from their `officers.toml` definition.
+    /// Add an officer to the army: one not in the roster starts from their `officers.toml`
+    /// definition, one who is away comes back as they left (no-op for one already present).
     pub fn join(&mut self, pack: &Pack, officer: &str) -> Result<(), CampaignError> {
-        if self.officer(officer).is_some() {
+        if let Some(o) = self.roster.iter_mut().find(|o| o.id == officer) {
+            o.away = false;
             return Ok(());
         }
         let def = pack
             .officer(officer)
             .ok_or_else(|| CampaignError::UnknownOfficer(officer.to_string()))?;
         self.roster.push(OfficerState::from_def(def));
+        Ok(())
+    }
+
+    /// Send an officer of the army away for now (see [`OfficerState::away`]).
+    pub fn set_away(&mut self, officer: &str) -> Result<(), CampaignError> {
+        let o = self
+            .roster
+            .iter_mut()
+            .find(|o| o.id == officer)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
+        o.away = true;
+        self.deployed.retain(|d| d != officer);
         Ok(())
     }
 

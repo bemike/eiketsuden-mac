@@ -502,7 +502,7 @@ fn adjacent_trigger_runs_a_duel() {
     let mut def = battle(OPEN_MAP);
     def.events = vec![event(
         Trigger::Adjacent {
-            a: "liu".into(),
+            a: Some("liu".into()),
             b: "boss".into(),
         },
         vec![
@@ -567,6 +567,49 @@ fn adjacent_trigger_runs_a_duel() {
         "no EXP either"
     );
     assert_eq!(st.outcome, None);
+}
+
+#[test]
+fn an_adjacent_trigger_without_a_is_any_player_unit_next_to_b() {
+    let mut def = battle(OPEN_MAP);
+    def.events = vec![event(
+        Trigger::Adjacent {
+            a: None,
+            b: "stranger".into(),
+        },
+        vec![EventAction::Drama {
+            scene: "met".into(),
+        }],
+    )];
+    let pack = pack_with(def);
+    let mut st = state(&pack);
+    let liu = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 1));
+    let guan = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    // An enemy next to it from the start is no player unit.
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 5));
+    let stranger = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(3, 4));
+    tag(&mut st, stranger, "stranger");
+    st.begin(&pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: guan,
+                to: p(0, 1),
+            },
+        )
+        .unwrap();
+    assert!(!ev.contains(&drama("met")));
+    let ev = st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: liu,
+                to: p(3, 3),
+            },
+        )
+        .unwrap();
+    assert_eq!(ev[1..], [drama("met")]);
 }
 
 #[test]

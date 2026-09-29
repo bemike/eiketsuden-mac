@@ -216,6 +216,36 @@ fn join_and_leave() {
 }
 
 #[test]
+fn an_officer_away_keeps_their_progress_and_is_not_deployed() {
+    let (pack, mut state) = new_game();
+    let def = pack.battles.values().next().unwrap().clone();
+    {
+        let guan_yu = state.roster.iter_mut().find(|o| o.id == "guan_yu").unwrap();
+        guan_yu.level = 12;
+        guan_yu.exp = 40;
+    }
+    state.deployed = vec!["liu_bei".into(), "guan_yu".into()];
+    state.set_away("guan_yu").unwrap();
+    let away = state.officer("guan_yu").unwrap();
+    assert!(away.away);
+    assert_eq!(state.deployed, ["liu_bei"]);
+    let chosen: Vec<String> = state.roster.iter().map(|o| o.id.clone()).collect();
+    let deployed = hero_core::battle::normalize_deployment(&pack, &def, &state, &chosen);
+    assert!(!deployed.iter().any(|d| d == "guan_yu"), "{deployed:?}");
+    // Joining brings them back as they left.
+    state.join(&pack, "guan_yu").unwrap();
+    let back = state.officer("guan_yu").unwrap();
+    assert_eq!((back.away, back.level, back.exp), (false, 12, 40));
+    assert_eq!(
+        state.set_away("cao_cao"),
+        Err(CampaignError::NotInArmy("cao_cao".into()))
+    );
+    // Saves of the army keep the flag, and older saves read without it.
+    let text = serde_json::to_string(&state.roster[0]).unwrap();
+    assert!(!text.contains("away"), "{text}");
+}
+
+#[test]
 fn inventory_and_gold() {
     let (pack, mut state) = new_game();
     state.remove_item("bean").unwrap();
