@@ -94,7 +94,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 12: the strategies' damage, morale and healing amounts and the 大 support reach from the
 /// original's formulas (`original_effect`).
 /// 13: the status window in `ui` ([`STATUS_FRAME`] and `[presentation.status_frame]`).
-pub const PACK_FORMAT_VERSION: u32 = 13;
+/// 14: the battle frame's buttons and weather box (`BATTLE_FRAME_MENU` …).
+pub const PACK_FORMAT_VERSION: u32 = 14;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -763,6 +764,12 @@ pub const BATTLE_FRAME_INFO: [u32; 4] = [448, 74, 176, 196];
 pub const BATTLE_FRAME_TITLE: [u32; 4] = [224, 8, 174, 16];
 /// The frame's black box at the top of the right column, for the weather and the gold.
 pub const BATTLE_FRAME_STATUS: [u32; 4] = [448, 34, 78, 28];
+/// The frame's buttons (measured on the frame, with their black borders): 기능 (the battle
+/// menu), 아군 and 적군 (the unit lists), and the picture box right of them (the weather).
+pub const BATTLE_FRAME_MENU: [u32; 4] = [15, 7, 66, 18];
+pub const BATTLE_FRAME_ALLIES: [u32; 4] = [528, 31, 33, 34];
+pub const BATTLE_FRAME_ENEMIES: [u32; 4] = [560, 31, 33, 34];
+pub const BATTLE_FRAME_WEATHER: [u32; 4] = [594, 33, 28, 30];
 
 /// Media key of the camp frame the pack writes (`gfx/ui/orig_camp_frame.png`).
 pub const CAMP_FRAME: &str = "ui/orig_camp_frame";
@@ -1663,12 +1670,17 @@ fn pack_toml(
     let mut frame = String::new();
     if frames.battle {
         frame += &format!(
-            "\n[presentation.battle_frame]\nimage = {}\nmap = {}\ninfo = {}\ntitle = {}\nstatus = {}\n",
+            "\n[presentation.battle_frame]\nimage = {}\nmap = {}\ninfo = {}\ntitle = {}\nstatus = {}\n\
+             menu = {}\nallies = {}\nenemies = {}\nweather = {}\n",
             toml_str(BATTLE_FRAME),
             area(BATTLE_FRAME_MAP),
             area(BATTLE_FRAME_INFO),
             area(BATTLE_FRAME_TITLE),
-            area(BATTLE_FRAME_STATUS)
+            area(BATTLE_FRAME_STATUS),
+            area(BATTLE_FRAME_MENU),
+            area(BATTLE_FRAME_ALLIES),
+            area(BATTLE_FRAME_ENEMIES),
+            area(BATTLE_FRAME_WEATHER)
         );
     }
     if frames.camp {
@@ -3980,6 +3992,8 @@ mod tests {
         let frame = manifest.presentation.battle_frame.expect("battle frame");
         assert_eq!(frame.image, BATTLE_FRAME);
         assert_eq!(frame.map, BATTLE_FRAME_MAP);
+        assert_eq!(frame.menu, Some(BATTLE_FRAME_MENU));
+        assert_eq!(frame.weather, Some(BATTLE_FRAME_WEATHER));
         assert_eq!(frame.check(manifest.presentation.canvas), Ok(()));
         let camp = manifest.presentation.camp_frame.expect("camp frame");
         assert_eq!(camp.image, CAMP_FRAME);
