@@ -901,7 +901,12 @@ impl<'a> Planner<'a> {
             terrain,
         );
         let kill = dmg >= t.hp;
-        let value = damage_value(dmg, t) + self.protect_value(target, dmg, t.hp);
+        let mut value = damage_value(dmg, t) + self.protect_value(target, dmg, t.hp);
+        // The original formulas: a blow leaving little morale confuses too (as strategy damage).
+        let left = t.morale - morale_loss(&pack.rules, dmg, t.max_hp).min(t.morale);
+        if !kill && !t.has_status(StatusKind::Confused) {
+            value += self.fall_confusion_value(target, t.morale, left, t.hp - dmg);
+        }
         let mut counter = None;
         let t_class = st.class_of(pack, target);
         // (Under the original formulas a confused target does not counter.)

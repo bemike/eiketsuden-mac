@@ -131,8 +131,8 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
     when cast (the forecast shows it without);
   * a morale gain adds `caster.level / 10`, plus `r` with `0 ≤ r < gain / 10` when cast;
   * confusion has no length (the HUD shows no count): it ends at the start of the unit's side's phase with chance
-    `(lead + morale) / 3` percent (§6), and morale falling below 30 for any reason (a morale-down, strategy or
-    physical damage, a counter) confuses the unit with 60 %.
+    `(lead + morale) / 3` percent (§6), and morale that a morale-down, strategy or physical damage or a counter
+    takes below 30 confuses the unit with 60 % (the original script's side-wide halving is not converted: BACKLOG).
 
 ## 6. Morale and confusion
 
@@ -147,7 +147,7 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
     morale falls and ends below 30 (damage, counters, morale-down strategies) it becomes confused with 60 %;
   * a confusion has no length: at the start of its side's phase a confused unit recovers with chance
     `(lead + morale) / 3` percent, and the same roll is made whenever its morale rises (regeneration — before the
-    phase-start roll —, support strategies, items; also a morale item or regeneration on a unit already at 100);
+    phase-start roll —, support strategies, items; also a morale item or regeneration on a unit already at 100, or a blow that costs it no morale there);
   * a unit defeated by the blow is not confused, and a confused defender (also one the blow just confused) does not
     counter.
 * A confused unit cannot move or act; the AI skips it; the player cannot select it for commands.

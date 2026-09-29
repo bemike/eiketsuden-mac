@@ -18,8 +18,8 @@ const FIRE: &str = "fire";
 const WATER: &str = "water";
 /// HP heals are halved on targets whose morale is below this (§5, *design*).
 const LOW_MORALE_HEAL: i32 = 30;
-/// Original formulas: morale falling below this (for any reason) confuses the unit with
-/// [`MORALE_DOWN_CONFUSION`] percent (§6).
+/// Original formulas: morale the battle lowers (damage, counters, morale-down strategies)
+/// falling below this confuses the unit with [`MORALE_DOWN_CONFUSION`] percent (§6).
 pub(super) const MORALE_DOWN_CONFUSES_BELOW: i32 = 30;
 pub(super) const MORALE_DOWN_CONFUSION: i32 = 60;
 
