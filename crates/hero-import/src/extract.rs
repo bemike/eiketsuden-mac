@@ -1099,8 +1099,8 @@ fn instr_text(i: &scenario::Instr) -> String {
 /// The heading of `text/scenario_structure.md`.
 const STRUCTURE_HEAD: &str = "# 시나리오 흐름 (구조)\n\n\
     `hero-tools original extract`가 사용자의 원작 파일에서 만든 개요입니다\
-    (`text/scenario_structure.md`). 원작의 대사·문구는 넣지 않습니다. 읽는 법은 \
-    [SCENARIO.md](SCENARIO.md)에 있습니다.\n\n";
+    (`text/scenario_structure.md`). 원작의 대사·문구는 넣지 않습니다. 읽는 법은 저장소의 \
+    `docs/reverse-engineering/SCENARIO.md`에 있습니다.\n\n";
 
 fn extract_text(
     install: &InstallDir,

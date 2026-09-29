@@ -366,9 +366,10 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
 
 **추출 결과**: `--text`는 `text/snr<n>.json`(장면 → 섹션의 대화·문자열 목록과 블록 → 레코드 → 명령, 명령마다 이름·텍스트를
 풀어 쓴 `resolved`), 같은 내용의 읽기용 `text/snr<n>.txt`, `text/ippan0m.json`, `text/townsfolk_talk.json`,
-`text/officers.json`·`items.json`·`townsfolk.json`을 씁니다. 실물 사본에서는 18장면, 명령 14,404개, 대화
-2,619개, 문자열 901개, 마을 사람 대사 653개, 디코딩 실패 0으로 추출됩니다. 게임의 이벤트 형식으로 바꾸는
-일(P6 후반)은 아직 하지 않았습니다.
+`text/officers.json`·`items.json`·`townsfolk.json`, 장마다 이야기 흐름 개요(원문 포함) `text/flow<n>.md`와
+원문을 뺀 전체 개요 `text/scenario_structure.md`(읽는 법: [reverse-engineering/SCENARIO.md](reverse-engineering/SCENARIO.md))를
+씁니다. 실물 사본에서는 18장면, 명령 14,404개, 대화 2,619개, 문자열 901개, 마을 사람 대사 653개, 디코딩 실패
+0으로 추출됩니다. 게임의 이벤트·드라마 형식으로 바꾸는 일은 원작 모드 팩이 합니다(4.5절, DECISIONS D18).
 
 ---
 

@@ -293,7 +293,7 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                         }
                     ));
                 }
-                "goto_block" if !r.code[..at].iter().any(|p| p.instr.mnemonic == "choice") => {
+                "goto_block" => {
                     out.push(format!(
                         "r{i} ({}) → 블록 {}",
                         r.trigger.kind_name,

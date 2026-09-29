@@ -350,12 +350,12 @@ fn leaves(r: &Record) -> bool {
     r.code.iter().any(|c| c.mnemonic == "leave_parallel")
 }
 
-/// Whether `r` changes the army or the inventory.
+/// Whether `r` changes the army, the inventory or the original's flags.
 fn has_effects(r: &Record) -> bool {
     r.code.iter().any(|c| {
         matches!(
             c.mnemonic,
-            "set_allegiance" | "add_item" | "set_shop_items" | "data"
+            "set_allegiance" | "add_item" | "set_shop_items" | "data" | "set_flag"
         )
     })
 }
