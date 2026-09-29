@@ -152,7 +152,7 @@ pub fn terrain_color(id: &str) -> Color {
         "mountain" => 0x7a6a5a,
         "wasteland" => 0xb49a64,
         "bridge" => 0x8a6238,
-        "castle" | "gate" | "granary" | "treasury" => 0xc9b48a,
+        "castle" | "gate" | "closed_gate" | "granary" | "treasury" => 0xc9b48a,
         "village" | "barracks" | "fort" => 0xb0784a,
         "river" => 0x4c9bd8,
         "wall" | "cliff" => 0x5b5f66,

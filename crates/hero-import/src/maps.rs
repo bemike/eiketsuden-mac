@@ -724,6 +724,87 @@ pub fn find_exe_tables(exe: &[u8]) -> Result<ExeTables, ExeTableError> {
     })
 }
 
+/// Movement rules of `MAIN.EXE` (FORMATS §10.4): values are read from the player's file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveRules {
+    /// Move type per class, in class order ([`CLASSES`] entries).
+    pub class_move: Vec<u8>,
+    /// Movement cost per move type and terrain code; 255: cannot enter.
+    pub cost: Vec<Vec<u8>>,
+    /// Terrain effect per terrain code: the percent of damage it keeps off (255 where no move
+    /// type can enter).
+    pub effect: Vec<u8>,
+}
+
+/// Classes of the original (the class byte's range).
+pub const CLASSES: usize = 19;
+/// Move types of the original.
+pub const MOVE_TYPES: usize = 4;
+
+/// `mov cl, [bx+class_move] / sub ch, ch / imul di, cx, 20 / mov bx, ax /
+/// cmp byte [bx+di+cost], 0xff`: whether a unit's move type can enter a terrain.
+const MOVE_LOOKUP: Pattern = pat!(
+    0x8a 0x8f _ _ 0x2a 0xed 0x6b 0xf9 0x14 0x8b 0xd8 0x80 0xb9 _ _ 0xff
+);
+/// `mov bl, [bp-1] / sub bh, bh / mov [bp-0x16], bx / cmp byte [bx+effect], 0xff / jz /
+/// sub ah, ah / mov al, [bx+effect] / lea bx, [bp-0x10]`: the terrain window's effect line.
+const EFFECT_LOOKUP: Pattern = pat!(
+    0x8a 0x5e 0xff 0x2a 0xff 0x89 0x5e 0xea 0x80 0xbf _ _ 0xff 0x74 0x10 0x2a 0xe4 0x8a 0x87 _ _
+    0x8d 0x5e 0xf0
+);
+
+/// Locate the movement rules through the code that reads them.
+pub fn find_move_rules(exe: &[u8]) -> Result<MoveRules, ExeTableError> {
+    let base = data_base(exe)?;
+    let at = unique(exe, MOVE_LOOKUP, "move-type and movement-cost tables")?;
+    let class_move = table(
+        exe,
+        base,
+        u16_at(exe, at + 2).unwrap_or(0),
+        CLASSES,
+        "class move types",
+    )?
+    .to_vec();
+    if class_move.iter().any(|&m| usize::from(m) >= MOVE_TYPES) {
+        return Err(ExeTableError::Table {
+            what: "class move types",
+            detail: format!("{class_move:?} has a move type of {MOVE_TYPES} or more"),
+        });
+    }
+    let costs = table(
+        exe,
+        base,
+        u16_at(exe, at + 13).unwrap_or(0),
+        MOVE_TYPES * TERRAIN_COUNT,
+        "movement costs",
+    )?;
+    let cost: Vec<Vec<u8>> = costs
+        .chunks_exact(TERRAIN_COUNT)
+        .map(<[u8]>::to_vec)
+        .collect();
+    let at = unique(exe, EFFECT_LOOKUP, "terrain effect table")?;
+    let (first, second) = (u16_at(exe, at + 10), u16_at(exe, at + 19));
+    if first != second {
+        return Err(ExeTableError::Table {
+            what: "terrain effect table",
+            detail: format!("the code reads {first:?} and {second:?}"),
+        });
+    }
+    let effect = table(
+        exe,
+        base,
+        first.unwrap_or(0),
+        TERRAIN_COUNT,
+        "terrain effects",
+    )?
+    .to_vec();
+    Ok(MoveRules {
+        class_move,
+        cost,
+        effect,
+    })
+}
+
 /// What `MAIN.EXE` does to a battle-map cell when a scenario script changes it
 /// (`set_map_chip`, opcode `0x26`, FORMATS §13.3): the value is an operation, not a chip.
 /// Operations 0 and 1 open and close a gate, 2 lowers a drawbridge (3 would raise it; the data
@@ -874,6 +955,33 @@ pub struct ExeFixture<'a> {
     pub campaign_sizes: [(u8, u8); CHAPTERS],
 }
 
+/// The movement rules in [`build_exe_fixture`]'s executable: the classes on the original's
+/// move types (infantry 0, cavalry 1, the band and the supply column 2, bandits and the like
+/// 3), every move type entering the terrain its code allows but the river, cliff and fire and
+/// flood (4 is the bridge); horses cannot enter forest.
+pub fn fixture_move_rules() -> MoveRules {
+    // An arbitrary arrangement (not the game's): only the synthetic pack test's classes
+    // (0, 6, 9, 12) matter.
+    let class_move = vec![0, 1, 2, 3, 0, 1, 1, 2, 3, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0];
+    let mut cost = vec![vec![1u8; TERRAIN_COUNT]; MOVE_TYPES];
+    for row in &mut cost {
+        for code in [3, 9, 18, 19] {
+            row[code] = 255;
+        }
+    }
+    cost[1][1] = 255;
+    let mut effect = vec![0u8; TERRAIN_COUNT];
+    effect[1] = 20;
+    for code in [3, 9, 18, 19] {
+        effect[code] = 255;
+    }
+    MoveRules {
+        class_move,
+        cost,
+        effect,
+    }
+}
+
 /// Build a small MZ executable whose start-up and table-reading code have the shapes
 /// [`find_exe_tables`] looks for (for this crate's tests and the golden fixtures). `len` pads
 /// it with `0x90` to at least that many bytes.
@@ -920,6 +1028,13 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     data.extend(&cells.swap_from);
     let swap_to = data.len() as u16;
     data.extend(&cells.swap_to);
+    let rules = fixture_move_rules();
+    let class_move = data.len() as u16;
+    data.extend(&rules.class_move);
+    let move_cost = data.len() as u16;
+    data.extend(rules.cost.iter().flatten());
+    let effect = data.len() as u16;
+    data.extend(&rules.effect);
 
     let mut put = |pattern: Pattern, fill: &[u8]| {
         let mut fill = fill.iter();
@@ -947,6 +1062,10 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     put(CELL_OFFSET, &[lo, hi]);
     let [(a, b), (c, d)] = cells.fixed;
     put(CELL_FIXED, &[a, b, c, d]);
+    let ([a, b], [c, d]) = (class_move.to_le_bytes(), move_cost.to_le_bytes());
+    put(MOVE_LOOKUP, &[a, b, c, d]);
+    let [lo, hi] = effect.to_le_bytes();
+    put(EFFECT_LOOKUP, &[lo, hi, lo, hi]);
 
     let data_at = HEADER + DGROUP * 16;
     assert!(
@@ -979,6 +1098,19 @@ mod tests {
             },
             0,
         )
+    }
+
+    #[test]
+    fn movement_rules_are_found_through_their_code() {
+        assert_eq!(find_move_rules(&fixture_exe()), Ok(fixture_move_rules()));
+        // Without the code that reads them.
+        let mut exe = fixture_exe();
+        let at = find_all(&exe, MOVE_LOOKUP)[0];
+        exe[at] = 0x90;
+        assert!(matches!(
+            find_move_rules(&exe),
+            Err(ExeTableError::Code { found: 0, .. })
+        ));
     }
 
     #[test]
