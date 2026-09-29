@@ -98,7 +98,7 @@ impl Rendered {
 }
 
 /// Error of a render whose `cancel` was set ([`render_cancellable`]).
-pub const CANCELLED: &str = "cancelled";
+pub(crate) const CANCELLED: &str = "cancelled";
 
 /// Song steps a second at most (tempo 255 overflows the step accumulator on every timer tick).
 const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
@@ -113,7 +113,7 @@ pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, Stri
     render_cancellable(song, rate, max_seconds, &AtomicBool::new(false))
 }
 
-/// [`render`], giving up with [`CANCELLED`] as soon as `cancel` is set (checked at every timer
+/// [`render`], giving up with an error as soon as `cancel` is set (checked at every timer
 /// tick, so a song stops within a fraction of a second: the game drops a render it no longer
 /// needs).
 pub fn render_cancellable(

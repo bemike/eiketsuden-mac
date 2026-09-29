@@ -793,7 +793,7 @@ fn render_songs(
 
 /// Render the original's songs of [`MUSIC_KEYS`] in the install at `source` one by one, calling
 /// `each` with the key and its `bgm/<key>.wav` file (or why it could not be made); `each` returns
-/// `false` to stop between songs, setting `cancel` (from another thread) stops within a song.
+/// `false` to stop between songs; setting `cancel` (from another thread) stops within a song.
 /// For the game, which converts without music ([`PackOptions::music`]) and adds the songs while
 /// it runs.
 pub fn render_music(

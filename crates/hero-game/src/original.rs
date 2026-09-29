@@ -259,7 +259,8 @@ impl MusicRender {
         let spawned = std::thread::Builder::new()
             .name("original-music".into())
             .spawn(move || {
-                // Stops when the game no longer listens (the data pack was reloaded).
+                // Stops when the game no longer listens (the data pack was reloaded), within a song
+                // as `cancel` is set on drop.
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     hero_import::pack::render_music(&install, &cancelled, &mut |key, wav| {
                         send.send((key.to_string(), wav)).is_ok()
