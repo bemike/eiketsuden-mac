@@ -32,6 +32,28 @@ pub enum Slot {
     Right,
 }
 
+/// One side of a duel (`@duel`): the fighter on the left or on the right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DuelSide {
+    Left,
+    Right,
+}
+
+/// A move of a duel fighter (`@duel_act`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DuelAct {
+    /// Gallop towards the other fighter, up to a short distance from them.
+    Charge,
+    /// Strike: the two attack frames from `frame` (4–10), with a clash.
+    Strike(u8),
+    /// Fall from the horse and lie on the ground.
+    Fall,
+    /// Gallop away off the stage.
+    Flee,
+    /// Gallop back to the starting place.
+    Back,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Compare {
     Eq,
@@ -173,6 +195,20 @@ pub enum Cmd {
     Gold(i64),
     /// Give an item to the army inventory.
     Item(String),
+    /// Start a duel scene: two mounted officers facing each other over the background
+    /// `gfx/duel/<bg>.png` (a plain stage without it).
+    Duel {
+        left: String,
+        right: String,
+        bg: Option<String>,
+    },
+    /// A fighter's move; the scene waits until it is over.
+    DuelAct {
+        side: DuelSide,
+        act: DuelAct,
+    },
+    /// Close the duel scene.
+    DuelEnd,
     End,
 }
 
@@ -422,6 +458,50 @@ impl Parser<'_> {
                     slot,
                 }
             }
+            "duel" => {
+                let mut words = arg.split_whitespace();
+                let (Some(left), Some(right)) = (words.next(), words.next()) else {
+                    return Err(self.err(line, "@duel needs `<left> <right> [background]`"));
+                };
+                let bg = words.next().map(str::to_string);
+                if words.next().is_some() {
+                    return Err(self.err(line, "@duel takes `<left> <right> [background]`"));
+                }
+                Cmd::Duel {
+                    left: left.to_string(),
+                    right: right.to_string(),
+                    bg,
+                }
+            }
+            "duel_act" => {
+                let usage = "@duel_act needs `<left|right> <charge|strike N|fall|flee|back>`";
+                let mut words = arg.split_whitespace();
+                let side = match words.next() {
+                    Some("left") => DuelSide::Left,
+                    Some("right") => DuelSide::Right,
+                    _ => return Err(self.err(line, usage)),
+                };
+                let act = match (words.next(), words.next()) {
+                    (Some("charge"), None) => DuelAct::Charge,
+                    (Some("fall"), None) => DuelAct::Fall,
+                    (Some("flee"), None) => DuelAct::Flee,
+                    (Some("back"), None) => DuelAct::Back,
+                    (Some("strike"), Some(n)) => match n.parse::<u8>() {
+                        Ok(frame @ 4..=10) => DuelAct::Strike(frame),
+                        _ => {
+                            return Err(
+                                self.err(line, "@duel_act strike takes a frame from 4 to 10")
+                            )
+                        }
+                    },
+                    _ => return Err(self.err(line, usage)),
+                };
+                if words.next().is_some() {
+                    return Err(self.err(line, usage));
+                }
+                Cmd::DuelAct { side, act }
+            }
+            "duel_end" => Cmd::DuelEnd,
             "hide" => match arg {
                 "" | "all" => Cmd::Hide(None),
                 s => Cmd::Hide(Some(parse_slot(s).ok_or_else(|| {
@@ -624,6 +704,45 @@ liu_bei: 어지러운 세상이로구나.
         assert!(
             matches!(&scenes[1].cmds[0], Cmd::If { cond, .. } if cond.cmp == Compare::Ne && cond.value == 0)
         );
+    }
+
+    #[test]
+    fn parses_duels() {
+        let src = "== d\n@duel guan_yu hua_xiong plain\n@duel_act left charge\n\
+                   @duel_act right strike 6\n@duel_act left fall\n@duel_end\n@duel a b\n";
+        let scenes = parse_drama("t.drama", src).unwrap();
+        let cmds = &scenes[0].cmds;
+        assert_eq!(
+            cmds[0],
+            Cmd::Duel {
+                left: "guan_yu".into(),
+                right: "hua_xiong".into(),
+                bg: Some("plain".into())
+            }
+        );
+        assert_eq!(
+            cmds[2],
+            Cmd::DuelAct {
+                side: DuelSide::Right,
+                act: DuelAct::Strike(6)
+            }
+        );
+        assert_eq!(cmds[4], Cmd::DuelEnd);
+        assert!(matches!(&cmds[5], Cmd::Duel { bg: None, .. }));
+        for bad in [
+            "@duel a",
+            "@duel a b c d",
+            "@duel_act up charge",
+            "@duel_act left strike 3",
+            "@duel_act left strike 11",
+            "@duel_act left dance",
+            "@duel_act left fall now",
+        ] {
+            assert!(
+                parse_drama("t.drama", &format!("== d\n{bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

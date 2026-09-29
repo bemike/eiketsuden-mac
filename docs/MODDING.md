@@ -1036,7 +1036,14 @@ caught; write free names in Korean or with a capital letter.
 | `@leave <officer id>` | The officer leaves; their equipment returns to the inventory (nothing happens if not in the army). |
 | `@gold <±n>` | Give (or take) gold, clamped to `0..=gold_cap`. |
 | `@item <item id>` | Give one item. |
+| `@duel <left> <right> [background]` | Open the duel scene: two mounted officers (officer ids) facing each other, `left` on the left, over `gfx/duel/<background>.png` (a plain dark stage without it). It stays on screen (messages show over it) until `@duel_end` or the end of the scene. |
+| `@duel_act <left\|right> <move>` | A move of one fighter; the scene waits until it is over. Moves: `charge` (gallop to four cells from the other), `strike <4-10>` (the two attack frames from that frame, with a clash), `fall` (thrown off, lying), `flee` (gallop off the stage), `back` (ride back to the start). |
+| `@duel_end` | Close the duel scene. |
 | `@end` | End the scene. Added automatically at the end of every scene. |
+
+The duel scene is drawn in the battle frame's map area during a battle (when the pack has a battle frame),
+otherwise in the middle of the screen; the rider sheets are described in [ASSETS.md](ASSETS.md#duel-riders--gfxduelkeypng).
+`hero-tools validate` reports `@duel` fighters that are not officers and `@duel_act` / `@duel_end` before any `@duel`.
 
 Labels are checked when the file is loaded: jumping to a missing label is an error. Jumps stay inside
 the scene. A scene that loops through `@goto` without showing anything for 10 000 commands is ended.
@@ -1067,6 +1074,7 @@ Rules and scripts refer to media by **key**; the engine turns keys into paths:
 | `@bg` | `gfx/bg/<key>.png` |
 | map `image` | `gfx/maps/<key>.png` |
 | `@sfx` | `sfx/<key>.ogg` or `sfx/<key>.wav` |
+| `@duel` fighter, background | `gfx/duel/<officer>.png`, else `gfx/duel/left.png` / `right.png`; `gfx/duel/<background>.png` |
 
 Formats, sizes, sheet layouts and the keys the engine itself uses (UI icons, sound effects, jingles) are
 specified in [ASSETS.md](ASSETS.md). Every third-party file must be credited in `CREDITS.md`.

@@ -1479,8 +1479,26 @@ impl<'a> Validator<'a> {
         let pack = self.pack;
         for scene in pack.scenes.values() {
             let ctx = format!("scene {}", scene.id);
+            // A duel is open from its `@duel` on in the order the lines are written.
+            let mut duel_open = false;
             for cmd in &scene.cmds {
                 match cmd {
+                    Cmd::Duel { left, right, .. } => {
+                        duel_open = true;
+                        for o in [left, right] {
+                            if pack.officer(o).is_none() {
+                                self.error(&ctx, format!("@duel names unknown officer `{o}`"));
+                            }
+                        }
+                    }
+                    Cmd::DuelAct { .. } | Cmd::DuelEnd if !duel_open => {
+                        let word = if matches!(cmd, Cmd::DuelEnd) {
+                            "duel_end"
+                        } else {
+                            "duel_act"
+                        };
+                        self.error(&ctx, format!("@{word} before any @duel"));
+                    }
                     Cmd::Join(o) | Cmd::Leave(o) => {
                         if pack.officer(o).is_none() {
                             let word = if matches!(cmd, Cmd::Join(_)) {

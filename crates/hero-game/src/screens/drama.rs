@@ -41,6 +41,7 @@ use crate::assets::{AssetState, UNKNOWN_PORTRAIT};
 use crate::audio::sfx;
 use crate::flow::Flow;
 use crate::gfx::{fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle};
+use crate::screens::duel::DuelView;
 use crate::screens::settings::SettingsScreen;
 use crate::ui::art::{background_state, draw_background, draw_portrait_card};
 use crate::ui::backlog::{Backlog, BacklogView};
@@ -740,6 +741,8 @@ enum Current {
     Wait(f32),
     /// Waiting for `@fade out` / `@fade in` to finish.
     Fade,
+    /// Waiting for a duel move (`@duel_act`) to finish.
+    Duel,
     Notice(Notice),
     /// The scene ended (its transition was returned).
     Done,
@@ -754,6 +757,8 @@ pub struct DramaScreen {
     /// Why the scene cannot be played (reported on the first update).
     start_error: Option<String>,
     stage: Stage,
+    /// The duel scene between `@duel` and `@duel_end`.
+    duel: Option<DuelView>,
     current: Current,
     /// The last message, kept on screen under a following choice.
     last_text: Option<(DialogueBox, Spotlight)>,
@@ -809,6 +814,7 @@ impl DramaScreen {
             runner,
             start_error,
             stage: Stage::new(backdrop),
+            duel: None,
             current: Current::Next,
             last_text: None,
             backlog: Backlog::default(),
@@ -886,6 +892,9 @@ impl DramaScreen {
         self.stage.leaving.clear();
         for p in self.stage.slots.iter_mut().flatten() {
             p.alpha = 1.0;
+        }
+        if let Some(duel) = self.duel.as_mut() {
+            duel.update(0.0, true);
         }
     }
 
@@ -1159,6 +1168,24 @@ impl DramaScreen {
                     }
                 }
             }
+            Step::Duel { left, right, bg } => {
+                self.duel = Some(DuelView::new(&left, &right, bg));
+            }
+            Step::DuelAct { side, act } => {
+                let Some(duel) = self.duel.as_mut() else {
+                    return Some(self.fail(ctx, "@duel_act without an open @duel"));
+                };
+                let sound = duel.act(side, act);
+                if skipping {
+                    duel.update(0.0, true);
+                } else {
+                    if let Some(key) = sound {
+                        ctx.sfx(key);
+                    }
+                    self.current = Current::Duel;
+                }
+            }
+            Step::DuelEnd => self.duel = None,
             Step::End => return Some(self.finish()),
         }
         if !matches!(self.current, Current::Next) {
@@ -1226,6 +1253,14 @@ impl DramaScreen {
                     self.current = Current::Fade;
                 }
             }
+            Current::Duel => {
+                if let Some(duel) = self.duel.as_mut() {
+                    duel.update(dt * speed, false);
+                    if duel.busy() {
+                        self.current = Current::Duel;
+                    }
+                }
+            }
             Current::Notice(mut notice) => {
                 notice.age += dt * speed;
                 if ctx.input.confirm() {
@@ -1238,6 +1273,24 @@ impl DramaScreen {
             }
         }
         None
+    }
+
+    /// Where the duel scene is drawn: over a battle whose pack has a battle frame, the frame's
+    /// map area (as in the original); otherwise between the buttons and the message box.
+    fn duel_area(&self, ctx: &Ctx) -> Rect {
+        let frame = ctx
+            .pack
+            .as_ref()
+            .and_then(|p| p.manifest.presentation.battle_frame.as_ref())
+            .filter(|_| self.end == DramaEnd::Pop);
+        if let Some(f) = frame {
+            let [x, y, w, h] = f.map;
+            return Rect::new(x as f32, y as f32, w as f32, h as f32);
+        }
+        let canvas = ctx.gfx.size();
+        let top = self.tool_top() + TOOL_H + 4.0;
+        let bottom = DialogueBox::box_rect(canvas, true).y - 4.0;
+        Rect::new(0.0, top, canvas.x, (bottom - top).max(0.0))
     }
 
     fn draw_toolbar(&self, ctx: &Ctx) {
@@ -1285,6 +1338,7 @@ fn step_blocks(step: &Step) -> bool {
         Step::Wait { .. }
             | Step::FadeOut
             | Step::FadeIn
+            | Step::DuelAct { .. }
             | Step::Title(_)
             | Step::Narration(_)
             | Step::Line { .. }
@@ -1315,6 +1369,10 @@ fn preload(ctx: &Ctx, pack: &Pack, scene: &str) {
             Cmd::Join(officer) => pack.officer(officer).map(|o| o.portrait_key()),
             Cmd::Sfx(key) => {
                 sounds.push(format!("sfx/{key}"));
+                None
+            }
+            Cmd::Duel { left, right, bg } => {
+                textures.extend(DuelView::new(left, right, bg.clone()).textures());
                 None
             }
             _ => None,
@@ -1378,6 +1436,9 @@ impl Screen for DramaScreen {
 
     fn draw(&self, ctx: &Ctx) {
         self.stage.draw(ctx);
+        if let Some(duel) = &self.duel {
+            duel.draw(ctx, self.duel_area(ctx));
+        }
         match &self.current {
             Current::Title(card) => card.draw(ctx),
             Current::Text { dialogue, .. } => dialogue.draw(ctx, !self.fast_now),
@@ -1388,7 +1449,7 @@ impl Screen for DramaScreen {
                 choice.draw(ctx);
             }
             Current::Notice(notice) => notice.draw(ctx),
-            Current::Next | Current::Wait(_) | Current::Fade | Current::Done => {}
+            Current::Next | Current::Wait(_) | Current::Fade | Current::Duel | Current::Done => {}
         }
         if matches!(self.current, Current::Done) {
             return;

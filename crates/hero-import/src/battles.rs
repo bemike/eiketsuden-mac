@@ -543,9 +543,27 @@ const RUN: u8 = 0;
 const BATTLE_WON: u8 = 7;
 const BATTLE_LOST: u8 = 8;
 const UNIT_IN_AREA: u8 = 11;
-/// `duel_action` moves of a fighter who falls or flees.
-const DUEL_FALLS: u16 = 3;
-const DUEL_FLEES: u16 = 4;
+/// Background of the converted duels (`gfx/duel/field.png`: the plain's sky and ground).
+pub const DUEL_BACKGROUND: &str = "field";
+
+/// The `@duel_act` moves of a `duel_action` code (MAIN.EXE's duel routine, FORMATS §13.6): 0, 1,
+/// 6 and 7 charge and strike (attack frames 4, 6, 4, 6), 2 strikes with frames 8, 3 falls, 4
+/// flees, 5 waits (no move), 8 is an effect taken for a strike with frames 10 [inferred], 9 rides
+/// back and 10 charges. `None`: an unknown code.
+fn duel_moves(action: u16) -> Option<&'static [&'static str]> {
+    Some(match action {
+        0 | 6 => &["charge", "strike 4"],
+        1 | 7 => &["charge", "strike 6"],
+        2 => &["strike 8"],
+        3 => &["fall"],
+        4 => &["flee"],
+        5 => &[],
+        8 => &["strike 10"],
+        9 => &["back"],
+        10 => &["charge"],
+        _ => return None,
+    })
+}
 
 /// A trigger group of a battle block from [`FIRST_PHASE_GROUP`] on (FORMATS §13.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1003,6 +1021,8 @@ impl EventWriter<'_, '_> {
         let mut skip = 0u8;
         let mut after_levels = false;
         let mut end = ScriptEnd::Done;
+        // The fighters of the duel being written (persons): left, right.
+        let mut duel: Option<(u16, u16, String, String)> = None;
         for (index, instr) in code.iter().enumerate() {
             if skip > 0 {
                 skip -= 1;
@@ -1114,20 +1134,61 @@ impl EventWriter<'_, '_> {
                     }
                 }
                 "duel" => {
-                    for (person, slot) in [(get("first"), "left"), (get("second"), "right")] {
-                        if let Some(id) = self.officer_ref(person) {
-                            let _ = writeln!(scene, "@show {id} {slot}");
+                    let (first, second) = (get("first"), get("second"));
+                    match (self.officer_ref(first), self.officer_ref(second)) {
+                        (Some(left), Some(right)) => {
+                            let _ = writeln!(scene, "@duel {left} {right} {DUEL_BACKGROUND}");
+                            duel = Some((first, second, left, right));
+                        }
+                        _ => {
+                            self.notes.push(format!(
+                                "record {record}: the duel of {} and {} is left out (not both \
+                                 officers of the pack)",
+                                self.names.person_label(first),
+                                self.names.person_label(second)
+                            ));
+                            duel = None;
                         }
                     }
                 }
                 "duel_action" => {
-                    let sound = match get("action") {
-                        DUEL_FALLS | DUEL_FLEES => "retreat",
-                        _ => "hit_heavy",
+                    let Some((first, second, left, right)) = &duel else {
+                        continue;
                     };
-                    let _ = writeln!(scene, "@sfx {sound}\n@wait 300");
+                    let (first, second) = (*first, *second);
+                    // A duel that went on past the end of a scene starts again in the next.
+                    if !scene.contains("@duel ") {
+                        let _ = writeln!(scene, "@duel {left} {right} {DUEL_BACKGROUND}");
+                    }
+                    let (person, action) = (get("person"), get("action"));
+                    let side = if person == first {
+                        "left"
+                    } else if person == second {
+                        "right"
+                    } else {
+                        self.notes.push(format!(
+                            "record {record}: a duel move of {}, who is not fighting, is left out",
+                            self.names.person_label(person)
+                        ));
+                        continue;
+                    };
+                    match duel_moves(action) {
+                        Some([]) => scene.push_str("@wait 300\n"),
+                        Some(moves) => {
+                            for m in moves {
+                                let _ = writeln!(scene, "@duel_act {side} {m}");
+                            }
+                        }
+                        None => self.notes.push(format!(
+                            "record {record}: duel move {action} is not known; left out"
+                        )),
+                    }
                 }
-                "duel_end" => scene.push_str("@hide all\n"),
+                "duel_end" => {
+                    if duel.take().is_some() && scene.contains("@duel ") {
+                        scene.push_str("@duel_end\n");
+                    }
+                }
                 "add_levels" => {
                     flush(&mut scene, actions, self);
                     match self.named(get("person")) {
@@ -2832,8 +2893,8 @@ item = "wine"
             c.drama,
             "\n== orig_b_9\n@narr 다리가 내려왔다.\n@hide all\n\
              \n== orig_b_10\nguan_yu: 첫 줄\n    둘째 줄\nboss: 덤벼라\n전령갑: 큰일입니다\n\
-             @show guan_yu left\n@show boss right\n@sfx hit_heavy\n@wait 300\n@sfx retreat\n\
-             @wait 300\n@hide all\n@hide all\n"
+             @duel guan_yu boss field\n@duel_act left charge\n@duel_act left strike 4\n\
+             @duel_act right flee\n@duel_end\n@hide all\n"
         );
         let scenes = hero_core::script::parse_drama("t", &c.drama).unwrap();
         assert_eq!(scenes.len(), 2);
