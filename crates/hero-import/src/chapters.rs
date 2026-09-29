@@ -157,9 +157,9 @@ struct Writer<'c, 'a> {
     routes: Vec<(i64, usize)>,
     /// Gold the script gives is the battle's reward (an outro), not a `@gold` line.
     gold_as_reward: bool,
-    /// Inside a record of the story: the label ending it (`rend_<n>`) once a jump uses it (a
-    /// `goto_block` to the block itself inside a question or a flag check ends the record).
-    rec_end: Option<Option<usize>>,
+    /// Where the record being written ends, for the jumps that end it (a `goto_block` to the
+    /// block itself inside a question or a flag check).
+    rec_end: RecordEnd,
     /// Write only the army's changes (a battle's setup, [`before_scene`]).
     army_only: bool,
     /// A picture is shown (`@picture`): the next instruction but a narration clears it.
@@ -231,11 +231,11 @@ impl Writer<'_, '_> {
     /// original runs the block again, whose record has had its turn); `false` outside a record.
     fn end_record(&mut self) -> bool {
         let n = match self.rec_end {
-            None => return false,
-            Some(Some(n)) => n,
-            Some(None) => {
+            RecordEnd::Outside => return false,
+            RecordEnd::Label(n) => n,
+            RecordEnd::Unused => {
                 let n = self.label();
-                self.rec_end = Some(Some(n));
+                self.rec_end = RecordEnd::Label(n);
                 n
             }
         };
@@ -245,9 +245,9 @@ impl Writer<'_, '_> {
 
     /// Write record `code` of the story: its lines, then the end label when a jump uses it.
     fn record(&mut self, code: &[Instr]) -> Flow {
-        self.rec_end = Some(None);
+        self.rec_end = RecordEnd::Unused;
         let flow = self.lines(code);
-        if let Some(Some(n)) = self.rec_end.take() {
+        if let RecordEnd::Label(n) = std::mem::replace(&mut self.rec_end, RecordEnd::Outside) {
             let _ = writeln!(self.out.text, "@label rend_{n}");
         }
         flow
@@ -610,6 +610,17 @@ fn leaves(r: &Record) -> bool {
     story::leaves_parallel(&r.code)
 }
 
+/// [`Writer::rec_end`]: the end of the record being written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecordEnd {
+    /// Not inside a record of the story.
+    Outside,
+    /// Inside one; nothing jumps to its end yet.
+    Unused,
+    /// Inside one whose end is label `rend_<n>`.
+    Label(usize),
+}
+
 impl<'c, 'a> Writer<'c, 'a> {
     fn new(ctx: &'c StoryContext<'a>, gold_as_reward: bool) -> Self {
         Writer {
@@ -619,7 +630,7 @@ impl<'c, 'a> Writer<'c, 'a> {
             labels: 0,
             routes: Vec::new(),
             gold_as_reward,
-            rec_end: None,
+            rec_end: RecordEnd::Outside,
             army_only: false,
             picture: false,
         }
@@ -695,6 +706,24 @@ impl<'c, 'a> Writer<'c, 'a> {
                         break;
                     }
                 }
+                // The original's records share their code: what follows the choice is its first
+                // option's record. Anything else would not be read.
+                let after_choice = &rec.code[at + 1..];
+                let first_option = block.records.get(i + 1).map(|r| r.code.as_slice());
+                let shared = |option: &[Instr]| {
+                    after_choice.len() >= option.len()
+                        && after_choice
+                            .iter()
+                            .zip(option)
+                            .all(|(a, b)| a.mnemonic == b.mnemonic && a.operands == b.operands)
+                };
+                if !after_choice.iter().all(|c| c.mnemonic == "end")
+                    && !first_option.is_some_and(shared)
+                {
+                    self.out
+                        .notes
+                        .push(format!("record {i}: code after its choice left out"));
+                }
                 let options = rec.code[at]
                     .operands
                     .get("options")
@@ -738,6 +767,12 @@ impl<'c, 'a> Writer<'c, 'a> {
                     match block.records.get(i + 1 + k) {
                         Some(target) => {
                             taken.insert(i + 1 + k);
+                            if target.code.iter().any(|c| c.mnemonic == "choice") {
+                                self.out.notes.push(format!(
+                                    "record {}: a choice inside option {k} of record {i} left out",
+                                    i + 1 + k
+                                ));
+                            }
                             let flow = self.lines(&target.code);
                             self.close(flow, goes_on && !leaves(target), ask, after);
                         }
@@ -1629,6 +1664,60 @@ mod tests {
              손건: 돌아왔습니다.\n@away yuan_shao\n"
         );
         parses(&s.text);
+    }
+
+    #[test]
+    fn a_choice_inside_an_option_is_noted() {
+        let b = block(vec![
+            record(1, 0, vec![instr("choice", &[("options", 10)])]),
+            // An option that asks again: its choice is not converted.
+            record(
+                0,
+                0,
+                vec![
+                    instr("choice", &[("options", 10)]),
+                    instr("leave_parallel", &[]),
+                ],
+            ),
+            record(0, 0, vec![instr("leave_parallel", &[])]),
+        ]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(
+            s.notes,
+            ["record 1: a choice inside option 0 of record 0 left out"]
+        );
+    }
+
+    #[test]
+    fn code_after_a_choice_is_its_first_options_or_noted() {
+        let option = vec![
+            instr("dialogue", &[("text", 3)]),
+            instr("leave_parallel", &[]),
+        ];
+        let with_after = |after: Vec<Instr>| {
+            let mut code = vec![instr("choice", &[("options", 10)])];
+            code.extend(after);
+            block(vec![
+                record(1, 0, code),
+                record(0, 0, option.clone()),
+                record(0, 0, vec![instr("leave_parallel", &[])]),
+            ])
+        };
+        let song_key = |_: u16| None;
+        let names = names();
+        let notes = |b: &Block| story_scene(b, &ctx(&names, &song_key)).notes;
+        // The records share their code: what follows is the first option's.
+        let mut shared = option.clone();
+        shared.push(instr("end", &[]));
+        assert!(notes(&with_after(shared)).is_empty());
+        assert!(notes(&with_after(vec![instr("end", &[])])).is_empty());
+        // Something else is not read.
+        assert_eq!(
+            notes(&with_after(vec![instr("dialogue", &[("text", 4)])])),
+            ["record 0: code after its choice left out"]
+        );
     }
 
     #[test]

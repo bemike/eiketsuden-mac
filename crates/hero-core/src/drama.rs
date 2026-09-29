@@ -41,10 +41,12 @@ pub enum Step {
     },
     /// Offer choices; the frontend must call [`DramaRunner::choose`] before `next` again.
     Choice(Vec<String>),
-    /// Notification that an officer joined (frontend may show a banner).
+    /// Notification that an officer joined (frontend may show a banner), or came back from
+    /// `@away` (`returned`).
     Joined {
         officer: String,
         name: String,
+        returned: bool,
     },
     /// Notification of gold/items received.
     Received {
@@ -211,6 +213,7 @@ impl DramaRunner {
                     if campaign.officer(officer).is_some_and(|o| !o.away) {
                         continue;
                     }
+                    let returned = campaign.officer(officer).is_some();
                     campaign.join(pack, officer)?;
                     let name = pack
                         .officer(officer)
@@ -218,6 +221,7 @@ impl DramaRunner {
                     Step::Joined {
                         officer: officer.clone(),
                         name,
+                        returned,
                     }
                 }
                 Cmd::Away(officer) => {
