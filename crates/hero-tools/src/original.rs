@@ -756,14 +756,14 @@ mod tests {
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
-        // (Then chapters 2 to 4's forty the story reaches, made from the original battles.)
+        // (Then chapters 2 to 4's forty-one, made from the original battles.)
         let battles = json["battles"].as_array().unwrap();
         let (later, restaged): (Vec<_>, Vec<_>) = battles.iter().partition(|b| {
             let id = b["id"].as_str().unwrap();
             ["c2_s", "c3_s", "c4_s"].iter().any(|c| id.starts_with(c))
         });
         assert_eq!(restaged.len(), 21, "{battles:#?}");
-        assert_eq!(later.len(), 9 + 20 + 11, "{battles:#?}");
+        assert_eq!(later.len(), 10 + 20 + 11, "{battles:#?}");
         let expect = [
             ("p1_sishui", "hexz_00", 30),
             ("p2_hulao", "hexz_01", 30),
@@ -893,15 +893,15 @@ mod tests {
         }
         // Chapter 2 (SNR2): its battles and its story continue the base campaign after Xuzhou,
         // and a wrong answer at Yuan Shao's hall ends the game. Xinye's siege (block 3), which
-        // the original offers by answering Zhang Fei instead of Zhuge Liang, is not reached.
+        // the original offers by answering Zhang Fei instead of Zhuge Liang, is a choice.
         let chapter: Vec<&str> = pack
             .battles
             .keys()
             .map(|k| k.as_str())
             .filter(|k| k.starts_with("c2_s"))
             .collect();
-        assert_eq!(chapter.len(), 9, "{chapter:?}");
-        assert!(!pack.battles.contains_key("c2_s3_b3"));
+        assert_eq!(chapter.len(), 10, "{chapter:?}");
+        assert!(pack.battles.contains_key("c2_s3_b3"));
         assert!(pack.battles["c2_s3_b7"].name.starts_with("장판파"));
         // Gucheng is won by any unit's contact with the stranger (Zhang Fei), as the objective says.
         assert!(pack.battles["c2_s0_b9"].events.iter().any(|e| matches!(
@@ -985,6 +985,11 @@ mod tests {
         assert!(story.contains("@goto ask_"), "{story}");
         // After Runan's battle Liu Pi asks to come along: the epilogue's choice.
         assert!(story.contains("@join liu_pi"), "{story}");
+        // Whose plan to follow at Xinye (the siege or Bowang).
+        assert!(story.contains("장비의 뜻을 따른다 -> "), "{story}");
+        // Jiangling goes on in the next block: one battle (no story scene for that block).
+        assert!(!story.contains("== c3_s0_story3\n"), "{story}");
+        assert!(pack.battles["c3_s0_b2"].events.len() > 4);
         // Officers persuaded in a battle join after it; towns one walks between are a choice.
         assert!(
             story.contains("@if orig_join_jiang_wei == 0 -> army_0\n@join jiang_wei\n"),

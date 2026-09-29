@@ -104,21 +104,20 @@ cargo run --release -p hero-tools -- validate data/base
 
 ## 진행 상황
 
-**전체 진행률 약 98%(전투 기준)** — 원작의 전투 60개(시나리오 5개 파일의 전투 블록, 루트마다 다른 전투 포함) 가운데
-원작 모드로 플레이할 수 있는 전투가 59개이고, 캠페인이 원작의 엔딩까지 이어집니다. 다만 마을은 걸어 다니는 대신 대사
+**전체 진행률 100%(전투 기준)** — 원작의 전투 60개(시나리오 5개 파일의 전투 블록, 루트마다 다른 전투 포함)를 모두
+원작 모드로 플레이할 수 있고, 캠페인이 원작의 엔딩까지 이어집니다. 다만 마을은 걸어 다니는 대신 대사
 장면과 선택지로 옮겼고, 아래 "남은 일"처럼 간략하게 옮긴 부분이 있습니다. 기준과 세부는 아래 표에 있고, 기능이 머지될
 때마다 갱신합니다.
 
 | 영역 | 기준 | 진행 |
 |---|---|---|
 | 기본 팩 캠페인(원작 없이 플레이) | 원작 전투 60개 중 새로 만든 전투가 대응하는 것 | `█████░░░░░░░░░░` 19/60 (32%) — 서장·1장 21개 전투, 새로 쓴 대사 119장면 |
-| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `██████████████░` 59/60 (98%) — 서장·1장 19개(기본 팩 21개 전투), 2장 9개, 3장 20개, 4장 11개 |
+| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(기본 팩 21개 전투), 2장 10개, 3장 20개, 4장 11개 |
 | 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장·1장은 기본 팩 이야기, 2–4장은 원작 이야기를 변환(엔딩 4개) |
 | 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환·규칙 표·원작 UI·음악 |
 | 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
 
-남은 일: 말을 거는 사람으로 고르는 대체 전투(2장 신야 농성), 전투 결과로 갈리는 다음 블록(3장 강릉), 루트마다 다른
-원작 출진 설정, 전투 중 도착하는 아군 부대(4장 허창), 이야기 속 레벨·병종 변경, 전투 중의 삽화, 서장·1장 이야기의 원작 변환,
+남은 일: 루트마다 다른 원작 출진 설정, 전투 중 도착하는 아군 부대(4장 허창), 이야기 속 레벨·병종 변경, 전투 중의 삽화, 서장·1장 이야기의 원작 변환,
 원작 모드 난이도 확인, 영어 번역([BACKLOG](BACKLOG.md)).
 
 ## 로드맵
@@ -180,7 +179,7 @@ Linux and in the browser via WebAssembly.
 * Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
   (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
-* Progress: about 98% by battles: 59 of the original's 60 battles are playable in the "original mode", a pack
+* Progress: 100% by battles: all 60 of the original's battles are playable in the "original mode", a pack
   converted from the player's own copy that extends the base pack, from the prologue to the original's endings
   (towns become dialogue scenes with choices; details in the Korean "진행 상황" section above).
 

@@ -239,10 +239,8 @@ impl BattleState {
             self.lose(DefeatReason::LordRetreated, ev);
             return;
         }
-        if self.army_retreated() {
-            self.lose(DefeatReason::ArmyRetreated, ev);
-            return;
-        }
+        // (A troop fought without the lord is lost only after the events had their turn:
+        // one may bring reinforcements or end the battle.)
         self.fire_events(pack, phase, only_turn_start, ev);
         self.check_outcome(pack, self.turn.saturating_sub(1), ev);
     }
@@ -478,12 +476,12 @@ impl BattleState {
     }
 
     /// A battle fought without the lord (another troop's) is lost when all of its player units
-    /// have retreated.
+    /// have retreated and none is still to arrive (a hidden reinforcement).
     fn army_retreated(&self) -> bool {
         let player = || self.units.iter().filter(|u| u.side == Side::Player);
         !player().any(|u| u.lord)
             && player().any(|u| u.state == UnitState::Retreated)
-            && !self.has_active(Side::Player)
+            && player().all(|u| u.state == UnitState::Retreated)
     }
 
     fn condition_holds(&self, cond: &Condition, completed_turns: u32) -> bool {
@@ -533,10 +531,6 @@ impl BattleState {
             self.lose(DefeatReason::LordRetreated, ev);
             return;
         }
-        if self.army_retreated() {
-            self.lose(DefeatReason::ArmyRetreated, ev);
-            return;
-        }
         self.update_bonus(pack, completed_turns, ev);
         let def = self.def(pack);
         if def
@@ -545,6 +539,8 @@ impl BattleState {
             .any(|c| self.condition_holds(c, completed_turns))
         {
             self.win(pack, ev);
+        } else if self.army_retreated() {
+            self.lose(DefeatReason::ArmyRetreated, ev);
         } else if def
             .defeat
             .iter()
