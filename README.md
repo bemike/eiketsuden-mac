@@ -102,6 +102,22 @@ cargo run --release -p hero-tools -- validate data/base
 [ASSETS](docs/ASSETS.md) · [DECISIONS](docs/DECISIONS.md) · [ORIGINAL_DATA](docs/ORIGINAL_DATA.md) ·
 [원작 데이터 분석 자료](docs/reverse-engineering/README.md)
 
+## 진행 상황
+
+**전체 진행률 약 47%** — 원작의 전투 60개(시나리오 5개 파일의 전투 블록, 루트마다 다른 전투 포함) 가운데 원작
+모드로 플레이할 수 있는 전투가 28개입니다. 기준과 세부는 아래 표에 있고, 기능이 머지될 때마다 갱신합니다.
+
+| 영역 | 기준 | 진행 |
+|---|---|---|
+| 기본 팩 캠페인(원작 없이 플레이) | 원작 전투 60개 중 새로 만든 전투가 대응하는 것 | `█████░░░░░░░░░░` 19/60 (32%) — 서장·1장 21개 전투, 새로 쓴 대사 119장면 |
+| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████░░░░░░░░` 28/60 (47%) — 서장·1장 19개(기본 팩 21개 전투), 2장 9개 |
+| 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `█████████░░░░░░` 3/5 (60%) — 서장·1장은 기본 팩 이야기, 2장은 원작 이야기를 변환 |
+| 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환·규칙 표·원작 UI·음악 |
+| 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
+
+남은 큰 일: 3·4장과 IF 루트(전투 31개), 말을 거는 사람으로 고르는 대체 전투, 삽화, 영어 번역
+([BACKLOG](BACKLOG.md)).
+
 ## 로드맵
 
 * 제2장(관도 ~ 장판파) 이후 캠페인, 원작의 IF 루트(촉한의 천하통일)까지
@@ -120,6 +136,7 @@ cargo run --release -p hero-tools -- validate data/base
 |---|---|
 | [FORMATS](docs/reverse-engineering/FORMATS.md) | 판본 식별, LS11 컨테이너, TF-DCE 얼굴 압축, 팔레트, 스프라이트, 맵, 대사, 시나리오 바이트코드, `BAKDATA`의 형식 명세(항목마다 신뢰도 표기) |
 | [METHOD](docs/reverse-engineering/METHOD.md) | 작업 순서와 기법, 함정, 공명전·조조전 등 다른 KOEI 게임에 적용할 체크리스트 |
+| [SCENARIO](docs/reverse-engineering/SCENARIO.md) | 시나리오의 흐름(블록·선택지·질문·블록 이동·합류와 이탈·전투 블록)과 장별 구조. 블록 단위 개요는 [SCENARIO_FLOW](docs/reverse-engineering/SCENARIO_FLOW.md), 원문이 든 흐름은 `hero-tools original extract`가 사용자 컴퓨터에 만듦 |
 | [STATUS](docs/reverse-engineering/STATUS.md) | 해독한 것·남은 것, 플레이 가능한 원작 모드까지 남은 단계 |
 
 ## 라이선스 · 크레딧 · 고지
@@ -160,8 +177,9 @@ Linux and in the browser via WebAssembly.
 * Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
   (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
-* Next milestone: an "original mode", a pack converted from the player's own copy that extends the base
-  pack (section 8 of [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)).
+* Progress: about 47% overall: 28 of the original's 60 battles are playable in the "original mode", a pack
+  converted from the player's own copy that extends the base pack (prologue to chapter 2; details in the
+  Korean "진행 상황" section above).
 
 **Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
 [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`

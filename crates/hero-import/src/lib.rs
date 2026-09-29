@@ -38,6 +38,7 @@ pub mod chapters;
 pub mod diskimage;
 pub mod edition;
 pub mod extract;
+mod flow;
 pub mod image;
 pub mod install;
 pub mod ippan;
