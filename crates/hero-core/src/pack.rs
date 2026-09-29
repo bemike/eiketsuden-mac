@@ -112,23 +112,53 @@ pub struct BattleFrame {
     pub title: [u32; 4],
     /// Where the weather and the gold go.
     pub status: [u32; 4],
+    /// Buttons drawn on the picture that the player can tap on the player's turn: the battle
+    /// menu, the player's unit list and the enemy's unit list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menu: Option<[u32; 4]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allies: Option<[u32; 4]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enemies: Option<[u32; 4]>,
+    /// Where a picture of the weather goes (its icon, centred).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weather: Option<[u32; 4]>,
 }
 
 impl BattleFrame {
     /// Why the frame does not fit a `canvas` sized canvas, if it does not.
     pub fn check(&self, canvas: [u32; 2]) -> Result<(), String> {
-        check_frame(
-            "battle_frame",
-            &self.image,
-            &[
-                ("map", self.map),
-                ("info", self.info),
-                ("title", self.title),
-                ("status", self.status),
-            ],
-            canvas,
-            "canvas",
-        )
+        let mut areas = vec![
+            ("map", self.map),
+            ("info", self.info),
+            ("title", self.title),
+            ("status", self.status),
+        ];
+        for (name, area) in [
+            ("menu", self.menu),
+            ("allies", self.allies),
+            ("enemies", self.enemies),
+            ("weather", self.weather),
+        ] {
+            areas.extend(area.map(|a| (name, a)));
+        }
+        // A button on the map would take the taps of its tiles.
+        let overlaps = |[ax, ay, aw, ah]: [u32; 4], [bx, by, bw, bh]: [u32; 4]| {
+            ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
+        };
+        for (name, area) in [
+            ("menu", self.menu),
+            ("allies", self.allies),
+            ("enemies", self.enemies),
+        ] {
+            if let Some(a) = area.filter(|&a| overlaps(a, self.map)) {
+                return Err(format!(
+                    "battle_frame.{name} {a:?} must not overlap battle_frame.map {:?}",
+                    self.map
+                ));
+            }
+        }
+        check_frame("battle_frame", &self.image, &areas, canvas, "canvas")
     }
 }
 

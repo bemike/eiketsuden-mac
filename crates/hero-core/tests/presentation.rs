@@ -88,11 +88,33 @@ fn a_battle_frame_is_read_and_checked_against_the_canvas() {
     let frame = pack.manifest.presentation.battle_frame.expect("frame");
     assert_eq!(frame.image, "ui/battle_frame");
     assert_eq!(frame.map, [16, 32, 416, 352]);
+    // The buttons and the weather box are optional.
+    assert_eq!((frame.menu, frame.weather), (None, None));
+    let with_buttons = FRAME.replace(
+        "status = [448, 34, 78, 28]",
+        "status = [448, 34, 78, 28]\nmenu = [15, 7, 66, 18]\nweather = [594, 33, 28, 30]",
+    );
+    let buttons = load(&with_presentation(&with_buttons))
+        .manifest
+        .presentation
+        .battle_frame
+        .expect("frame");
+    assert_eq!(buttons.menu, Some([15, 7, 66, 18]));
     // An area outside the canvas, an empty one and a path for a key do not load.
     for (from, to) in [
         ("map = [16, 32, 416, 352]", "map = [16, 32, 416, 400]"),
         ("info = [448, 74, 176, 196]", "info = [448, 74, 0, 196]"),
         ("image = \"ui/battle_frame\"", "image = \"../ui.png\""),
+        // The optional buttons and weather box are checked too.
+        (
+            "status = [448, 34, 78, 28]",
+            "status = [448, 34, 78, 28]\nenemies = [630, 31, 33, 34]",
+        ),
+        // A button on the map.
+        (
+            "status = [448, 34, 78, 28]",
+            "status = [448, 34, 78, 28]\nmenu = [100, 100, 32, 16]",
+        ),
     ] {
         match load_err(&with_presentation(&FRAME.replace(from, to))) {
             PackError::Parse { file, msg } => {

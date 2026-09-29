@@ -49,7 +49,7 @@ use crate::screens::settings::SettingsScreen;
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
-use crate::ui::window::{draw_icon, draw_window, draw_window_ex, WindowStyle};
+use crate::ui::window::{draw_highlight, draw_icon, draw_window, draw_window_ex, WindowStyle};
 use anim::{Cue, EventPlayer, Scene};
 use camera::{edge_direction, Camera, EDGE_PAN_SPEED};
 use hero_core::battle::{Action, BattleEvent, BattleState, MapImage, Outcome, UnitId};
@@ -84,6 +84,32 @@ fn column_x(info: Rect, w: f32, map: Rect, canvas: Vec2) -> f32 {
 /// An `[x, y, width, height]` area of a battle frame.
 fn frame_rect([x, y, w, h]: [u32; 4]) -> Rect {
     Rect::new(x as f32, y as f32, w as f32, h as f32)
+}
+
+/// A button of the battle frame (`menu`, `allies`, `enemies`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameButton {
+    Menu,
+    Allies,
+    Enemies,
+}
+
+/// The frame's buttons with their areas.
+fn frame_buttons(f: &BattleFrame) -> impl Iterator<Item = (FrameButton, Rect)> {
+    [
+        (FrameButton::Menu, f.menu),
+        (FrameButton::Allies, f.allies),
+        (FrameButton::Enemies, f.enemies),
+    ]
+    .into_iter()
+    .filter_map(|(b, a)| a.map(|a| (b, frame_rect(a))))
+}
+
+/// The frame's button at `p`, if any.
+fn frame_button_at(f: &BattleFrame, p: Vec2) -> Option<FrameButton> {
+    frame_buttons(f)
+        .find(|(_, r)| r.contains(p))
+        .map(|(b, _)| b)
 }
 /// Seconds the title card stays up.
 const TITLE_SECONDS: f32 = 2.6;
@@ -934,6 +960,37 @@ impl BattleScreen {
         self.panel = Panel::Menu(menu);
     }
 
+    /// A tap on one of the battle frame's buttons while no command is under way: `menu` opens
+    /// the battle menu, `allies` and `enemies` the unit lists. `true` when it took the tap.
+    fn frame_buttons(&mut self, ctx: &mut Ctx) -> bool {
+        let Some(f) = &self.frame else {
+            return false;
+        };
+        if !matches!(self.ui.mode, Mode::Browse) {
+            return false;
+        }
+        let Some(p) = ctx.input.tap() else {
+            return false;
+        };
+        let pressed = frame_button_at(f, p);
+        let Some(button) = pressed else {
+            return false;
+        };
+        ctx.input.consume();
+        match button {
+            FrameButton::Menu => self.open_battle_menu(ctx),
+            FrameButton::Allies | FrameButton::Enemies => {
+                ctx.sfx(sfx::CONFIRM);
+                self.open_unit_list(if button == FrameButton::Allies {
+                    Side::Player
+                } else {
+                    Side::Enemy
+                });
+            }
+        }
+        true
+    }
+
     fn open_unit_list(&mut self, side: Side) {
         let ids: Vec<UnitId> = self
             .state
@@ -1262,6 +1319,9 @@ impl BattleScreen {
             return Transition::None;
         }
 
+        if self.frame_buttons(ctx) {
+            return Transition::None;
+        }
         self.map_input(ctx, dt);
 
         // Everyone has acted: end the phase by itself.
@@ -1698,6 +1758,28 @@ impl Screen for BattleScreen {
                     self.state.turn_limit,
                     gold,
                 );
+                if let Some(area) = f.weather {
+                    let r = frame_rect(area);
+                    draw_icon(
+                        ctx,
+                        text::weather_icon(self.scene.hud.weather),
+                        vec2((r.center().x - 8.0).round(), (r.center().y - 8.0).round()),
+                    );
+                }
+                // The button under the mouse lights up while the buttons can be used (touch
+                // leaves no pointer over them).
+                let usable = player_turn
+                    && matches!(self.panel, Panel::None)
+                    && self.dialog.is_none()
+                    && self.waiting.is_none()
+                    && self.mode_menu.is_none()
+                    && matches!(self.ui.mode, Mode::Browse)
+                    && !self.touch_seen;
+                if let Some(p) = ctx.input.pointer().filter(|_| usable) {
+                    if let Some((_, r)) = frame_buttons(f).find(|(_, r)| r.contains(p)) {
+                        draw_highlight(r, false, ctx.time);
+                    }
+                }
             }
             None => hud::draw_top_bar(
                 ctx,
@@ -1847,5 +1929,31 @@ mod tests {
             assert!(last.right() < (canvas.x + UNIT_LIST_W) / 2.0);
             assert_eq!(unit_tab_at(vp, last.center()), Some(2));
         }
+    }
+
+    #[test]
+    fn frame_buttons_are_found_where_the_frame_puts_them() {
+        let mut frame: BattleFrame = toml::from_str(
+            "image = \"ui/frame\"\nmap = [16, 32, 416, 352]\ninfo = [448, 74, 176, 196]\n\
+             title = [224, 8, 174, 16]\nstatus = [448, 34, 78, 28]\nmenu = [15, 7, 66, 18]\n\
+             allies = [528, 31, 33, 34]\nenemies = [560, 31, 33, 34]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            frame_button_at(&frame, vec2(40.0, 15.0)),
+            Some(FrameButton::Menu)
+        );
+        assert_eq!(
+            frame_button_at(&frame, vec2(540.0, 40.0)),
+            Some(FrameButton::Allies)
+        );
+        assert_eq!(
+            frame_button_at(&frame, vec2(580.0, 40.0)),
+            Some(FrameButton::Enemies)
+        );
+        assert_eq!(frame_button_at(&frame, vec2(200.0, 200.0)), None);
+        // A frame without buttons has none.
+        frame.menu = None;
+        assert_eq!(frame_button_at(&frame, vec2(40.0, 15.0)), None);
     }
 }
