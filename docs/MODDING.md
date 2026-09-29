@@ -1065,7 +1065,7 @@ caught; write free names in Korean or with a capital letter.
 | `@class <officer id> <class id>` | The officer of the army changes class (a story's change: no item or promotion level needed); equipment the new class family may not use goes back to the inventory; `fixed_class` does not stop it. Nothing happens if not in the army. |
 | `@gold <±n>` | Give (or take) gold, clamped to `0..=gold_cap`. |
 | `@item <item id>` | Give one item. |
-| `@duel <left> <right> [background]` | Open the duel scene: two mounted officers (officer ids) facing each other, `left` on the left, over `gfx/duel/<background>.png` (a plain dark stage without it). It stays on screen (messages show over it) until `@duel_end` or the end of the scene. |
+| `@duel <left> <right> [background]` | Open the duel scene: two mounted officers (officer ids) facing each other, `left` on the left, over `gfx/duel/<background>.png` (a plain dark stage without it). The background `terrain` is the one of the terrain under the left officer in the battle the scene plays in (the right one's when the left one is not on the field), `gfx/duel/terrain_<terrain id>.png`: a plain stage outside a battle or without that picture (not checked by `validate`). It stays on screen (messages show over it) until `@duel_end` or the end of the scene. |
 | `@duel_act <left\|right> <move>` | A move of one fighter; the scene waits until it is over. Moves: `charge` (gallop to four cells from the other), `strike <4\|6\|8\|10>` (that attack frame and the next, with a clash), `fall` (thrown off, lying), `flee` (gallop off the stage), `back` (ride back to the start). |
 | `@duel_end` | Close the duel scene. |
 | `@end` | End the scene. Added automatically at the end of every scene. |

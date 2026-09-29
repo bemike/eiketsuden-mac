@@ -734,7 +734,17 @@ impl BattleScreen {
                             session.campaign.merge_battle_flags(&self.state);
                         }
                         self.waiting = Some(Waiting::Drama);
-                        out = Transition::push(DramaScreen::overlay(ctx, &scene));
+                        let terrain = self
+                            .state
+                            .units
+                            .iter()
+                            .filter(|u| u.is_active())
+                            .filter_map(|u| {
+                                let t = self.state.terrain_at(&self.pack, u.pos)?;
+                                Some((u.officer.clone()?.to_string(), t.id.to_string()))
+                            })
+                            .collect();
+                        out = Transition::push(DramaScreen::battle_overlay(ctx, &scene, terrain));
                     } else {
                         macroquad::logging::warn!("battle drama scene `{}` not found", scene);
                         self.events.resume();

@@ -12,8 +12,9 @@ use crate::app::Ctx;
 use crate::assets::AssetState;
 use crate::audio::sfx;
 use crate::gfx::fill_rect;
-use hero_core::script::{DuelAct, DuelSide};
+use hero_core::script::{DuelAct, DuelSide, DUEL_TERRAIN};
 use macroquad::prelude::*;
+use std::collections::BTreeMap;
 
 /// Width of the stage in cells, and a cell's size in stage pixels.
 pub const STAGE_CELLS: i32 = 26;
@@ -63,6 +64,24 @@ fn index(side: DuelSide) -> usize {
     match side {
         DuelSide::Left => 0,
         DuelSide::Right => 1,
+    }
+}
+
+/// The background key of an `@duel` background `bg` between `left` and `right`:
+/// [`DUEL_TERRAIN`] becomes `terrain_<id>` of the terrain `terrain` gives for the left officer
+/// (or the right one); `None` (a plain stage) when neither is on it.
+pub fn background(
+    bg: Option<&str>,
+    left: &str,
+    right: &str,
+    terrain: &BTreeMap<String, String>,
+) -> Option<String> {
+    match bg {
+        Some(DUEL_TERRAIN) => terrain
+            .get(left)
+            .or_else(|| terrain.get(right))
+            .map(|t| format!("terrain_{t}")),
+        other => other.map(str::to_string),
     }
 }
 
@@ -324,6 +343,31 @@ fn sheet(ctx: &Ctx, officer: &str, side: usize) -> Option<Texture2D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_terrain_background_is_the_one_under_the_left_fighter() {
+        let terrain: BTreeMap<String, String> = [("guan_yu", "forest"), ("hua_xiong", "plain")]
+            .iter()
+            .map(|&(o, t)| (o.to_string(), t.to_string()))
+            .collect();
+        let bg = |bg: Option<&str>, left: &str, right: &str| background(bg, left, right, &terrain);
+        assert_eq!(
+            bg(Some(DUEL_TERRAIN), "guan_yu", "hua_xiong").as_deref(),
+            Some("terrain_forest")
+        );
+        // The left one not on the field: the right one's.
+        assert_eq!(
+            bg(Some(DUEL_TERRAIN), "zhang_fei", "hua_xiong").as_deref(),
+            Some("terrain_plain")
+        );
+        // Neither (outside a battle): a plain stage. A named background stays.
+        assert_eq!(bg(Some(DUEL_TERRAIN), "zhang_fei", "lu_bu"), None);
+        assert_eq!(
+            bg(Some("field"), "guan_yu", "hua_xiong").as_deref(),
+            Some("field")
+        );
+        assert_eq!(bg(None, "guan_yu", "hua_xiong"), None);
+    }
 
     fn xs(v: &DuelView) -> [i32; 2] {
         [v.fighters[0].x, v.fighters[1].x]

@@ -41,7 +41,7 @@ use crate::assets::{AssetState, UNKNOWN_PORTRAIT};
 use crate::audio::sfx;
 use crate::flow::Flow;
 use crate::gfx::{fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle};
-use crate::screens::duel::DuelView;
+use crate::screens::duel::{self, DuelView};
 use crate::screens::settings::SettingsScreen;
 use crate::ui::art::{background_state, draw_background, draw_portrait_card};
 use crate::ui::backlog::{Backlog, BacklogView};
@@ -54,6 +54,7 @@ use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::Pack;
 use hero_core::script::{Cmd, Slot};
 use macroquad::prelude::*;
+use std::collections::BTreeMap;
 
 /// Seconds for a background cross-fade.
 const BG_FADE_SECONDS: f32 = 0.6;
@@ -859,6 +860,9 @@ pub struct DramaScreen {
     stage: Stage,
     /// The duel scene between `@duel` and `@duel_end`.
     duel: Option<DuelView>,
+    /// Terrain id under each officer on the field, for a scene played in a battle (the
+    /// [`hero_core::script::DUEL_TERRAIN`] background).
+    terrain: BTreeMap<String, String>,
     current: Current,
     /// The last message, kept on screen under a following choice.
     last_text: Option<(DialogueBox, Spotlight)>,
@@ -892,11 +896,32 @@ impl DramaScreen {
         DramaScreen::new(ctx, scene, DramaEnd::Pop)
     }
 
+    /// [`DramaScreen::overlay`] played in a battle, with the terrain id under each officer on
+    /// the field (for duels over the terrain they stand on).
+    pub fn battle_overlay(
+        ctx: &mut Ctx,
+        scene: &str,
+        terrain: BTreeMap<String, String>,
+    ) -> DramaScreen {
+        let mut screen = DramaScreen::new_on(ctx, scene, DramaEnd::Pop, &terrain);
+        screen.terrain = terrain;
+        screen
+    }
+
     fn new(ctx: &mut Ctx, scene: &str, end: DramaEnd) -> DramaScreen {
+        DramaScreen::new_on(ctx, scene, end, &BTreeMap::new())
+    }
+
+    fn new_on(
+        ctx: &mut Ctx,
+        scene: &str,
+        end: DramaEnd,
+        terrain: &BTreeMap<String, String>,
+    ) -> DramaScreen {
         let (runner, start_error) = match ctx.pack.clone() {
             Some(pack) => match DramaRunner::new(&pack, scene) {
                 Ok(r) => {
-                    preload(ctx, &pack, scene);
+                    preload(ctx, &pack, scene, terrain);
                     (Some(r), None)
                 }
                 Err(e) => (None, Some(e.to_string())),
@@ -915,6 +940,7 @@ impl DramaScreen {
             start_error,
             stage: Stage::new(backdrop),
             duel: None,
+            terrain: BTreeMap::new(),
             current: Current::Next,
             last_text: None,
             backlog: Backlog::default(),
@@ -1271,6 +1297,7 @@ impl DramaScreen {
                 }
             }
             Step::Duel { left, right, bg } => {
+                let bg = duel::background(bg.as_deref(), &left, &right, &self.terrain);
                 self.duel = Some(DuelView::new(&left, &right, bg));
             }
             Step::DuelAct { side, act } => {
@@ -1451,7 +1478,7 @@ fn step_blocks(step: &Step) -> bool {
 }
 
 /// Start loading the backgrounds, portraits and sounds a scene uses.
-fn preload(ctx: &Ctx, pack: &Pack, scene: &str) {
+fn preload(ctx: &Ctx, pack: &Pack, scene: &str, terrain: &BTreeMap<String, String>) {
     let Some(scene) = pack.scene(scene) else {
         return;
     };
@@ -1478,7 +1505,8 @@ fn preload(ctx: &Ctx, pack: &Pack, scene: &str) {
                 None
             }
             Cmd::Duel { left, right, bg } => {
-                textures.extend(DuelView::new(left, right, bg.clone()).textures());
+                let bg = duel::background(bg.as_deref(), left, right, terrain);
+                textures.extend(DuelView::new(left, right, bg).textures());
                 None
             }
             _ => None,

@@ -32,6 +32,11 @@ pub enum Slot {
     Right,
 }
 
+/// `@duel` background of a duel in a battle: `gfx/duel/terrain_<terrain id>.png` of the terrain
+/// under the left officer (the right one's when the left one is not on the field), as the
+/// original picks its sky and ground strips; a plain stage outside a battle or without it.
+pub const DUEL_TERRAIN: &str = "terrain";
+
 /// One side of a duel (`@duel`): the fighter on the left or on the right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DuelSide {
@@ -214,7 +219,8 @@ pub enum Cmd {
     /// Give an item to the army inventory.
     Item(String),
     /// Start a duel scene: two mounted officers facing each other over the background
-    /// `gfx/duel/<bg>.png` (a plain stage without it).
+    /// `gfx/duel/<bg>.png` (a plain stage without it; [`DUEL_TERRAIN`]: the one of the terrain
+    /// under the left officer).
     Duel {
         left: String,
         right: String,
