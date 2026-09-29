@@ -121,6 +121,8 @@ impl Unit {
 #[serde(rename_all = "snake_case")]
 pub enum DefeatReason {
     LordRetreated,
+    /// Every player unit retreated in a battle fought without the lord.
+    ArmyRetreated,
     TurnLimit,
     /// A `defeat` condition of the battle definition became true.
     Condition,

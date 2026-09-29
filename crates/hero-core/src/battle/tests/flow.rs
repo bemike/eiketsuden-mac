@@ -1323,6 +1323,40 @@ fn the_lord_retreating_always_loses() {
     );
 }
 
+/// A battle fought without the lord is lost when its troop has retreated, not at the turn limit.
+#[test]
+fn a_troop_without_the_lord_loses_when_it_has_retreated() {
+    let mut def = battle(OPEN_MAP);
+    def.deploy.forbidden = vec!["liu_bei".into()];
+    let pack = pack_with(def);
+    let roster = vec![
+        officer_state(&pack, "liu_bei"),
+        officer_state(&pack, "guan_yu"),
+    ];
+    let mut st = BattleState::new(&pack, BATTLE, &campaign(roster, &[]), 1).unwrap();
+    assert!(st.units.iter().all(|u| !u.lord));
+    let guan = 0;
+    let foe = add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(1, 1));
+    add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(7, 7));
+    st.units[guan].hp = 1;
+    st.units[guan].pos = p(1, 0);
+    st.begin(&pack);
+    end_phase(&mut st, &pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: foe,
+                target: guan,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        ev.last(),
+        Some(&BattleEvent::Defeat(DefeatReason::ArmyRetreated))
+    );
+}
+
 #[test]
 fn bonus_objective_is_announced_and_paid_at_victory() {
     let mut def = battle(OPEN_MAP);

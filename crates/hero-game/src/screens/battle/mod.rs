@@ -34,7 +34,7 @@ mod player;
 mod sprites;
 #[cfg(test)]
 mod testutil;
-mod text;
+pub(crate) mod text;
 mod tileset;
 
 use crate::app::{Ctx, Enter, Screen, Transition};

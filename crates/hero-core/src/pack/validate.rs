@@ -938,19 +938,15 @@ impl<'a> Validator<'a> {
             }
         }
         for o in &d.forbidden {
-            match pack.officer(o) {
-                None => self.error(ctx, format!("forbidden officer `{o}` does not exist")),
-                Some(def) if def.lord => self.error(
-                    ctx,
-                    format!("the lord `{o}` is always deployed and cannot be forbidden"),
-                ),
-                Some(_) => {}
+            if pack.officer(o).is_none() {
+                self.error(ctx, format!("forbidden officer `{o}` does not exist"));
             }
         }
-        // The lord is deployed implicitly, so it needs a place next to the required officers.
+        // The lord is deployed implicitly (unless the battle is fought without them: forbidden),
+        // so it needs a place next to the required officers.
         let mut must_deploy = required.clone();
         for o in &pack.campaign.starting_officers {
-            if pack.officer(o).is_some_and(|def| def.lord) {
+            if pack.officer(o).is_some_and(|def| def.lord) && !d.forbidden.contains(o) {
                 must_deploy.insert(o.as_str());
             }
         }

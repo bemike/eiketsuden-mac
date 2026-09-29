@@ -756,13 +756,14 @@ mod tests {
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
-        // (Then chapter 2's nine the story reaches, made from the original battles.)
+        // (Then chapters 2 to 4's forty the story reaches, made from the original battles.)
         let battles = json["battles"].as_array().unwrap();
-        let (later, restaged): (Vec<_>, Vec<_>) = battles
-            .iter()
-            .partition(|b| b["id"].as_str().unwrap().starts_with("c2_s"));
+        let (later, restaged): (Vec<_>, Vec<_>) = battles.iter().partition(|b| {
+            let id = b["id"].as_str().unwrap();
+            ["c2_s", "c3_s", "c4_s"].iter().any(|c| id.starts_with(c))
+        });
         assert_eq!(restaged.len(), 21, "{battles:#?}");
-        assert_eq!(later.len(), 9, "{battles:#?}");
+        assert_eq!(later.len(), 9 + 20 + 11, "{battles:#?}");
         let expect = [
             ("p1_sishui", "hexz_00", 30),
             ("p2_hulao", "hexz_01", 30),
@@ -938,7 +939,43 @@ mod tests {
         let bowang = &pack.battles["c2_s3_b2"];
         assert!(bowang.deploy.forbidden.iter().any(|o| o == "guan_yu"));
         assert!(bowang.reward_gold > 0);
-        assert!(pack.campaign.node("orig_c2_end").is_some());
+        // Chapters 3 and 4 (SNR3, SNR4) follow, to the original's endings.
+        let count = |c: &str| pack.battles.keys().filter(|k| k.starts_with(c)).count();
+        assert_eq!((count("c3_s"), count("c4_s")), (20, 11));
+        // Fu is fought in two blocks (two routes): each its own battle.
+        assert_ne!(
+            pack.battles["c3_s2_b6"].events.len(),
+            pack.battles["c3_s2_b10"].events.len()
+        );
+        // Maicheng: Guan Yu's troop without Liu Bei, lost when Guan Yu retreats, its triggers
+        // from the block after the setup's.
+        let maicheng = &pack.battles["c3_s4_b0"];
+        assert!(maicheng.deploy.required.iter().any(|o| o == "guan_yu"));
+        assert!(maicheng.deploy.forbidden.iter().any(|o| o == "liu_bei"));
+        assert!(maicheng.defeat.iter().any(|c| matches!(
+            c,
+            hero_core::battledef::Condition::UnitRetreated { target } if target == "guan_yu"
+        )));
+        assert!(!maicheng.events.is_empty());
+        // Its troop joins as the setup says, before the camp, and leaves when it is over.
+        assert!(matches!(
+            pack.campaign.node("c3_s4_b0_before"),
+            Some(hero_core::campaign::Node::Drama { next, .. }) if next == "c3_s4_b0_camp"
+        ));
+        // The re-staged Xuzhou keeps the slots under units arriving later.
+        assert_eq!(pack.battles["c1_xuzhou2"].deploy.max, 9);
+        // Losing Yiling goes on to the original's ending 4; the last scene ends in one of three.
+        assert!(matches!(
+            pack.campaign.node("c3_s4_b6_battle"),
+            Some(hero_core::campaign::Node::Battle { on_defeat: Some(d), .. }) if d == "c3_s4_b6_defeat"
+        ));
+        for n in 0..4 {
+            assert!(
+                pack.campaign.node(&format!("orig_ending_{n}")).is_some(),
+                "{n}"
+            );
+        }
+        assert!(pack.campaign.node("orig_c4_end").is_some());
         let story = std::fs::read_to_string(out.join(pack::CHAPTER_DRAMA_FILE)).unwrap();
         assert!(
             story.contains("@set orig_game_over = 1") && story.contains("yuan_shao: "),
@@ -948,6 +985,36 @@ mod tests {
         assert!(story.contains("@goto ask_"), "{story}");
         // After Runan's battle Liu Pi asks to come along: the epilogue's choice.
         assert!(story.contains("@join liu_pi"), "{story}");
+        // Officers persuaded in a battle join after it; towns one walks between are a choice.
+        assert!(
+            story.contains("@if orig_join_jiang_wei == 0 -> army_0\n@join jiang_wei\n"),
+            "{story}"
+        );
+        assert!(story.contains("에게 간다 -> "), "{story}");
+        let scene = |id: &str| {
+            let head = format!("== {id}\n");
+            let start = story.find(&head).unwrap_or_else(|| panic!("{id}")) + head.len();
+            story[start..].split("\n== ").next().unwrap().to_string()
+        };
+        assert!(scene("c3_s4_b0_before").contains("@join guan_yu\n"));
+        assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
+        // Chapter 4's detachment comes back as Xuchang's setup says.
+        assert!(scene("c4_s1_b6_before").contains("@join zhao_yun\n"));
+        // Saying yes to join ends the talk (no refusal after it).
+        assert!(story.contains("@goto rend_"), "{story}");
+        // A battle's events test the story's flags when it is fought (Xuchang's turn 12).
+        assert!(pack.battles["c4_s1_b6"]
+            .events
+            .iter()
+            .any(|e| e.when.iter().any(|c| c.flag == "orig_f89")));
+        // An officer the story has not brought in yet fights as an ally, not deployed.
+        let runan = &pack.battles["c2_s0_b16"];
+        assert!(!runan.deploy.required.iter().any(|o| o == "liu_pi"));
+        assert!(runan
+            .units
+            .iter()
+            .any(|u| u.officer.as_deref() == Some("liu_pi")
+                && u.side == hero_core::battledef::Side::Ally));
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

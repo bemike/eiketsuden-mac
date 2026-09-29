@@ -379,15 +379,23 @@ impl CampScreen {
         y += 6.0;
         let label = TextStyle::small(theme::TEXT_DIM);
         let text = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
+        // The lord's retreat (unless the battle is fought without them), the battle's own
+        // defeat conditions, running out of turns.
         let lord = campaign
             .roster
             .iter()
             .find(|o| pack.officer(&o.id).is_some_and(|d| d.lord))
-            .map(|o| officer_name(pack, &o.id));
-        let defeat = match lord {
-            Some(l) => format!("{l} 퇴각 · {}턴 경과", def.turn_limit),
-            None => format!("{}턴 경과", def.turn_limit),
-        };
+            .filter(|o| !def.deploy.forbidden.contains(&o.id))
+            .map(|o| format!("{} 퇴각", officer_name(pack, &o.id)));
+        let own = def.defeat.iter().map(|c| {
+            crate::screens::battle::text::condition_text(c, |id| officer_name(pack, id).to_string())
+        });
+        let defeat = lord
+            .into_iter()
+            .chain(own)
+            .chain([format!("{}턴 경과", def.turn_limit)])
+            .collect::<Vec<_>>()
+            .join(" · ");
         let mut rows = vec![("승리 조건", def.objective.clone()), ("패배 조건", defeat)];
         if def.reward_gold > 0 {
             rows.push((
