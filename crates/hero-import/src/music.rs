@@ -103,7 +103,8 @@ pub(crate) const CANCELLED: &str = "cancelled";
 /// Chip samples on each side of an output sample that the downsampling filter weighs.
 const HALF_TAPS: usize = 64;
 const TAPS: usize = 2 * HALF_TAPS;
-/// Fractional positions of the filter table between two chip samples.
+/// Fractional positions of the filter table between two chip samples (the table has one row
+/// more, for a position rounded up to the next chip sample).
 const PHASES: usize = 256;
 
 /// Turns chip samples (at [`RATE`]) into output samples: a low-pass filter (a Blackman-windowed
@@ -114,7 +115,7 @@ const PHASES: usize = 256;
 struct Downsampler {
     /// Chip samples per output sample.
     step: f64,
-    /// [`PHASES`] rows of [`TAPS`] weights, each row summing to 1.
+    /// [`PHASES`] + 1 rows of [`TAPS`] weights, each row summing to `gain`.
     table: Vec<f32>,
     /// Chip samples from index `first` on.
     hist: Vec<f32>,
@@ -126,14 +127,17 @@ struct Downsampler {
 }
 
 impl Downsampler {
-    fn new(rate: u32) -> Downsampler {
+    /// For output samples at `rate` Hz (below the chip rate), multiplied by `gain`.
+    fn new(rate: u32, gain: f64) -> Downsampler {
         let step = RATE / f64::from(rate);
         // The filter's transition band is about 5.5 / TAPS of the chip rate wide (Blackman):
-        // centred so that it ends at the output's Nyquist frequency.
+        // centred so that it ends at the output's Nyquist frequency (and below the chip's).
         let transition = 5.5 / TAPS as f64;
-        let cutoff = (0.5 / step - transition / 2.0).max(0.25 / step);
-        let mut table = Vec::with_capacity(PHASES * TAPS);
-        for p in 0..PHASES {
+        let cutoff = (0.5 / step - transition / 2.0)
+            .max(0.25 / step)
+            .min(0.5 - transition / 2.0);
+        let mut table = Vec::with_capacity((PHASES + 1) * TAPS);
+        for p in 0..=PHASES {
             let frac = p as f64 / PHASES as f64;
             let row: Vec<f64> = (0..TAPS)
                 .map(|j| {
@@ -152,7 +156,7 @@ impl Downsampler {
                 })
                 .collect();
             let sum: f64 = row.iter().sum();
-            table.extend(row.iter().map(|v| (v / sum) as f32));
+            table.extend(row.iter().map(|v| (v * gain / sum) as f32));
         }
         Downsampler {
             step,
@@ -180,29 +184,30 @@ impl Downsampler {
     }
 
     /// Add the next chip sample, appending the output samples it completes to `out`.
-    fn push(&mut self, x: f32, out: &mut Vec<f32>) {
+    fn push(&mut self, x: f32, out: &mut Vec<i16>) {
         self.hist.push(x);
         let last = self.first + self.hist.len() as u64 - 1;
         while self.next < self.end && self.next.floor() as u64 + HALF_TAPS as u64 <= last {
             let at = self.next.floor();
-            let phase = (((self.next - at) * PHASES as f64) as usize).min(PHASES - 1);
+            let phase = ((self.next - at) * PHASES as f64).round() as usize;
             let weights = &self.table[phase * TAPS..(phase + 1) * TAPS];
             // Tap 0 is chip sample `at - HALF_TAPS + 1`; before the first one there is silence.
             let from = at as i64 - HALF_TAPS as i64 + 1;
             let skip = (self.first as i64 - from).max(0) as usize;
             let start = (from + skip as i64 - self.first as i64) as usize;
-            out.push(dot(&weights[skip..], &self.hist[start..]));
+            let y = dot(&weights[skip..], &self.hist[start..]);
+            out.push(y.round().clamp(-32768.0, 32767.0) as i16);
             self.next += self.step;
         }
-        // Keep the chip samples the next output sample still needs (or the last TAPS).
+        // Drop, a few thousand at a time, the chip samples the next output sample no longer
+        // needs (before the start: all but the last TAPS).
         let keep_from = if self.next.is_finite() {
             (self.next.floor() as u64 + 1).saturating_sub(HALF_TAPS as u64)
         } else {
             (last + 1).saturating_sub(TAPS as u64)
         };
         let drop = keep_from.saturating_sub(self.first) as usize;
-        if drop >= 4096 || (drop > 0 && drop == self.hist.len()) {
-            let drop = drop.min(self.hist.len());
+        if drop >= 4096 {
             self.hist.drain(..drop);
             self.first += drop as u64;
         }
@@ -266,6 +271,9 @@ fn render_checking(
             Ok(())
         }
     };
+    if f64::from(rate) >= RATE {
+        return Err(format!("{rate} Hz is not below the chip's {RATE:.0} Hz"));
+    }
     // The driver alone first: where the tracks end and where they loop to.
     let mut probe = Driver::new(song)?;
     if !probe.playing() {
@@ -307,8 +315,8 @@ fn render_checking(
         chip.write(reg, value);
     }
     let ticks_per_sample = TIMER_TICK * RATE; // chip samples per timer tick
-    let mut down = Downsampler::new(rate);
-    let mut filtered = Vec::new();
+                                              // Doubled (one channel at full level is 13 bits).
+    let mut down = Downsampler::new(rate, 2.0);
     let mut samples = Vec::new();
     let mut chip_time = 0.0f64; // chip samples until the next timer tick
     let mut chip_samples = 0u64;
@@ -356,15 +364,9 @@ fn render_checking(
         if stopped && down.done() {
             break;
         }
-        down.push(chip.sample() as f32, &mut filtered);
+        down.push(chip.sample() as f32, &mut samples);
         chip_samples += 1;
         chip_time -= 1.0;
-        // Doubled (one channel at full level is 13 bits).
-        samples.extend(
-            filtered
-                .drain(..)
-                .map(|y| (y * 2.0).round().clamp(-32768.0, 32767.0) as i16),
-        );
         if samples.len() > limit {
             return Err(format!("longer than {max_seconds} s"));
         }
@@ -1204,7 +1206,7 @@ mod tests {
     /// Amplitude of the output of the downsampler for a sine of `hz` and amplitude 1000 at the
     /// chip rate, measured on the second half (past the start).
     fn filtered_amplitude(hz: f64) -> f64 {
-        let mut down = Downsampler::new(22050);
+        let mut down = Downsampler::new(22050, 1.0);
         down.start(0);
         let mut out = Vec::new();
         for i in 0..(RATE as usize) / 4 {
@@ -1226,7 +1228,7 @@ mod tests {
     #[test]
     fn downsampling_keeps_the_audible_band_and_removes_what_would_fold_back() {
         // One output sample per 49716 / 22050 chip samples.
-        let mut down = Downsampler::new(22050);
+        let mut down = Downsampler::new(22050, 1.0);
         down.start(0);
         let mut out = Vec::new();
         for _ in 0..(RATE as usize) {
@@ -1234,7 +1236,7 @@ mod tests {
         }
         // A second of DC: its level (after the filter's delay), about 22050 samples.
         assert!((22000..=22050).contains(&out.len()), "{}", out.len());
-        assert!(out[1000..].iter().all(|&y| (y - 500.0).abs() < 0.5));
+        assert!(out[1000..].iter().all(|&y| y == 500));
         for hz in [440.0, 4000.0, 8000.0] {
             let a = filtered_amplitude(hz);
             assert!((980.0..1020.0).contains(&a), "{hz} Hz: {a}");
@@ -1246,7 +1248,7 @@ mod tests {
             assert!(a < 5.0, "{hz} Hz: {a}");
         }
         // Stopped: nothing from there on.
-        let mut down = Downsampler::new(22050);
+        let mut down = Downsampler::new(22050, 1.0);
         down.start(0);
         down.stop(1000);
         let mut out = Vec::new();
@@ -1255,6 +1257,8 @@ mod tests {
         }
         assert!(down.done());
         assert_eq!(out.len(), (1000.0 / (RATE / 22050.0)).ceil() as usize);
+        // Only downsampling.
+        assert!(render(&song(), 50_000, 10.0).is_err());
     }
 
     #[test]
