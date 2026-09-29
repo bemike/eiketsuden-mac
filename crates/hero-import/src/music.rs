@@ -67,8 +67,8 @@ pub struct Rendered {
     /// Whether the samples are one pass of the song's loop, to be repeated without a seam: every
     /// track loops from the same step. Otherwise they are the song played once from its start.
     pub seamless: bool,
-    /// Seconds the song plays before its loop starts (0 without a loop point); not in `samples`
-    /// when they are [`seamless`](Self::seamless).
+    /// Seconds of the song before its loop point, left out of `samples`: 0 without a loop point
+    /// and when the samples are not [`seamless`](Self::seamless) (they start at the song's start).
     pub intro_seconds: f64,
 }
 
@@ -207,7 +207,11 @@ pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, Stri
         rate,
         samples,
         seamless,
-        intro_seconds: intro_seconds.unwrap_or(0.0),
+        intro_seconds: if seamless {
+            intro_seconds.unwrap_or(0.0)
+        } else {
+            0.0
+        },
     })
 }
 
@@ -1097,6 +1101,7 @@ mod tests {
         )
         .unwrap();
         assert!(!rendered.seamless);
+        assert_eq!(rendered.intro_seconds, 0.0);
         let seconds = rendered.samples.len() as f64 / 22050.0;
         assert!((0.72..0.78).contains(&seconds), "{seconds}");
     }
@@ -1115,7 +1120,9 @@ mod tests {
         // A loop without notes.
         let e = render(&song_of(&[&[0xfe, 0xff]]), 22050, 1.0).unwrap_err();
         assert!(e.contains("without a note"), "{e}");
-        // Too long for the limit.
+        // Too long for the limit: the song does not end within it, or its loop is longer.
+        let e = render(&song(), 22050, 0.2).unwrap_err();
+        assert!(e.contains("does not reach its end"), "{e}");
         let e = render(&song(), 22050, 0.5).unwrap_err();
         assert!(e.contains("longer than"), "{e}");
     }
