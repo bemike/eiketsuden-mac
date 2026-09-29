@@ -766,7 +766,16 @@ pub struct ClassRules {
     /// Attack range: 0 the four neighbours, 1 the eight, 2 the archer's ring, 3 the crossbow's,
     /// 4 the catapult's, 255 none (the civilian).
     pub range: Vec<u8>,
+    /// Troops at level 1 in hundreds: the maximum is `(10 × hp + hp_growth × (level − 1)) × 10`.
+    pub hp: Vec<u8>,
+    /// Troops gained per level in tens.
+    pub hp_growth: Vec<u8>,
 }
+
+/// The maximum troops: `mov al,10` / `mov bl,[si+0x20]` (class) / `mul byte [bx+hp]` /
+/// `mov cx,ax` / `mov al,[bx+growth]` / … / `mov bl,[si+0x21]` (level) / `dec bx` / `mul bx`.
+const CLASS_HP: Pattern = pat!(0xb0 0x0a 0x8a 0x5c 0x20 0x2a 0xff 0xf6 0xa7 _ _ 0x8b 0xc8 0x8a 0x87 _ _
+    0x2a 0xe4 0x8a 0x5c 0x21 0x4b 0xf7 0xe3);
 
 /// `call far class_of / mov bl, al / sub bh, bh / mov al, [bx+table] / sub ah, ah /
 /// sub dx, dx`: the attack formula reads the attack table here, the defence formula the
@@ -778,6 +787,55 @@ const CLASS_MOVE: Pattern = pat!(0x9a _ _ _ _ 0x8a 0xd8 0x2a 0xff 0x8a 0x87 _ _ 
 /// The same lookup of the attack range, stored at `[bp-2]`.
 const CLASS_RANGE: Pattern =
     pat!(0x9a _ _ _ _ 0x8a 0xd8 0x2a 0xff 0x8a 0x87 _ _ 0x88 0x46 0xfe 0x88);
+
+/// Number of strategies in `MAIN.EXE`'s strategy tables.
+pub const STRATEGIES: usize = 36;
+
+/// Strategy rules of `MAIN.EXE` (values read from the player's file), in strategy order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrategyRules {
+    /// Reach code: 0 the 3×3 square, 1 plus two steps straight out, 2 the 5×5 square without its
+    /// corners, 3 the whole 5×5 square plus three steps straight out (FORMATS §10.4).
+    pub range: Vec<u8>,
+    /// MP cost.
+    pub mp: Vec<u8>,
+    /// Level each class learns each strategy at, `learn[strategy][class]`; 255 never.
+    pub learn: Vec<Vec<u8>>,
+}
+
+/// The strategy command's check of the reach code and the MP cost (`mov al,[bx+reach]` /
+/// `mov [bp-7],al` / `mov al,[si+0xd]` / `cmp [bx+mp],al` / `jna`).
+const STRATEGY_COST: Pattern = pat!(0x8a 0x87 _ _ 0x88 0x46 0xf9 0x8a 0x44 0x0d 0x38 0x87 _ _ 0x76);
+/// The strategy list's check of the learn level: `imul bx,cx,19` (a row per strategy) /
+/// `add bx,[class]` / `cmp [bx+table],al` / `ja`.
+const STRATEGY_LEARN: Pattern = pat!(0x6b 0xd9 0x13 0x8a 0x4e 0xfd 0x03 0xd9 0x38 0x87 _ _ 0x77);
+
+/// Locate the strategy rules through the code that reads them.
+pub fn find_strategy_rules(exe: &[u8]) -> Result<StrategyRules, ExeTableError> {
+    let base = data_base(exe)?;
+    let at = unique(exe, STRATEGY_COST, "strategy reach and MP tables")?;
+    let address = |at: usize| u16_at(exe, at).unwrap_or(0);
+    let range = table(exe, base, address(at + 2), STRATEGIES, "strategy reach")?.to_vec();
+    if range.iter().any(|&r| r > 3) {
+        return Err(ExeTableError::Table {
+            what: "strategy reach",
+            detail: format!("{range:?} has a reach code above 3"),
+        });
+    }
+    let mp = table(exe, base, address(at + 12), STRATEGIES, "strategy MP")?.to_vec();
+    let at = unique(exe, STRATEGY_LEARN, "strategy learn levels")?;
+    let learn = table(
+        exe,
+        base,
+        address(at + 10),
+        STRATEGIES * CLASSES,
+        "strategy learn levels",
+    )?
+    .chunks_exact(CLASSES)
+    .map(<[u8]>::to_vec)
+    .collect();
+    Ok(StrategyRules { range, mp, learn })
+}
 
 /// Locate the class rules through the code that reads them.
 pub fn find_class_rules(exe: &[u8]) -> Result<ClassRules, ExeTableError> {
@@ -813,11 +871,30 @@ pub fn find_class_rules(exe: &[u8]) -> Result<ClassRules, ExeTableError> {
             detail: format!("{range:?} has a range other than 0-4 and 255"),
         });
     }
+    let at = unique(exe, CLASS_HP, "troops")?;
+    let hp = table(
+        exe,
+        base,
+        u16_at(exe, at + 9).unwrap_or(0),
+        CLASSES,
+        "troops",
+    )?
+    .to_vec();
+    let hp_growth = table(
+        exe,
+        base,
+        u16_at(exe, at + 15).unwrap_or(0),
+        CLASSES,
+        "troops per level",
+    )?
+    .to_vec();
     Ok(ClassRules {
         attack,
         defense,
         move_points,
         range,
+        hp,
+        hp_growth,
     })
 }
 
@@ -1051,8 +1128,30 @@ pub fn fixture_move_rules() -> MoveRules {
 }
 
 /// The class rules [`build_exe_fixture`] embeds: the base pack's values in the original's class
-/// order, but the civilian's coefficients are 15 (atk and def 3) instead of 0.
+/// order, but the civilian's coefficients are 15 (atk and def 3) instead of 0 and its troops
+/// 400 + 10 per level instead of 200 + 0.
 pub fn fixture_class_rules() -> ClassRules {
+    let troops: [(u8, u8); CLASSES] = [
+        (5, 5),
+        (5, 5),
+        (5, 5),
+        (5, 4),
+        (5, 4),
+        (5, 4),
+        (5, 6),
+        (5, 6),
+        (5, 6),
+        (8, 4),
+        (8, 4),
+        (8, 4),
+        (3, 4),
+        (4, 5),
+        (6, 5),
+        (3, 5),
+        (7, 6),
+        (4, 1),
+        (3, 4),
+    ];
     let rows: [(u8, u8, u8, u8); CLASSES] = [
         (8, 8, 4, 0),
         (12, 12, 4, 1),
@@ -1079,6 +1178,24 @@ pub fn fixture_class_rules() -> ClassRules {
         defense: rows.iter().map(|r| r.1 * 5).collect(),
         move_points: rows.iter().map(|r| r.2).collect(),
         range: rows.iter().map(|r| r.3).collect(),
+        hp: troops.iter().map(|t| t.0).collect(),
+        hp_growth: troops.iter().map(|t| t.1).collect(),
+    }
+}
+
+/// The strategy rules [`build_exe_fixture`] embeds (arbitrary, not the game's): reach
+/// `i % 4`, MP `2 + i`, class `i % 19` learns strategy `i` at level `1 + i`, the first class
+/// strategy 0 at level 5 too.
+pub fn fixture_strategy_rules() -> StrategyRules {
+    let mut learn = vec![vec![255u8; CLASSES]; STRATEGIES];
+    for (i, row) in learn.iter_mut().enumerate() {
+        row[i % CLASSES] = 1 + i as u8;
+    }
+    learn[0][1] = 5;
+    StrategyRules {
+        range: (0..STRATEGIES).map(|i| (i % 4) as u8).collect(),
+        mp: (0..STRATEGIES).map(|i| 2 + i as u8).collect(),
+        learn,
     }
 }
 
@@ -1087,7 +1204,7 @@ pub fn fixture_class_rules() -> ClassRules {
 /// it with `0x90` to at least that many bytes.
 pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     const HEADER: usize = 0x20;
-    const DGROUP: usize = 0x10; // data at HEADER + 0x100
+    const DGROUP: usize = 0x20; // data at HEADER + 0x200
     let mut exe = vec![0x90u8; len.max(0x400)];
     exe[..2].copy_from_slice(b"MZ");
     exe[2..HEADER].fill(0);
@@ -1144,6 +1261,17 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     data.extend(&classes.move_points);
     let class_range = data.len() as u16;
     data.extend(&classes.range);
+    let class_hp = data.len() as u16;
+    data.extend(&classes.hp);
+    let class_hp_growth = data.len() as u16;
+    data.extend(&classes.hp_growth);
+    let strategies = fixture_strategy_rules();
+    let reach = data.len() as u16;
+    data.extend(&strategies.range);
+    let mp = data.len() as u16;
+    data.extend(&strategies.mp);
+    let learn = data.len() as u16;
+    data.extend(strategies.learn.iter().flatten());
 
     let mut put = |pattern: Pattern, fill: &[u8]| {
         let mut fill = fill.iter();
@@ -1183,6 +1311,12 @@ pub fn build_exe_fixture(f: &ExeFixture, len: usize) -> Vec<u8> {
     put(CLASS_MOVE, &[0, 0, 0, 0, lo, hi]);
     let [lo, hi] = class_range.to_le_bytes();
     put(CLASS_RANGE, &[0, 0, 0, 0, lo, hi]);
+    let ([a, b], [c, d]) = (class_hp.to_le_bytes(), class_hp_growth.to_le_bytes());
+    put(CLASS_HP, &[a, b, c, d]);
+    let ([a, b], [c, d]) = (reach.to_le_bytes(), mp.to_le_bytes());
+    put(STRATEGY_COST, &[a, b, c, d]);
+    let [lo, hi] = learn.to_le_bytes();
+    put(STRATEGY_LEARN, &[lo, hi]);
 
     let data_at = HEADER + DGROUP * 16;
     assert!(
@@ -1226,6 +1360,35 @@ mod tests {
         exe[at] = 0x90;
         assert!(matches!(
             find_move_rules(&exe),
+            Err(ExeTableError::Code { found: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn strategy_rules_are_found_through_their_code() {
+        assert_eq!(
+            find_strategy_rules(&fixture_exe()),
+            Ok(fixture_strategy_rules())
+        );
+        // A reach code the game does not have.
+        let mut exe = fixture_exe();
+        let at = find_all(&exe, STRATEGY_COST)[0];
+        let address = usize::from(u16_at(&exe, at + 2).unwrap());
+        let data = data_base(&exe).unwrap();
+        exe[data + address] = 4;
+        assert!(matches!(
+            find_strategy_rules(&exe),
+            Err(ExeTableError::Table {
+                what: "strategy reach",
+                ..
+            })
+        ));
+        // Without the learn-level check.
+        let mut exe = fixture_exe();
+        let at = find_all(&exe, STRATEGY_LEARN)[0];
+        exe[at] = 0x90;
+        assert!(matches!(
+            find_strategy_rules(&exe),
             Err(ExeTableError::Code { found: 0, .. })
         ));
     }

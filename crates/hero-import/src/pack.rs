@@ -67,7 +67,7 @@ use crate::planar::{self, CELL_BYTES, CELL_PX};
 use crate::sprites;
 use crate::text::TextEncoding;
 use crate::{ls11, table6};
-use hero_core::data::{ClassDef, RangeSpec, TerrainDef};
+use hero_core::data::{ClassDef, Learn, RangeSpec, StrategyDef, TerrainDef};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -82,7 +82,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 4: the battles' mid-battle events (`events`, [`DRAMA_FILE`], tile pictures of changed cells).
 /// 5: `rules` (the terrain rules, with the original's closed gate as [`CLOSED_GATE`]).
 /// 6: the class rules in `rules` ([`CLASS_RULES`]).
-pub const PACK_FORMAT_VERSION: u32 = 6;
+/// 7: the strategy rules in `rules` ([`STRATEGY_RULES`]) and the classes' learn lists.
+pub const PACK_FORMAT_VERSION: u32 = 7;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×480 VGA screen.
@@ -171,6 +172,8 @@ pub struct PackOptions {
     pub class_moves: Vec<(String, String)>,
     /// The pack chain's classes, which the original's class tables adjust.
     pub class_defs: Vec<ClassDef>,
+    /// The pack chain's strategies, which the original's strategy tables adjust.
+    pub strategy_defs: Vec<StrategyDef>,
 }
 
 impl PackOptions {
@@ -236,6 +239,7 @@ impl PackOptions {
                 .map(|c| (c.sprite.clone(), c.move_type.clone()))
                 .collect(),
             class_defs: parent.classes.values().cloned().collect(),
+            strategy_defs: parent.strategies.values().cloned().collect(),
         }
     }
 }
@@ -311,6 +315,7 @@ struct Exe {
     cells: Result<maps::CellChanges, String>,
     rules: Result<maps::MoveRules, String>,
     class_rules: Result<maps::ClassRules, String>,
+    strategy_rules: Result<maps::StrategyRules, String>,
 }
 
 impl Exe {
@@ -323,6 +328,7 @@ impl Exe {
                 cells: Err(missing()),
                 rules: Err(missing()),
                 class_rules: Err(missing()),
+                strategy_rules: Err(missing()),
             });
         };
         Ok(Exe {
@@ -335,6 +341,8 @@ impl Exe {
             rules: maps::find_move_rules(&exe).map_err(|e| format!("MAIN.EXE movement rules: {e}")),
             class_rules: maps::find_class_rules(&exe)
                 .map_err(|e| format!("MAIN.EXE class rules: {e}")),
+            strategy_rules: maps::find_strategy_rules(&exe)
+                .map_err(|e| format!("MAIN.EXE strategy rules: {e}")),
         })
     }
 }
@@ -676,9 +684,13 @@ const RANGE_NAMES: [&str; 5] = ["adjacent4", "adjacent8", "archer", "crossbow", 
 /// The pack chain's classes with the original's attack and defence coefficients, movement
 /// points and attack range (`MAIN.EXE`, FORMATS §10.4) for the classes drawn with an
 /// original class's sprite (when several share it, the one named after it), and the changes as
-/// notes. Everything else stays the chain's.
+/// notes. With the strategy tables, such a class also learns the original's strategies at the
+/// original's levels, those of [`STRATEGY_IDS`] the chain has (`strategies`); a promoted class
+/// still knows its predecessors' lists too (the engine's rule), which is noted where the
+/// original's list for it lacks one. Everything else stays the chain's.
 pub fn original_classes(
     rules: &maps::ClassRules,
+    learn: Option<(&maps::StrategyRules, &BTreeSet<&str>)>,
     classes: &[ClassDef],
 ) -> Result<(Vec<ClassDef>, Vec<String>), String> {
     let tables = [
@@ -686,6 +698,8 @@ pub fn original_classes(
         &rules.defense,
         &rules.move_points,
         &rules.range,
+        &rules.hp,
+        &rules.hp_growth,
     ];
     if tables.iter().any(|t| t.len() != maps::CLASSES) {
         return Err(format!(
@@ -718,6 +732,8 @@ pub fn original_classes(
         c2.atk = coefficient(&rules.attack, "attack")?;
         c2.def = coefficient(&rules.defense, "defence")?;
         c2.move_points = rules.move_points[k];
+        c2.hp = 100 * i32::from(rules.hp[k]);
+        c2.hp_growth = 10 * i32::from(rules.hp_growth[k]);
         c2.range = match rules.range[k] {
             255 => RangeSpec::Offsets(Vec::new()),
             r => RangeSpec::Named(
@@ -733,6 +749,12 @@ pub fn original_classes(
         if c.def != c2.def {
             notes.push(format!("{}: def {} -> {}", c.id, c.def, c2.def));
         }
+        if (c.hp, c.hp_growth) != (c2.hp, c2.hp_growth) {
+            notes.push(format!(
+                "{}: troops {} + {}/level -> {} + {}/level",
+                c.id, c.hp, c.hp_growth, c2.hp, c2.hp_growth
+            ));
+        }
         if c.move_points != c2.move_points {
             notes.push(format!(
                 "{}: move {} -> {}",
@@ -747,9 +769,162 @@ pub fn original_classes(
                 range_label(&c2.range)
             ));
         }
+        if let Some((strategies, known)) = learn {
+            let mut list: Vec<(u8, usize)> = strategies
+                .learn
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| known.contains(STRATEGY_IDS[*i]))
+                .filter_map(|(i, row)| (row[k] != 255).then_some((row[k], i)))
+                .collect();
+            list.sort();
+            c2.strategies = list
+                .into_iter()
+                .map(|(level, i)| Learn {
+                    level: u32::from(level),
+                    id: STRATEGY_IDS[i].to_string(),
+                })
+                .collect();
+            if c.strategies != c2.strategies {
+                let show = |l: &[Learn]| {
+                    l.iter()
+                        .map(|l| format!("{}@{}", l.id, l.level))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                notes.push(format!(
+                    "{}: strategies [{}] -> [{}]",
+                    c.id,
+                    show(&c.strategies),
+                    show(&c2.strategies)
+                ));
+            }
+        }
         out.push(c2);
     }
+    if learn.is_some() {
+        for c in &out {
+            let Some(to) = c.promote.as_ref().map(|p| &p.to) else {
+                continue;
+            };
+            let Some(next) = out.iter().find(|n| &n.id == to) else {
+                continue;
+            };
+            for l in &c.strategies {
+                if !next.strategies.iter().any(|n| n.id == l.id) {
+                    notes.push(format!(
+                        "{}: also knows {} (from {}), which the original's list for it lacks",
+                        next.id, l.id, c.id
+                    ));
+                }
+            }
+        }
+    }
     Ok((out, notes))
+}
+
+/// Strategy id (the base pack's) of each strategy of `MAIN.EXE`'s strategy tables, in their
+/// order (FORMATS §10.4).
+pub const STRATEGY_IDS: [&str; maps::STRATEGIES] = [
+    "scorch",
+    "fire_dragon",
+    "hellfire",
+    "great_scorch",
+    "great_fire_dragon",
+    "whirlpool",
+    "torrent",
+    "tsunami",
+    "great_whirlpool",
+    "great_torrent",
+    "rockfall",
+    "landslide",
+    "mudflow",
+    "great_rockfall",
+    "great_landslide",
+    "false_report",
+    "false_troops",
+    "disguise",
+    "harass",
+    "provoke",
+    "intimidate",
+    "encourage",
+    "cheer",
+    "inspire",
+    "aid",
+    "resupply",
+    "relief",
+    "nurse",
+    "cure",
+    "revive",
+    "great_encourage",
+    "great_cheer",
+    "great_inspire",
+    "great_aid",
+    "great_resupply",
+    "great_relief",
+];
+
+/// Named reach per original reach code (0-3).
+const REACH_NAMES: [&str; 4] = ["range8", "range12", "range20", "range28"];
+
+/// Where the strategy rules of the pack go.
+pub const STRATEGY_RULES: &str = "rules/strategies.toml";
+
+/// The pack chain's strategies with the original's MP cost and reach for those of
+/// [`STRATEGY_IDS`], and the changes as notes. Everything else stays the chain's.
+pub fn original_strategies(
+    rules: &maps::StrategyRules,
+    strategies: &[StrategyDef],
+) -> Result<(Vec<StrategyDef>, Vec<String>), String> {
+    check_strategy_tables(rules)?;
+    let mut notes = Vec::new();
+    let mut out = Vec::with_capacity(strategies.len());
+    for s in strategies {
+        let Some(i) = STRATEGY_IDS.iter().position(|id| *id == s.id) else {
+            out.push(s.clone());
+            continue;
+        };
+        let mut s2 = s.clone();
+        s2.mp = i32::from(rules.mp[i]);
+        let reach = rules.range[i];
+        s2.range = RangeSpec::Named(
+            REACH_NAMES
+                .get(usize::from(reach))
+                .ok_or_else(|| format!("the original's reach code {reach} of strategy {i}"))?
+                .to_string(),
+        );
+        if s.mp != s2.mp {
+            notes.push(format!("{}: mp {} -> {}", s.id, s.mp, s2.mp));
+        }
+        if s.range != s2.range {
+            notes.push(format!(
+                "{}: range {} -> {}",
+                s.id,
+                range_label(&s.range),
+                range_label(&s2.range)
+            ));
+        }
+        out.push(s2);
+    }
+    Ok((out, notes))
+}
+
+/// The strategy tables have the game's shape (they may come from elsewhere than
+/// [`maps::find_strategy_rules`]).
+fn check_strategy_tables(rules: &maps::StrategyRules) -> Result<(), String> {
+    let rows_ok = rules.learn.iter().all(|row| row.len() == maps::CLASSES);
+    if rules.range.len() != maps::STRATEGIES
+        || rules.mp.len() != maps::STRATEGIES
+        || rules.learn.len() != maps::STRATEGIES
+        || !rows_ok
+    {
+        return Err(format!(
+            "the strategy tables do not have {} strategies × {} classes",
+            maps::STRATEGIES,
+            maps::CLASSES
+        ));
+    }
+    Ok(())
 }
 
 /// The rules of the original mode: terrain rules from the movement rules and class rules from
@@ -761,7 +936,10 @@ fn convert_rules(
     out: &mut Output,
     mut report: KindReport,
 ) -> Result<RulesResult, ExtractError> {
-    if options.terrain_defs.is_empty() && options.class_defs.is_empty() {
+    if options.terrain_defs.is_empty()
+        && options.class_defs.is_empty()
+        && options.strategy_defs.is_empty()
+    {
         report.status = Status::MissingSource;
         report.summary = "the pack chain has no rules to start from".into();
         return Ok((report, None, Vec::new()));
@@ -804,10 +982,23 @@ fn convert_rules(
         }
     }
     if !options.class_defs.is_empty() {
+        // The learn lists follow the strategy tables when they were found (otherwise the
+        // strategies' error below says so and the lists stay the chain's).
+        let known: BTreeSet<&str> = options
+            .strategy_defs
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        let learn = exe
+            .strategy_rules
+            .as_ref()
+            .ok()
+            .filter(|r| check_strategy_tables(r).is_ok())
+            .map(|r| (r, &known));
         let converted = exe
             .class_rules
             .clone()
-            .and_then(|rules| original_classes(&rules, &options.class_defs));
+            .and_then(|rules| original_classes(&rules, learn, &options.class_defs));
         match converted {
             Ok((classes, notes)) => {
                 #[derive(Serialize)]
@@ -827,6 +1018,37 @@ fn convert_rules(
                 report.notes.extend(notes);
             }
             Err(e) => report.errors.push(format!("class rules: {e}")),
+        }
+    }
+    if !options.strategy_defs.is_empty() {
+        let converted = exe
+            .strategy_rules
+            .clone()
+            .and_then(|rules| original_strategies(&rules, &options.strategy_defs));
+        match converted {
+            Ok((strategies, notes)) => {
+                #[derive(Serialize)]
+                struct File<'a> {
+                    strategy: &'a [StrategyDef],
+                }
+                let body = toml::to_string(&File {
+                    strategy: &strategies,
+                })
+                .map_err(|e| output_error(Path::new(STRATEGY_RULES), std::io::Error::other(e)))?;
+                out.write(
+                    STRATEGY_RULES,
+                    (header("Strategy rules") + &body).as_bytes(),
+                )?;
+                report.outputs += 1;
+                written.push(("strategies", STRATEGY_RULES));
+                summary.push(format!(
+                    "{} strategies ({} changed)",
+                    strategies.len(),
+                    notes.len()
+                ));
+                report.notes.extend(notes);
+            }
+            Err(e) => report.errors.push(format!("strategy rules: {e}")),
         }
     }
     report.status = match (written.is_empty(), report.errors.is_empty()) {
@@ -3138,6 +3360,10 @@ mod tests {
                 class_def("civilian", "civilian", 0, RangeSpec::Offsets(Vec::new())),
                 class_def("archer", "archer", 6, RangeSpec::Named("archer".into())),
             ],
+            strategy_defs: vec![
+                strategy_def("scorch", 4, "range8"),
+                strategy_def("great_encourage", 16, "range8"),
+            ],
             ..PackOptions::default()
         }
     }
@@ -3217,6 +3443,24 @@ mod tests {
         assert_eq!((rules.class[0].atk, rules.class[0].def), (3, 3), "{text}");
         assert_eq!(rules.class[0].range, RangeSpec::Offsets(Vec::new()));
         assert_eq!(rules.class[1].atk, 6);
+        // The archer (class 3) learns strategy 3 (not in the chain) and 22 (neither) in the
+        // fixture: its list is empty; the strategies take the fixture's MP and reach.
+        assert!(rules.class[1].strategies.is_empty(), "{text}");
+        #[derive(serde::Deserialize)]
+        struct Strategies {
+            strategy: Vec<StrategyDef>,
+        }
+        let text = std::fs::read_to_string(pack.join(STRATEGY_RULES)).unwrap();
+        let rules: Strategies = toml::from_str(&text).unwrap();
+        assert_eq!(
+            (rules.strategy[1].mp, rules.strategy[1].range.clone()),
+            (32, RangeSpec::Named("range20".into())),
+            "{text}"
+        );
+        assert!(
+            manifest.contains("strategies = \"rules/strategies.toml\""),
+            "{manifest}"
+        );
         // A finished pack leaves no write journal behind.
         assert!(!pack.join(crate::extract::JOURNAL_FILE).exists());
         assert_eq!(
@@ -3482,6 +3726,103 @@ mod tests {
         }
     }
 
+    fn strategy_def(id: &str, mp: i32, range: &str) -> StrategyDef {
+        toml::from_str(&format!(
+            "id = \"{id}\"\nname = \"{id}\"\nkind = \"heal\"\nmp = {mp}\nrange = \"{range}\"\n\
+             area = \"single\"\ntarget = \"ally\"\neffects = []\nfx = \"heal\"\n"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_original_strategy_tables_adjust_strategies_and_learn_lists() {
+        let rules = maps::fixture_strategy_rules();
+        let strategies = [
+            strategy_def("scorch", 4, "range8"),
+            strategy_def("great_encourage", 16, "range8"),
+            strategy_def("blast", 30, "range12"),
+        ];
+        let (out, notes) = original_strategies(&rules, &strategies).unwrap();
+        // The fixture: reach `i % 4`, MP `2 + i`; great_encourage is strategy 30.
+        assert_eq!(
+            (out[0].mp, &out[0].range),
+            (2, &RangeSpec::Named("range8".into()))
+        );
+        assert_eq!(
+            (out[1].mp, &out[1].range),
+            (32, &RangeSpec::Named("range20".into()))
+        );
+        // A strategy the original does not have stays the chain's.
+        assert_eq!(out[2], strategies[2]);
+        assert!(
+            notes.contains(&"great_encourage: mp 16 -> 32".to_string()),
+            "{notes:?}"
+        );
+        // Tables that are not the game's shape.
+        let mut short = rules.clone();
+        short.learn[3].pop();
+        assert!(original_strategies(&short, &strategies).is_err());
+
+        // Class `i % 19` learns strategy `i` at `1 + i`, and class 1 strategy 0 at 5. Only the
+        // chain's strategies are listed.
+        let mut short = class_def(
+            "short_infantry",
+            "short_infantry",
+            8,
+            RangeSpec::Named("adjacent4".into()),
+        );
+        let mut long = class_def(
+            "long_infantry",
+            "long_infantry",
+            12,
+            RangeSpec::Named("adjacent8".into()),
+        );
+        let chariot = class_def(
+            "chariot",
+            "chariot",
+            12,
+            RangeSpec::Named("adjacent8".into()),
+        );
+        let outlaw = class_def("outlaw", "outlaw", 14, RangeSpec::Named("adjacent8".into()));
+        let promote = |to: &str| {
+            Some(hero_core::data::Promotion {
+                to: to.into(),
+                level: 15,
+                item: "manual".into(),
+            })
+        };
+        short.promote = promote("long_infantry");
+        long.promote = promote("chariot");
+        let classes = [short, long, chariot, outlaw];
+        let known: BTreeSet<&str> = ["scorch", "great_encourage"].into();
+        let (out, notes) = original_classes(
+            &maps::fixture_class_rules(),
+            Some((&rules, &known)),
+            &classes,
+        )
+        .unwrap();
+        let learns = |c: &ClassDef| -> Vec<(u32, String)> {
+            c.strategies
+                .iter()
+                .map(|l| (l.level, l.id.clone()))
+                .collect()
+        };
+        assert_eq!(learns(&out[0]), [(1, "scorch".to_string())]);
+        assert_eq!(learns(&out[1]), [(5, "scorch".to_string())]);
+        assert!(learns(&out[2]).is_empty());
+        assert_eq!(learns(&out[3]), [(31, "great_encourage".to_string())]);
+        // The chariot still knows scorch through the long infantry (the engine's rule), which
+        // the original's list for it does not have.
+        assert!(
+            notes.contains(
+                &"chariot: also knows scorch (from long_infantry), which the original's list \
+                  for it lacks"
+                    .to_string()
+            ),
+            "{notes:?}"
+        );
+    }
+
     #[test]
     fn the_original_class_tables_adjust_the_chains_classes() {
         let classes = [
@@ -3503,10 +3844,12 @@ mod tests {
             ),
         ];
         let rules = maps::fixture_class_rules();
-        let (out, notes) = original_classes(&rules, &classes).unwrap();
+        let (out, notes) = original_classes(&rules, None, &classes).unwrap();
         // Coefficients are five times `atk` / `def`.
         assert_eq!((out[0].atk, out[0].def, out[0].move_points), (3, 3, 3));
         assert_eq!(out[0].range, RangeSpec::Offsets(Vec::new()));
+        // Troops: hundreds at level 1, tens per level.
+        assert_eq!((out[0].hp, out[0].hp_growth), (400, 10));
         assert_eq!((out[1].atk, out[1].def, out[1].move_points), (16, 10, 3));
         assert_eq!(out[1].range, RangeSpec::Named("catapult".into()));
         // A class drawn with no original sprite stays the chain's.
@@ -3528,7 +3871,7 @@ mod tests {
                 RangeSpec::Named("adjacent4".into()),
             ),
         ];
-        let (out, _) = original_classes(&rules, &reskinned).unwrap();
+        let (out, _) = original_classes(&rules, None, &reskinned).unwrap();
         assert_eq!(out[0], reskinned[0]);
         assert_eq!(out[1].range, RangeSpec::Named("catapult".into()));
         for note in [
@@ -3546,15 +3889,15 @@ mod tests {
         // A coefficient that is not five times a whole value cannot be one.
         let mut odd = rules.clone();
         odd.attack[17] = 21;
-        let err = original_classes(&odd, &classes).unwrap_err();
+        let err = original_classes(&odd, None, &classes).unwrap_err();
         assert!(err.contains("not a multiple of 5"), "{err}");
         // Tables that are not the game's shape, or a range code it does not have.
         let mut short = rules.clone();
         short.range.pop();
-        assert!(original_classes(&short, &classes).is_err());
+        assert!(original_classes(&short, None, &classes).is_err());
         let mut bad = rules.clone();
         bad.range[5] = 9;
-        let err = original_classes(&bad, &classes).unwrap_err();
+        let err = original_classes(&bad, None, &classes).unwrap_err();
         assert!(err.contains("range code 9"), "{err}");
     }
 

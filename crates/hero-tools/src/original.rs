@@ -696,10 +696,8 @@ mod tests {
         let manifest = std::fs::read_to_string(out.join("pack.toml")).unwrap();
         assert!(
             manifest.contains(
-                "[rules]
-terrain = \"rules/terrain.toml\"
-classes = \"rules/classes.toml\"
-"
+                "[rules]\nterrain = \"rules/terrain.toml\"\nclasses = \"rules/classes.toml\"\n\
+                 strategies = \"rules/strategies.toml\"\n"
             ),
             "{manifest}"
         );
@@ -717,6 +715,17 @@ classes = \"rules/classes.toml\"
         for sprite in hero_import::pack::CLASS_SPRITES {
             let class = pack.classes.values().find(|c| c.sprite == sprite).unwrap();
             assert!(class.range.offsets().is_some(), "{}", class.id);
+        }
+        // The strategy rules too: every original strategy's reach is a shape the engine knows,
+        // and the classes learn only strategies the pack has.
+        for id in hero_import::pack::STRATEGY_IDS {
+            let strategy = pack.strategy(id).unwrap();
+            assert!(strategy.range.offsets().is_some(), "{id}");
+        }
+        for class in pack.classes.values() {
+            for learn in &class.strategies {
+                assert!(pack.strategy(&learn.id).is_some(), "{}", learn.id);
+            }
         }
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map

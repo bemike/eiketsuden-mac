@@ -137,7 +137,8 @@ impl TerrainDef {
 /// Attack shapes: `adjacent4`, `adjacent8`, `archer` (distance exactly 2),
 /// `crossbow` (distance 2-3 within a 5x5 square), `catapult` (crossbow + corners + distance-3 cross).
 /// Strategy reach (includes the caster's own tile): `self`, `range8` (3x3),
-/// `range12` (3x3 plus the four tiles two steps straight out), `range20` (5x5 minus corners).
+/// `range12` (3x3 plus the four tiles two steps straight out), `range20` (5x5 minus corners),
+/// `range28` (the whole 5x5 plus the four tiles three steps straight out).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RangeSpec {
@@ -165,6 +166,7 @@ impl RangeSpec {
                             "range8" => c <= 1,
                             "range12" => c <= 1 || (m == 2 && c == 2 && (dx == 0 || dy == 0)),
                             "range20" => c <= 2 && m <= 3,
+                            "range28" => c <= 2 || (m == 3 && c == 3),
                             _ => return None,
                         };
                         if hit {
@@ -330,7 +332,7 @@ pub struct StrategyDef {
     pub hanja: String,
     pub kind: StrategyKind,
     pub mp: i32,
-    /// Reach from the caster (`range8`, `range12`, `range20`, `self` or offsets).
+    /// Reach from the caster (`range8`, `range12`, `range20`, `range28`, `self` or offsets).
     pub range: RangeSpec,
     pub area: Area,
     pub target: TargetSide,
@@ -490,6 +492,7 @@ mod tests {
         assert_eq!(n("range8"), 9);
         assert_eq!(n("range12"), 13);
         assert_eq!(n("range20"), 21);
+        assert_eq!(n("range28"), 29);
         assert!(RangeSpec::Named("nope".into()).offsets().is_none());
     }
 
