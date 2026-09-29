@@ -1724,6 +1724,42 @@ fn check_strategy_tables(rules: &maps::StrategyRules) -> Result<(), String> {
     Ok(())
 }
 
+/// `desc` with the amounts of `old` effects in brackets (`병력을 조금(400)`) changed to those of
+/// the `new` effects of the same kind, at once; an error (and `desc` unchanged) when an amount is
+/// not there exactly once or two effects share it.
+fn bracketed_amounts(desc: &str, old: &[Effect], new: &[Effect]) -> Result<String, String> {
+    let amount = |effects: &[Effect], heal: bool| {
+        effects.iter().find_map(|e| match (e, heal) {
+            (Effect::Heal { power }, true) => Some(*power),
+            (Effect::Morale { amount }, false) => Some(*amount),
+            _ => None,
+        })
+    };
+    let mut changes = Vec::new();
+    for heal in [true, false] {
+        if let (Some(from), Some(to)) = (amount(old, heal), amount(new, heal)) {
+            if from != to && desc.contains(&format!("({from})")) {
+                changes.push((format!("({from})"), format!("({to})")));
+            }
+        }
+    }
+    if changes.len() == 2 && changes[0].0 == changes[1].0 {
+        return Err(format!("two amounts are {}", changes[0].0));
+    }
+    let mut out = desc.to_string();
+    // Through markers, so that a new amount is never taken for an old one.
+    for (i, (from, _)) in changes.iter().enumerate() {
+        if out.matches(from.as_str()).count() != 1 {
+            return Err(format!("{from} is not there exactly once"));
+        }
+        out = out.replace(from.as_str(), &format!("\u{0}{i}\u{0}"));
+    }
+    for (i, (_, to)) in changes.iter().enumerate() {
+        out = out.replace(&format!("\u{0}{i}\u{0}"), to);
+    }
+    Ok(out)
+}
+
 /// The chain's items `chain` with the original's healing amounts ([`original_item_effects`])
 /// for those matched by name to the release's healing items `release`, and notes on what
 /// changed or could not be matched.
@@ -1766,16 +1802,9 @@ fn original_items(
             .expect("the names come from the chain's items");
         if item.effects != effects {
             notes.push(format!("{id}: {:?} -> {:?}", item.effects, effects));
-            // A description that gives the amount in brackets (`병력을 조금(400)`) follows it.
-            for (old, new) in item.effects.iter().zip(&effects) {
-                let amount = |e: &Effect| match e {
-                    Effect::Heal { power } => Some(*power),
-                    Effect::Morale { amount } => Some(*amount),
-                    _ => None,
-                };
-                if let (Some(old), Some(new)) = (amount(old), amount(new)) {
-                    item.desc = item.desc.replace(&format!("({old})"), &format!("({new})"));
-                }
+            match bracketed_amounts(&item.desc, &item.effects, &effects) {
+                Ok(desc) => item.desc = desc,
+                Err(why) => notes.push(format!("{id}: description left as it is ({why})")),
             }
             item.effects = effects;
         }
@@ -5088,6 +5117,33 @@ mod tests {
         assert!(
             notes.iter().any(|n| n.contains("healing item 31")),
             "{notes:?}"
+        );
+        // The amounts in a description go by kind, at once, and only when they are clear.
+        let heal = |power| Effect::Heal { power };
+        let morale = |amount| Effect::Morale { amount };
+        assert_eq!(
+            bracketed_amounts(
+                "사기(20)와 병력(400)",
+                &[morale(20), heal(400)],
+                &[heal(600), morale(30)]
+            ),
+            Ok("사기(30)와 병력(600)".to_string())
+        );
+        assert_eq!(
+            bracketed_amounts(
+                "(400) (600)",
+                &[heal(400), morale(600)],
+                &[heal(600), morale(40)]
+            ),
+            Ok("(600) (40)".to_string())
+        );
+        assert!(
+            bracketed_amounts("(50)", &[heal(50), morale(50)], &[heal(600), morale(30)]).is_err()
+        );
+        assert!(bracketed_amounts("(400)(400)", &[heal(400)], &[heal(600)]).is_err());
+        assert_eq!(
+            bracketed_amounts("병력을 회복한다.", &[heal(400)], &[heal(600)]),
+            Ok("병력을 회복한다.".to_string())
         );
     }
 

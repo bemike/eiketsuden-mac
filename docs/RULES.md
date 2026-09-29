@@ -126,9 +126,10 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
   * the hit chance of a strategy with a confusion effect divides by `2 * power(caster)` instead of
     `4 * power(caster)` (for all its effects; the original has no strategy that also damages);
   * damage has no minimum: `max(0, raw)`;
-  * heal = `power + caster.level * caster.int / 20` (no halving on low morale), plus `rng.range(0, heal / 10)` when
-    cast (the forecast shows it without);
-  * a morale gain adds `caster.level / 10`, plus `rng.range(0, gain / 10)` when cast;
+  * the random bonus of damage is `r` with `0 ≤ r < raw / 50` (the original's `rand`), not `0..=raw / 50`;
+  * heal = `power + caster.level * caster.int / 20` (no halving on low morale), plus `r` with `0 ≤ r < heal / 10`
+    when cast (the forecast shows it without);
+  * a morale gain adds `caster.level / 10`, plus `r` with `0 ≤ r < gain / 10` when cast;
   * confusion has no length (the HUD shows no count): it ends at the start of the unit's side's phase with chance
     `(lead + morale) / 3` percent (§6), and a morale-down that leaves the target below 30 morale confuses it with 60 %.
 
@@ -194,8 +195,8 @@ strategies impossible and water strategies deal +25%. Battles may override the c
 
 * Battle consumables (`battle_use = true`) come from the army inventory. A unit uses one as its action on itself or an
   orthogonally adjacent friendly unit (`effects`: `heal` restores exactly `power` HP, `morale` adds morale; under the
-  original strategy formulas (§5) plus `rng.range(0, value / 10)` each, as the original heals through the support
-  strategies' routine without a caster), or — for items with `strategy` — casts that strategy from its tile without
+  original strategy formulas (§5) plus `r` with `0 ≤ r < value / 10` each, as the original heals through the
+  support strategies' routine without a caster), or — for items with `strategy` — casts that strategy from its tile without
   paying MP.
 * A battle uses its own stock of consumables, copied from the army inventory when it starts. When it ends, won or
   lost, exactly the consumables it used (`items_used`) are taken out of the inventory (never below 0). An item a

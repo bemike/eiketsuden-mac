@@ -816,10 +816,11 @@ fn original_formulas_add_a_random_tenth_to_support() {
         let ev = st.apply(&pack, cast(other, "cheer", p(3, 4))).unwrap();
         cheered.push(hits(&ev)[0].morale);
     }
-    // 225 + rand(0..=22); 20 + 10 / 10 + rand(0..=2).
-    assert!(healed.iter().all(|h| (225..=247).contains(h)), "{healed:?}");
+    // 225 + rand(22), 0..22; 20 + 10 / 10 + rand(2), 0..2.
+    assert!(healed.iter().all(|h| (225..=246).contains(h)), "{healed:?}");
     assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
-    assert!(cheered.iter().all(|m| (21..=23).contains(m)), "{cheered:?}");
+    assert!(cheered.iter().all(|m| (21..=22).contains(m)), "{cheered:?}");
+    assert!(cheered.contains(&22), "{cheered:?}");
 }
 
 #[test]
@@ -891,8 +892,8 @@ fn original_formulas_add_a_random_tenth_to_healing_items() {
         healed.push(used(st.apply(&pack, use_item(u, "bean", friend)).unwrap()).0);
         raised.push(used(st.apply(&pack, use_item(friend, "wine", friend)).unwrap()).1);
     }
-    // 300 + rand(0..=30); 30 + rand(0..=3).
-    assert!(healed.iter().all(|h| (300..=330).contains(h)), "{healed:?}");
+    // 300 + rand(30), 0..30; 30 + rand(3), 0..3.
+    assert!(healed.iter().all(|h| (300..=329).contains(h)), "{healed:?}");
     assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
-    assert!(raised.iter().all(|m| (30..=33).contains(m)), "{raised:?}");
+    assert!(raised.iter().all(|m| (30..=32).contains(m)), "{raised:?}");
 }
