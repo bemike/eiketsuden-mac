@@ -697,7 +697,9 @@ mod tests {
         assert!(
             manifest.contains(
                 "[rules]
-terrain = \"rules/terrain.toml\""
+terrain = \"rules/terrain.toml\"
+classes = \"rules/classes.toml\"
+"
             ),
             "{manifest}"
         );
@@ -710,6 +712,12 @@ terrain = \"rules/terrain.toml\""
             maps.contains("\"a\" = \"closed_gate\""),
             "no map has a closed gate"
         );
+        // The class rules follow the player's MAIN.EXE: every original class's sprite is
+        // among the pack's classes, with an attack range the engine knows.
+        for sprite in hero_import::pack::CLASS_SPRITES {
+            let class = pack.classes.values().find(|c| c.sprite == sprite).unwrap();
+            assert!(class.range.offsets().is_some(), "{}", class.id);
+        }
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).

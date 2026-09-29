@@ -67,7 +67,7 @@ use crate::planar::{self, CELL_BYTES, CELL_PX};
 use crate::sprites;
 use crate::text::TextEncoding;
 use crate::{ls11, table6};
-use hero_core::data::TerrainDef;
+use hero_core::data::{ClassDef, RangeSpec, TerrainDef};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -81,7 +81,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 3: `battles` (the base battles re-staged as the original battles) and their battle files.
 /// 4: the battles' mid-battle events (`events`, [`DRAMA_FILE`], tile pictures of changed cells).
 /// 5: `rules` (the terrain rules, with the original's closed gate as [`CLOSED_GATE`]).
-pub const PACK_FORMAT_VERSION: u32 = 5;
+/// 6: the class rules in `rules` ([`CLASS_RULES`]).
+pub const PACK_FORMAT_VERSION: u32 = 6;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×480 VGA screen.
@@ -168,6 +169,8 @@ pub struct PackOptions {
     pub terrain_defs: Vec<TerrainDef>,
     /// Move type of the pack chain's classes: `(sprite key, move type)`.
     pub class_moves: Vec<(String, String)>,
+    /// The pack chain's classes, which the original's class tables adjust.
+    pub class_defs: Vec<ClassDef>,
 }
 
 impl PackOptions {
@@ -225,10 +228,14 @@ impl PackOptions {
                 // share the sprite, the one named after it does.
                 .filter(|c| {
                     c.id.as_str() == c.sprite
-                        || !parent.classes.values().any(|o| o.id.as_str() == c.sprite)
+                        || !parent
+                            .classes
+                            .values()
+                            .any(|o| o.id.as_str() == c.sprite && o.sprite == c.sprite)
                 })
                 .map(|c| (c.sprite.clone(), c.move_type.clone()))
                 .collect(),
+            class_defs: parent.classes.values().cloned().collect(),
         }
     }
 }
@@ -303,6 +310,7 @@ struct Exe {
     tables: Result<maps::ExeTables, String>,
     cells: Result<maps::CellChanges, String>,
     rules: Result<maps::MoveRules, String>,
+    class_rules: Result<maps::ClassRules, String>,
 }
 
 impl Exe {
@@ -314,6 +322,7 @@ impl Exe {
                 tables: Err(missing()),
                 cells: Err(missing()),
                 rules: Err(missing()),
+                class_rules: Err(missing()),
             });
         };
         Ok(Exe {
@@ -324,6 +333,8 @@ impl Exe {
             cells: maps::find_cell_changes(&exe)
                 .map_err(|e| format!("MAIN.EXE map-cell tables: {e}")),
             rules: maps::find_move_rules(&exe).map_err(|e| format!("MAIN.EXE movement rules: {e}")),
+            class_rules: maps::find_class_rules(&exe)
+                .map_err(|e| format!("MAIN.EXE class rules: {e}")),
         })
     }
 }
@@ -337,7 +348,7 @@ pub fn write_pack(
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
     // Checked before anything is written; the final manifest also lists the map file.
-    pack_toml(&options.extends, edition.id, false, &[], false, false)
+    pack_toml(&options.extends, edition.id, false, &[], false, &[])
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
     let mut output = Output::dir(out, PACK_FORMAT)?;
@@ -382,7 +393,7 @@ pub fn build_pack_with_progress(
 ) -> Result<MemoryPack, ExtractError> {
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
-    pack_toml(&options.extends, edition.id, false, &[], false, false)
+    pack_toml(&options.extends, edition.id, false, &[], false, &[])
         .map_err(|e| output_error(Path::new("pack.toml"), e))?;
     let mut output = Output::in_memory(PACK_ID);
     let index = convert(&install, edition, encoding, options, &mut output, progress)?;
@@ -456,7 +467,7 @@ fn convert(
     )?;
     progress(4);
     // The rules come first: the battle maps' rules grids use the terrain they add.
-    let (rules, rule_terrain) = convert_rules(
+    let (rules, rule_terrain, rule_files) = convert_rules(
         &exe,
         options,
         output,
@@ -500,7 +511,7 @@ fn convert(
         !map_records.is_empty(),
         &battle_files,
         drama,
-        rule_terrain.is_some(),
+        &rule_files,
     )
     .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
@@ -641,61 +652,194 @@ pub fn original_terrain(
     Ok((out, notes))
 }
 
-/// The terrain rules of the original mode ([`original_terrain`]). Returns the report and, when
-/// they were written, the ids of the pack's terrain (for the battle maps' rules grids).
+/// What [`convert_rules`] returns.
+type RulesResult = (
+    KindReport,
+    Option<Vec<String>>,
+    Vec<(&'static str, &'static str)>,
+);
+
+/// Where the class rules of the pack go.
+pub const CLASS_RULES: &str = "rules/classes.toml";
+
+/// A range as the notes show it: its name, or its offsets.
+fn range_label(range: &RangeSpec) -> String {
+    match range {
+        RangeSpec::Named(name) => name.clone(),
+        RangeSpec::Offsets(offsets) => format!("{offsets:?}"),
+    }
+}
+
+/// Named attack range per original range code (0-4; 255 is none).
+const RANGE_NAMES: [&str; 5] = ["adjacent4", "adjacent8", "archer", "crossbow", "catapult"];
+
+/// The pack chain's classes with the original's attack and defence coefficients, movement
+/// points and attack range (`MAIN.EXE`, FORMATS §10.4) for the classes drawn with an
+/// original class's sprite (when several share it, the one named after it), and the changes as
+/// notes. Everything else stays the chain's.
+pub fn original_classes(
+    rules: &maps::ClassRules,
+    classes: &[ClassDef],
+) -> Result<(Vec<ClassDef>, Vec<String>), String> {
+    let tables = [
+        &rules.attack,
+        &rules.defense,
+        &rules.move_points,
+        &rules.range,
+    ];
+    if tables.iter().any(|t| t.len() != maps::CLASSES) {
+        return Err(format!(
+            "the class tables do not have {} classes",
+            maps::CLASSES
+        ));
+    }
+    let mut out = Vec::with_capacity(classes.len());
+    let mut notes = Vec::new();
+    for c in classes {
+        let stands_in = c.id.as_str() == c.sprite
+            || !classes
+                .iter()
+                .any(|o| o.id.as_str() == c.sprite && o.sprite == c.sprite);
+        let k = CLASS_SPRITES.iter().position(|s| *s == c.sprite);
+        let Some(k) = k.filter(|_| stands_in) else {
+            out.push(c.clone());
+            continue;
+        };
+        let coefficient = |table: &[u8], what: &str| -> Result<i32, String> {
+            let v = table[k];
+            if v % 5 != 0 {
+                return Err(format!(
+                    "the original's {what} coefficient {v} of class {k} is not a multiple of 5"
+                ));
+            }
+            Ok(i32::from(v) / 5)
+        };
+        let mut c2 = c.clone();
+        c2.atk = coefficient(&rules.attack, "attack")?;
+        c2.def = coefficient(&rules.defense, "defence")?;
+        c2.move_points = rules.move_points[k];
+        c2.range = match rules.range[k] {
+            255 => RangeSpec::Offsets(Vec::new()),
+            r => RangeSpec::Named(
+                RANGE_NAMES
+                    .get(usize::from(r))
+                    .ok_or_else(|| format!("the original's range code {r} of class {k}"))?
+                    .to_string(),
+            ),
+        };
+        if c.atk != c2.atk {
+            notes.push(format!("{}: atk {} -> {}", c.id, c.atk, c2.atk));
+        }
+        if c.def != c2.def {
+            notes.push(format!("{}: def {} -> {}", c.id, c.def, c2.def));
+        }
+        if c.move_points != c2.move_points {
+            notes.push(format!(
+                "{}: move {} -> {}",
+                c.id, c.move_points, c2.move_points
+            ));
+        }
+        if c.range != c2.range {
+            notes.push(format!(
+                "{}: range {} -> {}",
+                c.id,
+                range_label(&c.range),
+                range_label(&c2.range)
+            ));
+        }
+        out.push(c2);
+    }
+    Ok((out, notes))
+}
+
+/// The rules of the original mode: terrain rules from the movement rules and class rules from
+/// the class tables. Returns the report, the ids of the pack's terrain when the terrain rules
+/// were written (for the battle maps' rules grids) and the rule files written (`kind`, path).
 fn convert_rules(
     exe: &Exe,
     options: &PackOptions,
     out: &mut Output,
     mut report: KindReport,
-) -> Result<(KindReport, Option<Vec<String>>), ExtractError> {
-    if options.terrain_defs.is_empty() {
+) -> Result<RulesResult, ExtractError> {
+    if options.terrain_defs.is_empty() && options.class_defs.is_empty() {
         report.status = Status::MissingSource;
-        report.summary = "the pack chain has no terrain rules to start from".into();
-        return Ok((report, None));
+        report.summary = "the pack chain has no rules to start from".into();
+        return Ok((report, None, Vec::new()));
     }
-    report.status = Status::Failed;
-    let rules = match &exe.rules {
-        Ok(r) => r,
-        Err(e) => {
-            report.summary = "no movement rules".into();
-            report.errors.push(e.clone());
-            return Ok((report, None));
-        }
+    let mut written = Vec::new();
+    let mut terrain_ids = None;
+    let mut summary = Vec::new();
+    let header = |what: &str| {
+        format!(
+            "# {what} of the original mode: the pack chain's with the values read from the player's\n\
+             # MAIN.EXE (docs/reverse-engineering/FORMATS.md §10), written by `hero-tools original pack`\n\
+             # (do not edit; run the importer again).\n\n"
+        )
     };
-    let (terrain, notes) =
-        match original_terrain(rules, &options.terrain_defs, &options.class_moves) {
-            Ok(t) => t,
-            Err(e) => {
-                report.summary = "the pack's move types do not follow the original's".into();
-                report.errors.push(e);
-                return Ok((report, None));
+    if !options.terrain_defs.is_empty() {
+        let converted = exe.rules.clone().and_then(|rules| {
+            original_terrain(&rules, &options.terrain_defs, &options.class_moves)
+        });
+        match converted {
+            Ok((terrain, notes)) => {
+                #[derive(Serialize)]
+                struct File<'a> {
+                    terrain: &'a [TerrainDef],
+                }
+                let body = toml::to_string(&File { terrain: &terrain }).map_err(|e| {
+                    output_error(Path::new(TERRAIN_RULES), std::io::Error::other(e))
+                })?;
+                out.write(TERRAIN_RULES, (header("Terrain rules") + &body).as_bytes())?;
+                report.outputs += 1;
+                written.push(("terrain", TERRAIN_RULES));
+                terrain_ids = Some(terrain.iter().map(|t| t.id.to_string()).collect());
+                summary.push(format!(
+                    "{} terrain ({} changed)",
+                    terrain.len(),
+                    notes.len()
+                ));
+                report.notes.extend(notes);
             }
-        };
-    #[derive(Serialize)]
-    struct File<'a> {
-        terrain: &'a [TerrainDef],
+            Err(e) => report.errors.push(format!("terrain rules: {e}")),
+        }
     }
-    let body = toml::to_string(&File { terrain: &terrain })
-        .map_err(|e| output_error(Path::new(TERRAIN_RULES), std::io::Error::other(e)))?;
-    let text = format!(
-        "# Terrain rules of the original mode: the pack chain's terrain with the movement costs and\n\
-         # terrain effects read from the player's MAIN.EXE (FORMATS §10.4), written by\n\
-         # `hero-tools original pack` (do not edit; run the importer again).\n\n{body}"
-    );
-    out.write(TERRAIN_RULES, text.as_bytes())?;
-    report.outputs += 1;
-    report.status = Status::Extracted;
-    report.summary = format!(
-        "{} terrain, {} value(s) differ from the pack chain's",
-        terrain.len(),
-        notes.len()
-    );
-    report.notes.extend(notes);
-    Ok((
-        report,
-        Some(terrain.iter().map(|t| t.id.to_string()).collect()),
-    ))
+    if !options.class_defs.is_empty() {
+        let converted = exe
+            .class_rules
+            .clone()
+            .and_then(|rules| original_classes(&rules, &options.class_defs));
+        match converted {
+            Ok((classes, notes)) => {
+                #[derive(Serialize)]
+                struct File<'a> {
+                    class: &'a [ClassDef],
+                }
+                let body = toml::to_string(&File { class: &classes })
+                    .map_err(|e| output_error(Path::new(CLASS_RULES), std::io::Error::other(e)))?;
+                out.write(CLASS_RULES, (header("Class rules") + &body).as_bytes())?;
+                report.outputs += 1;
+                written.push(("classes", CLASS_RULES));
+                summary.push(format!(
+                    "{} classes ({} changed)",
+                    classes.len(),
+                    notes.len()
+                ));
+                report.notes.extend(notes);
+            }
+            Err(e) => report.errors.push(format!("class rules: {e}")),
+        }
+    }
+    report.status = match (written.is_empty(), report.errors.is_empty()) {
+        (_, true) => Status::Extracted,
+        (false, false) => Status::Partial,
+        (true, false) => Status::Failed,
+    };
+    report.summary = if summary.is_empty() {
+        "no rules converted".into()
+    } else {
+        summary.join(", ")
+    };
+    Ok((report, terrain_ids, written))
 }
 
 /// A TOML basic string.
@@ -723,7 +867,7 @@ fn pack_toml(
     maps: bool,
     battles: &[String],
     dramas: bool,
-    terrain_rules: bool,
+    rules: &[(&str, &str)],
 ) -> Result<String, String> {
     if extends.is_empty()
         || Path::new(extends).is_absolute()
@@ -754,10 +898,14 @@ fn pack_toml(
     } else {
         String::new()
     };
-    let rules = if terrain_rules {
-        format!("\n[rules]\nterrain = {}\n", toml_str(TERRAIN_RULES))
-    } else {
+    let rules = if rules.is_empty() {
         String::new()
+    } else {
+        let lines: Vec<String> = rules
+            .iter()
+            .map(|(kind, path)| format!("{kind} = {}\n", toml_str(path)))
+            .collect();
+        format!("\n[rules]\n{}", lines.concat())
     };
     Ok(format!(
         "# Original mode, written by `hero-tools original pack` ({tool}) from the player's own copy\n\
@@ -2821,12 +2969,12 @@ mod tests {
 
     #[test]
     fn manifest_needs_a_relative_extends() {
-        let toml = pack_toml("../base", EditionId::KoreanDos, false, &[], false, false).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, false, &[], false, &[]).unwrap();
         assert!(toml.contains("\nid = \"original\"\n"), "{toml}");
         assert!(toml.contains("\nextends = \"../base\"\n"), "{toml}");
         assert!(toml.contains("canvas = [640, 480]"), "{toml}");
         assert!(!toml.contains("maps"), "{toml}");
-        let toml = pack_toml("../base", EditionId::KoreanDos, true, &[], false, false).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, true, &[], false, &[]).unwrap();
         assert!(
             toml.contains(
                 "\nextends = \"../base\"\nmaps = [\"maps/original.toml\"]\n\n[presentation]"
@@ -2837,13 +2985,13 @@ mod tests {
             "battles/p1_sishui.toml".to_string(),
             "battles/p2_hulao.toml".to_string(),
         ];
-        let toml = pack_toml("../base", EditionId::KoreanDos, true, &battles, true, false).unwrap();
+        let toml = pack_toml("../base", EditionId::KoreanDos, true, &battles, true, &[]).unwrap();
         let manifest: hero_core::pack::PackManifest = toml::from_str(&toml).unwrap();
         assert_eq!(manifest.battles, battles);
         assert_eq!(manifest.dramas, [DRAMA_FILE]);
         for bad in ["", "C:/data/base", "/data/base", "..\\base"] {
             assert!(
-                pack_toml(bad, EditionId::KoreanDos, false, &[], false, false).is_err(),
+                pack_toml(bad, EditionId::KoreanDos, false, &[], false, &[]).is_err(),
                 "{bad}"
             );
         }
@@ -2986,6 +3134,10 @@ mod tests {
             .iter()
             .map(|&(s, m)| (s.to_string(), m.to_string()))
             .collect(),
+            class_defs: vec![
+                class_def("civilian", "civilian", 0, RangeSpec::Offsets(Vec::new())),
+                class_def("archer", "archer", 6, RangeSpec::Named("archer".into())),
+            ],
             ..PackOptions::default()
         }
     }
@@ -3049,9 +3201,22 @@ mod tests {
         assert_eq!(forest["cost"]["slow"].as_integer(), Some(1));
         let manifest = std::fs::read_to_string(pack.join("pack.toml")).unwrap();
         assert!(
-            manifest.contains("[rules]\nterrain = \"rules/terrain.toml\""),
+            manifest.contains(
+                "[rules]\nterrain = \"rules/terrain.toml\"\nclasses = \"rules/classes.toml\"\n"
+            ),
             "{manifest}"
         );
+        // The class rules take the original's coefficients: the civilian's are 15 (atk 3).
+        let text = std::fs::read_to_string(pack.join(CLASS_RULES)).unwrap();
+        #[derive(serde::Deserialize)]
+        struct Classes {
+            class: Vec<ClassDef>,
+        }
+        let rules: Classes = toml::from_str(&text).unwrap();
+        assert_eq!(rules.class.len(), 2, "{text}");
+        assert_eq!((rules.class[0].atk, rules.class[0].def), (3, 3), "{text}");
+        assert_eq!(rules.class[0].range, RangeSpec::Offsets(Vec::new()));
+        assert_eq!(rules.class[1].atk, 6);
         // A finished pack leaves no write journal behind.
         assert!(!pack.join(crate::extract::JOURNAL_FILE).exists());
         assert_eq!(
@@ -3288,6 +3453,109 @@ mod tests {
             cost,
             effect,
         }
+    }
+
+    fn class_def(id: &str, sprite: &str, atk: i32, range: RangeSpec) -> ClassDef {
+        ClassDef {
+            id: id.into(),
+            name: id.into(),
+            hanja: String::new(),
+            family: id.into(),
+            tier: 1,
+            move_points: 4,
+            move_type: "foot".into(),
+            range,
+            atk,
+            def: atk,
+            hp: 500,
+            hp_growth: 20,
+            generic: [50, 30, 50],
+            strategies: Vec::new(),
+            promote: None,
+            sprite: sprite.into(),
+            can_counter: false,
+            provokes_counter: false,
+            strategy_guard: false,
+            mp_aura: false,
+            support_exp: None,
+            desc: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_original_class_tables_adjust_the_chains_classes() {
+        let classes = [
+            class_def("civilian", "civilian", 0, RangeSpec::Offsets(Vec::new())),
+            class_def(
+                "catapult",
+                "catapult",
+                16,
+                RangeSpec::Named("adjacent4".into()),
+            ),
+            class_def("hero", "hero", 30, RangeSpec::Named("adjacent8".into())),
+            // A mod's class drawn with the catapult's sprite: the class named after it stands
+            // for the original's catapult, this one stays the chain's.
+            class_def(
+                "siege",
+                "catapult",
+                20,
+                RangeSpec::Named("adjacent4".into()),
+            ),
+        ];
+        let rules = maps::fixture_class_rules();
+        let (out, notes) = original_classes(&rules, &classes).unwrap();
+        // Coefficients are five times `atk` / `def`.
+        assert_eq!((out[0].atk, out[0].def, out[0].move_points), (3, 3, 3));
+        assert_eq!(out[0].range, RangeSpec::Offsets(Vec::new()));
+        assert_eq!((out[1].atk, out[1].def, out[1].move_points), (16, 10, 3));
+        assert_eq!(out[1].range, RangeSpec::Named("catapult".into()));
+        // A class drawn with no original sprite stays the chain's.
+        assert_eq!(out[2], classes[2]);
+        assert_eq!(out[3], classes[3]);
+        // Named after the sprite but drawn with another: the only class drawn with the
+        // catapult's sprite stands in.
+        let reskinned = [
+            class_def(
+                "catapult",
+                "tower",
+                16,
+                RangeSpec::Named("adjacent4".into()),
+            ),
+            class_def(
+                "siege",
+                "catapult",
+                20,
+                RangeSpec::Named("adjacent4".into()),
+            ),
+        ];
+        let (out, _) = original_classes(&rules, &reskinned).unwrap();
+        assert_eq!(out[0], reskinned[0]);
+        assert_eq!(out[1].range, RangeSpec::Named("catapult".into()));
+        for note in [
+            "civilian: atk 0 -> 3",
+            "civilian: move 4 -> 3",
+            "catapult: def 16 -> 10",
+        ] {
+            assert!(notes.contains(&note.to_string()), "{notes:?}");
+        }
+        assert!(
+            notes.iter().any(|n| n.starts_with("catapult: range")),
+            "{notes:?}"
+        );
+
+        // A coefficient that is not five times a whole value cannot be one.
+        let mut odd = rules.clone();
+        odd.attack[17] = 21;
+        let err = original_classes(&odd, &classes).unwrap_err();
+        assert!(err.contains("not a multiple of 5"), "{err}");
+        // Tables that are not the game's shape, or a range code it does not have.
+        let mut short = rules.clone();
+        short.range.pop();
+        assert!(original_classes(&short, &classes).is_err());
+        let mut bad = rules.clone();
+        bad.range[5] = 9;
+        let err = original_classes(&bad, &classes).unwrap_err();
+        assert!(err.contains("range code 9"), "{err}");
     }
 
     #[test]
