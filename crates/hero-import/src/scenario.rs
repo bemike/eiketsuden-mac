@@ -431,16 +431,16 @@ pub mod story {
     use super::{Instr, TALK};
 
     /// Whether the script leaves its group's parallel control (moves the story on).
-    pub fn leaves_parallel(code: &[&Instr]) -> bool {
-        code.iter().any(|c| c.mnemonic == "leave_parallel")
+    pub fn leaves_parallel<I: AsRef<Instr>>(code: &[I]) -> bool {
+        code.iter().any(|c| c.as_ref().mnemonic == "leave_parallel")
     }
 
     /// Whether the script changes the army, the inventory or the original's flags: officers
     /// joining or leaving, items, the shop, gold, flags, levels and classes.
-    pub fn changes_state(code: &[&Instr]) -> bool {
+    pub fn changes_state<I: AsRef<Instr>>(code: &[I]) -> bool {
         code.iter().any(|c| {
             matches!(
-                c.mnemonic,
+                c.as_ref().mnemonic,
                 "set_allegiance"
                     | "set_country"
                     | "add_item"
@@ -454,32 +454,44 @@ pub mod story {
     }
 
     /// Whether instructions an answer guards start a battle (`op_3d`, a battle's setup).
-    pub fn starts_battle(guarded: &[&Instr]) -> bool {
-        guarded
-            .iter()
-            .any(|g| matches!(g.mnemonic, "op_3d" | "battle_setup" | "begin_battle"))
+    pub fn starts_battle<I: AsRef<Instr>>(guarded: &[I]) -> bool {
+        guarded.iter().any(|g| {
+            matches!(
+                g.as_ref().mnemonic,
+                "op_3d" | "battle_setup" | "begin_battle"
+            )
+        })
+    }
+
+    /// The instructions the `if_answer` at `code[at]` guards.
+    pub fn guarded<I: AsRef<Instr>>(code: &[I], at: usize) -> &[I] {
+        let skip = usize::from(code[at].as_ref().operands.get("skip").unwrap_or(0));
+        &code[at + 1..(at + 1 + skip).min(code.len())]
     }
 
     /// Whether the script asks whether to set out: a question whose yes starts a battle.
-    pub fn asks_sortie(code: &[&Instr]) -> bool {
-        code.iter().enumerate().any(|(i, c)| {
-            c.mnemonic == "if_answer" && {
-                let skip = usize::from(c.operands.get("skip").unwrap_or(0));
-                starts_battle(&code[i + 1..(i + 1 + skip).min(code.len())])
-            }
-        })
+    pub fn asks_sortie<I: AsRef<Instr>>(code: &[I]) -> bool {
+        code.iter()
+            .enumerate()
+            .any(|(i, c)| c.as_ref().mnemonic == "if_answer" && starts_battle(guarded(code, i)))
     }
 
     /// Whether a record of `kind` with this script is optional chatter: a talk that does not
     /// move the story on, in a group where another record does (`group_progresses`), and that
     /// changes nothing, asks nothing and is no call to set out.
-    pub fn is_chatter(kind: u8, group_progresses: bool, code: &[&Instr]) -> bool {
+    pub fn is_chatter<I: AsRef<Instr>>(kind: u8, group_progresses: bool, code: &[I]) -> bool {
         kind == TALK
             && group_progresses
             && !leaves_parallel(code)
             && !changes_state(code)
-            && !code.iter().any(|c| c.mnemonic == "choice")
+            && !code.iter().any(|c| c.as_ref().mnemonic == "choice")
             && !asks_sortie(code)
+    }
+}
+
+impl AsRef<Instr> for Instr {
+    fn as_ref(&self) -> &Instr {
+        self
     }
 }
 
@@ -808,9 +820,7 @@ mod tests {
                     .collect(),
             },
         };
-        let chatter = |kind, progresses, code: &[Instr]| {
-            story::is_chatter(kind, progresses, &code.iter().collect::<Vec<_>>())
-        };
+        let chatter = |kind, progresses, code: &[Instr]| story::is_chatter(kind, progresses, code);
         let talk = [op("dialogue", &[("text", 1)])];
         assert!(chatter(TALK, true, &talk));
         // Not a talk, or in a group nothing moves on: part of the story.
@@ -832,7 +842,7 @@ mod tests {
             op("if_answer", &[("answer", 0), ("skip", 1)]),
             op("op_3d", &[]),
         ];
-        assert!(story::asks_sortie(&sortie.iter().collect::<Vec<_>>()));
+        assert!(story::asks_sortie(&sortie));
         assert!(!chatter(TALK, true, &sortie));
         // An answer that guards something else.
         let other = [
@@ -840,7 +850,7 @@ mod tests {
             op("dialogue", &[("text", 1)]),
             op("op_3d", &[]),
         ];
-        assert!(!story::asks_sortie(&other.iter().collect::<Vec<_>>()));
+        assert!(!story::asks_sortie(&other));
     }
 
     fn script(parts: &[&[u8]]) -> Vec<u8> {

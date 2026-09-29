@@ -674,6 +674,12 @@ pub(crate) struct InstrOut {
     pub(crate) resolved: BTreeMap<&'static str, String>,
 }
 
+impl AsRef<scenario::Instr> for InstrOut {
+    fn as_ref(&self) -> &scenario::Instr {
+        &self.instr
+    }
+}
+
 #[cfg(test)]
 impl ScenarioFile {
     /// A file of one scene whose blocks have `records` (for tests of its outlines).

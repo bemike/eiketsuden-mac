@@ -6,7 +6,7 @@
 //! [`Detail::Text`] (every record with the lines it shows: stays on the player's computer).
 
 use crate::extract::{BlockOut, InstrOut, RecordOut, ScenarioFile};
-use crate::scenario::{self, story, Operands, TALK};
+use crate::scenario::{story, Operands, TALK};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -33,13 +33,8 @@ fn get(i: &InstrOut, name: &str) -> u16 {
     i.instr.operands.get(name).unwrap_or(0)
 }
 
-/// The script of `r`, for the [`story`] readings the converter shares.
-fn code(r: &RecordOut) -> Vec<&scenario::Instr> {
-    r.code.iter().map(|c| &c.instr).collect()
-}
-
 fn leaves(r: &RecordOut) -> bool {
-    story::leaves_parallel(&code(r))
+    story::leaves_parallel(&r.code)
 }
 
 /// A person as the extraction resolved it, else its number.
@@ -123,7 +118,7 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
             story::is_chatter(
                 r.trigger.kind,
                 progressing.contains(&r.trigger.group),
-                &code(r),
+                &r.code,
             )
         })
         .count();
@@ -250,8 +245,7 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                 "if_answer" => {
                     let skip = usize::from(get(c, "skip"));
                     let guarded = &r.code[at + 1..(at + 1 + skip).min(r.code.len())];
-                    let sortie =
-                        story::starts_battle(&guarded.iter().map(|g| &g.instr).collect::<Vec<_>>());
+                    let sortie = story::starts_battle(guarded);
                     let then: Vec<&str> = guarded
                         .iter()
                         .map(|g| g.instr.mnemonic)

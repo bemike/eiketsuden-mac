@@ -276,11 +276,9 @@ impl Writer<'_, '_> {
                 "if_answer" => {
                     // The instructions it guards run when the player answered `answer` (0 =
                     // yes) to the question just asked.
-                    let end = (i + 1 + usize::from(get("skip"))).min(code.len());
-                    let guarded = &code[i + 1..end];
-                    let sortie = guarded
-                        .iter()
-                        .any(|c| matches!(c.mnemonic, "op_3d" | "battle_setup" | "begin_battle"));
+                    let guarded = story::guarded(code, i);
+                    let end = i + 1 + guarded.len();
+                    let sortie = story::starts_battle(guarded);
                     // (A battle's setup asks nothing: its army changes are all it gives.)
                     if sortie || get("answer") != 0 || self.army_only {
                         // "Ready to set out?": the story goes on as if the player said yes.
@@ -607,19 +605,14 @@ fn growth_after_joining(text: &str) -> String {
     out
 }
 
-/// The script of `r`, for the [`story`] readings.
-fn code(r: &Record) -> Vec<&Instr> {
-    r.code.iter().collect()
-}
-
 /// Whether `r` asks whether to set out ([`story::asks_sortie`]).
 fn sortie(r: &Record) -> bool {
-    story::asks_sortie(&code(r))
+    story::asks_sortie(&r.code)
 }
 
 /// Whether `r` leaves its group's parallel control (moves the story on).
 fn leaves(r: &Record) -> bool {
-    story::leaves_parallel(&code(r))
+    story::leaves_parallel(&r.code)
 }
 
 impl<'c, 'a> Writer<'c, 'a> {
@@ -652,7 +645,7 @@ impl<'c, 'a> Writer<'c, 'a> {
             story::is_chatter(
                 r.trigger.kind,
                 progressing.contains(&r.trigger.group),
-                &code(r),
+                &r.code,
             )
         };
         let mut taken = BTreeSet::new();
@@ -765,9 +758,7 @@ impl<'c, 'a> Writer<'c, 'a> {
                 let _ = writeln!(self.out.text, "@label after_{after}");
                 continue;
             }
-            if rec.code.iter().any(|c| c.mnemonic == "game_over")
-                && !rec.code.iter().any(|c| c.mnemonic == "leave_parallel")
-            {
+            if rec.code.iter().any(|c| c.mnemonic == "game_over") && !leaves(rec) {
                 // A game over that no choice leads to (a failed errand): not part of the story.
                 continue;
             }
