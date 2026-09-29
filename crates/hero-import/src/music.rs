@@ -238,7 +238,7 @@ const MAX_STEPS_PER_SECOND: f64 = 1.0 / TIMER_TICK;
 /// step the samples are one pass of the loop, taken from the second time round so the releases
 /// of its end ring into its start as they do in the game; the intro before the loop point is left
 /// out ([`Rendered::intro_seconds`]). Otherwise the song is played once from its start. Longer
-/// than `max_seconds` is an error.
+/// than `max_seconds` is an error, and so is a `rate` not below the chip's ([`RATE`]).
 pub fn render(song: &[u8], rate: u32, max_seconds: f64) -> Result<Rendered, String> {
     render_cancellable(song, rate, max_seconds, &AtomicBool::new(false))
 }
@@ -314,8 +314,9 @@ fn render_checking(
     for (reg, value) in driver.writes.drain(..) {
         chip.write(reg, value);
     }
-    let ticks_per_sample = TIMER_TICK * RATE; // chip samples per timer tick
-                                              // Doubled (one channel at full level is 13 bits).
+    // Chip samples per timer tick.
+    let ticks_per_sample = TIMER_TICK * RATE;
+    // Doubled (one channel at full level is 13 bits).
     let mut down = Downsampler::new(rate, 2.0);
     let mut samples = Vec::new();
     let mut chip_time = 0.0f64; // chip samples until the next timer tick
@@ -326,7 +327,8 @@ fn render_checking(
         down.start(0);
     }
     // The filter needs the chip samples after the last output sample: the song goes on past
-    // `stop` (into its loop again) until they are in.
+    // `stop` (into its loop again; for a song played once, into its tracks' own loop points,
+    // not quite what the player repeats) until they are in.
     let mut stopped = false;
     // Timer ticks, the one of the first song step, and the time from it to the loop's first.
     let mut ticks = 0u64;
@@ -1274,7 +1276,8 @@ mod tests {
         assert!((420.0..460.0).contains(&hz), "{hz}");
         // Silent at the end, but for the last few samples: the filter hears the loop's start
         // coming (HALF_TAPS chip samples, about 29 output samples), which is what the player
-        // plays next.
+        // plays next (for a seamless loop; a song played once hears its tracks' loop points
+        // instead, within the same 1.3 ms).
         let n = rendered.samples.len();
         let end = &rendered.samples[n - 200..n - 30];
         assert!(end.iter().all(|&s| s.abs() < 50));
