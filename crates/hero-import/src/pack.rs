@@ -228,7 +228,10 @@ impl PackOptions {
                 // share the sprite, the one named after it does.
                 .filter(|c| {
                     c.id.as_str() == c.sprite
-                        || !parent.classes.values().any(|o| o.id.as_str() == c.sprite)
+                        || !parent
+                            .classes
+                            .values()
+                            .any(|o| o.id.as_str() == c.sprite && o.sprite == c.sprite)
                 })
                 .map(|c| (c.sprite.clone(), c.move_type.clone()))
                 .collect(),
@@ -693,8 +696,10 @@ pub fn original_classes(
     let mut out = Vec::with_capacity(classes.len());
     let mut notes = Vec::new();
     for c in classes {
-        let stands_in =
-            c.id.as_str() == c.sprite || !classes.iter().any(|o| o.id.as_str() == c.sprite);
+        let stands_in = c.id.as_str() == c.sprite
+            || !classes
+                .iter()
+                .any(|o| o.id.as_str() == c.sprite && o.sprite == c.sprite);
         let k = CLASS_SPRITES.iter().position(|s| *s == c.sprite);
         let Some(k) = k.filter(|_| stands_in) else {
             out.push(c.clone());
@@ -3507,6 +3512,25 @@ mod tests {
         // A class drawn with no original sprite stays the chain's.
         assert_eq!(out[2], classes[2]);
         assert_eq!(out[3], classes[3]);
+        // Named after the sprite but drawn with another: the only class drawn with the
+        // catapult's sprite stands in.
+        let reskinned = [
+            class_def(
+                "catapult",
+                "tower",
+                16,
+                RangeSpec::Named("adjacent4".into()),
+            ),
+            class_def(
+                "siege",
+                "catapult",
+                20,
+                RangeSpec::Named("adjacent4".into()),
+            ),
+        ];
+        let (out, _) = original_classes(&rules, &reskinned).unwrap();
+        assert_eq!(out[0], reskinned[0]);
+        assert_eq!(out[1].range, RangeSpec::Named("catapult".into()));
         for note in [
             "civilian: atk 0 -> 3",
             "civilian: move 4 -> 3",
