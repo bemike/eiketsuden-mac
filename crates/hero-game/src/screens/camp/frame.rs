@@ -71,8 +71,7 @@ pub fn draw_camp_frame(ctx: &Ctx, frame: &CampFrame) {
 
     let leader = campaign.roster.first();
     if let Some(officer) = leader.and_then(|o| pack.officer(&o.id)) {
-        let key = officer.portrait.as_deref().unwrap_or(officer.id.as_str());
-        if let Some(tex) = ctx.media.portrait(key) {
+        if let Some(tex) = ctx.media.portrait(officer.portrait_key()) {
             let r = area(frame.portrait);
             draw_texture_ex(
                 &tex,
