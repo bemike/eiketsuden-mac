@@ -480,7 +480,14 @@ impl OfficersScreen {
         let gfx = &ctx.gfx;
         let layout = StatusLayout::new(frame, gfx.size());
         let whole = layout.rect([0, 0, frame.size[0], frame.size[1]]);
-        match ctx.media.texture(&frame.image) {
+        // A picture of another size is not stretched: the window is filled plainly (as validate
+        // warns), like the other frames.
+        let [w, h] = frame.size;
+        let picture = ctx
+            .media
+            .texture(&frame.image)
+            .filter(|t| t.size() == vec2(w as f32, h as f32));
+        match picture {
             Some(tex) => draw_texture_ex(
                 &tex,
                 whole.x,
