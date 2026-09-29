@@ -262,9 +262,8 @@ impl CampaignState {
         self.inventory.get(item).copied().unwrap_or(0)
     }
 
-    /// Add an officer to the army (no-op if already present). A (re)joining officer starts
-    /// from their `officers.toml` definition.
-    /// Add an officer to the army; one who is away comes back as they left.
+    /// Add an officer to the army: one not in the roster starts from their `officers.toml`
+    /// definition, one who is away comes back as they left (no-op for one already present).
     pub fn join(&mut self, pack: &Pack, officer: &str) -> Result<(), CampaignError> {
         if let Some(o) = self.roster.iter_mut().find(|o| o.id == officer) {
             o.away = false;

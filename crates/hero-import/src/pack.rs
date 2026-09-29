@@ -1824,6 +1824,15 @@ pub const BASE_CAMPAIGN_LAST_BATTLE: &str = "c1_xuzhou2";
 
 /// A part of a chapter past the base campaign: its file, scene and part, and for a story its
 /// scene id and converted scene.
+/// A battle to convert: its id, pairing, the base battle, and the outro of a chapter's battle with
+/// its reward gold.
+type BattleJob<'a> = (
+    String,
+    battles::Pairing,
+    Option<&'a hero_core::battledef::BattleDef>,
+    Option<(String, i64)>,
+);
+
 type ChapterPart = (
     usize,
     usize,
@@ -2104,13 +2113,8 @@ fn convert_battles(
     }
 
     // The battles: the base pack's that follow original ones, then the chapters' battles.
-    // (battle id, pairing, the base battle, the outro of a chapter's battle)
-    let mut jobs: Vec<(
-        String,
-        battles::Pairing,
-        Option<&hero_core::battledef::BattleDef>,
-        Option<String>,
-    )> = wanted
+    // (battle id, pairing, the base battle, the outro of a chapter's battle and its reward gold)
+    let mut jobs: Vec<BattleJob<'_>> = wanted
         .iter()
         .map(|p| {
             let base = options.battles.iter().find(|b| b.id == p.battle);
@@ -2130,7 +2134,7 @@ fn convert_battles(
                     roles: &[],
                 },
                 None,
-                outro.as_ref().map(|(id, _)| id.clone()),
+                outro.as_ref().map(|(id, s)| (id.clone(), s.gold)),
             ));
         }
     }
@@ -2229,7 +2233,10 @@ fn convert_battles(
                         original.header.defeat_to_win.is_some(),
                         names.officers.get(&battles::LIU_BEI).map(String::as_str),
                     );
-                    b.outro = outro.clone();
+                    if let Some((scene, gold)) = outro {
+                        b.outro = Some(scene.clone());
+                        b.reward_gold = *gold;
+                    }
                     made = b;
                     &made
                 }
@@ -2275,6 +2282,27 @@ fn convert_battles(
                 }
                 let deploy = &mut converted.battle.deploy;
                 deploy.max = deploy.max.min(deploy.slots.len() as u32);
+            }
+            // The officers the original brings onto the field during a chapter's battle (allies,
+            // reinforcements) are not deployed from the army as well (the base pack forbids
+            // them the same way).
+            if pairing.battle.is_empty() {
+                let lord = names.officers.get(&battles::LIU_BEI);
+                let joining: BTreeSet<String> = converted
+                    .battle
+                    .units
+                    .iter()
+                    .filter(|u| u.side != hero_core::battledef::Side::Enemy)
+                    .filter_map(|u| u.officer.clone())
+                    .filter(|o| Some(o) != lord)
+                    .collect();
+                let deploy = &mut converted.battle.deploy;
+                deploy.required.retain(|o| !joining.contains(o));
+                for o in joining {
+                    if !deploy.forbidden.contains(&o) {
+                        deploy.forbidden.push(o);
+                    }
+                }
             }
             // Events of a stage no converted event moves the battle to never fire (the part of
             // the original that led there was not converted): they are left out.
@@ -2458,6 +2486,7 @@ fn convert_battles(
                         battle: id,
                         title,
                         shop: shop.clone(),
+                        game_over: outro.as_ref().is_some_and(|(_, s)| s.game_over),
                     },
                     next,
                 });

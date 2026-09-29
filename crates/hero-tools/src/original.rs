@@ -924,10 +924,20 @@ mod tests {
             .campaign
             .node("c1_battle_xuzhou2")
             .expect("the base campaign's last battle");
+        // The base chapter's close still plays, then chapter 2 begins.
         assert!(
-            matches!(after, hero_core::campaign::Node::Battle { next, .. } if next == "c2_s0_story0"),
+            matches!(after, hero_core::campaign::Node::Battle { next, .. } if next == "c1_finale"),
             "{after:?}"
         );
+        assert!(matches!(
+            pack.campaign.node("c1_finale"),
+            Some(hero_core::campaign::Node::Drama { next, .. }) if next == "c2_s0_story0"
+        ));
+        // Officers the original brings in during a battle are not deployed from the army too,
+        // and the gold of the victory is the battle's reward.
+        let bowang = &pack.battles["c2_s3_b2"];
+        assert!(bowang.deploy.forbidden.iter().any(|o| o == "guan_yu"));
+        assert!(bowang.reward_gold > 0);
         assert!(pack.campaign.node("orig_c2_end").is_some());
         let story = std::fs::read_to_string(out.join(pack::CHAPTER_DRAMA_FILE)).unwrap();
         assert!(
@@ -936,6 +946,8 @@ mod tests {
         );
         // Zhuge Liang is asked again until the right answer.
         assert!(story.contains("@goto ask_"), "{story}");
+        // After Runan's battle Liu Pi asks to come along: the epilogue's choice.
+        assert!(story.contains("@join liu_pi"), "{story}");
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

@@ -83,6 +83,8 @@ pub struct StoryScene {
     pub game_over: bool,
     /// The items the block's shop sells (`set_shop_items`), as pack item ids.
     pub shop: Vec<String>,
+    /// Gold the outro gives (the battle's reward; outros only).
+    pub gold: i64,
     /// Where the story goes on after the scene.
     pub next: Next,
     pub notes: Vec<String>,
@@ -135,6 +137,8 @@ struct Writer<'c, 'a> {
     labels: usize,
     /// Route flag values given out, with their blocks.
     routes: Vec<(i64, usize)>,
+    /// Gold the script gives is the battle's reward (an outro), not a `@gold` line.
+    gold_as_reward: bool,
 }
 
 impl Writer<'_, '_> {
@@ -209,6 +213,18 @@ impl Writer<'_, '_> {
                     let _ = writeln!(self.out.text, "@label after_{after}");
                     i = end;
                     continue;
+                }
+                "if_flags" => {
+                    // Read as every flag clear (the story's first time through): the guarded
+                    // instructions run unless the condition needs a flag set.
+                    if let Operands::Condition { skip, all_set, .. } = &instr.operands {
+                        self.skipped
+                            .insert("parts guarded by original flags (read as clear)");
+                        if !all_set.is_empty() {
+                            i += 1 + usize::from(*skip);
+                            continue;
+                        }
+                    }
                 }
                 _ => self.effect(instr),
             }
@@ -298,8 +314,15 @@ impl Writer<'_, '_> {
             "add_levels" | "set_class" => {
                 self.skipped.insert("level and class changes");
             }
+            "data" if get("kind") == DATA_GOLD => {
+                if self.gold_as_reward {
+                    out.gold += i64::from(get("value"));
+                } else {
+                    let _ = writeln!(out.text, "@gold {}", get("value"));
+                }
+            }
             "data" => {
-                self.skipped.insert("gold and other `data` payloads");
+                self.skipped.insert("`data` payloads other than gold");
             }
             _ => {}
         }
@@ -337,158 +360,189 @@ fn has_effects(r: &Record) -> bool {
     })
 }
 
-/// The drama scene of a story block (see the module docs).
-pub fn story_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
-    let mut w = Writer {
-        ctx,
-        out: StoryScene::default(),
-        skipped: BTreeSet::new(),
-        labels: 0,
-        routes: Vec::new(),
-    };
-    // Groups with a record that moves the story on: their other talks are optional chatter.
-    let progressing: BTreeSet<u8> = block
-        .records
-        .iter()
-        .filter(|r| leaves(r))
-        .map(|r| r.trigger.group)
-        .collect();
-    let chatter = |r: &Record| {
-        r.trigger.kind == TALK
-            && !leaves(r)
-            && progressing.contains(&r.trigger.group)
-            && !has_effects(r)
-    };
-    let mut taken = BTreeSet::new();
-    for (i, rec) in block.records.iter().enumerate() {
-        if taken.contains(&i) || chatter(rec) {
-            continue;
-        }
-        // A choice ends its record's script: option `k` goes on with record `i + 1 + k`; an
-        // option that neither leaves the group nor goes elsewhere asks again.
-        if let Some(at) = rec.code.iter().position(|c| c.mnemonic == "choice") {
-            match w.lines(&rec.code[..at]) {
-                Flow::Continue => {}
-                Flow::GameOver => {
-                    w.game_over();
-                    break;
-                }
-                Flow::Goto(b) => {
-                    w.out.next = Next::Block(b);
-                    break;
-                }
-            }
-            let options = rec.code[at]
-                .operands
-                .get("options")
-                .ok_or_else(|| "choice without options".to_string())
-                .and_then(|o| ctx.text.string(o));
-            let options: Vec<String> = match options {
-                Ok(t) => t
-                    .split('\n')
-                    .map(|l| l.trim_end_matches('\r').trim().to_string())
-                    .filter(|l| !l.is_empty())
-                    .collect(),
-                Err(e) => {
-                    w.out
-                        .notes
-                        .push(format!("record {i}: choice left out: {e}"));
-                    continue;
-                }
-            };
-            // Asking again needs an option that goes on: without one, every option does.
-            let targets = || (0..options.len()).filter_map(|k| block.records.get(i + 1 + k));
-            let goes_on = targets().any(|t| {
-                leaves(t)
-                    || t.code.iter().any(|c| {
-                        c.mnemonic == "game_over"
-                            || (c.mnemonic == "goto_block"
-                                && c.operands.get("block") != Some(ctx.block as u16))
-                    })
-            });
-            let (ask, after) = (w.label(), w.label());
-            let _ = writeln!(w.out.text, "@label ask_{ask}\n@choice");
-            for (k, option) in options.iter().enumerate() {
-                let _ = writeln!(
-                    w.out.text,
-                    "- {} -> opt_{ask}_{k}",
-                    option.replace("->", "→")
-                );
-            }
-            for k in 0..options.len() {
-                let _ = writeln!(w.out.text, "@label opt_{ask}_{k}");
-                match block.records.get(i + 1 + k) {
-                    Some(target) => {
-                        taken.insert(i + 1 + k);
-                        let flow = w.lines(&target.code);
-                        w.close(flow, goes_on && !leaves(target), ask, after);
-                    }
-                    None => {
-                        w.out.notes.push(format!(
-                            "record {i}: option {k} has no record to go on with"
-                        ));
-                        let _ = writeln!(w.out.text, "@goto after_{after}");
-                    }
-                }
-            }
-            let _ = writeln!(w.out.text, "@label after_{after}");
-            continue;
-        }
-        if rec.code.iter().any(|c| c.mnemonic == "game_over")
-            && !rec.code.iter().any(|c| c.mnemonic == "leave_parallel")
-        {
-            // A game over that no choice leads to (a failed errand): not part of the story.
-            continue;
-        }
-        match w.lines(&rec.code) {
-            Flow::Continue => {}
-            Flow::GameOver => {
-                w.game_over();
-                break;
-            }
-            // The block ends there.
-            Flow::Goto(b) if b != ctx.block => {
-                w.out.next = Next::Block(b);
-                break;
-            }
-            Flow::Goto(_) => {}
+impl<'c, 'a> Writer<'c, 'a> {
+    fn new(ctx: &'c StoryContext<'a>, gold_as_reward: bool) -> Self {
+        Writer {
+            ctx,
+            out: StoryScene::default(),
+            skipped: BTreeSet::new(),
+            labels: 0,
+            routes: Vec::new(),
+            gold_as_reward,
         }
     }
+
+    /// Write `records` of `block` (the indexes `from..`) as the story reads them: in order but
+    /// the optional chatter of people one may talk to, with their choices (see the module docs).
+    fn story(&mut self, block: &Block, from: usize) {
+        let ctx = self.ctx;
+        // Groups with a record that moves the story on: their other talks are optional chatter.
+        let progressing: BTreeSet<u8> = block.records[from..]
+            .iter()
+            .filter(|r| leaves(r))
+            .map(|r| r.trigger.group)
+            .collect();
+        let chatter = |r: &Record| {
+            r.trigger.kind == TALK
+                && !leaves(r)
+                && progressing.contains(&r.trigger.group)
+                && !has_effects(r)
+                // A talk that asks leads to the records of its options.
+                && !r.code.iter().any(|c| c.mnemonic == "choice")
+        };
+        let mut taken = BTreeSet::new();
+        for (i, rec) in block.records.iter().enumerate().skip(from) {
+            if taken.contains(&i) || chatter(rec) {
+                continue;
+            }
+            // A choice ends its record's script: option `k` goes on with record `i + 1 + k`; an
+            // option that neither leaves the group nor goes elsewhere asks again.
+            if let Some(at) = rec.code.iter().position(|c| c.mnemonic == "choice") {
+                match self.lines(&rec.code[..at]) {
+                    Flow::Continue => {}
+                    Flow::GameOver => {
+                        self.game_over();
+                        break;
+                    }
+                    Flow::Goto(b) => {
+                        self.out.next = Next::Block(b);
+                        break;
+                    }
+                }
+                let options = rec.code[at]
+                    .operands
+                    .get("options")
+                    .ok_or_else(|| "choice without options".to_string())
+                    .and_then(|o| ctx.text.string(o));
+                let options: Vec<String> = match options {
+                    Ok(t) => t
+                        .split('\n')
+                        .map(|l| l.trim_end_matches('\r').trim().to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect(),
+                    Err(e) => {
+                        self.out
+                            .notes
+                            .push(format!("record {i}: choice left out: {e}"));
+                        continue;
+                    }
+                };
+                // Asking again needs an option that goes on: without one, every option does.
+                let targets = || (0..options.len()).filter_map(|k| block.records.get(i + 1 + k));
+                let goes_on = targets().any(|t| {
+                    leaves(t)
+                        || t.code.iter().any(|c| {
+                            c.mnemonic == "game_over"
+                                || (c.mnemonic == "goto_block"
+                                    && c.operands.get("block") != Some(ctx.block as u16))
+                        })
+                });
+                let (ask, after) = (self.label(), self.label());
+                let _ = writeln!(self.out.text, "@label ask_{ask}\n@choice");
+                for (k, option) in options.iter().enumerate() {
+                    let _ = writeln!(
+                        self.out.text,
+                        "- {} -> opt_{ask}_{k}",
+                        option.replace("->", "→")
+                    );
+                }
+                for k in 0..options.len() {
+                    let _ = writeln!(self.out.text, "@label opt_{ask}_{k}");
+                    match block.records.get(i + 1 + k) {
+                        Some(target) => {
+                            taken.insert(i + 1 + k);
+                            let flow = self.lines(&target.code);
+                            self.close(flow, goes_on && !leaves(target), ask, after);
+                        }
+                        None => {
+                            self.out.notes.push(format!(
+                                "record {i}: option {k} has no record to go on with"
+                            ));
+                            let _ = writeln!(self.out.text, "@goto after_{after}");
+                        }
+                    }
+                }
+                let _ = writeln!(self.out.text, "@label after_{after}");
+                continue;
+            }
+            if rec.code.iter().any(|c| c.mnemonic == "game_over")
+                && !rec.code.iter().any(|c| c.mnemonic == "leave_parallel")
+            {
+                // A game over that no choice leads to (a failed errand): not part of the story.
+                continue;
+            }
+            match self.lines(&rec.code) {
+                Flow::Continue => {}
+                Flow::GameOver => {
+                    self.game_over();
+                    break;
+                }
+                // The block ends there.
+                Flow::Goto(b) if b != ctx.block => {
+                    self.out.next = Next::Block(b);
+                    break;
+                }
+                Flow::Goto(_) => {}
+            }
+        }
+    }
+}
+
+/// The drama scene of a story block (see the module docs).
+pub fn story_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
+    let mut w = Writer::new(ctx, false);
+    w.story(block, 0);
     w.finish()
 }
 
 /// Record kind of the script the original runs when the battle is won.
 const BATTLE_WON: u8 = 7;
-/// Record kind of a script that runs when its group's turn comes.
-const RUN: u8 = 0;
+/// Record kinds a battle watches (FORMATS §13.2): contact, a unit on a cell, won, lost, a turn,
+/// a unit in an area, a unit defeated. The groups with them are the battle's stages.
+const BATTLE_KINDS: [u8; 7] = [4, 6, BATTLE_WON, 8, 9, 11, 12];
+/// `data` kind that adds gold.
+const DATA_GOLD: u16 = 2;
 
 /// What the original plays after a battle of `block` is won, as a drama scene (the battle's
-/// outro): the victory script, then the scripts of the groups after the battle's last watched
-/// group (only `run` records: the epilogue, where officers join or go away). A `goto_block` in
-/// them is where the story goes on.
+/// outro): the victory script of the battle's last stage that has one, then the groups after
+/// the last stage as the story reads them ([`story_scene`]: the epilogue, where officers join, go
+/// away or are asked to). A `goto_block` there is where the story goes on. The gold they give is
+/// the battle's reward ([`StoryScene::gold`]), shown with the battle's result.
 pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
-    let last_watched = block
+    let mut w = Writer::new(ctx, true);
+    let watched = |r: &&Record| BATTLE_KINDS.contains(&r.trigger.kind);
+    let won = block
         .records
         .iter()
-        .filter(|r| r.trigger.kind != RUN)
-        .map(|r| r.trigger.group)
-        .max();
-    let mut w = Writer {
-        ctx,
-        out: StoryScene::default(),
-        skipped: BTreeSet::new(),
-        labels: 0,
-        routes: Vec::new(),
-    };
-    for rec in &block.records {
-        let epilogue =
-            rec.trigger.kind == RUN && last_watched.is_some_and(|g| rec.trigger.group > g);
-        if rec.trigger.kind != BATTLE_WON && !epilogue {
-            continue;
-        }
-        match w.lines(&rec.code) {
+        .filter(|r| r.trigger.kind == BATTLE_WON)
+        .max_by_key(|r| r.trigger.group);
+    if let Some(won) = won {
+        // Its first record of that group: the one the original runs.
+        let first = block
+            .records
+            .iter()
+            .find(|r| r.trigger.kind == BATTLE_WON && r.trigger.group == won.trigger.group)
+            .unwrap_or(won);
+        match w.lines(&first.code) {
             Flow::Goto(b) if b != ctx.block => w.out.next = Next::Block(b),
+            Flow::GameOver => w.game_over(),
             _ => {}
+        }
+    }
+    if w.out.next == Next::Default && !w.out.game_over {
+        let last_stage = block
+            .records
+            .iter()
+            .filter(watched)
+            .map(|r| r.trigger.group)
+            .max();
+        if let Some(last) = last_stage {
+            let from = block
+                .records
+                .iter()
+                .position(|r| r.trigger.group > last)
+                .unwrap_or(block.records.len());
+            w.story(block, from);
         }
     }
     w.finish()
@@ -576,11 +630,13 @@ pub struct Step {
 pub enum StepKind {
     /// Drama scene `scene`; `game_over`: it may set [`GAME_OVER_FLAG`].
     Story { scene: String, game_over: bool },
-    /// Battle `battle`, prepared in a camp titled `title` whose shop sells `shop`.
+    /// Battle `battle`, prepared in a camp titled `title` whose shop sells `shop`; `game_over`:
+    /// its outro may set [`GAME_OVER_FLAG`].
     Battle {
         battle: String,
         title: String,
         shop: Vec<String>,
+        game_over: bool,
     },
 }
 
@@ -688,26 +744,30 @@ pub fn continue_campaign(
             }
             other => target(i, other),
         };
+        // A step whose scene may end the game goes on through a check of the flag.
+        let (own, may_end) = match &step.kind {
+            StepKind::Story { scene, game_over } => (scene.clone(), *game_over),
+            StepKind::Battle {
+                battle, game_over, ..
+            } => (battle.clone(), *game_over),
+        };
+        let next = if may_end {
+            game_over = true;
+            let check = format!("{own}_check");
+            nodes.push(Node::Branch {
+                id: check.clone(),
+                flag: GAME_OVER_FLAG.to_string(),
+                cmp: Compare::Eq,
+                value: 1,
+                then: GAME_OVER_NODE.to_string(),
+                otherwise: next,
+            });
+            check
+        } else {
+            next
+        };
         match &step.kind {
-            StepKind::Story {
-                scene,
-                game_over: g,
-            } => {
-                let next = if *g {
-                    game_over = true;
-                    let check = format!("{scene}_check");
-                    nodes.push(Node::Branch {
-                        id: check.clone(),
-                        flag: GAME_OVER_FLAG.to_string(),
-                        cmp: Compare::Eq,
-                        value: 1,
-                        then: GAME_OVER_NODE.to_string(),
-                        otherwise: next,
-                    });
-                    check
-                } else {
-                    next
-                };
+            StepKind::Story { scene, .. } => {
                 nodes.push(Node::Drama {
                     id: scene.clone(),
                     scene: scene.clone(),
@@ -718,6 +778,7 @@ pub fn continue_campaign(
                 battle,
                 title,
                 shop,
+                ..
             } => {
                 let fight = format!("{battle}_battle");
                 nodes.push(Node::Camp {
@@ -752,15 +813,34 @@ pub fn continue_campaign(
         .first()
         .map_or_else(|| ending_id.clone(), Step::first_node);
     if let Node::Battle { next, .. } = &mut campaign.nodes[at] {
-        *next = first;
+        *next = first.clone();
     }
-    // The node the base campaign went on to is replaced when nothing else leads to it.
+    // The node the base campaign went on to is replaced when nothing else leads to it; an
+    // ending's scene (the base chapter's close) still plays, before the chapters.
     let still_used = campaign
         .nodes
         .iter()
         .any(|n| successors(n).contains(&old_next.as_str()));
     if !still_used {
+        let scene = campaign.nodes.iter().find_map(|n| match n {
+            Node::Ending {
+                id,
+                scene: Some(scene),
+                ..
+            } if *id == old_next => Some(scene.clone()),
+            _ => None,
+        });
         campaign.nodes.retain(|n| n.id() != old_next);
+        if let Some(scene) = scene {
+            if let Node::Battle { next, .. } = &mut campaign.nodes[at] {
+                *next = old_next.clone();
+            }
+            campaign.nodes.push(Node::Drama {
+                id: old_next,
+                scene,
+                next: first,
+            });
+        }
     }
     campaign.nodes.extend(nodes);
     Some(campaign)
@@ -828,6 +908,21 @@ mod tests {
                 11 => Ok("유비가 죽었다.".into()),
                 _ => Err(format!("no string at {offset}")),
             }
+        }
+    }
+
+    const RUN: u8 = 0;
+
+    fn if_flags(skip: u8, all_set: Vec<u8>, all_clear: Vec<u8>) -> Instr {
+        Instr {
+            offset: 0,
+            opcode: 0x21,
+            mnemonic: "if_flags",
+            operands: Operands::Condition {
+                skip,
+                all_set,
+                all_clear,
+            },
         }
     }
 
@@ -1093,6 +1188,68 @@ mod tests {
     }
 
     #[test]
+    fn an_outro_plays_the_last_stages_victory_and_the_whole_epilogue() {
+        let b = block(vec![
+            // Two stages with a victory script each: the last one's is the outro's.
+            record(BATTLE_WON, 3, vec![instr("dialogue", &[("text", 1)])]),
+            record(9, 4, vec![instr("leave_parallel", &[])]),
+            record(
+                BATTLE_WON,
+                4,
+                vec![
+                    // The version for a flag the battle set is left out (flags read as clear).
+                    if_flags(1, vec![150], vec![]),
+                    instr("dialogue", &[("text", 2)]),
+                    if_flags(1, vec![], vec![150]),
+                    instr("dialogue", &[("text", 3)]),
+                    instr("data", &[("kind", 2), ("value", 700)]),
+                ],
+            ),
+            // The epilogue: a run group, then a talk group with a choice to have an officer
+            // join (not chatter: it asks, and one option joins).
+            record(RUN, 5, vec![instr("dialogue", &[("text", 4)])]),
+            record(
+                TALK,
+                6,
+                vec![
+                    instr("dialogue", &[("text", 5)]),
+                    instr("choice", &[("options", 10)]),
+                ],
+            ),
+            record(
+                0,
+                6,
+                vec![
+                    instr("set_allegiance", &[("person", 9), ("army", 0)]),
+                    instr("leave_parallel", &[]),
+                ],
+            ),
+            record(0, 6, vec![instr("leave_parallel", &[])]),
+        ]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = victory_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(s.gold, 700);
+        assert_eq!(
+            s.text,
+            "yuan_shao: 처형하라!\nyuan_shao: 실례했소.\n손건: 돌아왔습니다.\n\
+             @label ask_1\n@choice\n- 예. -> opt_1_0\n- 아니오. -> opt_1_1\n\
+             @label opt_1_0\n@join yuan_shao\n@goto after_2\n\
+             @label opt_1_1\n@goto after_2\n@label after_2\n"
+        );
+        assert_eq!(s.next, Next::Default);
+        parses(&s.text);
+        // In a story scene gold is given there.
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![instr("data", &[("kind", 2), ("value", 100)])],
+        )]);
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert_eq!((s.text.as_str(), s.gold), ("@gold 100\n", 0));
+    }
+
+    #[test]
     fn the_chapters_continue_the_campaign_after_its_last_battle() {
         let base: CampaignDef = toml::from_str(
             "title = \"t\"\nstart = \"camp\"\nstarting_officers = [\"liu_bei\"]\n\
@@ -1126,6 +1283,7 @@ mod tests {
                     battle: "b2".into(),
                     title: "연주 — 출진 준비".into(),
                     shop: vec!["bean".into()],
+                    game_over: false,
                 },
                 next: Next::Default,
             },
@@ -1176,6 +1334,16 @@ mod tests {
         assert_eq!(toml::from_str::<CampaignDef>(&text).unwrap(), c);
         // No such battle: nothing to continue.
         assert!(continue_campaign(&base, "b9", &steps, ("end2", "2장")).is_none());
+        // An ending with a scene (the base chapter's close) plays it before the chapters.
+        let mut with_scene = base.clone();
+        if let Some(Node::Ending { scene, .. }) = with_scene.nodes.last_mut() {
+            *scene = Some("close".into());
+        }
+        let c = continue_campaign(&with_scene, "b1", &steps, ("end2", "2장")).unwrap();
+        let node = |id: &str| c.nodes.iter().find(|n| n.id() == id).unwrap();
+        assert!(matches!(node("fight"), Node::Battle { next, .. } if next == "end1"));
+        assert!(matches!(node("end1"), Node::Drama { scene, next, .. }
+            if scene == "close" && next == "s1"));
     }
 
     #[test]
