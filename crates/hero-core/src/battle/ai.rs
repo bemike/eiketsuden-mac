@@ -904,7 +904,14 @@ impl<'a> Planner<'a> {
         let value = damage_value(dmg, t) + self.protect_value(target, dmg, t.hp);
         let mut counter = None;
         let t_class = st.class_of(pack, target);
-        if !kill && t_class.can_counter && st.class_of(pack, self.id).provokes_counter {
+        // (Under the original formulas a confused target does not counter.)
+        let confused_quiet =
+            strategy::original_formulas(pack) && t.has_status(StatusKind::Confused);
+        if !kill
+            && !confused_quiet
+            && t_class.can_counter
+            && st.class_of(pack, self.id).provokes_counter
+        {
             let morale = t.morale - morale_loss(&pack.rules, dmg, t.max_hp).min(t.morale);
             if !(morale == 0 && t.has_status(StatusKind::Confused)) {
                 counter = Some(CounterInfo {

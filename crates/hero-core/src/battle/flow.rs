@@ -155,10 +155,11 @@ impl BattleState {
             }
             let hp = hp.min(u.max_hp - u.hp).max(0);
             let mp = mp.min(u.max_mp - u.mp).max(0);
+            // The original sets the morale even when it is already full (a recovery roll).
+            let morale_regen = morale > 0;
             let morale = morale.min(100 - u.morale).max(0);
             if hp > 0 || mp > 0 || morale > 0 {
                 let u = &mut self.units[id];
-                let before = u.morale;
                 u.hp += hp;
                 u.mp += mp;
                 u.morale += morale;
@@ -168,10 +169,11 @@ impl BattleState {
                     mp,
                     morale,
                 });
-                if morale > 0 {
-                    let set = self.morale_set(pack, id, before);
-                    ev.extend(Self::morale_set_event(id, set));
-                }
+            }
+            if morale_regen {
+                let before = self.units[id].morale - morale;
+                let set = self.morale_set(pack, id, before);
+                ev.extend(Self::morale_set_event(id, set));
             }
         }
     }

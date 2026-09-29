@@ -147,8 +147,9 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
     morale falls and ends below 30 (damage, counters, morale-down strategies) it becomes confused with 60 %;
   * a confusion has no length: at the start of its side's phase a confused unit recovers with chance
     `(lead + morale) / 3` percent, and the same roll is made whenever its morale rises (regeneration — before the
-    phase-start roll —, support strategies, items; also a morale item on a unit already at 100);
-  * a unit defeated by the blow is not confused.
+    phase-start roll —, support strategies, items; also a morale item or regeneration on a unit already at 100);
+  * a unit defeated by the blow is not confused, and a confused defender (also one the blow just confused) does not
+    counter.
 * A confused unit cannot move or act; the AI skips it; the player cannot select it for commands.
 * **A confused unit whose morale reaches 0 retreats immediately** (no defeat EXP is awarded to anyone).
 

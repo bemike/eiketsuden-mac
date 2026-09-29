@@ -1549,6 +1549,29 @@ fn original_formulas_confuse_as_morale_falls_and_recover_as_it_rises() {
     let engine = self::pack(OPEN_MAP);
     assert!((0..50).all(|seed| !blow(&engine, seed)));
 
+    // A defender the blow confused does not counter (MAIN.EXE 0x2B872); one it did not, does.
+    let mut both = [false, false];
+    for seed in 0..40 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let a = add(&mut st, &pack, Side::Player, "cavalry", 1, p(0, 0));
+        let d = add(&mut st, &pack, Side::Enemy, "bandit", 1, p(1, 0));
+        st.units[d].max_hp = 10_000;
+        st.units[d].hp = 10_000;
+        st.units[d].morale = 30;
+        // strength * 100 / 150 >= 100: a sure counter.
+        st.units[d].strength = 200;
+        let ev = st
+            .apply(&pack, Action::Attack { unit: a, target: d })
+            .unwrap();
+        let confused = ev.contains(&BattleEvent::Confused { unit: d });
+        let countered = ev
+            .iter()
+            .any(|e| matches!(e, BattleEvent::Strike { counter: true, .. }));
+        assert_eq!(countered, !confused, "{ev:?}");
+        both[usize::from(confused)] = true;
+    }
+    assert_eq!(both, [true, true]);
+
     // A morale gain rolls the recovery: a village's at the phase start.
     let pack = original(".v.\n...\n...");
     let mut st = state(&pack);

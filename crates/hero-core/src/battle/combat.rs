@@ -96,6 +96,11 @@ impl BattleState {
         {
             return false;
         }
+        // The original cancels the counter of a confused defender (MAIN.EXE 0x2B872), one
+        // the blow confused too.
+        if super::strategy::original_formulas(pack) && d.has_status(StatusKind::Confused) {
+            return false;
+        }
         let delta = Pos::new(att_pos.x - d.pos.x, att_pos.y - d.pos.y);
         dc.range.offsets().is_some_and(|o| o.contains(&delta))
     }
