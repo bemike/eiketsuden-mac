@@ -135,6 +135,8 @@ pub struct StoryContext<'a> {
     /// The original's flags some script sets (`set_flag`): a test of any other one is decided
     /// now (it is always clear).
     pub settable: &'a BTreeSet<u8>,
+    /// The event pictures the pack has (`show_picture` numbers, [`crate::pack::picture_key`]).
+    pub pictures: &'a BTreeSet<u8>,
     /// Whom one meets in each block of the scene (the first person to talk to): the places one
     /// can walk to are named after them.
     pub places: &'a [Option<String>],
@@ -168,6 +170,8 @@ struct Writer<'c, 'a> {
     rec_end: Option<Option<usize>>,
     /// Write only the army's changes (a battle's setup, [`before_scene`]).
     army_only: bool,
+    /// A picture is shown (`@picture`): the next instruction but a narration clears it.
+    picture: bool,
 }
 
 impl Writer<'_, '_> {
@@ -206,6 +210,7 @@ impl Writer<'_, '_> {
 
     /// End a branch of a choice or question by `flow`: `retry` asks again at label `ask`.
     fn close(&mut self, flow: Flow, retry: bool, ask: usize, after: usize) {
+        self.close_picture();
         match flow {
             f @ (Flow::GameOver | Flow::Ending(_)) => self.stop(f),
             Flow::Goto(b) if b == self.ctx.block => {
@@ -218,6 +223,15 @@ impl Writer<'_, '_> {
             Flow::Continue => {
                 let _ = writeln!(self.out.text, "@goto after_{after}");
             }
+        }
+    }
+
+    /// Close the picture shown, if any (anything but a narration after it closes it: an
+    /// instruction, a choice, the end of a branch).
+    fn close_picture(&mut self) {
+        if self.picture {
+            let _ = writeln!(self.out.text, "@picture none");
+            self.picture = false;
         }
     }
 
@@ -253,6 +267,11 @@ impl Writer<'_, '_> {
         while i < code.len() {
             let instr = &code[i];
             let get = |name: &str| instr.operands.get(name).unwrap_or(0);
+            // A picture stays for the narration after it; the next other instruction closes it
+            // (FORMATS §13.3 `show_picture`).
+            if !matches!(instr.mnemonic, "narration" | "show_picture") {
+                self.close_picture();
+            }
             match instr.mnemonic {
                 "goto_block" => return Flow::Goto(usize::from(get("block"))),
                 "game_over" => return Flow::GameOver,
@@ -436,7 +455,13 @@ impl Writer<'_, '_> {
                 }
             }
             "show_picture" => {
-                self.skipped.insert("pictures");
+                let n = get("picture") as u8;
+                if ctx.pictures.contains(&n) {
+                    let _ = writeln!(out.text, "@picture {}", crate::pack::picture_key(n));
+                    self.picture = true;
+                } else {
+                    self.skipped.insert("pictures the pack does not have");
+                }
             }
             "add_levels" | "set_class" => {
                 self.skipped.insert("level and class changes");
@@ -523,6 +548,7 @@ impl<'c, 'a> Writer<'c, 'a> {
             gold_as_reward,
             rec_end: None,
             army_only: false,
+            picture: false,
         }
     }
 
@@ -605,6 +631,7 @@ impl<'c, 'a> Writer<'c, 'a> {
                         })
                 });
                 let (ask, after) = (self.label(), self.label());
+                self.close_picture();
                 let _ = writeln!(self.out.text, "@label ask_{ask}\n@choice");
                 for (k, option) in options.iter().enumerate() {
                     let _ = writeln!(
@@ -660,11 +687,8 @@ impl Writer<'_, '_> {
     fn walk(&mut self, block: &Block, walks: &[usize]) {
         let ctx = self.ctx;
         let (ask, after) = (self.label(), self.label());
-        let _ = writeln!(
-            self.out.text,
-            "@label ask_{ask}
-@choice"
-        );
+        self.close_picture();
+        let _ = writeln!(self.out.text, "@label ask_{ask}\n@choice");
         let mut options = Vec::new();
         for &k in walks {
             let to = block.records[k]
@@ -1296,6 +1320,10 @@ mod tests {
 
     const RUN: u8 = 0;
 
+    /// Pictures the test pack has.
+    static PICTURES: std::sync::LazyLock<BTreeSet<u8>> =
+        std::sync::LazyLock::new(|| BTreeSet::from([12]));
+
     /// Flags the test scenarios set.
     static SETTABLE: std::sync::LazyLock<BTreeSet<u8>> =
         std::sync::LazyLock::new(|| BTreeSet::from([7, 150]));
@@ -1375,6 +1403,7 @@ mod tests {
             route_flag: "route",
             places: &[],
             settable: &SETTABLE,
+            pictures: &PICTURES,
         }
     }
 
@@ -1894,6 +1923,57 @@ mod tests {
             vec![instr("dialogue", &[("text", 1)])],
         )]);
         assert!(before_scene(&b, &ctx(&names, &song_key)).text.is_empty());
+    }
+
+    #[test]
+    fn an_event_picture_shows_over_the_narration_after_it() {
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("show_picture", &[("picture", 12), ("variant", 0)]),
+                instr("narration", &[("text", 11)]),
+                // The next other instruction closes it (a dialogue here).
+                instr("dialogue", &[("text", 4)]),
+                // One the pack does not have is left out (and noted).
+                instr("show_picture", &[("picture", 40), ("variant", 0)]),
+                instr("show_screen", &[]),
+            ],
+        )]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(
+            s.text,
+            "@picture orig_12\n@narr 유비가 죽었다.\n@picture none\nyuan_shao: 실례했소.\n"
+        );
+        assert!(s
+            .notes
+            .iter()
+            .any(|n| n.contains("pictures the pack does not have")));
+        parses(&s.text);
+        // Before a choice: it closes before the question (no branch goes on under it).
+        let b = block(vec![
+            record(
+                1,
+                0,
+                vec![
+                    instr("show_picture", &[("picture", 12), ("variant", 1)]),
+                    instr("narration", &[("text", 11)]),
+                    instr("choice", &[("options", 10)]),
+                ],
+            ),
+            record(0, 0, vec![instr("dialogue", &[("text", 3)])]),
+            record(0, 0, vec![instr("dialogue", &[("text", 4)])]),
+        ]);
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert!(
+            s.text
+                .starts_with("@picture orig_12\n@narr 유비가 죽었다.\n@picture none\n@label ask_"),
+            "{}",
+            s.text
+        );
+        assert_eq!(s.text.matches("@picture none").count(), 1);
     }
 
     #[test]

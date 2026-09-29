@@ -72,7 +72,7 @@
   - 영향 범위: hero-import `chapters.rs`·`battles.rs`
 
 - [ ] **원작 장 변환의 빠진 부분**
-  - 무엇을: 이야기 속 레벨·병종 변경(`add_levels`·`set_class` → 엔진 명령 필요), 삽화(`show_picture` → PACKGRP 3–33과 드라마 명령)와 장 제목 그림(`chapter_title`, 제목 글은 `@title`로 이미 옮김), 나중에 불리는 명단(장판파의 백성 호위)과 `battle_end`의 다음 맵으로 이어지는 전투를 옮긴다.
+  - 무엇을: 이야기 속 레벨·병종 변경(`add_levels`·`set_class` → 엔진 명령 필요), 장 제목 그림(`chapter_title`, 제목 글은 `@title`로 이미 옮김; 사건 삽화는 `@picture`로 옮김), 전투 이벤트 스크립트와 전투 준비 레코드의 `show_picture`와 서술(3장 맥성 준비의 삽화 23·24번은 지금 기록 없이 빠짐, 28·29번은 어디서도 쓰이지 않음: 전투 이벤트 쪽으로 보임), 나중에 불리는 명단(장판파의 백성 호위)과 `battle_end`의 다음 맵으로 이어지는 전투를 옮긴다.
   - 왜: 지금은 빠지고 `original-pack.json`에 적힌다. 장판파는 백성 호위 없이 적장 격파로 끝난다.
   - 영향 범위: hero-core 드라마·전투, hero-import `chapters.rs`·`battles.rs`
 

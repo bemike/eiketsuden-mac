@@ -14,6 +14,8 @@ const LOOP_GUARD: usize = 10_000;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Step {
     Background(Option<String>),
+    /// Show a picture framed over the background (`gfx/pictures/<key>.png`), `None` clears it.
+    Picture(Option<String>),
     Music(Option<String>),
     Sound(String),
     /// Show a portrait (portrait key already resolved from officer ids) in a slot.
@@ -147,6 +149,7 @@ impl DramaRunner {
             self.pc += 1;
             let step = match cmd {
                 Cmd::Bg(key) => Step::Background(key.clone()),
+                Cmd::Picture(key) => Step::Picture(key.clone()),
                 Cmd::Bgm(key) => Step::Music(key.clone()),
                 Cmd::Sfx(key) => Step::Sound(key.clone()),
                 Cmd::Show { who, slot } => Step::Show {

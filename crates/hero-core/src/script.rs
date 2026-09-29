@@ -153,6 +153,9 @@ pub struct ChoiceOption {
 pub enum Cmd {
     /// Background image key, `None` clears it.
     Bg(Option<String>),
+    /// Picture (an illustration of the event, `gfx/pictures/<key>.png`) shown framed over the
+    /// background until another replaces it, `None` clears it.
+    Picture(Option<String>),
     /// Music key, `None` stops the music.
     Bgm(Option<String>),
     Sfx(String),
@@ -447,6 +450,7 @@ impl Parser<'_> {
         };
         Ok(match word {
             "bg" => Cmd::Bg(optional_key(arg)),
+            "picture" => Cmd::Picture(optional_key(arg)),
             "bgm" => Cmd::Bgm(optional_key(arg)),
             "sfx" => Cmd::Sfx(need("a sound key")?),
             "show" => {
@@ -668,6 +672,15 @@ liu_bei: 어지러운 세상이로구나.
         let s = &scenes[0];
         assert_eq!(s.id, "prologue");
         assert_eq!(s.cmds[0], Cmd::Bg(Some("village".into())));
+        let p = parse_drama("t.drama", "== p\n@picture flood\n@picture none\n").unwrap();
+        assert_eq!(
+            p[0].cmds,
+            [
+                Cmd::Picture(Some("flood".into())),
+                Cmd::Picture(None),
+                Cmd::End
+            ]
+        );
         assert_eq!(
             s.cmds[3],
             Cmd::Narr("184년, 황건적의 난이\n천하를 뒤덮었다.".into())

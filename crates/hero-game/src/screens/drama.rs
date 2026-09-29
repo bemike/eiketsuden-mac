@@ -208,6 +208,11 @@ struct Stage {
     /// Screen darkness (0 = clear, 1 = black) and where it is heading.
     fade: f32,
     fade_target: f32,
+    /// The picture shown over the background (`@picture`, key of `gfx/pictures/`) and its
+    /// opacity; a cleared one fades out.
+    picture: Option<String>,
+    picture_alpha: f32,
+    picture_target: f32,
 }
 
 impl Stage {
@@ -220,6 +225,25 @@ impl Stage {
             leaving: Vec::new(),
             fade: 0.0,
             fade_target: 0.0,
+            picture: None,
+            picture_alpha: 0.0,
+            picture_target: 0.0,
+        }
+    }
+
+    fn set_picture(&mut self, key: Option<String>, instant: bool) {
+        match key {
+            Some(key) => {
+                if self.picture.as_ref() != Some(&key) {
+                    self.picture = Some(key);
+                    self.picture_alpha = 0.0;
+                }
+                self.picture_target = 1.0;
+            }
+            None => self.picture_target = 0.0,
+        }
+        if instant {
+            self.picture_alpha = self.picture_target;
         }
     }
 
@@ -290,6 +314,14 @@ impl Stage {
         }
         self.leaving.retain(|(_, p)| p.alpha > 0.0);
         self.fade = approach(self.fade, self.fade_target, dt / SCREEN_FADE_SECONDS);
+        self.picture_alpha = approach(
+            self.picture_alpha,
+            self.picture_target,
+            dt / PORTRAIT_FADE_SECONDS,
+        );
+        if self.picture_target == 0.0 && self.picture_alpha == 0.0 {
+            self.picture = None;
+        }
     }
 
     fn draw_backdrop(ctx: &Ctx, backdrop: &Backdrop, alpha: f32) {
@@ -334,6 +366,9 @@ impl Stage {
                 draw_portrait_card(ctx, Some(&p.key), slot_rect(canvas, i), p.alpha, p.light);
             }
         }
+        if let Some(key) = &self.picture {
+            draw_picture(ctx, key, self.picture_alpha);
+        }
     }
 
     /// `@fade out` / `@fade in`: over everything of the stage, the duel scene included.
@@ -345,6 +380,64 @@ impl Stage {
             );
         }
     }
+}
+
+/// Texture key of a picture (`gfx/pictures/<key>.png`).
+fn picture_texture_key(key: &str) -> String {
+    format!("pictures/{key}")
+}
+
+/// Where a picture of `size` goes on the canvas: centred above the text box, at the largest
+/// whole scale that fits there (pixel art stays sharp), or scaled down to fit when it is larger.
+fn picture_rect(canvas: Vec2, size: Vec2) -> Rect {
+    let room = vec2(canvas.x * 0.8, canvas.y * 0.55);
+    let fit = (room.x / size.x).min(room.y / size.y);
+    let scale = if fit >= 1.0 { fit.floor() } else { fit };
+    let (w, h) = (size.x * scale, size.y * scale);
+    Rect::new(
+        ((canvas.x - w) / 2.0).round(),
+        (canvas.y * 0.08).round(),
+        w,
+        h,
+    )
+}
+
+/// The picture `key`, framed, at opacity `alpha` (nothing while it loads or when it is missing:
+/// the pack's validation reports a missing picture).
+fn draw_picture(ctx: &Ctx, key: &str, alpha: f32) {
+    let tex_key = picture_texture_key(key);
+    if ctx.media.texture_state(&tex_key) != AssetState::Ready {
+        return;
+    }
+    let Some(texture) = ctx.media.texture(&tex_key) else {
+        return;
+    };
+    let r = picture_rect(ctx.gfx.size(), vec2(texture.width(), texture.height()));
+    let border = theme::TEXT_ACCENT.with_alpha(alpha);
+    fill_rect(
+        Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0),
+        Color::new(0.0, 0.0, 0.0, 0.8 * alpha),
+    );
+    fill_rect(Rect::new(r.x - 2.0, r.y - 2.0, r.w + 4.0, 1.0), border);
+    fill_rect(
+        Rect::new(r.x - 2.0, r.y + r.h + 1.0, r.w + 4.0, 1.0),
+        border,
+    );
+    fill_rect(Rect::new(r.x - 2.0, r.y - 2.0, 1.0, r.h + 4.0), border);
+    fill_rect(
+        Rect::new(r.x + r.w + 1.0, r.y - 2.0, 1.0, r.h + 4.0),
+        border,
+    );
+    draw_texture_ex(
+        &texture,
+        r.x,
+        r.y,
+        Color::new(1.0, 1.0, 1.0, alpha),
+        DrawTextureParams {
+            dest_size: Some(vec2(r.w, r.h)),
+            ..Default::default()
+        },
+    );
 }
 
 // ----- title cards and banners ----------------------------------------------------------------
@@ -896,6 +989,7 @@ impl DramaScreen {
         }
         self.stage.fade = self.stage.fade_target;
         self.stage.mix = 1.0;
+        self.stage.picture_alpha = self.stage.picture_target;
         self.stage.leaving.clear();
         for p in self.stage.slots.iter_mut().flatten() {
             p.alpha = 1.0;
@@ -1101,6 +1195,7 @@ impl DramaScreen {
                 let instant = skipping || !self.shown_anything;
                 self.stage.set_backdrop(Backdrop::from_step(key), instant);
             }
+            Step::Picture(key) => self.stage.set_picture(key, skipping),
             Step::Music(Some(key)) => ctx.audio.play_bgm(&key),
             Step::Music(None) => ctx.audio.stop_bgm(),
             Step::Sound(key) => {
@@ -1366,6 +1461,10 @@ fn preload(ctx: &Ctx, pack: &Pack, scene: &str) {
         let portrait = match cmd {
             Cmd::Bg(Some(key)) => {
                 textures.push(format!("bg/{key}"));
+                None
+            }
+            Cmd::Picture(Some(key)) => {
+                textures.push(picture_texture_key(key));
                 None
             }
             Cmd::Show { who, .. } => Some(
@@ -1648,6 +1747,20 @@ mod tests {
 
     /// The overlay toolbar sits between the top bar of the screen below (the battle HUD; that
     /// pairing is checked in `screens::battle::hud`) and the stage portraits and message box.
+    #[test]
+    fn a_picture_is_centred_above_the_text_at_a_whole_scale() {
+        // The original's 224×144 pictures: 1× on the 640×400 canvas, 3× on a doubled one.
+        assert_eq!(
+            picture_rect(vec2(640.0, 400.0), vec2(224.0, 144.0)),
+            Rect::new(208.0, 32.0, 224.0, 144.0)
+        );
+        let r = picture_rect(vec2(1280.0, 800.0), vec2(224.0, 144.0));
+        assert_eq!((r.w, r.h, r.x), (672.0, 432.0, 304.0));
+        // A picture larger than the room is scaled down to fit it.
+        let r = picture_rect(vec2(640.0, 400.0), vec2(1024.0, 768.0));
+        assert!(r.h <= 220.0 && r.w <= 512.0 && r.x >= 0.0, "{r:?}");
+    }
+
     #[test]
     fn overlay_toolbar_stays_above_the_stage() {
         for canvas in CANVASES {
