@@ -57,7 +57,7 @@ pub fn parts(scene: &Scene) -> Vec<Part> {
     let mut out = Vec::new();
     for (i, block) in scene.blocks.iter().enumerate() {
         // The second block of a battle fought in the block after its setup.
-        if i > 0 && battles::fought_in_next_block(scene, i - 1) {
+        if battles::part_of_earlier_battle(scene, i) {
             continue;
         }
         let code = || block.records.iter().flat_map(|r| &r.code);
@@ -284,7 +284,8 @@ impl Writer<'_, '_> {
                     let sortie = guarded
                         .iter()
                         .any(|c| matches!(c.mnemonic, "op_3d" | "battle_setup" | "begin_battle"));
-                    if sortie || get("answer") != 0 {
+                    // (A battle's setup asks nothing: its army changes are all it gives.)
+                    if sortie || get("answer") != 0 || self.army_only {
                         // "Ready to set out?": the story goes on as if the player said yes.
                         i += 1;
                         continue;
@@ -338,7 +339,9 @@ impl Writer<'_, '_> {
                         }
                         match self.lines(&code[i + 1..end]) {
                             f @ (Flow::GameOver | Flow::Ending(_)) => self.stop(f),
-                            Flow::Goto(b) if b != self.ctx.block => self.route(b),
+                            Flow::Goto(b) if b != self.ctx.block && !self.army_only => {
+                                self.route(b)
+                            }
                             Flow::Goto(_) => {
                                 self.end_record();
                             }
@@ -522,6 +525,18 @@ fn walks(r: &Record) -> bool {
     PLACES.contains(&r.trigger.kind) && r.code.iter().any(|c| c.mnemonic == "goto_block")
 }
 
+/// Whether `r` asks whether to set out (a question whose yes starts a battle: `op_3d`, a
+/// battle's setup).
+fn sortie(r: &Record) -> bool {
+    r.code.iter().enumerate().any(|(i, c)| {
+        c.mnemonic == "if_answer"
+            && r.code[i + 1..]
+                .iter()
+                .take(usize::from(c.operands.get("skip").unwrap_or(0)))
+                .any(|g| matches!(g.mnemonic, "op_3d" | "battle_setup" | "begin_battle"))
+    })
+}
+
 /// Whether `r` leaves its group's parallel control (moves the story on).
 fn leaves(r: &Record) -> bool {
     r.code.iter().any(|c| c.mnemonic == "leave_parallel")
@@ -569,11 +584,33 @@ impl<'c, 'a> Writer<'c, 'a> {
                 && !has_effects(r)
                 // A talk that asks leads to the records of its options.
                 && !r.code.iter().any(|c| c.mnemonic == "choice")
+                && !sortie(r)
         };
         let mut taken = BTreeSet::new();
         for (i, rec) in block.records.iter().enumerate().skip(from) {
             if taken.contains(&i) || chatter(rec) {
                 continue;
+            }
+            // Officers of the group each asking to set out on their own plan: whose plan to
+            // follow is a choice (the original lets one answer yes to one of them).
+            if sortie(rec) {
+                let group: Vec<usize> = (i..block.records.len())
+                    .take_while(|&k| block.records[k].trigger.group == rec.trigger.group)
+                    .filter(|&k| sortie(&block.records[k]))
+                    .collect();
+                // (Only where one of them leads elsewhere: officers who each merely ask
+                // whether to set out are read in order.)
+                let elsewhere = |k: &usize| {
+                    block.records[*k].code.iter().any(|c| {
+                        c.mnemonic == "goto_block"
+                            && c.operands.get("block") != Some(ctx.block as u16)
+                    })
+                };
+                if group.len() > 1 && group.iter().any(elsewhere) {
+                    self.plans(block, &group);
+                    taken.extend(group);
+                    continue;
+                }
             }
             // Walking to places of the group that lead to other blocks: where to go is a
             // choice (a place one cannot go to yet, and the one here, ask again).
@@ -683,6 +720,53 @@ impl<'c, 'a> Writer<'c, 'a> {
 }
 
 impl Writer<'_, '_> {
+    /// A choice of whose plan to follow: the talks `plans` of `block` each ask to set out.
+    fn plans(&mut self, block: &Block, plans: &[usize]) {
+        let names = self.ctx.names;
+        // Where each asks: its proposal comes before the choice, its plan after.
+        let split = |k: usize| {
+            let code = &block.records[k].code;
+            let at = code
+                .iter()
+                .position(|c| c.mnemonic == "if_answer")
+                .unwrap_or(code.len());
+            code.split_at(at)
+        };
+        for &k in plans {
+            let (proposal, _) = split(k);
+            // (A proposal only talks: a jump or an end in it would be left out.)
+            if self.lines(proposal) != Flow::Continue {
+                self.out.notes.push(format!(
+                    "record {k}: a jump or an end before its question is left out"
+                ));
+            }
+        }
+        let (ask, after) = (self.label(), self.label());
+        self.close_picture();
+        let _ = writeln!(self.out.text, "@label ask_{ask}\n@choice");
+        for &k in plans {
+            let person = block.records[k].trigger.word(0);
+            let who = names
+                .person_names
+                .get(&person)
+                .cloned()
+                .unwrap_or_else(|| format!("#{person}"));
+            let _ = writeln!(
+                self.out.text,
+                "- {}의 뜻을 따른다 -> opt_{ask}_{k}",
+                who.replace("->", "→")
+            );
+        }
+        for &k in plans {
+            let _ = writeln!(self.out.text, "@label opt_{ask}_{k}");
+            // The question is answered yes (a sortie): its plan goes on.
+            let (_, plan) = split(k);
+            let flow = self.lines(plan);
+            self.close(flow, false, ask, after);
+        }
+        let _ = writeln!(self.out.text, "@label after_{after}");
+    }
+
     /// A choice of the places the records `walks` of `block` walk to.
     fn walk(&mut self, block: &Block, walks: &[usize]) {
         let ctx = self.ctx;
@@ -744,7 +828,20 @@ const DATA_GOLD: u16 = 2;
 /// away or are asked to). A `goto_block` there is where the story goes on. The gold they give is
 /// the battle's reward ([`StoryScene::gold`]), shown with the battle's result.
 pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
-    let mut w = Writer::new(ctx, true);
+    victory_scene_after(block, ctx, None)
+}
+
+/// [`victory_scene`] of a battle that goes on in another block: the outro is that block's, so it
+/// plays only when the battle got there (`continued`: the flag it set then,
+/// [`battles::continuation_flag`]); a battle won before gives its own gold, so the outro's is a
+/// `@gold` of its own instead of the battle's reward.
+pub fn victory_scene_after(block: &Block, ctx: &StoryContext, continued: Option<u8>) -> StoryScene {
+    let mut w = Writer::new(ctx, continued.is_none());
+    let gate = continued.map(|f| {
+        let k = w.label();
+        let _ = writeln!(w.out.text, "@if {} == 0 -> outro_{k}", flag(f));
+        k
+    });
     let won = block
         .records
         .iter()
@@ -767,6 +864,10 @@ pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
         if let Some(from) = epilogue(block) {
             w.story(block, from);
         }
+    }
+    if let Some(k) = gate {
+        w.close_picture();
+        let _ = writeln!(w.out.text, "@label outro_{k}");
     }
     w.finish()
 }
@@ -1974,6 +2075,135 @@ mod tests {
             s.text
         );
         assert_eq!(s.text.matches("@picture none").count(), 1);
+    }
+
+    #[test]
+    fn a_battle_that_goes_on_in_another_block_is_one_battle() {
+        // Block 0 fights; at turn 8 it goes on in block 1 (only triggers, no map): one battle,
+        // block 1's groups after block 0's, the jump moving it on. Block 2 is the story after.
+        let scene = Scene {
+            blocks: vec![
+                block(vec![
+                    record(
+                        RUN,
+                        0,
+                        vec![
+                            instr("battle_roster", &[]),
+                            instr("load_map", &[("map", 0x3010)]),
+                        ],
+                    ),
+                    record(RUN, 1, vec![instr("begin_battle", &[])]),
+                    record(9, 3, vec![instr("goto_block", &[("block", 1)])]),
+                    record(12, 3, vec![instr("goto_block", &[("block", 2)])]),
+                ]),
+                block(vec![
+                    record(RUN, 0, vec![instr("dialogue", &[("text", 1)])]),
+                    record(BATTLE_WON, 1, vec![instr("leave_parallel", &[])]),
+                    record(RUN, 2, vec![instr("battle_end", &[])]),
+                ]),
+                block(vec![record(
+                    RUN,
+                    0,
+                    vec![instr("dialogue", &[("text", 2)])],
+                )]),
+            ],
+        };
+        assert_eq!(
+            parts(&scene),
+            [Part::Battle { block: 0, map: 16 }, Part::Story { block: 2 }]
+        );
+        let fought = battles::battle_block(&scene, 0);
+        let groups: Vec<u8> = fought.records.iter().map(|r| r.trigger.group).collect();
+        assert_eq!(groups, [0, 1, 3, 3, 4, 5, 6]);
+        // The jump to block 1 moves the battle on; the one to the story stays a jump.
+        // (Setting the flag the story after it tells the continuation by.)
+        assert_eq!(fought.records[2].code[0].mnemonic, "set_flag");
+        assert_eq!(
+            fought.records[2].code[0].operands.get("flag"),
+            Some(u16::from(battles::continuation_flag(&scene)))
+        );
+        assert_eq!(fought.records[2].code[1].mnemonic, "leave_parallel");
+        assert_eq!(fought.records[3].code[0].mnemonic, "goto_block");
+    }
+
+    #[test]
+    fn officers_asking_to_set_out_on_their_plans_are_a_choice() {
+        // Two talks each ask "shall we set out?": yes to one of them is the story's choice.
+        let b = block(vec![
+            record(
+                TALK,
+                0,
+                vec![
+                    instr("dialogue", &[("text", 2)]),
+                    instr("if_answer", &[("answer", 0), ("skip", 2)]),
+                    instr("op_3d", &[]),
+                    instr("goto_block", &[("block", 5)]),
+                ],
+            ),
+            record(
+                TALK,
+                0,
+                vec![
+                    instr("dialogue", &[("text", 4)]),
+                    instr("if_answer", &[("answer", 0), ("skip", 2)]),
+                    instr("op_3d", &[]),
+                    instr("leave_parallel", &[]),
+                ],
+            ),
+        ]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(
+            s.text,
+            // Their proposals first, then whose plan to follow.
+            "@set route = 0\nyuan_shao: 흥.\nliu_bei: 무슨 일입니까?\nyuan_shao: 실례했소.\n\
+             @label ask_1\n@choice\n- #0의 뜻을 따른다 -> opt_1_0\n\
+             - #0의 뜻을 따른다 -> opt_1_1\n\
+             @label opt_1_0\n@set route = 1\n@end\n\
+             @label opt_1_1\n@goto after_2\n@label after_2\n"
+        );
+        parses(&s.text);
+        // Officers who each merely ask whether to set out (all going on the same): read in
+        // order, no choice.
+        let same = |text| {
+            record(
+                TALK,
+                0,
+                vec![
+                    instr("dialogue", &[("text", text)]),
+                    instr("if_answer", &[("answer", 0), ("skip", 2)]),
+                    instr("op_3d", &[]),
+                    instr("leave_parallel", &[]),
+                ],
+            )
+        };
+        let b = block(vec![same(2), same(4)]);
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert!(!s.text.contains("@choice"), "{}", s.text);
+        assert_eq!(
+            s.text,
+            "yuan_shao: 흥.\nliu_bei: 무슨 일입니까?\nyuan_shao: 실례했소.\n"
+        );
+    }
+
+    #[test]
+    fn a_battles_setup_asks_nothing_and_goes_nowhere() {
+        // Before a battle: a question counts as yes, a jump elsewhere is not a route.
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("if_answer", &[("answer", 0), ("skip", 1)]),
+                instr("set_allegiance", &[("person", 9), ("army", 0)]),
+                instr("goto_block", &[("block", 7)]),
+            ],
+        )]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = before_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(s.text, "@join yuan_shao\n");
+        assert_eq!(s.next, Next::Default);
     }
 
     #[test]

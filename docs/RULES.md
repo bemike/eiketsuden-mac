@@ -167,8 +167,9 @@ strategies impossible and water strategies deal +25%. Battles may override the c
 * **Victory** when any `victory` condition holds; **defeat** when any `defeat` condition holds, the lord retreats, or
   the turn limit passes. A battle fought without the lord (the lord in `deploy.forbidden`: another troop's battle) is
   also lost when every player unit on the map has retreated. Checked after every action and phase change; victory is
-  checked before defeat, except that the lord retreating (and a lordless troop having retreated) always loses, before
-  the events run. On victory: `reward_gold` is added to `gold_found`, bonus EXP is granted,
+  checked before defeat, except that the lord retreating always loses, before the events run. A lordless troop
+  that has retreated (none of its player units left, hidden reinforcements included) loses after the events and the
+  victory check. On victory: `reward_gold` is added to `gold_found`, bonus EXP is granted,
   `Victory` is emitted.
 * `defeat_all` counts only enemies that are on the map (hidden reinforcements do not count).
 * The bonus objective is checked like a victory condition; when it becomes true `bonus_done` is set and

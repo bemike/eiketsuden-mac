@@ -771,3 +771,23 @@ fn battle_saves_without_used_items_still_load() {
     let battle: BattleState = serde_json::from_value(value).expect("old battle state loads");
     assert!(battle.items_used.is_empty());
 }
+
+/// A scene a battle plays sees the flags the battle has set so far; nothing else of the battle
+/// reaches the campaign before its result.
+#[test]
+fn battle_flags_reach_the_campaign_before_its_scenes() {
+    let (pack, mut state) = new_game();
+    state.flags.insert("pursue".into(), 0);
+    state.flags.insert("oath".into(), 1);
+    let gold = state.gold;
+    let battle = finished_battle(json!(null));
+    state.merge_battle_flags(&battle);
+    assert_eq!(state.flag("captives"), 2);
+    assert_eq!(state.flag("pursue"), 1);
+    assert_eq!(state.flag("oath"), 1);
+    assert_eq!(state.gold, gold);
+    assert_eq!(
+        state.officer("guan_yu").unwrap().level,
+        pack.officer("guan_yu").unwrap().level
+    );
+}

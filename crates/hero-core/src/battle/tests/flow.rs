@@ -1355,6 +1355,43 @@ fn a_troop_without_the_lord_loses_when_it_has_retreated() {
         ev.last(),
         Some(&BattleEvent::Defeat(DefeatReason::ArmyRetreated))
     );
+
+    // A player reinforcement still to come: the troop is not lost yet.
+    let mut def = battle(OPEN_MAP);
+    def.deploy.forbidden = vec!["liu_bei".into()];
+    let mut later = spawn(Side::Player, p(6, 6));
+    later.group = Some("later".into());
+    def.units.push(later);
+    let pack = pack_with(def);
+    let roster = vec![
+        officer_state(&pack, "liu_bei"),
+        officer_state(&pack, "guan_yu"),
+    ];
+    let mut st = BattleState::new(&pack, BATTLE, &campaign(roster, &[]), 1).unwrap();
+    let guan = st
+        .units
+        .iter()
+        .position(|u| u.officer.as_deref() == Some("guan_yu"))
+        .expect("guan_yu is deployed");
+    let foe = add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(1, 1));
+    add(&mut st, &pack, Side::Enemy, "cavalry", 5, p(7, 7));
+    st.units[guan].hp = 1;
+    st.units[guan].pos = p(1, 0);
+    st.begin(&pack);
+    end_phase(&mut st, &pack);
+    let ev = st
+        .apply(
+            &pack,
+            Action::Attack {
+                unit: foe,
+                target: guan,
+            },
+        )
+        .unwrap();
+    assert!(
+        !ev.iter().any(|e| matches!(e, BattleEvent::Defeat(_))),
+        "{ev:?}"
+    );
 }
 
 #[test]

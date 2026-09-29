@@ -386,7 +386,9 @@ impl CampScreen {
             .iter()
             .find(|o| pack.officer(&o.id).is_some_and(|d| d.lord))
             .filter(|o| !def.deploy.forbidden.contains(&o.id))
-            .map(|o| format!("{} 퇴각", officer_name(pack, &o.id)));
+            .map(|o| format!("{} 퇴각", officer_name(pack, &o.id)))
+            // Without the lord the troop is lost when it has retreated.
+            .or_else(|| Some("아군 전멸".to_string()));
         let own = def.defeat.iter().map(|c| {
             crate::screens::battle::text::condition_text(c, |id| officer_name(pack, id).to_string())
         });

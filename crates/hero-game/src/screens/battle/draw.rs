@@ -620,8 +620,10 @@ impl BattleScreen {
             victory.push(("—".into(), theme::TEXT_DIM));
         }
         let mut defeat: Vec<(String, Color)> = Vec::new();
-        if let Some(l) = self.state.units.iter().find(|u| u.lord) {
-            defeat.push((format!("{} 퇴각", l.name), theme::TEXT));
+        match self.state.units.iter().find(|u| u.lord) {
+            Some(l) => defeat.push((format!("{} 퇴각", l.name), theme::TEXT)),
+            // A troop fought without the lord is lost when it has retreated.
+            None => defeat.push(("아군 전멸".into(), theme::TEXT)),
         }
         defeat.extend(
             def.defeat
