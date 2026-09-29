@@ -147,7 +147,10 @@ status = [448, 34, 78, 28]
 ```
 
 `hero-tools validate` warns when the picture is missing or is not the canvas size; the game keeps the
-frame's layout and fills its parts plainly then (and while the picture loads).
+frame's layout and fills its parts plainly then (and while the picture loads). A misspelt key inside
+`[presentation.battle_frame]` is a load error (like in the rules files). A child pack inherits its
+parent's frame and cannot remove it: a child that changes the canvas declares a frame that fits it
+(loading fails otherwise, naming the pack the frame came from).
 
 Paths are relative to the pack directory, use `/`, must not contain `..`, `\` or `:`, and no file may be
 listed twice. The web build fetches exactly these files (and those of the packs it extends), so a file

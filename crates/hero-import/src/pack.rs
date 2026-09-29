@@ -619,24 +619,14 @@ fn convert_ui(
             return Ok((report, false));
         }
     };
-    let [cw, ch] = CANVAS;
-    let [mx, my, mw, mh] = BATTLE_FRAME_MAP.map(|v| v as usize);
-    let hole_empty = (my..my + mh).all(|y| {
-        frame.pixels[y * frame.width + mx..y * frame.width + mx + mw]
-            .iter()
-            .all(|&p| p == 0)
-    });
-    if (frame.width, frame.height) != (cw as usize, ch as usize) || !hole_empty {
+    if let Err(e) = check_battle_frame(&frame) {
         report.summary = "the battle frame has another layout".into();
-        report.errors.push(format!(
-            "PACKGRP.R3 entry {PACKGRP_BATTLE_FRAME} is {}×{} pixels{}; the pack expects {cw}×{ch} \
-             with the map hole at {BATTLE_FRAME_MAP:?}",
-            frame.width,
-            frame.height,
-            if hole_empty { "" } else { " without an empty map hole" }
-        ));
+        report
+            .errors
+            .push(format!("PACKGRP.R3 entry {PACKGRP_BATTLE_FRAME}: {e}"));
         return Ok((report, false));
     }
+    let [cw, ch] = CANVAS;
     let png = encode_png(&frame, &bank[MAP_PALETTE_SLOT], false)
         .map_err(|e| output_error(Path::new(BATTLE_FRAME), std::io::Error::other(e)))?;
     out.write(&format!("gfx/{BATTLE_FRAME}.png"), &png)?;
@@ -644,6 +634,28 @@ fn convert_ui(
     report.status = Status::Extracted;
     report.summary = format!("battle frame {cw}×{ch}");
     Ok((report, true))
+}
+
+/// Whether `frame` has the layout the pack's `[presentation.battle_frame]` describes: the
+/// canvas size, and nothing but colour 0 in the map hole [`BATTLE_FRAME_MAP`].
+fn check_battle_frame(frame: &IndexedImage) -> Result<(), String> {
+    let [cw, ch] = CANVAS;
+    if (frame.width, frame.height) != (cw as usize, ch as usize) {
+        return Err(format!(
+            "{}×{} pixels; the pack expects {cw}×{ch}",
+            frame.width, frame.height
+        ));
+    }
+    let [mx, my, mw, mh] = BATTLE_FRAME_MAP.map(|v| v as usize);
+    let hole_empty = (my..my + mh).all(|y| {
+        frame.pixels[y * frame.width + mx..y * frame.width + mx + mw]
+            .iter()
+            .all(|&p| p == 0)
+    });
+    if !hole_empty {
+        return Err(format!("the map hole {BATTLE_FRAME_MAP:?} is not empty"));
+    }
+    Ok(())
 }
 
 // ----- rules ---------------------------------------------------------------------------------
@@ -3876,6 +3888,31 @@ mod tests {
             support_exp: None,
             desc: String::new(),
         }
+    }
+
+    #[test]
+    fn a_battle_frame_needs_the_canvas_size_and_an_empty_map_hole() {
+        let [w, h] = CANVAS.map(|v| v as usize);
+        let mut frame = IndexedImage {
+            width: w,
+            height: h,
+            pixels: vec![3; w * h],
+        };
+        let [mx, my, mw, mh] = BATTLE_FRAME_MAP.map(|v| v as usize);
+        for y in my..my + mh {
+            frame.pixels[y * w + mx..y * w + mx + mw].fill(0);
+        }
+        assert_eq!(check_battle_frame(&frame), Ok(()));
+        // A pixel drawn in the hole, or another size (small enough that the hole would not fit
+        // in it), is another layout, not a crash.
+        frame.pixels[(my + 5) * w + mx + 5] = 1;
+        assert!(check_battle_frame(&frame).unwrap_err().contains("map hole"));
+        let small = IndexedImage {
+            width: 320,
+            height: 200,
+            pixels: vec![0; 320 * 200],
+        };
+        assert!(check_battle_frame(&small).unwrap_err().contains("320×200"));
     }
 
     fn strategy_def(id: &str, mp: i32, range: &str) -> StrategyDef {

@@ -72,6 +72,15 @@ fn viewport(canvas: Vec2, frame: Option<&BattleFrame>) -> Rect {
     }
 }
 
+/// Left edge of a `w` wide window centred in the battle frame's `info` column: a window wider
+/// than the column stays off the map (`map`) as far as the canvas allows.
+fn column_x(info: Rect, w: f32, map: Rect, canvas: Vec2) -> f32 {
+    (info.x + (info.w - w) / 2.0)
+        .max(map.right())
+        .min(canvas.x - w)
+        .round()
+}
+
 /// An `[x, y, width, height]` area of a battle frame.
 fn frame_rect([x, y, w, h]: [u32; 4]) -> Rect {
     Rect::new(x as f32, y as f32, w as f32, h as f32)
@@ -1035,10 +1044,15 @@ impl BattleScreen {
         let size = self.tile();
         let canvas = ctx.gfx.size();
         let vp = self.camera.viewport;
+        // In a battle frame the menus stay over the map (the frame's panel shows the unit).
+        let area = match self.frame {
+            Some(_) => vp,
+            None => Rect::new(0.0, 0.0, canvas.x, canvas.y),
+        };
         let tile = self.camera.tile_screen(self.state.units[unit].pos);
         let (x, y) = if kind == MenuKind::Command {
             // Beside the unit, on the right when there is room.
-            let x = if tile.x + size + 6.0 + w <= canvas.x - 4.0 {
+            let x = if tile.x + size + 6.0 + w <= area.right() - 4.0 {
                 tile.x + size + 6.0
             } else {
                 tile.x - w - 6.0
@@ -1046,15 +1060,15 @@ impl BattleScreen {
             (x, tile.y + size / 2.0 - h / 2.0)
         } else {
             // Lists go to the side of the screen away from the unit.
-            let x = if tile.x < canvas.x / 2.0 {
-                canvas.x - w - 8.0
+            let x = if tile.x < area.center().x {
+                area.right() - w - 8.0
             } else {
-                8.0
+                area.x + 8.0
             };
             (x, vp.y + 6.0)
         };
-        let x = x.clamp(4.0, canvas.x - w - 4.0).round();
-        let y = y.clamp(vp.y + 4.0, canvas.y - h - 4.0).round();
+        let x = x.clamp(area.x + 4.0, area.right() - w - 4.0).round();
+        let y = y.clamp(vp.y + 4.0, area.bottom() - h - 4.0).round();
         menu.set_position(x, y);
         self.mode_menu = Some((kind, menu));
     }
@@ -1802,6 +1816,20 @@ mod tests {
                  at {OVERLAY_TOOL_TOP} px"
             );
         }
+    }
+
+    #[test]
+    fn windows_in_the_frame_column_stay_off_the_map() {
+        let (info, map) = (
+            Rect::new(448.0, 74.0, 176.0, 196.0),
+            Rect::new(16.0, 32.0, 416.0, 352.0),
+        );
+        let canvas = vec2(640.0, 400.0);
+        // Centred when it fits, off the map when wider, inside the canvas before all.
+        assert_eq!(column_x(info, 96.0, map, canvas), 488.0);
+        assert_eq!(column_x(info, 186.0, map, canvas), 443.0);
+        assert_eq!(column_x(info, 208.0, map, canvas), 432.0);
+        assert_eq!(column_x(info, 210.0, map, canvas), 430.0);
     }
 
     #[test]

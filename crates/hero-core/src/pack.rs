@@ -644,11 +644,22 @@ impl Pack {
         let mut manifest = chain.layers()[0].manifest.clone();
         manifest.presentation = chain.presentation();
         if let Some(frame) = &manifest.presentation.battle_frame {
-            // The frame and the canvas may come from different layers.
+            // The frame and the canvas may come from different layers: a pack that changes the
+            // canvas of a pack with a frame declares its own frame (a frame cannot be removed).
             frame.check(manifest.presentation.canvas).map_err(|e| {
+                let top = &chain.layers()[0].dir;
+                let from = chain.battle_frame_dir().unwrap_or(top);
+                let inherited = if from == top {
+                    String::new()
+                } else {
+                    format!(
+                        " (the battle frame of `{}`; declare one that fits this pack's canvas)",
+                        chain::join_path(from, MANIFEST_FILE)
+                    )
+                };
                 parse_error(
-                    &chain::join_path(&chain.layers()[0].dir, MANIFEST_FILE),
-                    format!("presentation.{e}"),
+                    &chain::join_path(top, MANIFEST_FILE),
+                    format!("presentation.{e}{inherited}"),
                 )
             })?;
         }

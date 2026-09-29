@@ -279,7 +279,7 @@ impl BattleScreen {
         };
         let info = self.frame.as_ref().map(|f| super::frame_rect(f.info));
         let unit_at = match info {
-            Some(i) => vec2(i.x + (i.w - hud::UNIT_PANEL.x) / 2.0, i.y + 4.0),
+            Some(i) => vec2(super::column_x(i, hud::UNIT_PANEL.x, vp, canvas), i.y + 4.0),
             None => vec2(4.0, y_unit),
         };
         if let Some(u) = self.panel_unit() {
@@ -307,7 +307,7 @@ impl BattleScreen {
                 };
                 let at = match info {
                     Some(i) => vec2(
-                        i.x + (i.w - hud::TERRAIN_PANEL.x) / 2.0,
+                        super::column_x(i, hud::TERRAIN_PANEL.x, vp, canvas),
                         i.y + hud::UNIT_PANEL.y + 8.0,
                     ),
                     None => vec2(canvas.x - hud::TERRAIN_PANEL.x - 4.0, y),
@@ -330,7 +330,12 @@ impl BattleScreen {
         let info = self.frame.as_ref().map(|f| super::frame_rect(f.info));
         let place = |h: f32, w: f32| match info {
             // Under the unit panel in the battle frame's panel column.
-            Some(i) => Rect::new(i.x + (i.w - w) / 2.0, i.y + hud::UNIT_PANEL.y + 8.0, w, h),
+            Some(i) => Rect::new(
+                super::column_x(i, w, vp, canvas),
+                i.y + hud::UNIT_PANEL.y + 8.0,
+                w,
+                h,
+            ),
             None => {
                 let x = canvas.x - w - 4.0;
                 let y = if top { vp.y + 4.0 } else { canvas.y - h - 4.0 };

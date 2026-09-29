@@ -159,6 +159,8 @@ pub struct PackChain {
     /// `[presentation]` fields, each from the nearest layer that sets it.
     canvas: Option<[u32; 2]>,
     battle_frame: Option<Option<BattleFrame>>,
+    /// Directory of the layer whose `battle_frame` is used.
+    battle_frame_dir: Option<String>,
     /// Directory of the parent still to be read, relative to the top pack.
     next: Option<String>,
 }
@@ -171,6 +173,7 @@ impl PackChain {
             layers: Vec::new(),
             canvas: None,
             battle_frame: None,
+            battle_frame_dir: None,
             next: None,
         };
         chain.add(String::new(), top_manifest)?;
@@ -251,6 +254,11 @@ impl PackChain {
             canvas: self.canvas.unwrap_or(default.canvas),
             battle_frame: self.battle_frame.clone().unwrap_or(default.battle_frame),
         }
+    }
+
+    /// Directory of the layer the inherited `battle_frame` comes from, if any declares one.
+    pub fn battle_frame_dir(&self) -> Option<&str> {
+        self.battle_frame_dir.as_deref()
     }
 
     /// Decide which layer provides each file (see the module docs). Fails when the chain is not
@@ -378,6 +386,7 @@ impl PackChain {
         }
         if self.battle_frame.is_none() && declared.iter().any(|f| f == "battle_frame") {
             self.battle_frame = Some(manifest.presentation.battle_frame.clone());
+            self.battle_frame_dir = Some(dir.clone());
         }
         self.layers.push(PackLayer { dir, manifest });
         self.next = parent;
