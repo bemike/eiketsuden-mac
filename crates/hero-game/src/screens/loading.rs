@@ -594,6 +594,8 @@ impl LoadingScreen {
         memfs::mount(root.top_dir(), converted.files);
         ctx.media = Media::new(root.clone());
         ctx.data_root = root;
+        // The original's music follows while the game runs.
+        ctx.music = Some(crate::original::MusicRender::start(install.to_path_buf()));
         self.original = Original::Mounted;
         self.progress = 0.0;
         self.stage = Stage::Start;

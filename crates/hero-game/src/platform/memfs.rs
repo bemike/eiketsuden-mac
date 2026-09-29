@@ -85,6 +85,18 @@ pub fn mount(dir: &str, files: BTreeMap<String, Vec<u8>>) {
     MOUNT.with(|m| *m.borrow_mut() = Some(Mount { prefix, files }));
 }
 
+/// Add (or replace) the file `rel` (relative to the mount directory) of the mounted pack. `false`
+/// when nothing is mounted.
+pub fn insert(rel: &str, bytes: Vec<u8>) -> bool {
+    MOUNT.with(|m| match m.borrow_mut().as_mut() {
+        Some(mount) => {
+            mount.files.insert(normalize(rel), bytes);
+            true
+        }
+        None => false,
+    })
+}
+
 /// Drop the mounted pack (the data pack is about to be loaded again).
 pub fn unmount() {
     MOUNT.with(|m| *m.borrow_mut() = None);
@@ -189,6 +201,12 @@ mod tests {
         );
         assert!(is_file(r"D:\games\data\original/pack.toml"));
         assert!(!is_file(r"D:\games\data\original/credits.txt"));
+        // Files added later (the songs rendered while the game runs).
+        assert!(insert("bgm/title.wav", vec![7]));
+        assert_eq!(
+            lookup(r"D:\games\data\original/bgm/title.wav"),
+            Lookup::Memory(Some(vec![7]))
+        );
         // The parent pack is on disk, reached without going through the mount directory.
         assert_eq!(
             lookup(r"D:\games\data\original/../base/rules/game.toml"),
@@ -202,6 +220,7 @@ mod tests {
 
         unmount();
         assert_eq!(mounted(), None);
+        assert!(!insert("bgm/title.wav", vec![7]), "nothing to add to");
         assert_eq!(
             lookup(r"D:\games\data\original/pack.toml"),
             Lookup::Disk(r"D:\games\data\original/pack.toml".into())

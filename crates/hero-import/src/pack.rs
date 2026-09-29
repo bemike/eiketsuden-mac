@@ -615,6 +615,72 @@ pub const MUSIC_KEYS: [(&str, &str, usize); 10] = [
     ("boss", "MUSIC.R3", 16),
 ];
 
+/// A rendered song, or why it could not be rendered.
+type SongResult = Result<crate::music::Rendered, String>;
+/// A song's WAV file, or why it could not be made.
+pub type WavResult = Result<Vec<u8>, String>;
+
+/// Render the original's songs of [`MUSIC_KEYS`] in `install` one after another, calling `each`
+/// with the key, the file and song number, and the song (or why it could not be rendered);
+/// `each` returns `false` to stop. `Ok(false)`: none of the music files is there.
+fn render_songs(
+    install: &InstallDir,
+    report: &mut KindReport,
+    each: &mut dyn FnMut(&str, &str, usize, SongResult) -> bool,
+) -> Result<bool, ExtractError> {
+    let mut files: BTreeMap<&str, Option<Vec<u8>>> = BTreeMap::new();
+    for (_, file, _) in MUSIC_KEYS {
+        if !files.contains_key(file) {
+            let data = read_source(install, file, report)?;
+            files.insert(file, data);
+        }
+    }
+    if files.values().all(Option::is_none) {
+        return Ok(false);
+    }
+    for (key, file, index) in MUSIC_KEYS {
+        let rendered = match files.get(file).and_then(Option::as_ref) {
+            None => Err("the file is missing".to_string()),
+            Some(data) => crate::music::songs(data).and_then(|songs| {
+                let song = songs
+                    .get(index)
+                    .ok_or_else(|| format!("{file} has no song {index}"))?;
+                crate::music::render(song, MUSIC_RATE, 600.0)
+            }),
+        };
+        if !each(key, file, index, rendered) {
+            break;
+        }
+    }
+    Ok(true)
+}
+
+/// Render the original's songs of [`MUSIC_KEYS`] in the install at `source` one by one, calling
+/// `each` with the key and its `bgm/<key>.wav` file (or why it could not be made); `each` returns
+/// `false` to stop. For the game, which converts without music ([`PackOptions::music`]) and adds
+/// the songs while it runs.
+pub fn render_music(
+    source: &Path,
+    each: &mut dyn FnMut(&str, WavResult) -> bool,
+) -> Result<(), String> {
+    let install = InstallDir::open(source).map_err(|e| e.to_string())?;
+    let mut report = KindReport::new(Status::Extracted, false, "");
+    let found = render_songs(&install, &mut report, &mut |key, file, index, rendered| {
+        each(
+            key,
+            rendered
+                .map(|r| r.wav())
+                .map_err(|e| format!("{file} song {index}: {e}")),
+        )
+    })
+    .map_err(|e| e.to_string())?;
+    if found {
+        Ok(())
+    } else {
+        Err("no music files in the install".into())
+    }
+}
+
 /// The original's songs of [`MUSIC_KEYS`] rendered as `bgm/<key>.wav` (one pass of each song's
 /// loop, which the game repeats; see [`crate::music::render`]), standing in for the base pack's
 /// `bgm/<key>.ogg`.
@@ -627,61 +693,47 @@ fn convert_music(
     if !options.music {
         report.status = Status::Unsupported;
         report.summary =
-            "not rendered here (it takes several seconds); `hero-tools original pack` renders it"
+            "not rendered with the pack (it takes several seconds): the game renders it in the \
+             background after it starts; `hero-tools original pack` writes it into the pack"
                 .into();
         return Ok(report);
     }
-    let mut files: BTreeMap<&str, Option<Vec<u8>>> = BTreeMap::new();
-    for (_, file, _) in MUSIC_KEYS {
-        if !files.contains_key(file) {
-            let data = read_source(install, file, &mut report)?;
-            files.insert(file, data);
-        }
-    }
-    if files.values().all(Option::is_none) {
-        report.status = Status::MissingSource;
-        report.summary = "no music files".into();
-        return Ok(report);
-    }
     let mut seconds = 0.0;
-    for (key, file, index) in MUSIC_KEYS {
-        let Some(data) = files.get(file).and_then(Option::as_ref) else {
-            report.errors.push(format!("{key}: {file} missing"));
-            continue;
-        };
-        let rendered = crate::music::songs(data).and_then(|songs| {
-            let song = songs
-                .get(index)
-                .ok_or_else(|| format!("{file} has no song {index}"))?;
-            crate::music::render(song, MUSIC_RATE, 600.0)
-        });
+    let mut written = Vec::new();
+    let mut failed = Vec::new();
+    let mut notes = Vec::new();
+    let found = render_songs(install, &mut report, &mut |key, file, index, rendered| {
         match rendered {
             Ok(r) => {
-                seconds += r.samples.len() as f64 / f64::from(MUSIC_RATE);
-                out.write(&format!("bgm/{key}.wav"), &r.wav())?;
-                report.outputs += 1;
                 let length = r.samples.len() as f64 / f64::from(MUSIC_RATE);
+                seconds += length;
                 let how = match (r.seamless, r.intro_seconds > 0.0) {
                     (true, false) => String::new(),
                     (true, true) => format!(
                         "; its loop only, the {:.1} s intro before it left out",
                         r.intro_seconds
                     ),
-                    (false, _) => {
-                        "; its tracks loop from different places, so it is played once from \
-                         the start and repeats with a seam"
-                            .into()
-                    }
+                    (false, _) => "; its tracks loop from different places, so it is played once from the start and repeats with a seam"
+                        .into(),
                 };
-                report
-                    .notes
-                    .push(format!("{key}: {file} song {index}, {length:.0} s{how}"));
+                notes.push(format!("{key}: {file} song {index}, {length:.0} s{how}"));
+                written.push((format!("bgm/{key}.wav"), r.wav()));
             }
-            Err(e) => report
-                .errors
-                .push(format!("{key}: {file} song {index}: {e}")),
+            Err(e) => failed.push(format!("{key}: {file} song {index}: {e}")),
         }
+        true
+    })?;
+    if !found {
+        report.status = Status::MissingSource;
+        report.summary = "no music files".into();
+        return Ok(report);
     }
+    for (path, wav) in &written {
+        out.write(path, wav)?;
+    }
+    report.outputs += written.len();
+    report.notes.extend(notes);
+    report.errors.extend(failed);
     report.status = match (report.outputs, report.errors.is_empty()) {
         (_, true) => Status::Extracted,
         (0, false) => Status::Failed,
@@ -3949,6 +4001,38 @@ mod tests {
         let music = &index.assets["music"];
         assert_eq!(music.status, Status::Partial);
         assert_eq!(music.outputs, MUSIC_KEYS.len() - 1);
+    }
+
+    #[test]
+    fn the_game_gets_the_songs_one_by_one() {
+        let src = TempDir::new("pack-music-game");
+        std::fs::write(src.path().join("MUSIC.R3"), music_file(20)).unwrap();
+        std::fs::write(src.path().join("OPMUSIC.R3"), music_file(2)).unwrap();
+        let mut got = Vec::new();
+        render_music(src.path(), &mut |key, wav| {
+            got.push((key.to_string(), wav));
+            true
+        })
+        .unwrap();
+        assert_eq!(got.len(), MUSIC_KEYS.len());
+        for (key, wav) in &got {
+            match key.as_str() {
+                // EDMUSIC.R3 is missing.
+                "ending" => assert!(wav.as_ref().unwrap_err().contains("missing")),
+                _ => assert_eq!(&wav.as_ref().unwrap()[..4], b"RIFF", "{key}"),
+            }
+        }
+        // The game stops listening: rendering stops.
+        let mut calls = 0;
+        render_music(src.path(), &mut |_, _| {
+            calls += 1;
+            false
+        })
+        .unwrap();
+        assert_eq!(calls, 1);
+        // No music at all.
+        let empty = TempDir::new("pack-music-none");
+        assert!(render_music(empty.path(), &mut |_, _| true).is_err());
     }
 
     #[test]

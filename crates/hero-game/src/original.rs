@@ -12,11 +12,15 @@
 //!
 //! `docs/DECISIONS.md` D10 records why the conversion runs at every launch.
 
+use crate::assets::Media;
+use crate::audio::Audio;
+use crate::platform::memfs;
 use hero_import::edition::{identify, Edition, EditionId};
 use hero_import::install::InstallDir;
 use hero_import::pack::{build_pack_with_progress, MemoryPack, PackOptions, BUILD_STEPS};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -215,6 +219,99 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> &str {
         .map(String::as_str)
         .or_else(|| panic.downcast_ref::<&str>().copied())
         .unwrap_or("unknown panic")
+}
+
+// ----- music -------------------------------------------------------------------------------
+
+/// A finished song: its key and its `bgm/<key>.wav` file, or why it could not be made (an empty
+/// key: the music could not be rendered at all).
+type Song = (String, Result<Vec<u8>, String>);
+
+/// The original's songs, rendered on a worker thread while the game runs: the conversion at
+/// launch leaves them out because rendering takes 10–20 seconds (`PackOptions::music`,
+/// `docs/DECISIONS.md` D16). Each finished song is added to the mounted pack as
+/// `bgm/<key>.wav`, where it stands in for the base pack's music from then on; music that is
+/// playing when its song arrives starts again with it.
+pub struct MusicRender {
+    songs: Receiver<Song>,
+    /// Songs added whose cached sound could not be dropped yet (it was loading).
+    stale: Vec<String>,
+    added: usize,
+    finished: bool,
+}
+
+impl MusicRender {
+    /// Start rendering the songs of the install at `install`.
+    pub fn start(install: PathBuf) -> MusicRender {
+        let (send, songs) = mpsc::channel::<Song>();
+        let failed = send.clone();
+        let spawned = std::thread::Builder::new()
+            .name("original-music".into())
+            .spawn(move || {
+                // Stops when the game no longer listens (the data pack was reloaded).
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hero_import::pack::render_music(&install, &mut |key, wav| {
+                        send.send((key.to_string(), wav)).is_ok()
+                    })
+                }))
+                .unwrap_or_else(|panic| {
+                    Err(format!("rendering crashed: {}", panic_message(&*panic)))
+                });
+                if let Err(e) = result {
+                    let _ = send.send((String::new(), Err(e)));
+                }
+            });
+        if let Err(e) = spawned {
+            let _ = failed.send((String::new(), Err(format!("cannot start rendering: {e}"))));
+        }
+        MusicRender {
+            songs,
+            stale: Vec::new(),
+            added: 0,
+            finished: false,
+        }
+    }
+
+    /// Add the songs finished since the last call to the mounted pack. `true` once every song
+    /// has been handled.
+    pub fn poll(&mut self, media: &Media, audio: &mut Audio) -> bool {
+        loop {
+            match self.songs.try_recv() {
+                Ok((key, Ok(wav))) => {
+                    if memfs::insert(&format!("bgm/{key}.wav"), wav) {
+                        audio.reload_bgm(&key);
+                        self.stale.push(key);
+                        self.added += 1;
+                    } else {
+                        macroquad::logging::warn!(
+                            "original mode: music {}: no pack mounted to add it to",
+                            key
+                        );
+                    }
+                }
+                Ok((key, Err(e))) if key.is_empty() => {
+                    macroquad::logging::warn!("original mode: music: {}", e);
+                }
+                Ok((key, Err(e))) => {
+                    macroquad::logging::warn!("original mode: music {}: {}", key, e);
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    if !self.finished {
+                        macroquad::logging::info!(
+                            "original mode: {} of the original's songs added",
+                            self.added
+                        );
+                    }
+                    self.finished = true;
+                    break;
+                }
+            }
+        }
+        self.stale
+            .retain(|key| !media.forget_sound(&format!("bgm/{key}")));
+        self.finished && self.stale.is_empty()
+    }
 }
 
 // ----- background reads ----------------------------------------------------------------------

@@ -60,6 +60,9 @@ pub struct Ctx {
     pub data_root: DataRoot,
     /// Seconds since the previous frame (clamped to [`MAX_FRAME_TIME`]).
     pub dt: f32,
+    /// The original mode's songs being rendered (added to the mounted pack as they finish).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub music: Option<crate::original::MusicRender>,
     /// Seconds since startup.
     pub time: f64,
     pub frame: u64,
@@ -87,6 +90,8 @@ impl Ctx {
             options,
             data_root,
             dt: 0.0,
+            #[cfg(not(target_arch = "wasm32"))]
+            music: None,
             time: 0.0,
             frame: 0,
         }
@@ -256,6 +261,12 @@ impl App {
         ctx.gfx.canvas.update();
         ctx.input.update(dt, &ctx.gfx.canvas);
         ctx.media.pump();
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(music) = ctx.music.as_mut() {
+            if music.poll(&ctx.media, &mut ctx.audio) {
+                ctx.music = None;
+            }
+        }
         ctx.audio.update(dt, &ctx.media, ctx.input.any_activity());
         ctx.toasts.update(dt);
         if let Some(session) = ctx.session.as_mut() {

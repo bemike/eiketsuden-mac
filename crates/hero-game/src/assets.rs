@@ -453,6 +453,18 @@ impl Media {
         }
     }
 
+    /// Forget a sound whose file changed (the original mode adds its songs while the game runs),
+    /// so the next request reads the file again. `false` while it is loading (its job may
+    /// already have read the old file): try again later.
+    pub fn forget_sound(&self, key: &str) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        if matches!(inner.sounds.get(key), Some(Slot::Loading)) {
+            return false;
+        }
+        inner.sounds.remove(key);
+        true
+    }
+
     /// Icon cell by key: the atlas texture and the source rectangle in texels.
     pub fn icon(&self, key: &str) -> Option<(Texture2D, Rect)> {
         let atlas = self.texture(ICON_TEXTURE)?;
@@ -952,6 +964,22 @@ mod tests {
                 "/p/sfx/x.ogg"
             ]
         );
+    }
+
+    #[test]
+    fn a_changed_sound_is_forgotten_once_it_is_not_loading() {
+        let media = Media::new(DataRoot::from_dir(std::path::Path::new("/p"), &[]));
+        assert!(media.forget_sound("bgm/title"), "never requested");
+        assert_eq!(media.sound_state("bgm/title"), AssetState::Loading);
+        // Its read may already have taken the old file.
+        assert!(!media.forget_sound("bgm/title"));
+        media
+            .inner
+            .borrow_mut()
+            .sounds
+            .insert("bgm/title".into(), Slot::Missing);
+        assert!(media.forget_sound("bgm/title"));
+        assert!(!media.inner.borrow().sounds.contains_key("bgm/title"));
     }
 
     #[test]
