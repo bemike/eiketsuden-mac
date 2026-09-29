@@ -96,8 +96,28 @@ impl BattleState {
         {
             return false;
         }
+        // The original cancels the counter of a confused defender (MAIN.EXE 0x2B872), one
+        // the blow confused too.
+        if super::strategy::original_formulas(pack) && d.has_status(StatusKind::Confused) {
+            return false;
+        }
         let delta = Pos::new(att_pos.x - d.pos.x, att_pos.y - d.pos.y);
         dc.range.offsets().is_some_and(|o| o.contains(&delta))
+    }
+
+    /// Chance that `def` counters a blow that takes its morale from `before` to `after`: the
+    /// counter chance, times the 40 % the blow leaves it unconfused under the original formulas
+    /// when `after` is below 30 (a confused defender does not counter, `BattleState::morale_set`).
+    pub(super) fn counter_odds(&self, pack: &Pack, def: UnitId, before: i32, after: i32) -> i32 {
+        let chance = counter_chance(&pack.rules, self.units[def].strength);
+        if super::strategy::original_formulas(pack)
+            && after < before
+            && after < super::strategy::MORALE_DOWN_CONFUSES_BELOW
+        {
+            chance * (100 - super::strategy::MORALE_DOWN_CONFUSION) / 100
+        } else {
+            chance
+        }
     }
 
     pub(super) fn attack_forecast(&self, pack: &Pack, att: UnitId, def: UnitId) -> AttackForecast {
@@ -111,7 +131,7 @@ impl BattleState {
             if !routed {
                 counter = Some(CounterForecast {
                     damage: self.counter_damage(pack, def, d_morale, att),
-                    chance: counter_chance(&pack.rules, d.strength),
+                    chance: self.counter_odds(pack, def, d.morale, d_morale),
                 });
             }
         }
@@ -235,6 +255,7 @@ impl BattleState {
             self.units[def].morale,
             d_pos,
         );
+        let before = self.units[def].morale;
         let loss = self.take_damage(pack, def, damage);
         ev.push(BattleEvent::Strike {
             attacker: att,
@@ -243,6 +264,8 @@ impl BattleState {
             morale_loss: loss,
             counter: false,
         });
+        let set = self.morale_set(pack, def, before);
+        ev.extend(Self::morale_set_event(def, set));
         let def_killed = self.units[def].hp == 0;
         self.retreat_if_beaten(def, ev);
 
@@ -253,6 +276,7 @@ impl BattleState {
             if self.rng.chance(chance) {
                 countered = true;
                 let damage = self.counter_damage(pack, def, self.units[def].morale, att);
+                let before = self.units[att].morale;
                 let loss = self.take_damage(pack, att, damage);
                 ev.push(BattleEvent::Strike {
                     attacker: def,
@@ -261,6 +285,8 @@ impl BattleState {
                     morale_loss: loss,
                     counter: true,
                 });
+                let set = self.morale_set(pack, att, before);
+                ev.extend(Self::morale_set_event(att, set));
                 att_killed = self.units[att].hp == 0;
                 self.retreat_if_beaten(att, ev);
             }

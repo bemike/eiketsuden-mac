@@ -303,8 +303,8 @@ fn original_formulas_end_confusion_on_a_recovery_roll() {
     let mut st = state(&pack);
     let bold = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
     add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
-    // (300 + 0) / 3 >= 100: always, and not confused again by its low morale (which would be
-    // sure at 0) in the same phase start.
+    // (300 + 0) / 3 >= 100: always, and not confused again by its low morale: the original
+    // has no phase-start confusion.
     st.units[bold].lead = 300;
     st.units[bold].morale = 0;
     st.units[bold].statuses = vec![confused(crate::battle::UNTIL_RECOVERED)];
@@ -1512,4 +1512,97 @@ fn bonus_objective_is_announced_and_paid_at_victory() {
         (st.units[a].exp, st.units[b].exp, st.units[gone].exp),
         (30, 68, 0)
     );
+}
+
+#[test]
+fn original_formulas_confuse_as_morale_falls_and_recover_as_it_rises() {
+    let original = |rows: &str| {
+        let mut pack = pack(rows);
+        pack.rules.strategy_formulas = crate::data::StrategyFormulas::Original;
+        pack
+    };
+    // No confusion at a phase start, however low the morale.
+    let pack = original(OPEN_MAP);
+    let mut st = state(&pack);
+    let broken = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    st.units[broken].morale = 0;
+    assert_eq!(st.begin(&pack), vec![phase(Side::Player, 1)]);
+    assert!(st.units[broken].statuses.is_empty());
+
+    // A blow that leaves less than 30 morale: confused with 60 %; never under the engine's.
+    let blow = |pack: &crate::pack::Pack, seed| {
+        let mut st = BattleState::new(pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let a = add(&mut st, pack, Side::Player, "infantry", 1, p(0, 0));
+        let d = add(&mut st, pack, Side::Enemy, "infantry", 1, p(1, 0));
+        st.units[d].max_hp = 10_000;
+        st.units[d].hp = 10_000;
+        st.units[d].morale = 30;
+        let ev = st
+            .apply(pack, Action::Attack { unit: a, target: d })
+            .unwrap();
+        assert!(st.units[d].morale < 30);
+        ev.contains(&BattleEvent::Confused { unit: d })
+    };
+    let hits = (0..400).filter(|&seed| blow(&pack, seed)).count();
+    assert!((200..280).contains(&hits), "{hits} of 400");
+    let engine = self::pack(OPEN_MAP);
+    assert!((0..50).all(|seed| !blow(&engine, seed)));
+
+    // A defender the blow confused does not counter (MAIN.EXE 0x2B872); one it did not, does.
+    let mut both = [false, false];
+    for seed in 0..40 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let a = add(&mut st, &pack, Side::Player, "cavalry", 1, p(0, 0));
+        let d = add(&mut st, &pack, Side::Enemy, "bandit", 1, p(1, 0));
+        st.units[d].max_hp = 10_000;
+        st.units[d].hp = 10_000;
+        st.units[d].morale = 30;
+        // strength * 100 / 150 >= 100: a sure counter.
+        st.units[d].strength = 200;
+        let ev = st
+            .apply(&pack, Action::Attack { unit: a, target: d })
+            .unwrap();
+        let confused = ev.contains(&BattleEvent::Confused { unit: d });
+        let countered = ev
+            .iter()
+            .any(|e| matches!(e, BattleEvent::Strike { counter: true, .. }));
+        assert_eq!(countered, !confused, "{ev:?}");
+        both[usize::from(confused)] = true;
+    }
+    assert_eq!(both, [true, true]);
+    // The forecast counts it: a blow leaving less than 30 morale is countered with 40 % of the
+    // chance (the rest of the time the defender is confused); the engine's formulas do not.
+    for (pack, chance) in [(&pack, 40), (&engine, 100)] {
+        let mut st = state(pack);
+        let a = add(&mut st, pack, Side::Player, "cavalry", 1, p(0, 0));
+        let d = add(&mut st, pack, Side::Enemy, "bandit", 1, p(1, 0));
+        st.units[d].max_hp = 10_000;
+        st.units[d].hp = 10_000;
+        st.units[d].morale = 30;
+        st.units[d].strength = 200;
+        let counter = st.forecast_attack(pack, a, d).counter.expect("a counter");
+        assert_eq!(counter.chance, chance);
+    }
+
+    // A morale gain rolls the recovery: a village's at the phase start.
+    let pack = original(".v.\n...\n...");
+    let mut st = state(&pack);
+    let u = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(2, 2));
+    st.units[u].lead = 300;
+    st.units[u].morale = 50;
+    st.units[u].statuses = vec![confused(crate::battle::UNTIL_RECOVERED)];
+    let ev = st.begin(&pack);
+    let at = |e: &BattleEvent| ev.iter().position(|x| x == e);
+    let expired = BattleEvent::StatusExpired {
+        unit: u,
+        status: StatusKind::Confused,
+    };
+    let regenerated = ev
+        .iter()
+        .position(|e| matches!(e, BattleEvent::Regenerated { unit, .. } if *unit == u))
+        .expect("the village regenerates");
+    assert_eq!(at(&expired), Some(regenerated + 1), "{ev:?}");
+    assert_eq!(ev.iter().filter(|e| **e == expired).count(), 1);
 }

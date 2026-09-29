@@ -81,8 +81,8 @@ impl BattleState {
         }
         if played {
             self.regenerate(pack, side, ev);
-            let recovered = self.count_down_statuses(pack, side, ev);
-            self.low_morale_confusion(pack, side, &recovered, ev);
+            self.count_down_statuses(pack, side, ev);
+            self.low_morale_confusion(pack, side, ev);
             self.clear_flags(side);
             self.settle_with(pack, key, false, ev);
             return self.outcome.is_none();
@@ -155,6 +155,8 @@ impl BattleState {
             }
             let hp = hp.min(u.max_hp - u.hp).max(0);
             let mp = mp.min(u.max_mp - u.mp).max(0);
+            // The original sets the morale even when it is already full (a recovery roll).
+            let morale_regen = morale > 0;
             let morale = morale.min(100 - u.morale).max(0);
             if hp > 0 || mp > 0 || morale > 0 {
                 let u = &mut self.units[id];
@@ -168,19 +170,18 @@ impl BattleState {
                     morale,
                 });
             }
+            if morale_regen {
+                let before = self.units[id].morale - morale;
+                let set = self.morale_set(pack, id, before);
+                ev.extend(Self::morale_set_event(id, set));
+            }
         }
     }
 
     /// Status countdown (§1.2.3): confusion persists at 1 while morale is low. Under the
     /// original strategy formulas confusion has no length: it ends when
-    /// `rand(100) < (LEAD + morale) / 3` (§6). Returns the units that recovered on that roll.
-    fn count_down_statuses(
-        &mut self,
-        pack: &Pack,
-        side: Side,
-        ev: &mut Vec<BattleEvent>,
-    ) -> Vec<UnitId> {
-        let mut recovered = Vec::new();
+    /// `rand(100) < (LEAD + morale) / 3` (§6).
+    fn count_down_statuses(&mut self, pack: &Pack, side: Side, ev: &mut Vec<BattleEvent>) {
         let low = pack.rules.confuse_morale;
         let original = super::strategy::original_formulas(pack);
         for id in 0..self.units.len() {
@@ -189,17 +190,11 @@ impl BattleState {
                 continue;
             }
             if original {
-                let chance = u.lead.max(0).saturating_add(u.morale.max(0)) / 3;
-                let confused = u.has_status(StatusKind::Confused);
-                if confused && self.rng.chance(chance) {
-                    self.units[id]
-                        .statuses
-                        .retain(|s| s.status != StatusKind::Confused);
+                if self.recovery_roll(id) {
                     ev.push(BattleEvent::StatusExpired {
                         unit: id,
                         status: StatusKind::Confused,
                     });
-                    recovered.push(id);
                 }
                 continue;
             }
@@ -222,18 +217,15 @@ impl BattleState {
                 ev.push(BattleEvent::StatusExpired { unit: id, status });
             }
         }
-        recovered
     }
 
-    /// Low-morale confusion (§6): chance `(confuse_morale - morale) * 3 + 10` percent; not for
-    /// the units that just `recovered` from one (original strategy formulas).
-    fn low_morale_confusion(
-        &mut self,
-        pack: &Pack,
-        side: Side,
-        recovered: &[UnitId],
-        ev: &mut Vec<BattleEvent>,
-    ) {
+    /// Low-morale confusion (§6): chance `(confuse_morale - morale) * 3 + 10` percent. Not
+    /// under the original strategy formulas: the original confuses when morale falls
+    /// ([`BattleState::morale_set`]), not at a phase start.
+    fn low_morale_confusion(&mut self, pack: &Pack, side: Side, ev: &mut Vec<BattleEvent>) {
+        if super::strategy::original_formulas(pack) {
+            return;
+        }
         let low = pack.rules.confuse_morale;
         for id in 0..self.units.len() {
             let u = &self.units[id];
@@ -241,18 +233,12 @@ impl BattleState {
                 || u.side != side
                 || u.morale > low
                 || u.has_status(StatusKind::Confused)
-                || recovered.contains(&id)
             {
                 continue;
             }
             let chance = (low - u.morale).saturating_mul(3).saturating_add(10);
             if self.rng.chance(chance) {
-                let turns = if super::strategy::original_formulas(pack) {
-                    super::UNTIL_RECOVERED
-                } else {
-                    1
-                };
-                self.confuse(id, turns);
+                self.confuse(id, 1);
                 ev.push(BattleEvent::Confused { unit: id });
                 self.retreat_if_beaten(id, ev);
             }

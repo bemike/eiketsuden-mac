@@ -346,7 +346,8 @@ pub enum BattleEvent {
         mp: i32,
         morale: i32,
     },
-    /// A unit became confused (strategy or low morale).
+    /// A unit became confused (strategy or low morale), or confused again (the original
+    /// formulas: a morale fall on a confused unit).
     Confused {
         unit: UnitId,
     },
