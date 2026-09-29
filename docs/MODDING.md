@@ -315,6 +315,7 @@ shape or an explicit list of `[dx, dy]` offsets from the unit (`range = [[0, -1]
 | `range8` | the 3×3 square (own tile included) | short strategies |
 | `range12` | `range8` plus the four tiles two steps straight out | most strategies |
 | `range20` | the 5×5 square without its corners | long strategies |
+| `range28` | the whole 5×5 square plus the four tiles three steps straight out | the original's great support strategies |
 
 "Distance" is the Manhattan distance `|dx| + |dy|`.
 

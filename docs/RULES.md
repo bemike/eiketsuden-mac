@@ -42,7 +42,8 @@ Integer arithmetic: every division truncates towards zero unless stated otherwis
 | Move | `class.move + best accessory move_bonus` (0 while confused) |
 
 The ATK / DEF formula is the original's *(code: `MAIN.EXE` image 0x13A3E / 0x13B6C, FORMATS §10.4)*, which adds
-twice a class coefficient stored as `class.atk * 5`.
+twice a class coefficient stored as `class.atk * 5`. So is the max HP *(code: image 0x14308)*: the original stores
+`class.hp / 100` and `class.hp_growth / 10`.
 
 *(community)* Worked example: Cao Cao Lv42, STR 75, LEAD 98, guard class (atk 16 / def 12), morale 100, weapon 120%,
 manual 120% → ATK `52 * (100 + 61 + 160) / 10 = 1669 → 2002`, DEF `52 * (100 + 95 + 120) / 10 = 1638 → 1965`.
