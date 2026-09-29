@@ -105,6 +105,21 @@ impl BattleState {
         dc.range.offsets().is_some_and(|o| o.contains(&delta))
     }
 
+    /// Chance that `def` counters a blow that takes its morale from `before` to `after`: the
+    /// counter chance, times the 40 % the blow leaves it unconfused under the original formulas
+    /// when `after` is below 30 (a confused defender does not counter, `BattleState::morale_set`).
+    pub(super) fn counter_odds(&self, pack: &Pack, def: UnitId, before: i32, after: i32) -> i32 {
+        let chance = counter_chance(&pack.rules, self.units[def].strength);
+        if super::strategy::original_formulas(pack)
+            && after < before
+            && after < super::strategy::MORALE_DOWN_CONFUSES_BELOW
+        {
+            chance * (100 - super::strategy::MORALE_DOWN_CONFUSION) / 100
+        } else {
+            chance
+        }
+    }
+
     pub(super) fn attack_forecast(&self, pack: &Pack, att: UnitId, def: UnitId) -> AttackForecast {
         let (a, d) = (&self.units[att], &self.units[def]);
         let damage = self.strike_damage(pack, att, a.morale, def, d.morale, d.pos);
@@ -116,7 +131,7 @@ impl BattleState {
             if !routed {
                 counter = Some(CounterForecast {
                     damage: self.counter_damage(pack, def, d_morale, att),
-                    chance: counter_chance(&pack.rules, d.strength),
+                    chance: self.counter_odds(pack, def, d.morale, d_morale),
                 });
             }
         }

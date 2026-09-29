@@ -1571,6 +1571,19 @@ fn original_formulas_confuse_as_morale_falls_and_recover_as_it_rises() {
         both[usize::from(confused)] = true;
     }
     assert_eq!(both, [true, true]);
+    // The forecast counts it: a blow leaving less than 30 morale is countered with 40 % of the
+    // chance (the rest of the time the defender is confused); the engine's formulas do not.
+    for (pack, chance) in [(&pack, 40), (&engine, 100)] {
+        let mut st = state(pack);
+        let a = add(&mut st, pack, Side::Player, "cavalry", 1, p(0, 0));
+        let d = add(&mut st, pack, Side::Enemy, "bandit", 1, p(1, 0));
+        st.units[d].max_hp = 10_000;
+        st.units[d].hp = 10_000;
+        st.units[d].morale = 30;
+        st.units[d].strength = 200;
+        let counter = st.forecast_attack(pack, a, d).counter.expect("a counter");
+        assert_eq!(counter.chance, chance);
+    }
 
     // A morale gain rolls the recovery: a village's at the phase start.
     let pack = original(".v.\n...\n...");

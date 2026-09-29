@@ -35,7 +35,7 @@
 //! Scores are expressed in "HP-equivalents": one point is one HP of damage dealt or healed.
 
 use super::board::Board;
-use super::combat::{counter_chance, hit_damage, morale_loss};
+use super::combat::{hit_damage, morale_loss};
 use super::strategy;
 use super::{Action, BattleEvent, BattleState, Unit, UnitId};
 use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
@@ -916,7 +916,7 @@ impl<'a> Planner<'a> {
             if !(morale == 0 && t.has_status(StatusKind::Confused)) {
                 counter = Some(CounterInfo {
                     offsets: t_class.range.offsets().unwrap_or_default(),
-                    chance: counter_chance(&pack.rules, t.strength),
+                    chance: st.counter_odds(pack, target, t.morale, morale),
                     atk: st.attack_with_morale(pack, target, morale),
                     affinity: st.affinity(pack, target, self.id),
                 });
@@ -990,6 +990,25 @@ impl<'a> Planner<'a> {
         out
     }
 
+    /// Under the original formulas, the expected value of hostile unit `u`'s morale falling from
+    /// `before` to `after` with `hp` left: below 30 it is confused with 60 % (a skipped phase,
+    /// and a rout at 0), as `BattleState::morale_set` rolls it. Nothing otherwise.
+    fn fall_confusion_value(&self, u: UnitId, before: i32, after: i32, hp: i32) -> i64 {
+        let (st, pack) = (self.st, self.pack);
+        if !strategy::original_formulas(pack)
+            || after >= before
+            || after >= strategy::MORALE_DOWN_CONFUSES_BELOW
+        {
+            return 0;
+        }
+        let odds = strategy::MORALE_DOWN_CONFUSION as i64;
+        let mut v = st.attack_power(pack, u) as i64 / 2 * odds / 100;
+        if after == 0 {
+            v += hp as i64 * odds / 100;
+        }
+        v
+    }
+
     /// Expected value of `s`'s effects on unit `u` standing on `terrain`.
     fn unit_value(&self, s: &StrategyDef, u: UnitId, terrain: Option<&TerrainDef>) -> i64 {
         let (st, pack) = (self.st, self.pack);
@@ -1022,7 +1041,11 @@ impl<'a> Planner<'a> {
                     }
                     v += sign * value;
                     hp -= dmg.min(hp);
-                    morale -= morale_loss(&pack.rules, dmg, t.max_hp).min(morale);
+                    let new = morale - morale_loss(&pack.rules, dmg, t.max_hp).min(morale);
+                    if sign > 0 && hp > 0 && !confused {
+                        v += self.fall_confusion_value(u, morale, new, hp);
+                    }
+                    morale = new;
                 }
                 Effect::Heal { power } => {
                     let heal = st
@@ -1038,19 +1061,8 @@ impl<'a> Planner<'a> {
                     // Morale enters ATK/DEF as `(level + 10) * morale / 10`.
                     let change = (new - morale) as i64 * level_factor / 10;
                     v += if sign > 0 { -change } else { change / 2 };
-                    // The original formulas: a morale-down leaving little morale confuses
-                    // (routing a unit left at 0), as `apply_effects` rolls it.
-                    if sign > 0
-                        && delta < 0
-                        && new < strategy::MORALE_DOWN_CONFUSES_BELOW
-                        && !confused
-                        && strategy::original_formulas(pack)
-                    {
-                        let odds = strategy::MORALE_DOWN_CONFUSION as i64;
-                        v += st.attack_power(pack, u) as i64 / 2 * odds / 100;
-                        if new == 0 {
-                            v += hp as i64 * odds / 100;
-                        }
+                    if sign > 0 && delta < 0 && !confused {
+                        v += self.fall_confusion_value(u, morale, new, hp);
                     }
                     morale = new;
                 }
