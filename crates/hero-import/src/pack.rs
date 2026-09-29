@@ -70,7 +70,7 @@ use crate::planar::{self, CELL_BYTES, CELL_PX};
 use crate::sprites;
 use crate::text::TextEncoding;
 use crate::{ls11, table6};
-use hero_core::data::{ClassDef, Learn, RangeSpec, StrategyDef, TerrainDef};
+use hero_core::data::{Area, ClassDef, Effect, Learn, RangeSpec, StrategyDef, TerrainDef};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -91,7 +91,9 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 9: the camp frame in `ui` ([`CAMP_FRAME`] and `[presentation.camp_frame]`).
 /// 10: `music` (the original's songs rendered as `bgm/<key>.wav`, [`MUSIC_KEYS`]).
 /// 11: the duels as `@duel` scenes and their pictures in `gfx/duel/` (`duel_pictures`).
-pub const PACK_FORMAT_VERSION: u32 = 11;
+/// 12: the strategies' damage, morale and healing amounts and the 大 support reach from the
+/// original's formulas (`original_effect`).
+pub const PACK_FORMAT_VERSION: u32 = 12;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -1256,12 +1258,38 @@ pub fn original_strategies(
         let mut s2 = s.clone();
         s2.mp = i32::from(rules.mp[i]);
         let reach = rules.range[i];
+        // The 大 support strategies reach by their step, not by the table (FORMATS §10.4).
+        let reach_name = if i >= GREAT_SUPPORT_FIRST {
+            Some(REACH_NAMES[(i - GREAT_SUPPORT_FIRST) % 3])
+        } else {
+            REACH_NAMES.get(usize::from(reach)).copied()
+        };
         s2.range = RangeSpec::Named(
-            REACH_NAMES
-                .get(usize::from(reach))
+            reach_name
                 .ok_or_else(|| format!("the original's reach code {reach} of strategy {i}"))?
                 .to_string(),
         );
+        if i >= GREAT_SUPPORT_FIRST {
+            s2.area = Area::AllInRange;
+            if s.area != s2.area {
+                notes.push(format!("{}: area {:?} -> all_in_range", s.id, s.area));
+            }
+        }
+        s2.effects = s
+            .effects
+            .iter()
+            .map(|e| original_effect(i, reach, e))
+            .collect();
+        for (old, new) in s.effects.iter().zip(&s2.effects) {
+            if old != new {
+                notes.push(format!(
+                    "{}: {} -> {}",
+                    s.id,
+                    effect_label(old),
+                    effect_label(new)
+                ));
+            }
+        }
         if s.mp != s2.mp {
             notes.push(format!("{}: mp {} -> {}", s.id, s.mp, s2.mp));
         }
@@ -1276,6 +1304,51 @@ pub fn original_strategies(
         out.push(s2);
     }
     Ok((out, notes))
+}
+
+/// First of the 大 support strategies (30–35), which work on everyone of the caster's side within
+/// range8/12/20 by their step (`(id − 30) % 3`), the caster included.
+const GREAT_SUPPORT_FIRST: usize = 30;
+
+/// Effect `e` of the base pack's strategy with the original's number `i` and reach code `reach`,
+/// with the original's amounts (MAIN.EXE's strategy command, FORMATS §10.4): attacks (0–14) deal
+/// `100 × (4 × reach + element + 2)` (fire 0, water 1, rock 2), morale-downs (18–20) take
+/// `(reach + 2) × 10`, and the support strategies (21–35) restore `(step + 1) × 600` troops and
+/// `(step + 3) × 10` morale, the step being the reach code (21–29) or `(i − 30) % 3` (30–35).
+/// Effects are matched by kind: a heal or morale-up a pack gives such a strategy gets the
+/// original's amount too. Other effects stay as they are.
+fn original_effect(i: usize, reach: u8, e: &Effect) -> Effect {
+    let reach = i32::from(reach);
+    let step = if i >= GREAT_SUPPORT_FIRST {
+        ((i - GREAT_SUPPORT_FIRST) % 3) as i32
+    } else {
+        reach
+    };
+    match (*e).clone() {
+        Effect::Damage { .. } if i < 15 => Effect::Damage {
+            power: 100 * (4 * reach + (i / 5) as i32 + 2),
+        },
+        Effect::Morale { amount } if amount < 0 && (18..=20).contains(&i) => Effect::Morale {
+            amount: -(reach + 2) * 10,
+        },
+        Effect::Morale { amount } if amount > 0 && i >= 21 => Effect::Morale {
+            amount: (step + 3) * 10,
+        },
+        Effect::Heal { .. } if i >= 21 => Effect::Heal {
+            power: (step + 1) * 600,
+        },
+        other => other,
+    }
+}
+
+/// An effect for the notes.
+fn effect_label(e: &Effect) -> String {
+    match e {
+        Effect::Damage { power } => format!("damage {power}"),
+        Effect::Heal { power } => format!("heal {power}"),
+        Effect::Morale { amount } => format!("morale {amount:+}"),
+        other => format!("{other:?}"),
+    }
 }
 
 /// The strategy tables have the game's shape (they may come from elsewhere than
@@ -4119,9 +4192,10 @@ mod tests {
         }
         let text = std::fs::read_to_string(pack.join(STRATEGY_RULES)).unwrap();
         let rules: Strategies = toml::from_str(&text).unwrap();
+        // great_encourage (30) reaches by its step (0: range8), not by the fixture's reach table.
         assert_eq!(
             (rules.strategy[1].mp, rules.strategy[1].range.clone()),
-            (32, RangeSpec::Named("range20".into())),
+            (32, RangeSpec::Named("range8".into())),
             "{text}"
         );
         assert!(
@@ -4433,10 +4507,36 @@ mod tests {
     #[test]
     fn the_original_strategy_tables_adjust_strategies_and_learn_lists() {
         let rules = maps::fixture_strategy_rules();
+        let with = |mut s: StrategyDef, effects: Vec<Effect>| {
+            s.effects = effects;
+            s
+        };
         let strategies = [
-            strategy_def("scorch", 4, "range8"),
-            strategy_def("great_encourage", 16, "range8"),
+            with(
+                strategy_def("scorch", 4, "range8"),
+                vec![Effect::Damage { power: 1 }],
+            ),
+            with(
+                strategy_def("great_encourage", 16, "range8"),
+                vec![Effect::Morale { amount: 20 }],
+            ),
             strategy_def("blast", 30, "range12"),
+            with(
+                strategy_def("tsunami", 10, "range20"),
+                vec![Effect::Damage { power: 1 }],
+            ),
+            with(
+                strategy_def("provoke", 10, "range20"),
+                vec![Effect::Morale { amount: -1 }],
+            ),
+            with(
+                strategy_def("revive", 10, "range20"),
+                vec![Effect::Heal { power: 1 }, Effect::Morale { amount: 1 }],
+            ),
+            with(
+                strategy_def("great_relief", 10, "range20"),
+                vec![Effect::Heal { power: 1 }],
+            ),
         ];
         let (out, notes) = original_strategies(&rules, &strategies).unwrap();
         // The fixture: reach `i % 4`, MP `2 + i`; great_encourage is strategy 30.
@@ -4444,9 +4544,28 @@ mod tests {
             (out[0].mp, &out[0].range),
             (2, &RangeSpec::Named("range8".into()))
         );
+        // Attacks: 100 × (4 × reach + element + 2); scorch is fire with reach 0, tsunami (7) water
+        // with reach 3.
+        assert_eq!(out[0].effects, [Effect::Damage { power: 200 }]);
+        assert_eq!(out[3].effects, [Effect::Damage { power: 1500 }]);
+        // Morale-down (19, reach 3): (reach + 2) × 10.
+        assert_eq!(out[4].effects, [Effect::Morale { amount: -50 }]);
+        // Support by its step: 29 (reach 1) and 大 35 (step 2).
         assert_eq!(
-            (out[1].mp, &out[1].range),
-            (32, &RangeSpec::Named("range20".into()))
+            out[5].effects,
+            [Effect::Heal { power: 1200 }, Effect::Morale { amount: 40 }]
+        );
+        assert_eq!(out[6].effects, [Effect::Heal { power: 1800 }]);
+        // The 大 support strategies reach by their step and work on everyone in reach.
+        assert_eq!(
+            (out[1].mp, &out[1].range, out[1].area),
+            (32, &RangeSpec::Named("range8".into()), Area::AllInRange)
+        );
+        assert_eq!(out[1].effects, [Effect::Morale { amount: 30 }]);
+        assert_eq!(out[6].range, RangeSpec::Named("range20".into()));
+        assert!(
+            notes.contains(&"scorch: damage 1 -> damage 200".to_string()),
+            "{notes:?}"
         );
         // A strategy the original does not have stays the chain's.
         assert_eq!(out[2], strategies[2]);
