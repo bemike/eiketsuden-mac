@@ -18,7 +18,7 @@
 
 use crate::battles::BATTLE_MAP;
 use crate::battles::{self, Names, TextSource};
-use crate::scenario::{Block, Instr, Operands, Record, Scene};
+use crate::scenario::{story, Block, Instr, Operands, Record, Scene};
 use hero_core::battledef::{BattleDef, Condition, DeployDef, MapDef};
 use hero_core::campaign::{CampaignDef, Node};
 use hero_core::geom::Pos;
@@ -39,9 +39,6 @@ pub const ENDING_FLAG: &str = "orig_ending";
 pub fn ending_node(n: u8) -> String {
     format!("orig_ending_{n}")
 }
-
-/// Record kind of a person one talks to (FORMATS §13.2).
-const TALK: u8 = 3;
 
 /// A block of a scenario scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -610,31 +607,19 @@ fn growth_after_joining(text: &str) -> String {
     out
 }
 
-/// Whether `r` asks whether to set out (a question whose yes starts a battle: `op_3d`, a
-/// battle's setup).
+/// The script of `r`, for the [`story`] readings.
+fn code(r: &Record) -> Vec<&Instr> {
+    r.code.iter().collect()
+}
+
+/// Whether `r` asks whether to set out ([`story::asks_sortie`]).
 fn sortie(r: &Record) -> bool {
-    r.code.iter().enumerate().any(|(i, c)| {
-        c.mnemonic == "if_answer"
-            && r.code[i + 1..]
-                .iter()
-                .take(usize::from(c.operands.get("skip").unwrap_or(0)))
-                .any(|g| matches!(g.mnemonic, "op_3d" | "battle_setup" | "begin_battle"))
-    })
+    story::asks_sortie(&code(r))
 }
 
 /// Whether `r` leaves its group's parallel control (moves the story on).
 fn leaves(r: &Record) -> bool {
-    r.code.iter().any(|c| c.mnemonic == "leave_parallel")
-}
-
-/// Whether `r` changes the army, the inventory or the original's flags.
-fn has_effects(r: &Record) -> bool {
-    r.code.iter().any(|c| {
-        matches!(
-            c.mnemonic,
-            "set_allegiance" | "add_item" | "set_shop_items" | "data" | "set_flag"
-        )
-    })
+    story::leaves_parallel(&code(r))
 }
 
 impl<'c, 'a> Writer<'c, 'a> {
@@ -662,14 +647,13 @@ impl<'c, 'a> Writer<'c, 'a> {
             .filter(|r| leaves(r))
             .map(|r| r.trigger.group)
             .collect();
+        // (A talk that asks leads to the records of its options.)
         let chatter = |r: &Record| {
-            r.trigger.kind == TALK
-                && !leaves(r)
-                && progressing.contains(&r.trigger.group)
-                && !has_effects(r)
-                // A talk that asks leads to the records of its options.
-                && !r.code.iter().any(|c| c.mnemonic == "choice")
-                && !sortie(r)
+            story::is_chatter(
+                r.trigger.kind,
+                progressing.contains(&r.trigger.group),
+                &code(r),
+            )
         };
         let mut taken = BTreeSet::new();
         for (i, rec) in block.records.iter().enumerate().skip(from) {
@@ -1442,6 +1426,7 @@ pub fn continue_campaign(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scenario::TALK;
     use crate::scenario::{Arg, ArgKind, Trigger};
     use std::collections::BTreeMap;
 

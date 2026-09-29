@@ -6,7 +6,7 @@
 //! [`Detail::Text`] (every record with the lines it shows: stays on the player's computer).
 
 use crate::extract::{BlockOut, InstrOut, RecordOut, ScenarioFile};
-use crate::scenario::Operands;
+use crate::scenario::{self, story, Operands, TALK};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -18,9 +18,6 @@ pub(crate) enum Detail {
     /// The summaries, then every record with the lines it shows.
     Text,
 }
-
-/// Record kind of a person one talks to (FORMATS §13.2).
-const TALK: u8 = 3;
 
 /// A map id as its kind and number (FORMATS §13.3 `load_map`).
 fn map_label(map: u16) -> String {
@@ -36,17 +33,13 @@ fn get(i: &InstrOut, name: &str) -> u16 {
     i.instr.operands.get(name).unwrap_or(0)
 }
 
-fn leaves(r: &RecordOut) -> bool {
-    r.code.iter().any(|c| c.instr.mnemonic == "leave_parallel")
+/// The script of `r`, for the [`story`] readings the converter shares.
+fn code(r: &RecordOut) -> Vec<&scenario::Instr> {
+    r.code.iter().map(|c| &c.instr).collect()
 }
 
-fn has_effects(r: &RecordOut) -> bool {
-    r.code.iter().any(|c| {
-        matches!(
-            c.instr.mnemonic,
-            "set_allegiance" | "add_item" | "set_shop_items" | "data" | "set_flag"
-        )
-    })
+fn leaves(r: &RecordOut) -> bool {
+    story::leaves_parallel(&code(r))
 }
 
 /// A person as the extraction resolved it, else its number.
@@ -109,6 +102,9 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
         "연출"
     };
     let groups: BTreeSet<u8> = block.records.iter().map(|r| r.trigger.group).collect();
+    // Chatter as the converter reads it (`scenario::story`), over the whole block: the
+    // converter reads a block from where its story starts (after a battle, `records[from..]`),
+    // which only matters for a group whose moving record comes before that start.
     let progressing: BTreeSet<u8> = block
         .records
         .iter()
@@ -124,11 +120,11 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
         .records
         .iter()
         .filter(|r| {
-            r.trigger.kind == TALK
-                && !leaves(r)
-                && progressing.contains(&r.trigger.group)
-                && !has_effects(r)
-                && !r.code.iter().any(|c| c.instr.mnemonic == "choice")
+            story::is_chatter(
+                r.trigger.kind,
+                progressing.contains(&r.trigger.group),
+                &code(r),
+            )
         })
         .count();
     let mut head = format!(
@@ -254,9 +250,8 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                 "if_answer" => {
                     let skip = usize::from(get(c, "skip"));
                     let guarded = &r.code[at + 1..(at + 1 + skip).min(r.code.len())];
-                    let sortie = guarded.iter().any(|g| {
-                        matches!(g.instr.mnemonic, "op_3d" | "battle_setup" | "begin_battle")
-                    });
+                    let sortie =
+                        story::starts_battle(&guarded.iter().map(|g| &g.instr).collect::<Vec<_>>());
                     let then: Vec<&str> = guarded
                         .iter()
                         .map(|g| g.instr.mnemonic)
