@@ -426,7 +426,10 @@ pub fn stale_pack(dir: &Path) -> Result<Option<String>, String> {
     if index.format != PACK_FORMAT {
         return Ok(None);
     }
-    const AGAIN: &str = "convert it again (`hero-tools original pack <install> --out <folder>`)";
+    const AGAIN: &str = concat!(
+        "convert it again (`hero-tools original pack <install> --out <folder>`",
+        " with the `--base` it was written with)"
+    );
     if index.format_version != PACK_FORMAT_VERSION {
         return Ok(Some(format!(
             "written by another version of the converter (pack format {}, this one writes \
@@ -460,7 +463,22 @@ pub fn stale_packs(dir: &Path, pack: &hero_core::pack::Pack) -> Vec<(std::path::
     pack.layers
         .iter()
         .filter_map(|layer| {
-            let layer_dir = dir.join(&layer.dir);
+            // `data/mod` and `../original`: `data/original`, as the chain resolves it (D8).
+            let mut layer_dir = dir.to_path_buf();
+            for part in Path::new(&layer.dir).components() {
+                match part {
+                    std::path::Component::ParentDir
+                        if matches!(
+                            layer_dir.components().next_back(),
+                            Some(std::path::Component::Normal(_))
+                        ) =>
+                    {
+                        layer_dir.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    other => layer_dir.push(other),
+                }
+            }
             match stale_pack(&layer_dir) {
                 Ok(None) => None,
                 Ok(Some(why)) | Err(why) => Some((layer_dir, why)),

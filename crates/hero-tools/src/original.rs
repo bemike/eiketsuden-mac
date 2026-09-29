@@ -500,7 +500,7 @@ mod tests {
         let mod_pack = crate::load_pack(&modded).unwrap();
         let found = pack::stale_packs(&modded, &mod_pack);
         assert_eq!(found.len(), 1, "{found:?}");
-        assert!(found[0].0.ends_with("original"), "{found:?}");
+        assert_eq!(found[0].0, tmp.0.join("data/original"), "{found:?}");
         let issues = crate::validate::check(&modded, &mod_pack).unwrap();
         assert!(
             issues.iter().any(|i| i.severity == Severity::Warning
