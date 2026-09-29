@@ -175,10 +175,18 @@ fn first_line(text: &str) -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
+/// [`read_clipboard`] runs on a worker thread ([`OriginalScreen::paste`]). Defined with it: the
+/// Linux read must not run on the main thread and miniquad's must not run on another.
+#[cfg(target_os = "linux")]
+const READS_IN_BACKGROUND: bool = true;
+#[cfg(not(target_os = "linux"))]
+const READS_IN_BACKGROUND: bool = false;
+
 /// The first line of the clipboard, `None` when it holds no text. On Linux it runs on a worker
 /// thread with its own X11 connection, which gives up on a clipboard owner that does not answer
-/// (arboard waits 4 s); miniquad's read waits for it forever on the main thread
-/// (docs/DECISIONS.md D14).
+/// (arboard waits 4 s for each of the six text formats it asks for, so up to about 24 s; Esc
+/// cancels meanwhile, and a timeout reads as an empty clipboard). miniquad's read waits for it
+/// forever on the main thread (docs/DECISIONS.md D14).
 #[cfg(target_os = "linux")]
 fn read_clipboard() -> Result<Option<String>, String> {
     let mut clipboard =
@@ -299,7 +307,7 @@ impl OriginalScreen {
     /// Paste the clipboard's first line at the end of the path line (a new line when none is
     /// being typed). Linux reads it in the background ([`read_clipboard`]).
     fn paste(&mut self, ctx: &mut Ctx) {
-        if cfg!(target_os = "linux") {
+        if READS_IN_BACKGROUND {
             self.start(ctx, true, "클립보드".into(), || {
                 Done::Pasted(read_clipboard())
             });
@@ -1007,6 +1015,17 @@ impl OriginalScreen {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_paste_takes_the_first_line() {
+        assert_eq!(first_line("C:\\GAME\r\nmore"), Some("C:\\GAME".to_string()));
+        assert_eq!(
+            first_line("/home/me/game\n"),
+            Some("/home/me/game".to_string())
+        );
+        assert_eq!(first_line(""), None);
+        assert_eq!(first_line("   \nsecond"), None);
+    }
+
     use super::*;
     use std::path::PathBuf;
 

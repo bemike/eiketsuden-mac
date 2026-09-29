@@ -235,7 +235,7 @@ pub struct Background<T> {
 impl<T: Send + 'static> Background<T> {
     pub fn spawn(work: impl FnOnce() -> T + Send + 'static) -> Background<T> {
         match std::thread::Builder::new()
-            .name("folder-read".into())
+            .name("background-read".into())
             .spawn(work)
         {
             Ok(handle) => Background {
@@ -244,7 +244,7 @@ impl<T: Send + 'static> Background<T> {
             },
             Err(e) => Background {
                 running: None,
-                failed: Some(format!("폴더를 읽을 스레드를 시작하지 못했습니다: {e}")),
+                failed: Some(format!("작업 스레드를 시작하지 못했습니다: {e}")),
             },
         }
     }
@@ -261,9 +261,9 @@ impl<T: Send + 'static> Background<T> {
             return None;
         }
         Some(
-            handle.join().map_err(|panic| {
-                format!("폴더를 읽다가 오류가 났습니다: {}", panic_message(&*panic))
-            }),
+            handle
+                .join()
+                .map_err(|panic| format!("읽다가 오류가 났습니다: {}", panic_message(&*panic))),
         )
     }
 }
@@ -522,7 +522,7 @@ mod tests {
         let crashed: Result<(), String> = wait(Background::spawn(|| panic!("disk on fire")));
         assert_eq!(
             crashed,
-            Err("폴더를 읽다가 오류가 났습니다: disk on fire".to_string())
+            Err("읽다가 오류가 났습니다: disk on fire".to_string())
         );
     }
 
