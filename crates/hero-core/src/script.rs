@@ -44,7 +44,7 @@ pub enum DuelSide {
 pub enum DuelAct {
     /// Gallop towards the other fighter, up to a short distance from them.
     Charge,
-    /// Strike: the two attack frames from `frame` (4–10), with a clash.
+    /// Strike: the attack frames `frame` (4, 6, 8 or 10) and the next, with a clash.
     Strike(u8),
     /// Fall from the horse and lie on the ground.
     Fall,
@@ -487,10 +487,10 @@ impl Parser<'_> {
                     (Some("flee"), None) => DuelAct::Flee,
                     (Some("back"), None) => DuelAct::Back,
                     (Some("strike"), Some(n)) => match n.parse::<u8>() {
-                        Ok(frame @ 4..=10) => DuelAct::Strike(frame),
+                        Ok(frame @ (4 | 6 | 8 | 10)) => DuelAct::Strike(frame),
                         _ => {
                             return Err(
-                                self.err(line, "@duel_act strike takes a frame from 4 to 10")
+                                self.err(line, "@duel_act strike takes the frame 4, 6, 8 or 10")
                             )
                         }
                     },
@@ -735,6 +735,7 @@ liu_bei: 어지러운 세상이로구나.
             "@duel_act up charge",
             "@duel_act left strike 3",
             "@duel_act left strike 11",
+            "@duel_act left strike 5",
             "@duel_act left dance",
             "@duel_act left fall now",
         ] {

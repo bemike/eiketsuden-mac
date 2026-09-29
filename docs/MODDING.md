@@ -1037,7 +1037,7 @@ caught; write free names in Korean or with a capital letter.
 | `@gold <±n>` | Give (or take) gold, clamped to `0..=gold_cap`. |
 | `@item <item id>` | Give one item. |
 | `@duel <left> <right> [background]` | Open the duel scene: two mounted officers (officer ids) facing each other, `left` on the left, over `gfx/duel/<background>.png` (a plain dark stage without it). It stays on screen (messages show over it) until `@duel_end` or the end of the scene. |
-| `@duel_act <left\|right> <move>` | A move of one fighter; the scene waits until it is over. Moves: `charge` (gallop to four cells from the other), `strike <4-10>` (the two attack frames from that frame, with a clash), `fall` (thrown off, lying), `flee` (gallop off the stage), `back` (ride back to the start). |
+| `@duel_act <left\|right> <move>` | A move of one fighter; the scene waits until it is over. Moves: `charge` (gallop to four cells from the other), `strike <4\|6\|8\|10>` (that attack frame and the next, with a clash), `fall` (thrown off, lying), `flee` (gallop off the stage), `back` (ride back to the start). |
 | `@duel_end` | Close the duel scene. |
 | `@end` | End the scene. Added automatically at the end of every scene. |
 

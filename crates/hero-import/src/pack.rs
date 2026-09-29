@@ -1850,7 +1850,7 @@ fn convert_battles(
 // ----- duels ---------------------------------------------------------------------------------
 
 /// Frames of a rider set of `HEXICHR.R3` (the engine's duel sheet: 0–3 galloping, 4–11
-/// attacking, 12 falling, 13 lying, 14 the horse alone).
+/// attacking, 12 falling, 13 and 14 lying next to the horse).
 pub const DUEL_FRAMES: usize = 15;
 /// Rider set of each duel side: MAIN.EXE draws a fighter without a set of their own with set 0
 /// on the left and set 1 on the right.

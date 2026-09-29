@@ -934,12 +934,24 @@ fn drama_checks() {
                 "@join jian_yong\n@duel_act left charge",
             )],
             "scene oath",
-            "@duel_act before any @duel",
+            "@duel_act outside a @duel",
+        ),
+        error(
+            &[(
+                STORY,
+                "@join jian_yong",
+                "@join jian_yong
+@duel liu_bei guan_yu
+@duel_end
+@duel_act left fall",
+            )],
+            "scene oath",
+            "@duel_act outside a @duel",
         ),
         error(
             &[(STORY, "@join jian_yong", "@join jian_yong\n@duel_end")],
             "scene oath",
-            "@duel_end before any @duel",
+            "@duel_end outside a @duel",
         ),
         warning(
             &[(

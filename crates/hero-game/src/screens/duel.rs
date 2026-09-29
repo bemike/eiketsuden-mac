@@ -3,7 +3,7 @@
 //! facing right and the right one mirrored, over the background `gfx/duel/<bg>.png`.
 //!
 //! A fighter is drawn from a sheet of fifteen 96×96 frames in a row (docs/ASSETS.md): 0–3
-//! galloping, 4–11 attacking (pairs), 12 falling, 13 lying, 14 the horse alone. The sheet is
+//! galloping, 4–11 attacking (pairs), 12 falling, 13 and 14 lying next to the horse (two poses). The sheet is
 //! `gfx/duel/<officer>.png` for the officer, else `gfx/duel/left.png` / `right.png` for the side.
 //! Without a sheet the fighter is not drawn (the scene still runs its timing).
 
@@ -135,9 +135,12 @@ impl DuelView {
                 Some(sfx::RETREAT)
             }
             DuelAct::Flee => {
+                // Off the stage, however far that is.
                 let mut x = me;
-                for n in 0..14u8 {
+                let mut n = 0u8;
+                while !off_stage(x) {
                     x -= toward;
+                    n = n.wrapping_add(1);
                     steps.push((
                         Pose {
                             x,
@@ -203,7 +206,7 @@ impl DuelView {
         f.x = pose.x;
         f.frame = pose.frame;
         f.turned = turned;
-        f.gone = !(-6..STAGE_CELLS).contains(&pose.x);
+        f.gone = off_stage(pose.x);
     }
 
     /// Textures the scene needs (for preloading).
@@ -247,24 +250,47 @@ impl DuelView {
                 continue;
             };
             let size = FRAME * scale;
-            let x = stage.x + f.x as f32 * CELL * scale - size / 2.0 + CELL * scale;
-            let y = stage.y + ROW * CELL * scale;
+            let x = (stage.x + f.x as f32 * CELL * scale - size / 2.0 + CELL * scale).round();
+            let y = (stage.y + ROW * CELL * scale).round();
             // The sheets face right: the right fighter is mirrored, and so is one turning away.
             let mirrored = (i == 1) != f.turned;
+            // Only the part on the stage is drawn (a rider comes and goes at its edges).
+            let (cut_left, cut_right) =
+                ((stage.x - x).max(0.0), (x + size - stage.right()).max(0.0));
+            if cut_left + cut_right >= size {
+                continue;
+            }
+            // In sheet pixels; a mirrored frame is cut on the other side of the sheet.
+            let (src_left, src_right) = if mirrored {
+                (cut_right / scale, cut_left / scale)
+            } else {
+                (cut_left / scale, cut_right / scale)
+            };
             draw_texture_ex(
                 &sheet,
-                x.round(),
-                y.round(),
+                x + cut_left,
+                y,
                 WHITE,
                 DrawTextureParams {
-                    dest_size: Some(vec2(size, size)),
-                    source: Some(Rect::new(f32::from(f.frame) * FRAME, 0.0, FRAME, FRAME)),
+                    dest_size: Some(vec2(size - cut_left - cut_right, size)),
+                    source: Some(Rect::new(
+                        f32::from(f.frame) * FRAME + src_left,
+                        0.0,
+                        FRAME - src_left - src_right,
+                        FRAME,
+                    )),
                     flip_x: mirrored,
                     ..Default::default()
                 },
             );
         }
     }
+}
+
+/// Whether a rider at `x` is entirely off the stage (a frame reaches 2 cells left and 4 right
+/// of its cell).
+fn off_stage(x: i32) -> bool {
+    x + 4 <= 0 || x - 2 >= STAGE_CELLS
 }
 
 /// Width of the stage in stage pixels.
@@ -353,6 +379,15 @@ mod tests {
         v.update(0.0, true);
         assert!(v.fighters[1].gone);
         assert!(v.fighters[1].turned);
+        // From wherever the flight starts (here after a charge to the right).
+        let mut v = DuelView::new("a", "b", None);
+        v.act(DuelSide::Left, DuelAct::Charge);
+        v.act(DuelSide::Left, DuelAct::Flee);
+        v.update(STEP, false);
+        assert!(!v.fighters[0].gone);
+        v.update(0.0, true);
+        assert!(v.fighters[0].gone);
+        assert!(off_stage(v.fighters[0].x) && !off_stage(v.fighters[0].x + 1));
         let mut v = DuelView::new("a", "b", None);
         v.act(DuelSide::Left, DuelAct::Charge);
         v.act(DuelSide::Left, DuelAct::Back);

@@ -1479,7 +1479,8 @@ impl<'a> Validator<'a> {
         let pack = self.pack;
         for scene in pack.scenes.values() {
             let ctx = format!("scene {}", scene.id);
-            // A duel is open from its `@duel` on in the order the lines are written.
+            // A duel is open from its `@duel` to its `@duel_end` in the order the lines are
+            // written (jumps are not followed).
             let mut duel_open = false;
             for cmd in &scene.cmds {
                 match cmd {
@@ -1497,8 +1498,9 @@ impl<'a> Validator<'a> {
                         } else {
                             "duel_act"
                         };
-                        self.error(&ctx, format!("@{word} before any @duel"));
+                        self.error(&ctx, format!("@{word} outside a @duel"));
                     }
+                    Cmd::DuelEnd => duel_open = false,
                     Cmd::Join(o) | Cmd::Leave(o) => {
                         if pack.officer(o).is_none() {
                             let word = if matches!(cmd, Cmd::Join(_)) {

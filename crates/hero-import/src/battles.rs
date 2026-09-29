@@ -1153,6 +1153,9 @@ impl EventWriter<'_, '_> {
                 }
                 "duel_action" => {
                     let Some((first, second, left, right)) = &duel else {
+                        self.notes.push(format!(
+                            "record {record}: a duel move without a duel it belongs to is left out"
+                        ));
                         continue;
                     };
                     let (first, second) = (*first, *second);

@@ -334,8 +334,15 @@ impl Stage {
                 draw_portrait_card(ctx, Some(&p.key), slot_rect(canvas, i), p.alpha, p.light);
             }
         }
+    }
+
+    /// `@fade out` / `@fade in`: over everything of the stage, the duel scene included.
+    fn draw_fade(&self, ctx: &Ctx) {
         if self.fade > 0.0 {
-            fill_rect(screen, Color::new(0.0, 0.0, 0.0, self.fade.min(1.0)));
+            fill_rect(
+                ctx.gfx.screen(),
+                Color::new(0.0, 0.0, 0.0, self.fade.min(1.0)),
+            );
         }
     }
 }
@@ -1439,6 +1446,7 @@ impl Screen for DramaScreen {
         if let Some(duel) = &self.duel {
             duel.draw(ctx, self.duel_area(ctx));
         }
+        self.stage.draw_fade(ctx);
         match &self.current {
             Current::Title(card) => card.draw(ctx),
             Current::Text { dialogue, .. } => dialogue.draw(ctx, !self.fast_now),
