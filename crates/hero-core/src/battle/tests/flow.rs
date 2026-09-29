@@ -303,8 +303,10 @@ fn original_formulas_end_confusion_on_a_recovery_roll() {
     let mut st = state(&pack);
     let bold = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
     add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
-    // (200 + 100) / 3 >= 100: always.
-    st.units[bold].lead = 200;
+    // (300 + 0) / 3 >= 100: always, and not confused again by its low morale (which would be
+    // sure at 0) in the same phase start.
+    st.units[bold].lead = 300;
+    st.units[bold].morale = 0;
     st.units[bold].statuses = vec![confused(crate::battle::UNTIL_RECOVERED)];
     assert_eq!(
         st.begin(&pack),

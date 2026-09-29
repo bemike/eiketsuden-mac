@@ -1031,6 +1031,19 @@ impl<'a> Planner<'a> {
                     // Morale enters ATK/DEF as `(level + 10) * morale / 10`.
                     let change = (new - morale) as i64 * level_factor / 10;
                     v += if sign > 0 { -change } else { change / 2 };
+                    // The original formulas: a morale-down leaving little morale confuses with
+                    // 60 % (routing a unit left at 0).
+                    if sign > 0
+                        && new < morale
+                        && new < 30
+                        && !confused
+                        && super::strategy::original_formulas(pack)
+                    {
+                        v += st.attack_power(pack, u) as i64 / 2 * 60 / 100;
+                        if new == 0 {
+                            v += hp as i64 * 60 / 100;
+                        }
+                    }
                     morale = new;
                 }
                 Effect::Status { .. } => {
@@ -1194,7 +1207,12 @@ impl<'a> Planner<'a> {
         {
             if h.statuses
                 .iter()
-                .any(|s| s.status == StatusKind::Confused && s.turns >= 2)
+                // Sure to stay confused next phase (one without a length may recover).
+                .any(|s| {
+                    s.status == StatusKind::Confused
+                        && s.turns >= 2
+                        && s.turns != super::UNTIL_RECOVERED
+                })
             {
                 continue;
             }
