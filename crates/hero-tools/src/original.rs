@@ -756,8 +756,13 @@ mod tests {
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
+        // (Then chapter 2's ten, made from the original battles.)
         let battles = json["battles"].as_array().unwrap();
-        assert_eq!(battles.len(), 21, "{battles:#?}");
+        let (later, restaged): (Vec<_>, Vec<_>) = battles
+            .iter()
+            .partition(|b| b["id"].as_str().unwrap().starts_with("c2_s"));
+        assert_eq!(restaged.len(), 21, "{battles:#?}");
+        assert_eq!(later.len(), 10, "{battles:#?}");
         let expect = [
             ("p1_sishui", "hexz_00", 30),
             ("p2_hulao", "hexz_01", 30),
@@ -885,6 +890,30 @@ mod tests {
         for key in ["left", "right", "field", "guan_yu", "zhang_fei", "lu_bu"] {
             assert!(out.join(format!("gfx/duel/{key}.png")).is_file(), "{key}");
         }
+        // Chapter 2 (SNR2): its ten battles and its story continue the base campaign after
+        // Xuzhou, and a wrong answer at Yuan Shao's hall ends the game.
+        let chapter: Vec<&str> = pack
+            .battles
+            .keys()
+            .map(|k| k.as_str())
+            .filter(|k| k.starts_with("c2_s"))
+            .collect();
+        assert_eq!(chapter.len(), 10, "{chapter:?}");
+        assert!(pack.battles["c2_s3_b7"].name.starts_with("장판파"));
+        let after = pack
+            .campaign
+            .node("c1_battle_xuzhou2")
+            .expect("the base campaign's last battle");
+        assert!(
+            matches!(after, hero_core::campaign::Node::Battle { next, .. } if next == "c2_s0_story0"),
+            "{after:?}"
+        );
+        assert!(pack.campaign.node("orig_c2_end").is_some());
+        let story = std::fs::read_to_string(out.join(pack::CHAPTER_DRAMA_FILE)).unwrap();
+        assert!(
+            story.contains("@set orig_game_over = 1") && story.contains("yuan_shao: "),
+            "{story}"
+        );
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

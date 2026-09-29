@@ -150,13 +150,13 @@ pub const ORIGINAL_BATTLES: &[Pairing] = &[
 ];
 
 /// Upper nibble of a `load_map` value that loads a battle map.
-const BATTLE_MAP: u16 = 0x3000;
+pub(crate) const BATTLE_MAP: u16 = 0x3000;
 /// Trigger kind `unit_at_cell`.
 const UNIT_AT_CELL: u8 = 6;
 /// Person value of trigger records meaning "any unit".
 const ANY_UNIT: u16 = 0x400;
 /// `BAKDATA` person of Liu Bei.
-const LIU_BEI: u16 = 0;
+pub(crate) const LIU_BEI: u16 = 0;
 /// Person value of setup slots that any deployed officer may take.
 const ANY_OFFICER: u16 = 0x400;
 /// `data` kinds: add gold / run the battle routine.
@@ -692,7 +692,7 @@ fn event_problem(e: &EventDef, gone: &BTreeSet<String>) -> Option<String> {
 /// A drama speaker without an officer id: the name as the game shows it, without spaces
 /// (drama speakers are one word of at most 24 characters, and one that looks like an id must be
 /// an officer, which a free name is not).
-fn free_speaker(name: &str) -> String {
+pub(crate) fn free_speaker(name: &str) -> String {
     let name: String = name
         .chars()
         .filter(|c| !c.is_whitespace() && *c != ':')
@@ -708,9 +708,21 @@ fn free_speaker(name: &str) -> String {
     }
 }
 
+/// Remove scene `id` (its `== id` line and the lines up to the next scene) from a drama.
+pub(crate) fn remove_scene(drama: &mut String, id: &str) {
+    let head = format!("\n== {id}\n");
+    let Some(start) = drama.find(&head) else {
+        return;
+    };
+    let end = drama[start + head.len()..]
+        .find("\n== ")
+        .map_or(drama.len(), |i| start + head.len() + i);
+    drama.replace_range(start..end, "");
+}
+
 /// Append `text` to a drama as `head` (`speaker:` or `@narr`) and indented continuation lines;
 /// a line the drama parser would read as something else starts a new `head` line instead.
-fn push_text(out: &mut String, head: &str, text: &str) {
+pub(crate) fn push_text(out: &mut String, head: &str, text: &str) {
     let mut lines = text
         .split('\n')
         .map(|l| l.trim_end_matches('\r').trim())
@@ -939,10 +951,17 @@ impl EventWriter<'_, '_> {
         let taken = std::mem::take(&mut self.branches);
         let mut converted = Vec::new();
         let end = self.script(record, code, &mut converted, true);
-        if !std::mem::replace(&mut self.branches, taken).is_empty() {
+        let dropped = std::mem::replace(&mut self.branches, taken);
+        if !dropped.is_empty() {
             self.notes.push(format!(
                 "record {record}: its flag-guarded parts are left out (it runs between phases)"
             ));
+            // Their lines were written already: nothing plays them now.
+            for action in dropped.iter().flat_map(|b| &b.actions) {
+                if let EventAction::Drama { scene } = action {
+                    remove_scene(&mut self.drama, scene);
+                }
+            }
         }
         actions.extend(converted.iter().cloned());
         self.on_the_way.insert(record, (converted, end));
@@ -1350,7 +1369,7 @@ impl EventWriter<'_, '_> {
 
 /// An original objective text as one line: the original lists its conditions numbered on lines
 /// of their own (`1,적의 전멸\r2,유비가 …`) and marks names in brackets (`[여포]`).
-fn objective_text(raw: &str) -> String {
+pub(crate) fn objective_text(raw: &str) -> String {
     // A name in brackets followed by a space before its particle: `[여포] 의` is `여포의`.
     const PARTICLES: [&str; 11] = [
         "의", "을", "를", "이", "가", "은", "는", "와", "과", "에게", "에",
