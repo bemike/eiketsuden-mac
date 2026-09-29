@@ -121,6 +121,16 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
   and are shifted by `caster.level / 10 - target.level / 10` (a Lv5x caster against a Lv2x target: `-20 → -23`).
 * **Status** (`Effect::Status { confused, turns }`): on hit, the unit becomes confused for `turns` turns.
 * The caster pays the MP even if every target evades.
+* **Original formulas** (`strategy_formulas = "original"` in `rules/game.toml`, the PC original's routines in
+  `MAIN.EXE`, FORMATS §10.4 *[code]*; the original mode's pack uses them). Everything above holds except:
+  * the hit chance of a strategy with a confusion effect divides by `2 * power(caster)` instead of
+    `4 * power(caster)` (for all its effects; the original has no strategy that also damages);
+  * damage has no minimum: `max(0, raw)`;
+  * heal = `power + caster.level * caster.int / 20` (no halving on low morale), plus `rng.range(0, heal / 10)` when
+    cast (the forecast shows it without);
+  * a morale gain adds `caster.level / 10`, plus `rng.range(0, gain / 10)` when cast;
+  * confusion has no length (the HUD shows no count): it ends at the start of the unit's side's phase with chance
+    `(lead + morale) / 3` percent (§6), and a morale-down that leaves the target below 30 morale confuses it with 60 %.
 
 ## 6. Morale and confusion
 
@@ -129,6 +139,11 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
 * **Low-morale confusion** *(design; the original confuses units "around 30" morale)*: at the start of its side's
   phase an unconfused unit with `morale ≤ confuse_morale` becomes confused for 1 turn with chance
   `(confuse_morale - morale) * 3 + 10` percent.
+* Under the original strategy formulas (§5) a confusion has no length and the countdown above is replaced by a
+  recovery roll: at the start of its side's phase a confused unit recovers with chance `(lead + morale) / 3` percent
+  (the confusion of low morale too, which lasts the same way), and a unit that recovered is not rolled for
+  low-morale confusion in the same phase start. The original rolls "every phase" (FORMATS §10.4); that it is the
+  unit's own phase start, before it acts, is *[inference]*.
 * A confused unit cannot move or act; the AI skips it; the player cannot select it for commands.
 * **A confused unit whose morale reaches 0 retreats immediately** (no defeat EXP is awarded to anyone).
 

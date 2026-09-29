@@ -60,6 +60,24 @@ pub struct GameRules {
     /// Counter-attack damage in percent of a normal attack.
     pub counter_damage_pct: i32,
     pub weather: WeatherChances,
+    /// Which strategy formulas the battles use (RULES.md §5, §6).
+    #[serde(default)]
+    pub strategy_formulas: StrategyFormulas,
+}
+
+/// The strategy formulas of `GameRules::strategy_formulas`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategyFormulas {
+    /// The engine's (RULES.md §5): support bonus `2 × (INT + LV × INT / 50)` halved on low
+    /// morale, confusion for the strategy's turns, damage at least 1.
+    #[default]
+    Engine,
+    /// The PC original's (FORMATS §10.4): support bonus `LV × INT / 20` plus up to 10 %, morale
+    /// support `+ LV / 10` plus up to 10 %, confusion hits against half the target's power and
+    /// lasts until a roll `rand(100) < (LEAD + morale) / 3` at the unit's phase start, a
+    /// morale-down under 30 confuses with 60 %, no minimum damage.
+    Original,
 }
 
 impl GameRules {

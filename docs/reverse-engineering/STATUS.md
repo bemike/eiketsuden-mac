@@ -106,7 +106,7 @@
    "원작 전투"), 2–4장(`SNR2`–`SNR4`)의 전투 41개와 이야기(마을·캠페인 맵 블록의 대사 장면, 선택지·재질문·루트 분기·마을 이동·원작 플래그·전투 중 설득·패배 후 진행·엔딩 포함)를 기본 팩 캠페인
    뒤에 잇는 원작 모드 캠페인(DECISIONS D18). 남음: 루트마다 다른 출진 설정, 전투 중 도착하는 아군 부대, 나중에 불리는 명단·두 번째 맵,
    남은 명령 의미.
-3. **규칙 표** — `MAIN.EXE` 규칙 표를 코드 서명으로 찾아 팩 규칙 파일로 변환(값은 사용자의 파일에서만 읽음). **부분**: 이동 비용·지형 효과 → 원작 모드 `rules/terrain.toml`(원작의 문은 닫힌 성문이라 기본 팩의 열린 `gate`와 따로 `closed_gate` 지형을 더한다. 기본 팩과 다른 값은 `original-pack.json`에 적는다). 병종의 공격·방어 계수·이동력·공격 범위·병력 → `rules/classes.toml`, 책략 MP·도달·위력·회복량·효과 범위와 병종별 습득 레벨 → `rules/strategies.toml`·`rules/classes.toml`(FORMATS §10.4 책략 효과). 남음: 엔진 식과 다른 원작 책략 식(지원 보너스, 혼란 명중·풀림 등, BACKLOG).
+3. **규칙 표** — `MAIN.EXE` 규칙 표를 코드 서명으로 찾아 팩 규칙 파일로 변환(값은 사용자의 파일에서만 읽음). **부분**: 이동 비용·지형 효과 → 원작 모드 `rules/terrain.toml`(원작의 문은 닫힌 성문이라 기본 팩의 열린 `gate`와 따로 `closed_gate` 지형을 더한다. 기본 팩과 다른 값은 `original-pack.json`에 적는다). 병종의 공격·방어 계수·이동력·공격 범위·병력 → `rules/classes.toml`, 책략 MP·도달·위력·회복량·효과 범위와 병종별 습득 레벨 → `rules/strategies.toml`·`rules/classes.toml`(FORMATS §10.4 책략 효과), 원작 책략 식(지원 보너스, 혼란 명중·풀림, 사기 저하 혼란, 최소 피해) → `rules/game.toml`의 `strategy_formulas = "original"`(DECISIONS D19).
 4. **원작 UI** — `PACKGRP`의 화면 틀(메인·전투 640×400, 상태 창 512×320)과 삽화를 쓰는 원작 배치의 UI. **부분**:
    전투 화면 틀 → 원작 모드 `[presentation.battle_frame]`(캔버스 640×400), 메인 화면 틀 → `[presentation.camp_frame]`(캠프
    화면들), 상태 창 → `[presentation.status_frame]`(캠프 무장 정보, DECISIONS D15). 전투 틀의 기능·아군·적군 버튼 → 전투 메뉴·부대 일람. 사건 삽화 31장 → `gfx/pictures/`, 장 이야기의 `@picture`. 남음: 메인 화면 아이콘 동작, 16색 그림의

@@ -237,12 +237,13 @@ pub fn draw_unit_panel(
             .iter()
             .find(|s| s.status == StatusKind::Confused)
             .map_or(0, |s| s.turns);
-        gfx.text(
-            &format!("혼란 {turns}"),
-            tag_x,
-            r.y + 6.0,
-            small.color(theme::TEXT_BAD),
-        );
+        // Without a length (the original strategy formulas) it ends on a roll: no count.
+        let label = if turns == hero_core::battle::UNTIL_RECOVERED {
+            "혼란".to_string()
+        } else {
+            format!("혼란 {turns}")
+        };
+        gfx.text(&label, tag_x, r.y + 6.0, small.color(theme::TEXT_BAD));
     }
     gfx.text_aligned(
         &format!("Lv {}", view.level),

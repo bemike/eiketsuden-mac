@@ -6,7 +6,7 @@ use crate::battle::{
     Weather,
 };
 use crate::battledef::Side;
-use crate::data::{Effect, StatusKind};
+use crate::data::{Effect, StatusKind, StrategyFormulas};
 use crate::geom::Pos;
 
 fn cast(unit: UnitId, strategy: &str, target: Pos) -> Action {
@@ -746,4 +746,125 @@ fn strategy_scrolls_cast_without_mp_and_earn_exp() {
     );
     assert_eq!(st.units[u].mp, 0);
     assert!(st.inventory.is_empty());
+}
+
+/// The test pack playing the original strategy formulas.
+fn original_pack() -> crate::pack::Pack {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.strategy_formulas = StrategyFormulas::Original;
+    pack
+}
+
+#[test]
+fn original_formulas_confuse_harder_heal_less_and_have_no_least_damage() {
+    let (engine, original) = (pack(OPEN_MAP), original_pack());
+    let setup = |pack: &crate::pack::Pack| {
+        let mut st = state(pack);
+        let c = add(&mut st, pack, Side::Player, "infantry", 10, p(3, 3));
+        set_stats(&mut st, pack, c, [50, 50, 50]);
+        let foe = add(&mut st, pack, Side::Enemy, "infantry", 10, p(3, 4));
+        set_stats(&mut st, pack, foe, [50, 50, 50]);
+        let dull = add(&mut st, pack, Side::Player, "infantry", 10, p(2, 3));
+        set_stats(&mut st, pack, dull, [50, 0, 50]);
+        let sage = add(&mut st, pack, Side::Enemy, "infantry", 10, p(2, 4));
+        set_stats(&mut st, pack, sage, [50, 200, 50]);
+        let band = add(&mut st, pack, Side::Player, "band", 10, p(4, 3));
+        set_stats(&mut st, pack, band, [10, 50, 10]);
+        let hurt = add(&mut st, pack, Side::Player, "infantry", 1, p(4, 4));
+        st.units[hurt].hp = 1;
+        st.units[hurt].max_hp = 1000;
+        st.units[hurt].morale = 10;
+        (st, c, foe, dull, sage, band, hurt)
+    };
+    let forecast = |st: &BattleState, pack, caster, s: &str, t: UnitId| {
+        let f = st.forecast_strategy(pack, caster, s, st.units[t].pos);
+        (f[0].chance, f[0].amount)
+    };
+    let (st, c, foe, dull, sage, band, hurt) = setup(&engine);
+    assert_eq!(forecast(&st, &engine, c, "confuse", foe).0, 75);
+    assert_eq!(forecast(&st, &engine, c, "fire", foe).0, 75);
+    // 200 + 0 - (200 * 10 / 50 + 200) < 0: at least 1.
+    assert_eq!(forecast(&st, &engine, dull, "fire", sage).1, 1);
+    // 200 + 2 * (50 * 10 / 50 + 50), halved on morale below 30.
+    assert_eq!(forecast(&st, &engine, band, "heal", hurt).1, -160);
+
+    let (st, c, foe, dull, sage, band, hurt) = setup(&original);
+    // Confusion: 100 - 100 * 55 / (2 * 55); other strategies as before.
+    assert_eq!(forecast(&st, &original, c, "confuse", foe).0, 50);
+    assert_eq!(forecast(&st, &original, c, "fire", foe).0, 75);
+    assert_eq!(forecast(&st, &original, dull, "fire", sage).1, 0);
+    // 200 + 10 * 50 / 20, whatever the morale (the random 10 % comes on casting).
+    assert_eq!(forecast(&st, &original, band, "heal", hurt).1, -225);
+}
+
+#[test]
+fn original_formulas_add_a_random_tenth_to_support() {
+    let pack = original_pack();
+    let (mut healed, mut cheered) = (Vec::new(), Vec::new());
+    for seed in 0..60 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let band = add(&mut st, &pack, Side::Player, "band", 10, p(3, 3));
+        set_stats(&mut st, &pack, band, [10, 50, 10]);
+        let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+        let other = add(&mut st, &pack, Side::Player, "band", 10, p(2, 3));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        st.units[friend].hp = 1;
+        st.units[friend].max_hp = 1000;
+        st.units[friend].morale = 50;
+        let ev = st.apply(&pack, cast(band, "heal", p(3, 4))).unwrap();
+        healed.push(hits(&ev)[0].healed);
+        let ev = st.apply(&pack, cast(other, "cheer", p(3, 4))).unwrap();
+        cheered.push(hits(&ev)[0].morale);
+    }
+    // 225 + rand(0..=22); 20 + 10 / 10 + rand(0..=2).
+    assert!(healed.iter().all(|h| (225..=247).contains(h)), "{healed:?}");
+    assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
+    assert!(cheered.iter().all(|m| (21..=23).contains(m)), "{cheered:?}");
+}
+
+#[test]
+fn original_formulas_confuse_until_recovered_and_on_low_morale_downs() {
+    let pack = original_pack();
+    let mut st = state(&pack);
+    let c = add(&mut st, &pack, Side::Player, "infantry", 10, p(3, 3));
+    set_stats(&mut st, &pack, c, [50, 50, 50]);
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 10, p(3, 4));
+    set_stats(&mut st, &pack, foe, [50, 0, 50]);
+    st.apply(&pack, cast(c, "confuse", p(3, 4))).unwrap();
+    assert_eq!(
+        st.units[foe].statuses,
+        vec![ActiveStatus {
+            status: StatusKind::Confused,
+            turns: crate::battle::UNTIL_RECOVERED
+        }],
+        "no length: it lasts until a recovery roll"
+    );
+
+    // Morale 40 - 20 (+ 0 levels) = 20 < 30: confused with 60 %.
+    let mut confused = 0;
+    for seed in 0..400 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        let c = add(&mut st, &pack, Side::Player, "cavalry", 10, p(3, 3));
+        set_stats(&mut st, &pack, c, [50, 50, 50]);
+        let foe = add(&mut st, &pack, Side::Enemy, "infantry", 10, p(3, 4));
+        set_stats(&mut st, &pack, foe, [50, 0, 50]);
+        st.units[foe].morale = 40;
+        let ev = st.apply(&pack, cast(c, "provoke", p(3, 4))).unwrap();
+        assert_eq!(st.units[foe].morale, 20);
+        if st.units[foe].has_status(StatusKind::Confused) {
+            assert_eq!(hits(&ev)[0].status, Some(StatusKind::Confused));
+            assert!(ev.contains(&BattleEvent::Confused { unit: foe }));
+            confused += 1;
+        }
+    }
+    assert!((200..280).contains(&confused), "{confused} of 400");
+    // Left with 30 or more: never.
+    let mut st = state(&pack);
+    let c = add(&mut st, &pack, Side::Player, "cavalry", 10, p(3, 3));
+    set_stats(&mut st, &pack, c, [50, 50, 50]);
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 10, p(3, 4));
+    set_stats(&mut st, &pack, foe, [50, 0, 50]);
+    st.units[foe].morale = 50;
+    st.apply(&pack, cast(c, "provoke", p(3, 4))).unwrap();
+    assert!(st.units[foe].statuses.is_empty());
 }

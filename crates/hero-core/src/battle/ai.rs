@@ -36,6 +36,7 @@
 
 use super::board::Board;
 use super::combat::{counter_chance, hit_damage, morale_loss};
+use super::strategy;
 use super::{Action, BattleEvent, BattleState, Unit, UnitId};
 use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
 use crate::data::{Area, Effect, ItemDef, StatusKind, StrategyDef, TargetSide, TerrainDef};
@@ -988,7 +989,7 @@ impl<'a> Planner<'a> {
         let t = &st.units[u];
         let sign: i64 = if self.is_hostile(u) { 1 } else { -1 };
         let chance = match s.target {
-            TargetSide::Enemy => st.hit_chance(pack, self.id, u),
+            TargetSide::Enemy => st.hit_chance(pack, self.id, s, u),
             TargetSide::Ally => 100,
         } as i64;
         let level_factor = t.level as i64 + 10;
@@ -1018,19 +1019,32 @@ impl<'a> Planner<'a> {
                 }
                 Effect::Heal { power } => {
                     let heal = st
-                        .strategy_heal(self.id, *power, u)
+                        .strategy_heal(pack, self.id, *power, u)
                         .min(t.max_hp - hp)
                         .max(0);
                     v -= sign * heal as i64;
                     hp += heal;
                 }
                 Effect::Morale { amount } => {
-                    let new = morale
-                        .saturating_add(st.morale_shift(self.id, u, *amount))
-                        .clamp(0, 100);
+                    let delta = st.morale_shift(pack, self.id, u, *amount);
+                    let new = morale.saturating_add(delta).clamp(0, 100);
                     // Morale enters ATK/DEF as `(level + 10) * morale / 10`.
                     let change = (new - morale) as i64 * level_factor / 10;
                     v += if sign > 0 { -change } else { change / 2 };
+                    // The original formulas: a morale-down leaving little morale confuses
+                    // (routing a unit left at 0), as `apply_effects` rolls it.
+                    if sign > 0
+                        && delta < 0
+                        && new < strategy::MORALE_DOWN_CONFUSES_BELOW
+                        && !confused
+                        && strategy::original_formulas(pack)
+                    {
+                        let odds = strategy::MORALE_DOWN_CONFUSION as i64;
+                        v += st.attack_power(pack, u) as i64 / 2 * odds / 100;
+                        if new == 0 {
+                            v += hp as i64 * odds / 100;
+                        }
+                    }
                     morale = new;
                 }
                 Effect::Status { .. } => {
@@ -1194,7 +1208,12 @@ impl<'a> Planner<'a> {
         {
             if h.statuses
                 .iter()
-                .any(|s| s.status == StatusKind::Confused && s.turns >= 2)
+                // Sure to stay confused next phase (one without a length may recover).
+                .any(|s| {
+                    s.status == StatusKind::Confused
+                        && s.turns >= 2
+                        && s.turns != super::UNTIL_RECOVERED
+                })
             {
                 continue;
             }
@@ -1329,7 +1348,7 @@ impl<'a> Planner<'a> {
                 _ => None,
             })
             .sum();
-        damage * st.hit_chance(pack, caster, target) as i64 / 100
+        damage * st.hit_chance(pack, caster, s, target) as i64 / 100
     }
 
     /// Expected damage taken on `tile` next phase (not capped at the unit's HP).

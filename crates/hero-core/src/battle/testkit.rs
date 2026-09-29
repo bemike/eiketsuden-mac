@@ -14,7 +14,8 @@ use crate::battledef::{AiMode, BattleDef, Condition, DeployDef, EventDef, MapDef
 use crate::campaign::{CampaignDef, CampaignState, OfficerState};
 use crate::data::{
     Area, ClassDef, Effect, Equipment, GameRules, ItemDef, ItemKind, Learn, OfficerDef, Promotion,
-    RangeSpec, StatusKind, StrategyDef, StrategyKind, TargetSide, TerrainDef, WeatherChances,
+    RangeSpec, StatusKind, StrategyDef, StrategyFormulas, StrategyKind, TargetSide, TerrainDef,
+    WeatherChances,
 };
 use crate::geom::{Dir, Pos};
 use crate::pack::{Pack, PackFiles, PackLayer, PackManifest, Presentation, RulesFiles};
@@ -376,6 +377,7 @@ pub fn rules() -> GameRules {
             cloudy: 0,
             rain: 0,
         },
+        strategy_formulas: StrategyFormulas::Engine,
     }
 }
 
