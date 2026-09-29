@@ -1059,9 +1059,9 @@ caught; write free names in Korean or with a capital letter.
 | `@set <flag> = n` / `+= n` / `-= n` | Change a [flag](#flags). |
 | `@join <officer id>` | The officer joins the army (a banner is shown; nothing happens if already in the army), or comes back from `@away`. |
 | `@leave <officer id>` | The officer leaves; their equipment returns to the inventory (nothing happens if not in the army). |
+| `@away <officer id>` | The officer is away for a while: they stay in the army with their level, experience and equipment but cannot be deployed (the deploy screen marks them 부재). `@join` brings them back as they left. Nothing happens if not in the army. |
 | `@level <officer id> <levels>` | The officer of the army gains levels (at least 1, up to the level cap; one already above it keeps their level); HP, MP and known strategies follow from the level in the next battle. Nothing happens if not in the army. |
 | `@class <officer id> <class id>` | The officer of the army changes class (a story's change: no item or promotion level needed); equipment the new class family may not use goes back to the inventory; `fixed_class` does not stop it. Nothing happens if not in the army. |
-| `@away <officer id>` | The officer is away for a while: they stay in the army with their level, experience and equipment but cannot be deployed (the deploy screen marks them 부재). `@join` brings them back as they left. Nothing happens if not in the army. |
 | `@gold <±n>` | Give (or take) gold, clamped to `0..=gold_cap`. |
 | `@item <item id>` | Give one item. |
 | `@duel <left> <right> [background]` | Open the duel scene: two mounted officers (officer ids) facing each other, `left` on the left, over `gfx/duel/<background>.png` (a plain dark stage without it). It stays on screen (messages show over it) until `@duel_end` or the end of the scene. |
@@ -1208,7 +1208,7 @@ walkable from the first `deploy.max` deployment slots or the start tiles of play
 (walkable: any class of the pack can enter the tile, before or after a `set_terrain` changes it; enemies a
 `retreat` event removes are left out).
 
-**Dramas** — E: `@join`/`@leave` of unknown officers, `@item` of unknown items, speakers that look like
+**Dramas** — E: `@join`/`@leave`/`@away`/`@level`/`@class` of unknown officers, `@class` of unknown classes, `@item` of unknown items, speakers that look like
 ids but name no officer. W: scenes of the pack itself that no campaign node or battle plays (in a
 [layered pack](#layered-packs-extends), a parent's scene that only a battle the child replaced played is not
 reported: it is the parent's).

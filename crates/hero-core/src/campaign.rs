@@ -505,6 +505,7 @@ impl CampaignState {
     /// `officer` becomes `class`: equipment the new class family may not use goes back to the
     /// inventory. The class must exist.
     fn change_class(&mut self, pack: &Pack, officer: &str, class: Id) {
+        debug_assert!(pack.class(&class).is_some(), "unknown class {class}");
         let family = pack
             .class(&class)
             .map_or_else(String::new, |c| c.family.clone());

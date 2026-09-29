@@ -935,12 +935,7 @@ fn drama_checks() {
             "@class names unknown class `sage`",
         ),
         error(
-            &[(
-                STORY,
-                "@item bean",
-                "@item bean
-@class mi_zhu archer",
-            )],
+            &[(STORY, "@item bean", "@item bean\n@class mi_zhu archer")],
             "scene oath",
             "@class names unknown officer `mi_zhu`",
         ),

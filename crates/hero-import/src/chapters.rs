@@ -472,8 +472,11 @@ impl Writer<'_, '_> {
                 }
             }
             "add_levels" => match officer(get("person")) {
-                // A battle's setup changes its enemies too: nothing of the army's.
-                Some(id) if self.army_only && !names.player_officers.contains(&id) => {}
+                // A battle's setup changes its enemies too: not the army's, and not converted.
+                Some(id) if self.army_only && !names.player_officers.contains(&id) => {
+                    self.skipped
+                        .insert("levels and classes of a battle's enemies set up before it");
+                }
                 Some(id) => {
                     let _ = writeln!(out.text, "@level {id} {}", get("levels").max(1));
                 }
@@ -486,7 +489,10 @@ impl Writer<'_, '_> {
                 officer(get("person")),
                 names.classes.get(&(get("class") as u8)),
             ) {
-                (Some(id), _) if self.army_only && !names.player_officers.contains(&id) => {}
+                (Some(id), _) if self.army_only && !names.player_officers.contains(&id) => {
+                    self.skipped
+                        .insert("levels and classes of a battle's enemies set up before it");
+                }
                 (Some(id), Some(class)) => {
                     let _ = writeln!(out.text, "@class {id} {class}");
                 }
@@ -952,9 +958,10 @@ pub fn victory_scene_after(block: &Block, ctx: &StoryContext, continued: Option<
 }
 
 /// What the original changes in the army as it sets a battle of `block` up (the setup's
-/// `set_allegiance`, behind its flag checks): officers joining for it (Guan Yu's troop at
-/// Maicheng) or coming back (chapter 4's detachment). Played before the battle's camp; empty
-/// when the setup changes nothing.
+/// `set_allegiance`, behind its flag checks, and the level and class changes of the army's
+/// officers): officers joining for it (Guan Yu's troop at Maicheng) or coming back (chapter 4's
+/// detachment). Played before the battle's camp; empty when the setup changes nothing of the
+/// army's. The setup's level and class changes of the enemies are left out and noted.
 pub fn before_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
     let mut w = Writer::new(ctx, false);
     w.army_only = true;
@@ -2116,10 +2123,12 @@ mod tests {
         let mut names = names;
         names.player_officers.insert("yuan_shao".into());
         names.classes.insert(1, "light_cavalry".into());
-        assert_eq!(
-            before_scene(&b, &ctx(&names, &song_key)).text,
-            "@level yuan_shao 2
-"
+        let s = before_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(s.text, "@level yuan_shao 2\n");
+        assert!(
+            s.notes.iter().any(|n| n.contains("battle's enemies")),
+            "{:?}",
+            s.notes
         );
     }
 
