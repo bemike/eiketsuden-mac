@@ -80,6 +80,9 @@ pub struct Presentation {
     /// A picture the camp screens are drawn in; without one they fill the canvas.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camp_frame: Option<CampFrame>,
+    /// A picture the camp's officer list (무장 정보) is drawn on; without one it is a table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_frame: Option<StatusFrame>,
 }
 
 impl Default for Presentation {
@@ -88,6 +91,7 @@ impl Default for Presentation {
             canvas: DEFAULT_CANVAS,
             battle_frame: None,
             camp_frame: None,
+            status_frame: None,
         }
     }
 }
@@ -123,6 +127,7 @@ impl BattleFrame {
                 ("status", self.status),
             ],
             canvas,
+            "canvas",
         )
     }
 }
@@ -168,6 +173,7 @@ impl CampFrame {
                 ("clock", self.clock),
             ],
             canvas,
+            "canvas",
         )?;
         let [_, _, w, h] = self.view;
         let [min_w, min_h] = MIN_CANVAS;
@@ -180,24 +186,116 @@ impl CampFrame {
     }
 }
 
-/// Why a frame `what` with picture `image` and `areas` does not fit a `canvas` sized canvas.
+/// `[presentation.status_frame]`: a picture the camp's officer list (무장 정보) is drawn on (the
+/// original's status window), centred in the camp screens' area, and where its parts go, as
+/// `[x, y, width, height]` in the picture's pixels. The officers are shown a page at a time, one
+/// per slot; the one chosen is shown in full on the side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StatusFrame {
+    /// Media key of the picture, `gfx/<image>.png`.
+    pub image: String,
+    /// Size of the picture, `[width, height]`: at most the canvas.
+    pub size: [u32; 2],
+    /// The window's heading.
+    pub title: [u32; 4],
+    /// The officers of a page, in order (row by row).
+    pub slots: Vec<StatusSlot>,
+    /// The chosen officer's portrait.
+    pub portrait: [u32; 4],
+    /// The chosen officer's name.
+    pub name: [u32; 4],
+    /// The chosen officer's level.
+    pub level: [u32; 4],
+    /// The chosen officer's 통솔, 무력 and 지력.
+    pub lead: [u32; 4],
+    pub strength: [u32; 4],
+    pub intellect: [u32; 4],
+    /// The chosen officer's class.
+    pub class: [u32; 4],
+    /// The chosen officer's equipment and strategies.
+    pub info: [u32; 4],
+    /// The page number.
+    pub page: [u32; 4],
+    /// The page buttons: the previous page in the top half, the next in the bottom half.
+    pub pager: [u32; 4],
+    /// How many officers the pages after this one hold.
+    pub rest: [u32; 4],
+    /// The button that closes the window.
+    pub close: [u32; 4],
+}
+
+/// One officer's place on a [`StatusFrame`] page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StatusSlot {
+    /// The officer's unit icon.
+    pub icon: [u32; 4],
+    /// The officer's level.
+    pub level: [u32; 4],
+    /// The officer's troops.
+    pub troops: [u32; 4],
+}
+
+impl StatusFrame {
+    /// Why the frame does not fit a `canvas` sized canvas, if it does not.
+    pub fn check(&self, canvas: [u32; 2]) -> Result<(), String> {
+        let [w, h] = self.size;
+        let [cw, ch] = canvas;
+        if w == 0 || h == 0 || w > cw || h > ch {
+            return Err(format!(
+                "status_frame.size [{w}, {h}] must be a picture no larger than the [{cw}, {ch}] canvas"
+            ));
+        }
+        if self.slots.is_empty() {
+            return Err("status_frame.slots must list at least one slot".into());
+        }
+        let mut areas = vec![
+            ("title", self.title),
+            ("portrait", self.portrait),
+            ("name", self.name),
+            ("level", self.level),
+            ("lead", self.lead),
+            ("strength", self.strength),
+            ("intellect", self.intellect),
+            ("class", self.class),
+            ("info", self.info),
+            ("page", self.page),
+            ("pager", self.pager),
+            ("rest", self.rest),
+            ("close", self.close),
+        ];
+        for s in &self.slots {
+            areas.extend([
+                ("slots.icon", s.icon),
+                ("slots.level", s.level),
+                ("slots.troops", s.troops),
+            ]);
+        }
+        check_frame("status_frame", &self.image, &areas, self.size, "picture")
+    }
+}
+
+/// Why a frame `what` with picture `image` and `areas` does not fit a `bounds` sized `within`
+/// (the canvas, or the picture itself).
 fn check_frame(
     what: &str,
     image: &str,
     areas: &[(&str, [u32; 4])],
-    canvas: [u32; 2],
+    bounds: [u32; 2],
+    within: &str,
 ) -> Result<(), String> {
     if !validate::is_media_key(image) {
         return Err(format!("{what}.image `{image}` is not a media key"));
     }
-    let [cw, ch] = canvas;
+    let [cw, ch] = bounds;
     for &(name, [x, y, w, h]) in areas {
         let inside = u64::from(x) + u64::from(w) <= u64::from(cw)
             && u64::from(y) + u64::from(h) <= u64::from(ch);
         if w == 0 || h == 0 || !inside {
             return Err(format!(
                 "{what}.{name} [{x}, {y}, {w}, {h}] must be a non-empty area inside the \
-                 [{cw}, {ch}] canvas"
+                 [{cw}, {ch}] {within}"
             ));
         }
     }
@@ -524,6 +622,10 @@ impl PackManifest {
                 "camp_frame",
                 self.presentation.camp_frame.as_ref().map(|f| &f.image),
             ),
+            (
+                "status_frame",
+                self.presentation.status_frame.as_ref().map(|f| &f.image),
+            ),
         ];
         for (what, image) in images {
             if let Some(image) = image.filter(|i| !validate::is_media_key(i)) {
@@ -734,6 +836,14 @@ impl Pack {
                 chain.camp_frame_dir(),
                 presentation
                     .camp_frame
+                    .as_ref()
+                    .map(|f| f.check(presentation.canvas)),
+            ),
+            (
+                "status frame",
+                chain.status_frame_dir(),
+                presentation
+                    .status_frame
                     .as_ref()
                     .map(|f| f.check(presentation.canvas)),
             ),

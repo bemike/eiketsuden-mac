@@ -250,6 +250,10 @@ in the spirit of the original PC version), so a pack only supplies:
 | `title.png` | title screen artwork (16:9, recommended 960×540; covers the canvas like drama backgrounds) |
 | `flags.png` | 16×16 animated banner, 4 frames horizontally, per side in rows: player, ally, enemy (drawn beside commanders) |
 
+Screen frames are optional pictures a pack names in `pack.toml` (`[presentation.battle_frame]`, `camp_frame`,
+`status_frame`, see MODDING.md): the battle and camp frames the size of the canvas, the status window any size up to
+it; the engine fills their areas with its own text and pictures.
+
 ## Audio — `bgm/<key>.(ogg|wav)`, `sfx/<key>.(ogg|wav)`
 
 BGM keys used by the engine and base pack: `title`, `peace`, `tension`, `sad`, `camp`, `battle`, `enemy`,

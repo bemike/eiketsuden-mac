@@ -745,3 +745,44 @@ fn an_inherited_battle_frame_that_does_not_fit_names_its_pack() {
     assert!(msg.contains("battle_frame.map"), "{msg}");
     assert!(msg.contains("`../mini_ext/pack.toml`"), "{msg}");
 }
+
+#[test]
+fn an_inherited_status_frame_that_does_not_fit_names_its_pack() {
+    // `mini_ext` (640x480) gets a 512x320 status window; a child that shrinks the canvas to
+    // 480x270 cannot keep it.
+    let mut files = Files::new();
+    for (key, text) in fixture_files_at("mini_ext", "../mini_ext") {
+        files.insert(key, text);
+    }
+    files.extend(fixture_files_at("mini", "../mini"));
+    let parent = files.get_mut("../mini_ext/pack.toml").unwrap();
+    parent.push_str(
+        "\n[presentation.status_frame]\nimage = \"ui/status\"\nsize = [512, 320]\n\
+         title = [8, 8, 288, 32]\nportrait = [320, 16, 64, 80]\nname = [400, 8, 80, 16]\n\
+         level = [464, 32, 16, 16]\nlead = [456, 64, 24, 16]\nstrength = [456, 96, 24, 16]\n\
+         intellect = [456, 128, 24, 16]\nclass = [320, 112, 64, 32]\ninfo = [314, 170, 188, 140]\n\
+         page = [48, 272, 48, 32]\npager = [96, 272, 32, 32]\nrest = [176, 272, 48, 32]\n\
+         close = [240, 272, 48, 32]\n[[presentation.status_frame.slots]]\n\
+         icon = [16, 64, 32, 32]\nlevel = [16, 96, 32, 16]\ntroops = [104, 72, 40, 16]\n",
+    );
+    files.insert(
+        "pack.toml".into(),
+        manifest("balance", "extends = \"../mini_ext\""),
+    );
+    let pack = load(&files);
+    assert!(
+        pack.manifest.presentation.status_frame.is_some(),
+        "inherited"
+    );
+    files.insert(
+        "pack.toml".into(),
+        manifest(
+            "balance",
+            "extends = \"../mini_ext\"\n[presentation]\ncanvas = [480, 270]",
+        ),
+    );
+    let (file, msg) = parse_error(load_err(&files));
+    assert_eq!(file, "pack.toml");
+    assert!(msg.contains("status_frame.size"), "{msg}");
+    assert!(msg.contains("`../mini_ext/pack.toml`"), "{msg}");
+}

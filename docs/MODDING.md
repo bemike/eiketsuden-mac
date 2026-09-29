@@ -116,6 +116,7 @@ items = "rules/items.toml"
 
 | `presentation.battle_frame` | table | no | A picture the battle screen is drawn in, see below. |
 | `presentation.camp_frame` | table | no | A picture the camp screens are drawn in, see below. |
+| `presentation.status_frame` | table | no | A picture the camp's officer list is drawn on, see below. |
 
 ```toml
 [presentation]
@@ -171,6 +172,27 @@ the battle frame for the picture, the areas and inheritance):
 | `caption` | The camp node's whole `title`. |
 | `clock` | The play time. |
 
+**Status window.** With `[presentation.status_frame]` the camp's officer list (무장 정보) is drawn on a
+picture (like the original's status window) instead of the table, centred in the camp screens' area. The
+army is shown a page at a time, one officer per slot, and the chosen officer on the side; its areas are
+`[x, y, width, height]` in the **picture's** pixels. Taps choose an officer (a second tap opens the detail
+page, as does confirm), the arrow keys move (up and down by a row of slots), the top or bottom half of
+`pager` turns the page back or forward, and `close` or cancel leaves. With a camp frame the picture should fit the
+frame's `view` (the rest is covered by the frame's picture). The same rules as the other frames
+apply to the picture (warned when missing or not `size`), the areas (inside the picture) and inheritance:
+
+| field | meaning |
+|---|---|
+| `image` | Media key of the picture, `gfx/<image>.png`. |
+| `size` | `[width, height]` of the picture, at most the canvas. |
+| `title` | The window's heading. |
+| `slots` | `[[presentation.status_frame.slots]]` tables, row by row: each officer's unit `icon`, `level` and `troops`. At least one. |
+| `portrait`, `name`, `level`, `class` | The chosen officer's portrait (stretched to the area), name, level and class. |
+| `lead`, `strength`, `intellect` | The chosen officer's 통솔, 무력 and 지력. |
+| `info` | The chosen officer's equipment and strategies, as many lines as fit. |
+| `page`, `rest` | The page number, and how many officers the later pages hold. |
+| `pager`, `close` | The page buttons (top half back, bottom half forward) and the button that closes the window. |
+
 Paths are relative to the pack directory, use `/`, must not contain `..`, `\` or `:`, and no file may be
 listed twice. The web build fetches exactly these files (and those of the packs it extends), so a file
 that is not listed is never loaded.
@@ -201,7 +223,7 @@ What the chain provides:
 | `battles` | The **union** of every pack's battle files. A battle whose `id` a nearer pack defines again **overrides** the farther pack's battle with that id. Within one pack a battle id must still be unique. |
 | `dramas` | The same for scene ids: every pack's scenes, a nearer pack's scene replacing a farther pack's scene with the same id (`== b01_outro` in a child replaces the parent's `b01_outro`). |
 | `maps` | The same for map ids. A battle's `use` is resolved after the whole chain is merged, so a child's map with the id of a parent's map also replaces it in the parent's battles (a mod can redraw a map without copying the battles). |
-| `[presentation]` | Inherited **field by field**: each field (`canvas`, `battle_frame`, `camp_frame`) comes from the nearest pack that sets it; without any, `[480, 270]`. A field a child leaves out keeps the parent's value, so an empty `[presentation]` changes nothing. |
+| `[presentation]` | Inherited **field by field**: each field (`canvas`, `battle_frame`, `camp_frame`, `status_frame`) comes from the nearest pack that sets it; without any, `[480, 270]`. A field a child leaves out keeps the parent's value, so an empty `[presentation]` changes nothing. |
 | media (`gfx/`, `bgm/`, `sfx/`, `fonts/`) | Every media file is looked up in the top pack first, then in each parent in chain order; the first pack that has the file wins. This includes the media index files `gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml` and `gfx/ui/icons.toml`: a child's index **replaces** its parent's as a whole, so copy the entries you keep. |
 | `credits.txt` | **Every** pack's, nearest first: the credits screen shows the child's credits, then each parent's, so a mod keeps the attributions of the pack it builds on without copying them. List only the child's own credits: a copy of the parent's text is shown twice (an identical file is shown once). |
 | `id`, `name`, `version`, `authors`, `license`, `description` | The top pack's. Save games remember the top pack's `id`, so saves of the parent pack do not load in the child and vice versa; each pack also has its own save slots (autosave included), so playing one pack never overwrites another's saves. |

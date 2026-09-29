@@ -93,7 +93,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 11: the duels as `@duel` scenes and their pictures in `gfx/duel/` (`duel_pictures`).
 /// 12: the strategies' damage, morale and healing amounts and the 大 support reach from the
 /// original's formulas (`original_effect`).
-pub const PACK_FORMAT_VERSION: u32 = 12;
+/// 13: the status window in `ui` ([`STATUS_FRAME`] and `[presentation.status_frame]`).
+pub const PACK_FORMAT_VERSION: u32 = 13;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -783,6 +784,48 @@ pub const CAMP_FRAME_CAPTION: [u32; 4] = [12, 352, 244, 32];
 /// The main frame's short box at the bottom, for the play time.
 pub const CAMP_FRAME_CLOCK: [u32; 4] = [270, 352, 100, 32];
 
+/// Media key of the status window the pack writes (`gfx/ui/orig_status.png`).
+pub const STATUS_FRAME: &str = "ui/orig_status";
+/// `PACKGRP.R3` entry of the status window (FORMATS §6.6), shown in the main frame's view.
+pub const PACKGRP_STATUS_FRAME: usize = 2;
+/// Palette slot the status window is converted with [inferred: the screen it opens from is the
+/// main screen; the slot MAIN.EXE sets for it was not followed].
+pub const STATUS_PALETTE_SLOT: usize = 0;
+/// Size of the status window.
+pub const STATUS_FRAME_SIZE: [u32; 2] = [512, 320];
+/// Its areas (measured on the picture; the black boxes are checked when converting): the
+/// heading, the chosen officer's portrait (black box), name, 부대 Lv, 통솔력, 무력, 지력, the
+/// box under the portrait (the class), the big box (equipment and strategies), 페이지, the page
+/// arrows, 나머지 and 종료.
+pub const STATUS_FRAME_TITLE: [u32; 4] = [8, 8, 288, 32];
+pub const STATUS_FRAME_PORTRAIT: [u32; 4] = [320, 16, 64, 80];
+pub const STATUS_FRAME_NAME: [u32; 4] = [400, 8, 80, 16];
+pub const STATUS_FRAME_LEVEL: [u32; 4] = [464, 32, 16, 16];
+pub const STATUS_FRAME_LEAD: [u32; 4] = [456, 64, 24, 16];
+pub const STATUS_FRAME_STRENGTH: [u32; 4] = [456, 96, 24, 16];
+pub const STATUS_FRAME_INTELLECT: [u32; 4] = [456, 128, 24, 16];
+pub const STATUS_FRAME_CLASS: [u32; 4] = [320, 112, 64, 32];
+pub const STATUS_FRAME_INFO: [u32; 4] = [314, 170, 188, 140];
+pub const STATUS_FRAME_PAGE: [u32; 4] = [48, 272, 48, 32];
+pub const STATUS_FRAME_PAGER: [u32; 4] = [96, 272, 32, 32];
+pub const STATUS_FRAME_REST: [u32; 4] = [176, 272, 48, 32];
+pub const STATUS_FRAME_CLOSE: [u32; 4] = [240, 272, 48, 32];
+/// The six officer slots, row by row: the top left of each slot's icon box (32 × 32, black); its
+/// level box is below it and its 병력 box 88 px right, 8 px down.
+pub const STATUS_FRAME_SLOTS: [[u32; 2]; 6] = [
+    [16, 64],
+    [160, 64],
+    [16, 128],
+    [160, 128],
+    [16, 192],
+    [160, 192],
+];
+
+/// A slot's icon, level and troops areas from the top left of its icon.
+fn status_slot([x, y]: [u32; 2]) -> [[u32; 4]; 3] {
+    [[x, y, 32, 32], [x, y + 32, 32, 16], [x + 88, y + 8, 40, 16]]
+}
+
 /// The screen frames [`convert_ui`] wrote.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UiFrames {
@@ -790,6 +833,8 @@ pub struct UiFrames {
     pub battle: bool,
     /// [`CAMP_FRAME`] and `[presentation.camp_frame]`.
     pub camp: bool,
+    /// [`STATUS_FRAME`] and `[presentation.status_frame]`.
+    pub status: bool,
 }
 
 /// The original's screen frames: `PACKGRP.R3` entries [`PACKGRP_BATTLE_FRAME`] (the battle
@@ -869,6 +914,28 @@ fn convert_ui(
             _ => frames.camp = true,
         }
     }
+    // The status window.
+    let status = table
+        .get(PACKGRP_STATUS_FRAME)
+        .ok_or_else(|| format!("no entry {PACKGRP_STATUS_FRAME}"))
+        .and_then(|payload| crate::tfdce::decode(payload).map_err(|e| e.to_string()))
+        .and_then(|image| {
+            planar::decode(&image.planar, image.width, image.height).map_err(|e| e.to_string())
+        })
+        .and_then(|window| check_status_window(&window).map(|()| window));
+    match status {
+        Ok(window) => {
+            let png = encode_png(&window, &bank[STATUS_PALETTE_SLOT], false)
+                .map_err(|e| output_error(Path::new(STATUS_FRAME), std::io::Error::other(e)))?;
+            out.write(&format!("gfx/{STATUS_FRAME}.png"), &png)?;
+            report.outputs += 1;
+            written.push("status window");
+            frames.status = true;
+        }
+        Err(e) => report.errors.push(format!(
+            "PACKGRP.R3 entry {PACKGRP_STATUS_FRAME} (status window): {e}"
+        )),
+    }
     report.status = match (written.len(), report.errors.is_empty()) {
         (_, true) => Status::Extracted,
         (0, false) => Status::Failed,
@@ -878,9 +945,37 @@ fn convert_ui(
     report.summary = if written.is_empty() {
         "no screen frame converted".into()
     } else {
-        format!("{} {cw}×{ch}", written.join(", "))
+        format!("{} (frames {cw}×{ch})", written.join(", "))
     };
     Ok((report, frames))
+}
+
+/// Whether `window` has the layout [`STATUS_FRAME_SLOTS`] and the other areas describe: its size,
+/// and colour 0 (black) inside the portrait box and each slot's icon box (inside their borders).
+fn check_status_window(window: &IndexedImage) -> Result<(), String> {
+    let [w, h] = STATUS_FRAME_SIZE;
+    if (window.width, window.height) != (w as usize, h as usize) {
+        return Err(format!(
+            "{}×{} pixels; the pack expects {w}×{h}",
+            window.width, window.height
+        ));
+    }
+    let black = |[x, y, w, h]: [u32; 4]| {
+        let [x, y, w, h] = [x + 1, y + 1, w - 2, h - 2].map(|v| v as usize);
+        (y..y + h).all(|r| {
+            window.pixels[r * window.width + x..r * window.width + x + w]
+                .iter()
+                .all(|&p| p == 0)
+        })
+    };
+    let boxes = std::iter::once(STATUS_FRAME_PORTRAIT)
+        .chain(STATUS_FRAME_SLOTS.iter().map(|&s| status_slot(s)[0]));
+    for area in boxes {
+        if !black(area) {
+            return Err(format!("the box {area:?} is not black"));
+        }
+    }
+    Ok(())
 }
 
 /// Whether `frame` has the layout the pack's frames describe: the canvas size, and nothing but
@@ -1589,6 +1684,38 @@ fn pack_toml(
             area(CAMP_FRAME_CAPTION),
             area(CAMP_FRAME_CLOCK)
         );
+    }
+    if frames.status {
+        frame += &format!(
+            "\n[presentation.status_frame]\nimage = {}\nsize = [{}, {}]\ntitle = {}\nportrait = {}\n\
+             name = {}\nlevel = {}\nlead = {}\nstrength = {}\nintellect = {}\nclass = {}\ninfo = {}\n\
+             page = {}\npager = {}\nrest = {}\nclose = {}\n",
+            toml_str(STATUS_FRAME),
+            STATUS_FRAME_SIZE[0],
+            STATUS_FRAME_SIZE[1],
+            area(STATUS_FRAME_TITLE),
+            area(STATUS_FRAME_PORTRAIT),
+            area(STATUS_FRAME_NAME),
+            area(STATUS_FRAME_LEVEL),
+            area(STATUS_FRAME_LEAD),
+            area(STATUS_FRAME_STRENGTH),
+            area(STATUS_FRAME_INTELLECT),
+            area(STATUS_FRAME_CLASS),
+            area(STATUS_FRAME_INFO),
+            area(STATUS_FRAME_PAGE),
+            area(STATUS_FRAME_PAGER),
+            area(STATUS_FRAME_REST),
+            area(STATUS_FRAME_CLOSE),
+        );
+        for slot in STATUS_FRAME_SLOTS {
+            let [icon, level, troops] = status_slot(slot);
+            frame += &format!(
+                "\n[[presentation.status_frame.slots]]\nicon = {}\nlevel = {}\ntroops = {}\n",
+                area(icon),
+                area(level),
+                area(troops)
+            );
+        }
     }
     Ok(format!(
         "# Original mode, written by `hero-tools original pack` ({tool}) from the player's own copy\n\
@@ -3843,6 +3970,7 @@ mod tests {
             UiFrames {
                 battle: true,
                 camp: true,
+                status: true,
             },
         )
         .unwrap();
@@ -3856,6 +3984,12 @@ mod tests {
         let camp = manifest.presentation.camp_frame.expect("camp frame");
         assert_eq!(camp.image, CAMP_FRAME);
         assert_eq!(camp.check(manifest.presentation.canvas), Ok(()));
+        // The status window with its six slots fits its picture and the canvas.
+        let status = manifest.presentation.status_frame.expect("status window");
+        assert_eq!(status.image, STATUS_FRAME);
+        assert_eq!(status.slots.len(), 6);
+        assert_eq!(status.slots[1].troops, [248, 72, 40, 16]);
+        assert_eq!(status.check(manifest.presentation.canvas), Ok(()));
         assert_eq!(manifest.dramas, [DRAMA_FILE]);
         for bad in ["", "C:/data/base", "/data/base", "..\\base"] {
             assert!(
@@ -4465,6 +4599,33 @@ mod tests {
             support_exp: None,
             desc: String::new(),
         }
+    }
+
+    #[test]
+    fn the_status_window_needs_its_size_and_black_boxes() {
+        let [w, h] = STATUS_FRAME_SIZE.map(|v| v as usize);
+        let mut window = IndexedImage {
+            width: w,
+            height: h,
+            pixels: vec![0; w * h],
+        };
+        assert_eq!(check_status_window(&window), Ok(()));
+        // Something drawn in the fourth slot's icon box: another layout.
+        let [x, y, _, _] = status_slot(STATUS_FRAME_SLOTS[3])[0].map(|v| v as usize);
+        window.pixels[(y + 10) * w + x + 10] = 5;
+        assert!(check_status_window(&window)
+            .unwrap_err()
+            .contains("not black"));
+        // Its border does not count.
+        window.pixels[(y + 10) * w + x + 10] = 0;
+        window.pixels[y * w + x] = 5;
+        assert_eq!(check_status_window(&window), Ok(()));
+        let small = IndexedImage {
+            width: 320,
+            height: 200,
+            pixels: vec![0; 320 * 200],
+        };
+        assert!(check_status_window(&small).unwrap_err().contains("320×200"));
     }
 
     #[test]

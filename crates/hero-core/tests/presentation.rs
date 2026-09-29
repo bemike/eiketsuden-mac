@@ -142,3 +142,64 @@ fn a_camp_frame_needs_a_view_the_camp_screens_fit_in() {
         }
     }
 }
+
+/// A status window of the original's layout: two of its six slots.
+const STATUS: &str = "canvas = [640, 400]\n\
+    [presentation.status_frame]\n\
+    image = \"ui/status\"\n\
+    size = [512, 320]\n\
+    title = [8, 8, 288, 32]\n\
+    portrait = [320, 16, 64, 80]\n\
+    name = [400, 8, 80, 16]\n\
+    level = [464, 32, 16, 16]\n\
+    lead = [456, 64, 24, 16]\n\
+    strength = [456, 96, 24, 16]\n\
+    intellect = [456, 128, 24, 16]\n\
+    class = [320, 112, 64, 32]\n\
+    info = [314, 170, 188, 140]\n\
+    page = [48, 272, 48, 32]\n\
+    pager = [96, 272, 32, 32]\n\
+    rest = [176, 272, 48, 32]\n\
+    close = [240, 272, 48, 32]\n\
+    [[presentation.status_frame.slots]]\n\
+    icon = [16, 64, 32, 32]\n\
+    level = [16, 96, 32, 16]\n\
+    troops = [104, 72, 40, 16]\n\
+    [[presentation.status_frame.slots]]\n\
+    icon = [160, 64, 32, 32]\n\
+    level = [160, 96, 32, 16]\n\
+    troops = [248, 72, 40, 16]";
+
+#[test]
+fn a_status_frame_lays_its_parts_out_in_its_picture() {
+    let pack = load(&with_presentation(STATUS));
+    let frame = pack.manifest.presentation.status_frame.expect("frame");
+    assert_eq!(frame.slots.len(), 2);
+    assert_eq!(frame.slots[1].troops, [248, 72, 40, 16]);
+    for (from, to) in [
+        // An area outside the picture.
+        ("close = [240, 272, 48, 32]", "close = [500, 272, 48, 32]"),
+        ("troops = [248, 72, 40, 16]", "troops = [248, 72, 40, 0]"),
+        // A picture larger than the canvas.
+        ("size = [512, 320]", "size = [700, 320]"),
+        ("image = \"ui/status\"", "image = \"../status.png\""),
+    ] {
+        match load_err(&with_presentation(&STATUS.replace(from, to))) {
+            PackError::Parse { file, msg } => {
+                assert_eq!(file, "pack.toml");
+                assert!(msg.contains("status_frame"), "{to}: {msg}");
+            }
+            other => panic!("{to}: unexpected error {other:?}"),
+        }
+    }
+    // Without slots.
+    let bare = STATUS
+        .split("[[presentation.status_frame.slots]]")
+        .next()
+        .unwrap()
+        .to_string();
+    match load_err(&with_presentation(&bare)) {
+        PackError::Parse { msg, .. } => assert!(msg.contains("slots"), "{msg}"),
+        other => panic!("unexpected error {other:?}"),
+    }
+}

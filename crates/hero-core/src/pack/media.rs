@@ -547,6 +547,9 @@ impl MediaCheck {
                 self.frame_picture(ctx, &image, presentation.canvas);
             }
         }
+        if let Some(f) = &presentation.status_frame {
+            self.frame_picture("presentation.status_frame", &f.image, f.size);
+        }
     }
 
     fn frame_picture(&mut self, ctx: &str, image: &str, canvas: [u32; 2]) {
@@ -562,7 +565,7 @@ impl MediaCheck {
                 Severity::Warning,
                 ctx,
                 format!(
-                    "{rel} is {w}×{h} pixels, the canvas {cw}×{ch}: the frame is filled plainly"
+                    "{rel} is {w}×{h} pixels, the frame {cw}×{ch}: the frame is filled plainly"
                 ),
             ),
             Err(e) => self.push(

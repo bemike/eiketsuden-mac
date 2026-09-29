@@ -25,7 +25,7 @@
 
 use super::{
     parse_error, read, BattleFrame, CampFrame, FileSource, PackError, PackManifest, Presentation,
-    MANIFEST_FILE,
+    StatusFrame, MANIFEST_FILE,
 };
 use std::collections::BTreeSet;
 
@@ -164,6 +164,9 @@ pub struct PackChain {
     camp_frame: Option<Option<CampFrame>>,
     /// Directory of the layer whose `camp_frame` is used.
     camp_frame_dir: Option<String>,
+    status_frame: Option<Option<StatusFrame>>,
+    /// Directory of the layer whose `status_frame` is used.
+    status_frame_dir: Option<String>,
     /// Directory of the parent still to be read, relative to the top pack.
     next: Option<String>,
 }
@@ -179,6 +182,8 @@ impl PackChain {
             battle_frame_dir: None,
             camp_frame: None,
             camp_frame_dir: None,
+            status_frame: None,
+            status_frame_dir: None,
             next: None,
         };
         chain.add(String::new(), top_manifest)?;
@@ -259,6 +264,7 @@ impl PackChain {
             canvas: self.canvas.unwrap_or(default.canvas),
             battle_frame: self.battle_frame.clone().unwrap_or(default.battle_frame),
             camp_frame: self.camp_frame.clone().unwrap_or(default.camp_frame),
+            status_frame: self.status_frame.clone().unwrap_or(default.status_frame),
         }
     }
 
@@ -270,6 +276,11 @@ impl PackChain {
     /// Directory of the layer the inherited `camp_frame` comes from, if any declares one.
     pub fn camp_frame_dir(&self) -> Option<&str> {
         self.camp_frame_dir.as_deref()
+    }
+
+    /// Directory of the layer the inherited `status_frame` comes from, if any declares one.
+    pub fn status_frame_dir(&self) -> Option<&str> {
+        self.status_frame_dir.as_deref()
     }
 
     /// Decide which layer provides each file (see the module docs). Fails when the chain is not
@@ -402,6 +413,10 @@ impl PackChain {
         if self.camp_frame.is_none() && declared.iter().any(|f| f == "camp_frame") {
             self.camp_frame = Some(manifest.presentation.camp_frame.clone());
             self.camp_frame_dir = Some(dir.clone());
+        }
+        if self.status_frame.is_none() && declared.iter().any(|f| f == "status_frame") {
+            self.status_frame = Some(manifest.presentation.status_frame.clone());
+            self.status_frame_dir = Some(dir.clone());
         }
         self.layers.push(PackLayer { dir, manifest });
         self.next = parent;
