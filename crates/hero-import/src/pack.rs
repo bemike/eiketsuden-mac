@@ -90,7 +90,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 640×400.
 /// 9: the camp frame in `ui` ([`CAMP_FRAME`] and `[presentation.camp_frame]`).
 /// 10: `music` (the original's songs rendered as `bgm/<key>.wav`, [`MUSIC_KEYS`]).
-pub const PACK_FORMAT_VERSION: u32 = 10;
+/// 11: the duels as `@duel` scenes and their pictures in `gfx/duel/` (`duel_pictures`).
+pub const PACK_FORMAT_VERSION: u32 = 11;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -1856,11 +1857,24 @@ fn convert_battles(
     for (key, png) in &pictures {
         out.write(&format!("gfx/maps/{key}.png"), png)?;
     }
+    let mut duel_files = 0;
+    if drama.contains("\n@duel ") {
+        match duel_pictures(install, exe, &names.officers, &mut report)? {
+            Ok(files) => {
+                for (path, png) in &files {
+                    out.write(path, png)?;
+                }
+                duel_files = files.len();
+            }
+            // The scenes cannot show their duels: they are errors of the pack (validate).
+            Err(e) => report.errors.push(format!("duel pictures: {e}")),
+        }
+    }
     let wrote_drama = scenes > 0;
     if wrote_drama {
         out.write(DRAMA_FILE, drama.as_bytes())?;
     }
-    report.outputs = records.len() + pictures.len() + usize::from(wrote_drama);
+    report.outputs = records.len() + pictures.len() + duel_files + usize::from(wrote_drama);
     report.status = if report.errors.is_empty() {
         Status::Extracted
     } else if records.is_empty() {
@@ -1871,7 +1885,7 @@ fn convert_battles(
     let events: usize = records.iter().map(|r| r.events).sum();
     report.summary = format!(
         "{} of {} base battles re-staged as the original battles on the original maps, {events} \
-         events ({scenes} drama scenes, {} changed-cell pictures)",
+         events ({scenes} drama scenes, {} changed-cell pictures, {duel_files} duel pictures)",
         records.len(),
         wanted.len(),
         pictures.len()
@@ -1882,6 +1896,138 @@ fn convert_battles(
             .into(),
     );
     Ok((report, records, wrote_drama))
+}
+
+// ----- duels ---------------------------------------------------------------------------------
+
+/// Frames of a rider set of `HEXICHR.R3` (the engine's duel sheet: 0–3 galloping, 4–11
+/// attacking, 12 falling, 13 and 14 lying next to the horse).
+pub const DUEL_FRAMES: usize = 15;
+/// Rider set of each duel side: MAIN.EXE draws a fighter without a set of their own with set 0
+/// on the left and set 1 on the right.
+pub const DUEL_SIDE_SETS: [(&str, usize); 2] = [("left", 0), ("right", 1)];
+/// `BAKDATA` persons with a rider set of their own (MAIN.EXE's table at DS 0x5048 for persons
+/// 1, 2 and 4, and two persons it tests by number): `(person, set)`.
+pub const DUEL_RIDERS: [(u16, usize); 5] = [(1, 2), (2, 3), (4, 4), (372, 2), (373, 3)];
+/// Terrain code whose sky and ground strips are the duel background ([`battles::DUEL_BACKGROUND`]).
+pub const DUEL_TERRAIN: usize = 0;
+/// Size of the duel stage in pixels (the battle frame's map hole: 26 × 13 cells).
+pub const DUEL_STAGE: (usize, usize) = (416, 208);
+
+/// Pictures by their path in the pack, or why they cannot be made.
+type DuelPictures = Result<Vec<(String, Vec<u8>)>, String>;
+
+/// The pictures of the converted duels: a sheet of [`DUEL_FRAMES`] 96×96 frames per side and per
+/// officer with riders of their own (`gfx/duel/<key>.png`), and the background: the left
+/// [`DUEL_STAGE`] of terrain [`DUEL_TERRAIN`]'s sky strip over its ground strip.
+fn duel_pictures(
+    install: &InstallDir,
+    exe: &Exe,
+    officers: &BTreeMap<u16, String>,
+    report: &mut KindReport,
+) -> Result<DuelPictures, ExtractError> {
+    let archive = |name: &str,
+                   report: &mut KindReport|
+     -> Result<Result<Vec<Vec<u8>>, String>, ExtractError> {
+        Ok(match read_source(install, name, report)? {
+            None => Err(format!("{name} missing")),
+            Some(data) => ls11::Archive::parse(&data)
+                .and_then(|a| a.decode_all())
+                .map_err(|e| format!("{name}: {e}")),
+        })
+    };
+    let riders = archive("HEXICHR.R3", report)?;
+    let strips = archive("HEXBMAP.R3", report)?;
+    let cells = archive("HEXBCHP.R3", report)?;
+    Ok((|| {
+        let (riders, strips, cells) = (riders?, strips?, cells?);
+        let pal = exe.bank.as_ref().map_err(Clone::clone)?[MAP_PALETTE_SLOT];
+        let tables = exe.tables.as_ref().map_err(Clone::clone)?;
+        let spec = sprites::archive("HEXICHR.R3").expect("HEXICHR.R3 is a known archive");
+        let sheet = |set: usize| -> Result<Vec<u8>, String> {
+            let mut sheet = IndexedImage {
+                width: 96 * DUEL_FRAMES,
+                height: 96,
+                pixels: vec![0; 96 * DUEL_FRAMES * 96],
+            };
+            for f in 0..DUEL_FRAMES {
+                let i = set * DUEL_FRAMES + f;
+                let entry = riders
+                    .get(i)
+                    .ok_or_else(|| format!("HEXICHR.R3 has no entry {i}"))?;
+                let frame = (spec.arrangement)(i, entry.len())
+                    .ok_or_else(|| format!("HEXICHR.R3 entry {i}: not a 96×96 frame"))
+                    .and_then(|a| {
+                        sprites::decode_entry(entry, a)
+                            .map_err(|e| format!("HEXICHR.R3 entry {i}: {e}"))
+                    })?;
+                if (frame.width, frame.height) != (96, 96) {
+                    return Err(format!(
+                        "HEXICHR.R3 entry {i}: {}×{}, not 96×96",
+                        frame.width, frame.height
+                    ));
+                }
+                for y in 0..96 {
+                    let row = &frame.pixels[y * 96..(y + 1) * 96];
+                    let at = y * sheet.width + f * 96;
+                    sheet.pixels[at..at + 96].copy_from_slice(row);
+                }
+            }
+            encode_png(&sheet, &pal, true).map_err(|e| e.to_string())
+        };
+        let mut out = Vec::new();
+        for (side, set) in DUEL_SIDE_SETS {
+            out.push((format!("gfx/duel/{side}.png"), sheet(set)?));
+        }
+        for (person, set) in DUEL_RIDERS {
+            if let Some(officer) = officers.get(&person) {
+                out.push((format!("gfx/duel/{officer}.png"), sheet(set)?));
+            }
+        }
+        // The background.
+        let bank = cells.first().ok_or("HEXBCHP.R3 has no entry")?;
+        let strip = |entry: Option<&u8>, kind: maps::SceneStrip| -> Result<IndexedImage, String> {
+            let i = usize::from(*entry.ok_or("MAIN.EXE has no strip for the terrain")?);
+            let data = strips
+                .get(i)
+                .ok_or_else(|| format!("HEXBMAP.R3 has no entry {i}"))?;
+            if maps::SceneStrip::of(data) != Some(kind) {
+                return Err(format!(
+                    "HEXBMAP.R3 entry {i} is not a {} strip",
+                    kind.name()
+                ));
+            }
+            let (w, h) = kind.cells();
+            maps::render_tiles(data, w, h, bank).map_err(|e| format!("HEXBMAP.R3 entry {i}: {e}"))
+        };
+        let sky = strip(
+            tables.backdrop.get(DUEL_TERRAIN),
+            maps::SceneStrip::Backdrop,
+        )?;
+        let ground = strip(tables.ground.get(DUEL_TERRAIN), maps::SceneStrip::Ground)?;
+        let (w, h) = DUEL_STAGE;
+        if sky.width < w || ground.width < w || sky.height + ground.height != h {
+            return Err(format!(
+                "the sky ({}×{}) and ground ({}×{}) strips do not make a {w}×{h} stage",
+                sky.width, sky.height, ground.width, ground.height
+            ));
+        }
+        let mut stage = IndexedImage {
+            width: w,
+            height: h,
+            pixels: Vec::with_capacity(w * h),
+        };
+        for part in [&sky, &ground] {
+            for y in 0..part.height {
+                stage
+                    .pixels
+                    .extend_from_slice(&part.pixels[y * part.width..y * part.width + w]);
+            }
+        }
+        let png = encode_png(&stage, &pal, false).map_err(|e| e.to_string())?;
+        out.push((format!("gfx/duel/{}.png", battles::DUEL_BACKGROUND), png));
+        Ok(out)
+    })())
 }
 
 // ----- portraits -----------------------------------------------------------------------------

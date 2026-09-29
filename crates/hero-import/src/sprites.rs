@@ -151,8 +151,9 @@ pub const HEXBCHR_GROUPS: &[Group] = &[
 ];
 
 /// `HEXICHR.R3`: five sets of 15 frames of mounted officers (12 riding and attacking frames, a
-/// falling rider, the fallen rider, the riderless horse), then three mounted-archer frames.
-/// Which officer each set belongs to is not known yet.
+/// falling rider, the fallen rider in two poses), then three mounted-archer frames.
+/// Sets 0 and 1 are the left and right fighters of anyone, 2–4 Guan Yu, Zhang Fei and Lü Bu
+/// (FORMATS §13.6, `pack::DUEL_RIDERS`).
 pub const HEXICHR_GROUPS: &[Group] = &[
     g(0, 14, "mounted officer set 1"),
     g(15, 29, "mounted officer set 2"),

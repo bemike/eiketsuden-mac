@@ -918,6 +918,41 @@ fn drama_checks() {
             "scene b01_duel",
             "speaker `zhang_liang` looks like an officer id",
         ),
+        error(
+            &[(
+                STORY,
+                "@join jian_yong",
+                "@join jian_yong\n@duel liu_bei lu_bu\n@duel_act left charge\n@duel_end",
+            )],
+            "scene oath",
+            "@duel names unknown officer `lu_bu`",
+        ),
+        error(
+            &[(
+                STORY,
+                "@join jian_yong",
+                "@join jian_yong\n@duel_act left charge",
+            )],
+            "scene oath",
+            "@duel_act before any @duel",
+        ),
+        warning(
+            &[(
+                STORY,
+                "@join jian_yong",
+                "@join jian_yong
+@duel liu_bei guan_yu
+@duel_end
+@duel_act left fall",
+            )],
+            "scene oath",
+            "@duel_act after the duel's @duel_end",
+        ),
+        error(
+            &[(STORY, "@join jian_yong", "@join jian_yong\n@duel_end")],
+            "scene oath",
+            "@duel_end before any @duel",
+        ),
         warning(
             &[(
                 BATTLE_DRAMAS,

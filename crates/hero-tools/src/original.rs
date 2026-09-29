@@ -876,6 +876,15 @@ mod tests {
             "{drama}"
         );
         assert!(pack.scene("orig_c1_xuzhou2_4").is_some());
+        // Xiapi's duels are duel scenes with the original's riders.
+        assert!(
+            drama.contains("@duel liu_bei wei_xu field\n")
+                && drama.contains("@duel_act right flee\n"),
+            "{drama}"
+        );
+        for key in ["left", "right", "field", "guan_yu", "zhang_fei", "lu_bu"] {
+            assert!(out.join(format!("gfx/duel/{key}.png")).is_file(), "{key}");
+        }
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()

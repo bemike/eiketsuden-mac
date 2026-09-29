@@ -293,6 +293,32 @@ impl MediaCheck {
                         &format!("gfx/bg/{key}.png"),
                         "background",
                     ),
+                    Cmd::Duel { left, right, bg } => {
+                        if let Some(bg) = bg {
+                            self.require(
+                                Severity::Error,
+                                &ctx,
+                                &format!("gfx/duel/{bg}.png"),
+                                "duel background",
+                            );
+                        }
+                        for (officer, side) in [(left, "left"), (right, "right")] {
+                            let own = format!("gfx/duel/{officer}.png");
+                            let fallback = format!("gfx/duel/{side}.png");
+                            if !self.exists(&own)
+                                && !self.exists(&fallback)
+                                && self.reported.insert(own.clone())
+                            {
+                                self.push(
+                                    Severity::Warning,
+                                    &ctx,
+                                    format!(
+                                        "missing {own} or {fallback} (duel rider); the fighter is not drawn"
+                                    ),
+                                );
+                            }
+                        }
+                    }
                     Cmd::Sfx(key) => {
                         let ogg = format!("sfx/{key}.ogg");
                         let wav = format!("sfx/{key}.wav");

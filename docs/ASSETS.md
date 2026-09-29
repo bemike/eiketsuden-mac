@@ -222,6 +222,17 @@ Any resolution with a **4:5 aspect** (recommended 192×240), head-and-shoulders,
 `palace`, `town`, `village`, `camp`, `field`, `river`, `mountain`, `castle`, `night`, `black` (plain black is also
 implied by `@bg none`).
 
+## Duel riders — `gfx/duel/<key>.png`
+
+The duel scene (`@duel`, MODDING.md) draws each fighter from a sheet of **15 frames of 96×96** in one row, facing
+right (the right-hand fighter is mirrored): 0–3 galloping (0 also standing), 4–11 attacking in pairs (a strike
+shows frames *n* and *n*+1), 12 falling, 13 and 14 lying next to the horse (two poses). The sheet is
+`gfx/duel/<officer id>.png` when there is one, otherwise `gfx/duel/left.png` or `gfx/duel/right.png` by side;
+without either the fighter is not drawn (a fighter without a sheet of their own costs one failed read, a 404 on
+the web). The background `gfx/duel/<key>.png` is the stage, **416×208** (26 × 13 cells
+of 16 px; fighters stand with their frame's top 48 px down), scaled by whole numbers to fit. The base pack ships
+none; the original mode converts the original's (ORIGINAL_DATA.md).
+
 ## Effects — `gfx/fx/<key>.png` + `gfx/fx/fx.toml`
 
 Horizontal frame strips. `fx.toml`: `[fx.fire] frame = [32, 32]  frames = 8  fps = 12`. Keys referenced by

@@ -229,7 +229,7 @@ eiketsuden --data data/original
 
 * **한계**: 소속 변경(`set_country`, 산적 두목 영입은 기본 팩 이벤트가 맡음)과 원작 전투 중 곡 바꾸기는 옮기지 않고 전투 파일
   주석에 적습니다. 조건이 맞지 않을 때의 분기(하비 적교 칸에서 세 장수를 만나기 전 유비의 대사)는 이벤트의 `unless`로,
-  전투 중에 바뀌는 목표 문구는 `set_objective`로 옮깁니다(번호와 `[이름]` 표시를 떼어 한 줄로). 일기토는 원작 대사와 효과음으로 보여 줄 뿐 원작의 일기토 연출은 없습니다. 기본 팩 이벤트 가운데
+  전투 중에 바뀌는 목표 문구는 `set_objective`로 옮깁니다(번호와 `[이름]` 표시를 떼어 한 줄로). 기본 팩 이벤트가 맡지 않는 일기토(하비의 세 장수 등)는 원작 대사 사이에 원작 기마 그림으로 된 일기토 장면(`@duel`, FORMATS §13.6)으로 보여 줍니다(배경은 평지로 고정). 기본 팩 이벤트 가운데
   기본 맵의 칸이나 원작에 없는 무장·증원 그룹을 쓰는 것은 빠지고, 그 대사 장면은 원작 대사가 대신합니다. 원작 AI 방식은
   `MAIN.EXE`의 AI 코드 이름(대기·최단 적공격·부동·이동·무공격이동)대로 옮깁니다(FORMATS §13.4). 전투 앞뒤 장면·규칙·음악·전투 장면 연출은 아직 기본 팩 것이고, 서장·1장
   밖의 원작 맵 42개는 쓰는 전투가 없습니다.
@@ -444,7 +444,8 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   parallel control), and each trigger record becomes an event with its trigger and actions (joins, AI changes,
   levels, retreats, gold and items, a gate opening or the Xiapi drawbridge coming down as `set_terrain` with the
   new chips' picture, the end of the battle, `set_stage` into the next phase); its dialogue, narration and duels
-  become drama scenes written from the player's copy (`dramas/original_battles.drama`). Flags that one record sets
+  become drama scenes written from the player's copy (`dramas/original_battles.drama`; duels as `@duel` scenes with the
+  original's riders in `gfx/duel/`). Flags that one record sets
   and another tests become battle flags with `when` conditions (and what a script does while they do not hold,
   events with `unless`); objective texts a script changes become `set_objective`; where the base battle keeps an event for the same
   occasion (most duels), it keeps telling it and gains the original's other actions. The rules, the battle and camp

@@ -3,7 +3,7 @@
 
 use crate::campaign::{CampaignError, CampaignState};
 use crate::pack::Pack;
-use crate::script::{Cmd, Scene, SetOp, Slot};
+use crate::script::{Cmd, DuelAct, DuelSide, Scene, SetOp, Slot};
 use serde::{Deserialize, Serialize};
 
 /// Commands executed in one [`DramaRunner::next`] call without producing a step before the
@@ -49,6 +49,19 @@ pub enum Step {
         gold: i64,
         item: Option<String>,
     },
+    /// Start a duel scene between two officers (ids as written) over background `bg`.
+    Duel {
+        left: String,
+        right: String,
+        bg: Option<String>,
+    },
+    /// A duel fighter's move; wait until the frontend has played it.
+    DuelAct {
+        side: DuelSide,
+        act: DuelAct,
+    },
+    /// Close the duel scene.
+    DuelEnd,
     /// Scene finished.
     End,
 }
@@ -143,6 +156,16 @@ impl DramaRunner {
                     slot: *slot,
                 },
                 Cmd::Hide(slot) => Step::Hide(*slot),
+                Cmd::Duel { left, right, bg } => Step::Duel {
+                    left: left.clone(),
+                    right: right.clone(),
+                    bg: bg.clone(),
+                },
+                Cmd::DuelAct { side, act } => Step::DuelAct {
+                    side: *side,
+                    act: *act,
+                },
+                Cmd::DuelEnd => Step::DuelEnd,
                 Cmd::Wait(ms) => Step::Wait { ms: *ms },
                 Cmd::FadeOut => Step::FadeOut,
                 Cmd::FadeIn => Step::FadeIn,
