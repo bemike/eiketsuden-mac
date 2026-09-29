@@ -128,6 +128,7 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                 && !leaves(r)
                 && progressing.contains(&r.trigger.group)
                 && !has_effects(r)
+                && !r.code.iter().any(|c| c.instr.mnemonic == "choice")
         })
         .count();
     let mut head = format!(
@@ -246,6 +247,9 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                         })
                         .collect();
                     out.push(format!("선택지 r{i}: {}", list.join("; ")));
+                    // A choice ends its record's script: what the listing shows after it is the
+                    // next record's code (the options' records share it).
+                    break;
                 }
                 "if_answer" => {
                     let skip = usize::from(get(c, "skip"));
@@ -425,6 +429,10 @@ fn records(block: &BlockOut, out: &mut String) {
                     }
                 }
             }
+            if m == "choice" {
+                // The rest is the first option's record (listed on its own).
+                break;
+            }
         }
     }
 }
@@ -464,4 +472,99 @@ pub(crate) fn chapter_flow(file: &ScenarioFile, detail: Detail) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scenario::{Arg, ArgKind, Instr, Trigger};
+    use std::collections::BTreeMap;
+
+    fn instr(mnemonic: &'static str, args: &[(&'static str, u16)]) -> Instr {
+        Instr {
+            offset: 0,
+            opcode: 0,
+            mnemonic,
+            operands: Operands::Fields {
+                args: args
+                    .iter()
+                    .map(|&(name, value)| Arg {
+                        name,
+                        kind: ArgKind::Number,
+                        value,
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    fn record(index: usize, kind: u8, group: u8, code: Vec<Instr>) -> RecordOut {
+        let trigger = Trigger {
+            kind,
+            kind_name: if kind == TALK { "talk" } else { "run" },
+            inverted: false,
+            group,
+            group_flag: false,
+            args: [0; 6],
+        };
+        let code = code
+            .into_iter()
+            .map(|i| {
+                let mut resolved = BTreeMap::new();
+                match i.mnemonic {
+                    "choice" => {
+                        resolved.insert("options", "간다\r\n안 간다".to_string());
+                    }
+                    "dialogue" => {
+                        resolved.insert("text", "유비: 어떻게 할까?".to_string());
+                    }
+                    _ => {}
+                }
+                (i, resolved)
+            })
+            .collect();
+        RecordOut::for_test(index, trigger, code)
+    }
+
+    #[test]
+    fn an_outline_shows_where_each_option_goes_and_the_text_only_when_asked() {
+        let file = ScenarioFile::for_test(vec![vec![
+            // The choice; the listing goes on with the first option's code (they share it).
+            record(
+                0,
+                TALK,
+                1,
+                vec![
+                    instr("dialogue", &[("text", 1)]),
+                    instr("choice", &[("options", 2)]),
+                    instr("game_over", &[]),
+                ],
+            ),
+            record(1, 0, 1, vec![instr("game_over", &[])]),
+            record(2, 0, 1, vec![instr("leave_parallel", &[])]),
+            // Chatter: a talk of the group that neither moves it on nor has effects.
+            record(3, TALK, 1, vec![instr("dialogue", &[("text", 1)])]),
+            record(4, 0, 2, vec![instr("goto_block", &[("block", 5)])]),
+        ]]);
+        let s = chapter_flow(&file, Detail::Structure);
+        assert!(
+            s.contains("- **블록 0**: 이야기; 레코드 5, 그룹 2; 대화 2(잡담 1)"),
+            "{s}"
+        );
+        assert!(
+            s.contains("선택지 r0: 1번 r1 → 게임 오버; 2번 r2 → 진행"),
+            "{s}"
+        );
+        assert!(!s.contains("r0 게임 오버"), "{s}");
+        assert!(
+            s.contains("r1 게임 오버") && s.contains("r4 (run) → 블록 5"),
+            "{s}"
+        );
+        assert!(!s.contains("어떻게") && !s.contains("간다"), "{s}");
+        let t = chapter_flow(&file, Detail::Text);
+        assert!(
+            t.contains("「간다」 r1 → 게임 오버") && t.contains("> 유비: 어떻게 할까?"),
+            "{t}"
+        );
+    }
 }

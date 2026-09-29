@@ -674,6 +674,57 @@ pub(crate) struct InstrOut {
     pub(crate) resolved: BTreeMap<&'static str, String>,
 }
 
+#[cfg(test)]
+impl ScenarioFile {
+    /// A file of one scene whose blocks have `records` (for tests of its outlines).
+    pub(crate) fn for_test(blocks: Vec<Vec<RecordOut>>) -> ScenarioFile {
+        ScenarioFile {
+            scenario: "SNR9D.R3".into(),
+            messages: "SNR9M.R3".into(),
+            encoding: "test",
+            note: "",
+            scenes: vec![SceneOut {
+                index: 0,
+                message_base: 0,
+                dialogues: Vec::new(),
+                strings: Vec::new(),
+                unreferenced: Vec::new(),
+                blocks: blocks
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, records)| BlockOut {
+                        index,
+                        offset: 0,
+                        records,
+                    })
+                    .collect(),
+            }],
+        }
+    }
+}
+
+#[cfg(test)]
+impl RecordOut {
+    /// Record `index` with `trigger` and `code` (instructions with their resolved texts).
+    pub(crate) fn for_test(
+        index: usize,
+        trigger: scenario::Trigger,
+        code: Vec<(scenario::Instr, BTreeMap<&'static str, String>)>,
+    ) -> RecordOut {
+        RecordOut {
+            index,
+            offset: 0,
+            trigger,
+            trigger_person: None,
+            code_offset: 0,
+            code: code
+                .into_iter()
+                .map(|(instr, resolved)| InstrOut { instr, resolved })
+                .collect(),
+        }
+    }
+}
+
 /// Counters for the report.
 #[derive(Default)]
 struct TextCounts {
