@@ -163,13 +163,6 @@ impl DataRoot {
                 |p| p.join("pack.toml").is_file(),
             );
             let root = DataRoot::from_dir(&dir, &candidates);
-            // A written original pack (`--data data/original`) copies from the pack it extends.
-            match hero_import::pack::stale_pack(&dir) {
-                Ok(None) => {}
-                Ok(Some(why)) | Err(why) => {
-                    macroquad::logging::warn!("original pack {}: {}", dir.display(), why)
-                }
-            }
             let original_env = std::env::var_os(ORIGINAL_ENV).map(PathBuf::from);
             match resolve_overlay_dir(opts.original_dir.as_deref(), original_env.as_deref(), |p| {
                 p.join(OVERLAY_INDEX).is_file()

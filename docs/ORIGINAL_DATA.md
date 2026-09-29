@@ -208,8 +208,9 @@ eiketsuden --data data/original
   `base` 폴더를 기본 팩으로 씁니다. 두 폴더는 같은 드라이브에 있어야 합니다(`extends`는 상대 경로만 허용).
 * 쓴 팩은 기본 팩의 규칙 파일을 원작 값으로 바꾼 복사본을 가지므로(8절), 기본 팩이 바뀐 뒤에는 기본 팩의 새 병종·필드·책략을
   가립니다. 그래서 `original-pack.json`에 쓸 때의 기본 팩 체인 지문(`base_fingerprint`: 모든 `pack.toml`과 읽힌 글 파일의
-  SHA-256)을 적어 두고, `hero-tools validate`와 게임(`--data`로 연 폴더, 로그)이 지금의 기본 팩과 다르거나 변환기의 팩 형식
-  버전이 다르면 다시 변환하라고 경고합니다. 실행마다 새로 변환하는 게임 안 원작 모드에는 해당하지 않습니다.
+  SHA-256)을 적어 두고, `hero-tools validate`와 게임(`--data`로 연 팩 체인, 시작 때 알림과 로그)이 지금의 기본 팩과 다르거나
+  변환기의 팩 형식 버전이 다르면 다시 변환하라고 경고합니다(그 팩을 확장한 모드도). 지문은 기본 팩 체인의 글 파일 전체라
+  원작 팩과 상관없는 수정(대사 오탈자 등)에도 경고가 납니다(놓치는 것보다 낫다고 봄). 실행마다 새로 변환하는 게임 안 원작 모드에는 해당하지 않습니다.
 * 쓴 뒤에 `hero-tools validate`와 같은 검사를 돌려 결과를 보여 주고, 변환에 실패한 종류가 있거나 팩에 오류가 있으면
   종료 코드 1을 돌려줍니다. 출력 폴더는 새 폴더·빈 폴더·이전에 이 명령이 쓴 팩(`original-pack.json`)만 허용합니다(도중에 멈춘 실행은
   추출과 같이 `.hero-import-partial`로 정리).
@@ -435,8 +436,9 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   folder, or the base pack. An explicit `--data` / `EIKETSUDEN_DATA` wins over the setting. See DECISIONS D10.
 * **Original mode pack as files (development)**: `hero-tools original pack <dir> --out data/original` writes the same
   layered pack (`id = "original"`, `extends` the base pack, `canvas = [640, 400]`, git-ignored) holding what can be mapped
-  onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. `hero-tools validate` and the game warn when the
-  base pack (or the converter's pack format) changed since it was written (`base_fingerprint` in `original-pack.json`). It holds officer
+  onto the base pack's keys, then validates it; play it with `eiketsuden --data data/original`. `hero-tools validate` and the game
+  warn when the base pack (or the converter's pack format) changed since it was written (`base_fingerprint` in
+  `original-pack.json`), also for a mod that extends it. It holds officer
   portraits (matched to the base pack's officers by name, with five spelling aliases and one reading used to tell
   two officers of the same name apart; 108 of 118 on the verified copy), unit sheets of all 19 classes from the
   `HEXZCHR` map icons (32×32 frames; orange for the player and allies, green for enemies, as `MAIN.EXE` picks

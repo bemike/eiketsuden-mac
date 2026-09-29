@@ -453,6 +453,22 @@ pub fn stale_pack(dir: &Path) -> Result<Option<String>, String> {
     })
 }
 
+/// [`stale_pack`] of every pack of the chain `pack` loaded from `dir` (a mod may extend a
+/// written original pack): `(the pack's directory, why)` of each one that should be converted
+/// again, or whose check failed.
+pub fn stale_packs(dir: &Path, pack: &hero_core::pack::Pack) -> Vec<(std::path::PathBuf, String)> {
+    pack.layers
+        .iter()
+        .filter_map(|layer| {
+            let layer_dir = dir.join(&layer.dir);
+            match stale_pack(&layer_dir) {
+                Ok(None) => None,
+                Ok(Some(why)) | Err(why) => Some((layer_dir, why)),
+            }
+        })
+        .collect()
+}
+
 /// Convert the install in `source` into an original-mode pack in `out`.
 pub fn write_pack(
     source: &Path,

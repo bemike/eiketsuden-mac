@@ -77,7 +77,9 @@ impl Ctx {
         if let Some(w) = warning {
             macroquad::logging::warn!("{}", w);
         }
-        Ctx {
+        #[cfg(not(target_arch = "wasm32"))]
+        let stale = stale_original_packs(&data_root);
+        let mut ctx = Ctx {
             gfx: Gfx::new(),
             input: Input::new(),
             audio: Audio::new(&settings),
@@ -94,7 +96,12 @@ impl Ctx {
             music: None,
             time: 0.0,
             frame: 0,
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        for why in stale {
+            ctx.toast(why);
         }
+        ctx
     }
 
     /// Play a UI sound effect by key (see [`crate::audio::sfx`]).
@@ -448,4 +455,28 @@ pub async fn run(options: LaunchOptions) {
     while app.frame() {
         next_frame().await;
     }
+}
+
+/// A written original pack in the chain of the data pack on disk (`--data data/original`, or a
+/// mod on top of one) copies from the pack it extends: one message for each such pack that should
+/// be converted again, also logged. The game's own original mode converts at every launch and is
+/// not on disk.
+#[cfg(not(target_arch = "wasm32"))]
+fn stale_original_packs(root: &DataRoot) -> Vec<String> {
+    let dir = std::path::PathBuf::from(root.top_dir());
+    // A pack that does not load is reported by the loading screen.
+    let Ok(pack) = hero_core::pack::Pack::load(&hero_core::pack::DirSource { root: dir.clone() })
+    else {
+        return Vec::new();
+    };
+    hero_import::pack::stale_packs(&dir, &pack)
+        .into_iter()
+        .map(|(layer, why)| {
+            macroquad::logging::warn!("original pack {}: {}", layer.display(), why);
+            format!(
+                "원작 팩을 다시 변환하세요 (hero-tools original pack): {}",
+                layer.display()
+            )
+        })
+        .collect()
 }

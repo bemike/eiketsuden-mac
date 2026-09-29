@@ -479,7 +479,7 @@ mod tests {
         let stale = |issues: &[hero_core::pack::Issue]| {
             issues
                 .iter()
-                .any(|i| i.context == pack::PACK_INDEX && i.severity == Severity::Warning)
+                .any(|i| i.context.ends_with(pack::PACK_INDEX) && i.severity == Severity::Warning)
         };
         assert!(!stale(&crate::validate::check(&out, &pack).unwrap()));
         let base_manifest = tmp.0.join("data/base/pack.toml");
@@ -489,6 +489,25 @@ mod tests {
         let why = pack::stale_pack(&out).unwrap().unwrap();
         assert!(why.contains("changed after it was written"), "{why}");
         assert!(stale(&crate::validate::check(&out, &pack).unwrap()));
+        // A mod on top of the original pack: the original pack in its chain is checked too.
+        let modded = tmp.0.join("data/mod");
+        std::fs::create_dir_all(&modded).unwrap();
+        std::fs::write(
+            modded.join("pack.toml"),
+            "id = \"mod\"\nname = \"mod\"\nversion = \"1\"\nextends = \"../original\"\n",
+        )
+        .unwrap();
+        let mod_pack = crate::load_pack(&modded).unwrap();
+        let found = pack::stale_packs(&modded, &mod_pack);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].0.ends_with("original"), "{found:?}");
+        let issues = crate::validate::check(&modded, &mod_pack).unwrap();
+        assert!(
+            issues.iter().any(|i| i.severity == Severity::Warning
+                && i.context.ends_with(pack::PACK_INDEX)
+                && i.msg.contains("changed after it was written")),
+            "{issues:?}"
+        );
         // An index of another pack format: written by another converter.
         let index_path = out.join(pack::PACK_INDEX);
         let mut json: serde_json::Value =
