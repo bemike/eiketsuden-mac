@@ -903,25 +903,23 @@ impl DramaScreen {
         scene: &str,
         terrain: BTreeMap<String, String>,
     ) -> DramaScreen {
-        let mut screen = DramaScreen::new_on(ctx, scene, DramaEnd::Pop, &terrain);
-        screen.terrain = terrain;
-        screen
+        DramaScreen::new_on(ctx, scene, DramaEnd::Pop, terrain)
     }
 
     fn new(ctx: &mut Ctx, scene: &str, end: DramaEnd) -> DramaScreen {
-        DramaScreen::new_on(ctx, scene, end, &BTreeMap::new())
+        DramaScreen::new_on(ctx, scene, end, BTreeMap::new())
     }
 
     fn new_on(
         ctx: &mut Ctx,
         scene: &str,
         end: DramaEnd,
-        terrain: &BTreeMap<String, String>,
+        terrain: BTreeMap<String, String>,
     ) -> DramaScreen {
         let (runner, start_error) = match ctx.pack.clone() {
             Some(pack) => match DramaRunner::new(&pack, scene) {
                 Ok(r) => {
-                    preload(ctx, &pack, scene, terrain);
+                    preload(ctx, &pack, scene, &terrain);
                     (Some(r), None)
                 }
                 Err(e) => (None, Some(e.to_string())),
@@ -940,7 +938,7 @@ impl DramaScreen {
             start_error,
             stage: Stage::new(backdrop),
             duel: None,
-            terrain: BTreeMap::new(),
+            terrain,
             current: Current::Next,
             last_text: None,
             backlog: Backlog::default(),

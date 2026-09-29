@@ -1879,9 +1879,10 @@ impl Screen for BattleScreen {
 }
 
 /// The terrain id under each officer of `state` on the map, for the duels of its scenes
-/// (`@duel ... terrain`). An officer who left the map by the same event that plays the scene
-/// (a duel's loser retreats in the actions after it) is still counted at their last cell, after
-/// the ones on the map.
+/// (`@duel ... terrain`). Retreated officers count at their last cell, after the ones on the
+/// map: a duel's loser retreats in the actions of the same event, which have all been applied
+/// when its scene plays (one that retreated turns earlier counts too, a case the converted
+/// duels do not have).
 fn officer_terrain(pack: &Pack, state: &BattleState) -> BTreeMap<String, String> {
     let mut terrain = BTreeMap::new();
     for on_map in [true, false] {
@@ -1906,9 +1907,13 @@ fn officer_terrain(pack: &Pack, state: &BattleState) -> BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::screens::drama::OVERLAY_TOOL_TOP;
+    use hero_core::battle::UnitState;
+
     #[test]
     fn duels_see_the_terrain_under_the_officers_and_under_those_just_gone() {
-        let (pack, mut state) = super::testutil::sishui();
+        let (pack, mut state) = testutil::sishui();
         let officers: Vec<usize> = state
             .units
             .iter()
@@ -1922,26 +1927,23 @@ mod tests {
             .map(|&id| state.units[id].officer.as_ref().unwrap().to_string())
             .collect();
         let name = |id: usize| names[officers.iter().position(|&o| o == id).unwrap()].clone();
-        let under = |state: &hero_core::battle::BattleState, id: usize| {
+        let under = |state: &BattleState, id: usize| {
             state
                 .terrain_at(&pack, state.units[id].pos)
                 .unwrap()
                 .id
                 .to_string()
         };
-        let map = super::officer_terrain(&pack, &state);
+        let map = officer_terrain(&pack, &state);
         assert_eq!(map[&name(officers[0])], under(&state, officers[0]));
         // Retreated by the event that plays the duel: still at their last cell.
-        state.units[officers[1]].state = hero_core::battle::UnitState::Retreated;
-        let map = super::officer_terrain(&pack, &state);
+        state.units[officers[1]].state = UnitState::Retreated;
+        let map = officer_terrain(&pack, &state);
         assert_eq!(map[&name(officers[1])], under(&state, officers[1]));
         // Not yet on the map: not there.
-        state.units[officers[1]].state = hero_core::battle::UnitState::Hidden;
-        assert!(!super::officer_terrain(&pack, &state).contains_key(&name(officers[1])));
+        state.units[officers[1]].state = UnitState::Hidden;
+        assert!(!officer_terrain(&pack, &state).contains_key(&name(officers[1])));
     }
-
-    use super::*;
-    use crate::screens::drama::OVERLAY_TOOL_TOP;
 
     /// The default (and smallest allowed), VGA and the largest allowed canvas.
     const CANVASES: [Vec2; 3] = [
