@@ -255,8 +255,17 @@ impl BattleState {
     /// Up to 10 % more of a support amount under the original formulas (their random bonus),
     /// else nothing.
     fn support_bonus(&mut self, pack: &Pack, amount: i32) -> i32 {
-        if original_formulas(pack) && amount >= 10 {
-            self.rng.range(0, amount / 10)
+        if original_formulas(pack) {
+            self.original_rand(amount / 10)
+        } else {
+            0
+        }
+    }
+
+    /// The original's `rand(n)`: `0..n` (`random % n`), nothing for `n` below 1.
+    fn original_rand(&mut self, n: i32) -> i32 {
+        if n >= 1 {
+            self.rng.range(0, n - 1)
         } else {
             0
         }
@@ -482,7 +491,14 @@ impl BattleState {
             match e {
                 Effect::Damage { power } => {
                     let base = self.strategy_damage_base(pack, caster, s, *power, t, terrain);
-                    let damage = base.saturating_add(self.rng.range(0, base / 50));
+                    // `rand(D / 50)`: up to `D / 50` in the engine's formula, below it in the
+                    // original's.
+                    let bonus = if original_formulas(pack) {
+                        self.original_rand(base / 50)
+                    } else {
+                        self.rng.range(0, base / 50)
+                    };
+                    let damage = base.saturating_add(bonus);
                     let loss = self.take_damage(pack, t, damage);
                     hit.damage += damage;
                     hit.morale -= loss;
@@ -642,16 +658,27 @@ impl BattleState {
                 self.consume(item);
                 let (mut healed, mut morale) = (0, 0);
                 for e in &def.effects {
+                    // The original formulas add up to a tenth, as for the support strategies.
+                    let bonus = match e {
+                        Effect::Heal { power } => self.support_bonus(pack, *power),
+                        Effect::Morale { amount } if *amount > 0 => {
+                            self.support_bonus(pack, *amount)
+                        }
+                        _ => 0,
+                    };
                     let u = &mut self.units[target];
                     match e {
                         Effect::Heal { power } => {
-                            let h = (*power).min(u.max_hp - u.hp).max(0);
+                            let h = power.saturating_add(bonus).min(u.max_hp - u.hp).max(0);
                             u.hp += h;
                             healed += h;
                         }
                         Effect::Morale { amount } => {
                             let before = u.morale;
-                            u.morale = u.morale.saturating_add(*amount).clamp(0, 100);
+                            u.morale = u
+                                .morale
+                                .saturating_add(amount.saturating_add(bonus))
+                                .clamp(0, 100);
                             morale += u.morale - before;
                         }
                         // Rejected by `battle_item`.

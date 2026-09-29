@@ -816,10 +816,11 @@ fn original_formulas_add_a_random_tenth_to_support() {
         let ev = st.apply(&pack, cast(other, "cheer", p(3, 4))).unwrap();
         cheered.push(hits(&ev)[0].morale);
     }
-    // 225 + rand(0..=22); 20 + 10 / 10 + rand(0..=2).
-    assert!(healed.iter().all(|h| (225..=247).contains(h)), "{healed:?}");
+    // 225 + rand(22), 0..22; 20 + 10 / 10 + rand(2), 0..2.
+    assert!(healed.iter().all(|h| (225..=246).contains(h)), "{healed:?}");
     assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
-    assert!(cheered.iter().all(|m| (21..=23).contains(m)), "{cheered:?}");
+    assert!(cheered.iter().all(|m| (21..=22).contains(m)), "{cheered:?}");
+    assert!(cheered.contains(&22), "{cheered:?}");
 }
 
 #[test]
@@ -867,4 +868,32 @@ fn original_formulas_confuse_until_recovered_and_on_low_morale_downs() {
     st.units[foe].morale = 50;
     st.apply(&pack, cast(c, "provoke", p(3, 4))).unwrap();
     assert!(st.units[foe].statuses.is_empty());
+}
+
+#[test]
+fn original_formulas_add_a_random_tenth_to_healing_items() {
+    let pack = original_pack();
+    let (mut healed, mut raised) = (Vec::new(), Vec::new());
+    for seed in 0..60 {
+        let mut st = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), seed).unwrap();
+        for item in ["bean", "wine"] {
+            st.inventory.insert(item.into(), 1);
+        }
+        let u = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+        let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 4));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        st.units[friend].hp = 1;
+        st.units[friend].max_hp = 1000;
+        st.units[friend].morale = 10;
+        let used = |ev: Vec<BattleEvent>| match &ev[0] {
+            BattleEvent::ItemUsed { healed, morale, .. } => (*healed, *morale),
+            other => panic!("{other:?}"),
+        };
+        healed.push(used(st.apply(&pack, use_item(u, "bean", friend)).unwrap()).0);
+        raised.push(used(st.apply(&pack, use_item(friend, "wine", friend)).unwrap()).1);
+    }
+    // 300 + rand(30), 0..30; 30 + rand(3), 0..3.
+    assert!(healed.iter().all(|h| (300..=329).contains(h)), "{healed:?}");
+    assert!(healed.iter().any(|&h| h != healed[0]), "{healed:?}");
+    assert!(raised.iter().all(|m| (30..=32).contains(m)), "{raised:?}");
 }
