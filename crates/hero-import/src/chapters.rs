@@ -706,6 +706,24 @@ impl<'c, 'a> Writer<'c, 'a> {
                         break;
                     }
                 }
+                // The original's records share their code: what follows the choice is its first
+                // option's record. Anything else would not be read.
+                let after_choice = &rec.code[at + 1..];
+                let first_option = block.records.get(i + 1).map(|r| r.code.as_slice());
+                let shared = |option: &[Instr]| {
+                    after_choice.len() >= option.len()
+                        && after_choice
+                            .iter()
+                            .zip(option)
+                            .all(|(a, b)| a.mnemonic == b.mnemonic && a.operands == b.operands)
+                };
+                if !after_choice.iter().all(|c| c.mnemonic == "end")
+                    && !first_option.is_some_and(shared)
+                {
+                    self.out
+                        .notes
+                        .push(format!("record {i}: code after its choice left out"));
+                }
                 let options = rec.code[at]
                     .operands
                     .get("options")
@@ -1669,6 +1687,36 @@ mod tests {
         assert_eq!(
             s.notes,
             ["record 1: a choice inside option 0 of record 0 left out"]
+        );
+    }
+
+    #[test]
+    fn code_after_a_choice_is_its_first_options_or_noted() {
+        let option = vec![
+            instr("dialogue", &[("text", 3)]),
+            instr("leave_parallel", &[]),
+        ];
+        let with_after = |after: Vec<Instr>| {
+            let mut code = vec![instr("choice", &[("options", 10)])];
+            code.extend(after);
+            block(vec![
+                record(1, 0, code),
+                record(0, 0, option.clone()),
+                record(0, 0, vec![instr("leave_parallel", &[])]),
+            ])
+        };
+        let song_key = |_: u16| None;
+        let names = names();
+        let notes = |b: &Block| story_scene(b, &ctx(&names, &song_key)).notes;
+        // The records share their code: what follows is the first option's.
+        let mut shared = option.clone();
+        shared.push(instr("end", &[]));
+        assert!(notes(&with_after(shared)).is_empty());
+        assert!(notes(&with_after(vec![instr("end", &[])])).is_empty());
+        // Something else is not read.
+        assert_eq!(
+            notes(&with_after(vec![instr("dialogue", &[("text", 4)])])),
+            ["record 0: code after its choice left out"]
         );
     }
 
