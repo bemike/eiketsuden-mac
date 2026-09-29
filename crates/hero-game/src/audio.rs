@@ -102,6 +102,8 @@ struct Track {
     /// Fade level 0..=1.
     level: f32,
     applied_volume: f32,
+    /// Its file was replaced ([`Audio::reload_bgm`]): fade it out and start the new one.
+    stale: bool,
 }
 
 /// The music/effects manager. Owned by [`crate::app::Ctx`].
@@ -163,6 +165,16 @@ impl Audio {
         }
     }
 
+    /// The file of music `key` was replaced (the original mode adds its songs while the game
+    /// runs): if it is playing, fade it out and start it again from the new file.
+    pub fn reload_bgm(&mut self, key: &str) {
+        if let Some(track) = self.current.as_mut() {
+            if track.request.key == key {
+                track.stale = true;
+            }
+        }
+    }
+
     /// Fade the music out.
     pub fn stop_bgm(&mut self) {
         self.wanted = None;
@@ -212,16 +224,18 @@ impl Audio {
         }
 
         // Fade out music that is no longer wanted.
-        let keep = matches!((&self.current, &self.wanted), (Some(t), Some(w)) if t.request == *w);
+        let keep = matches!((&self.current, &self.wanted), (Some(t), Some(w)) if t.request == *w && !t.stale);
         if let Some(track) = self.current.as_mut() {
             if !keep {
                 track.level -= dt / FADE_OUT;
                 if track.level <= 0.0 {
                     stop_sound(&track.sound);
                     let key = format!("bgm/{}", track.request.key);
+                    let stale = track.stale;
                     self.current = None;
-                    // Decoded music is large; drop it unless it is wanted again right away.
-                    if self.bgm().map(|k| format!("bgm/{k}")) != Some(key.clone()) {
+                    // Decoded music is large; drop it unless it is wanted again right away (and
+                    // is still the same file).
+                    if stale || self.bgm().map(|k| format!("bgm/{k}")) != Some(key.clone()) {
                         media.release_sound(&key);
                     }
                 }
@@ -249,6 +263,7 @@ impl Audio {
                                 sound,
                                 level: 0.0,
                                 applied_volume: 0.0,
+                                stale: false,
                             });
                         }
                     }

@@ -221,6 +221,10 @@ pub fn enter(flow: Flow, ctx: &mut Ctx) -> Box<dyn Screen> {
             ctx.session = None;
             ctx.pack = None;
             ctx.audio.stop_bgm();
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ctx.music = None;
+            }
             memfs::unmount();
             ctx.data_root = DataRoot::resolve(&ctx.options);
             ctx.media = Media::new(ctx.data_root.clone());
