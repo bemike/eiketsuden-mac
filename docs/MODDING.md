@@ -323,7 +323,7 @@ cavalry = 125
 | `counter_divisor` | integer > 0 | Counter-attack chance in percent = `STR * 100 / counter_divisor`. |
 | `counter_damage_pct` | integer ≥ 0 | Counter damage in percent of a normal attack. |
 | `weather.clear` / `.cloudy` / `.rain` | integers ≥ 0, sum 100 | Chance of each weather, rolled every turn. |
-| `strategy_formulas` | `"engine"` (default) or `"original"` | Which strategy formulas battles use: the engine's or the PC original's (support bonus, confusion hit and recovery, morale-down confusion, least damage; RULES.md §5–§6). The original mode's converted pack sets `"original"`. |
+| `strategy_formulas` | `"engine"` (default) or `"original"` | Which strategy formulas battles use: the engine's or the PC original's (support bonus, confusion hit and recovery, morale-down confusion, least damage, the damage bonus below `raw / 50`, healing items' random tenth; RULES.md §5–§6, §10). The original mode's converted pack sets `"original"`. |
 
 ## rules/terrain.toml
 
@@ -455,7 +455,7 @@ Strategies and consumable items list their effects as inline tables with a `type
 | effect | fields | on strategies | on items |
 |---|---|---|---|
 | `{ type = "damage", power = 60 }` | `power` | strategy damage (RULES.md §5) | not allowed (give the item a `strategy`) |
-| `{ type = "heal", power = 100 }` | `power` | heal scaled by caster INT/level | restores exactly `power` HP |
+| `{ type = "heal", power = 100 }` | `power` | heal scaled by caster INT/level | restores exactly `power` HP (plus up to 10 % under `strategy_formulas = "original"`, RULES.md §10) |
 | `{ type = "morale", amount = 20 }` | `amount` (negative = morale down) | morale change (negative needs a hit) | morale change |
 | `{ type = "status", status = "confused", turns = 2 }` | `status`, `turns` | inflict a status on hit (with `strategy_formulas = "original"` in `rules/game.toml` the `turns` are ignored: the confusion ends on a recovery roll, RULES.md §6) | not allowed |
 | `{ type = "promote" }` | — | not allowed | class-up item, used in camp |
