@@ -18,7 +18,7 @@
 
 use crate::battles::BATTLE_MAP;
 use crate::battles::{self, Names, TextSource};
-use crate::scenario::{Block, Instr, Operands, Record, Scene};
+use crate::scenario::{story, Block, Instr, Operands, Record, Scene};
 use hero_core::battledef::{BattleDef, Condition, DeployDef, MapDef};
 use hero_core::campaign::{CampaignDef, Node};
 use hero_core::geom::Pos;
@@ -39,9 +39,6 @@ pub const ENDING_FLAG: &str = "orig_ending";
 pub fn ending_node(n: u8) -> String {
     format!("orig_ending_{n}")
 }
-
-/// Record kind of a person one talks to (FORMATS §13.2).
-const TALK: u8 = 3;
 
 /// A block of a scenario scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,12 +63,7 @@ pub fn parts(scene: &Scene) -> Vec<Part> {
             .filter_map(|c| c.operands.get("map"))
             .find(|m| m & 0xf000 == BATTLE_MAP);
         // The setup may come in the block before (with the camp's story).
-        let sets_up = code().any(|c| {
-            matches!(
-                c.mnemonic,
-                "battle_setup" | "battle_roster" | "begin_battle"
-            )
-        });
+        let sets_up = code().any(story::sets_up_battle);
         match battle_map {
             Some(m) if sets_up => out.push(Part::Battle {
                 block: i,
@@ -279,11 +271,9 @@ impl Writer<'_, '_> {
                 "if_answer" => {
                     // The instructions it guards run when the player answered `answer` (0 =
                     // yes) to the question just asked.
-                    let end = (i + 1 + usize::from(get("skip"))).min(code.len());
-                    let guarded = &code[i + 1..end];
-                    let sortie = guarded
-                        .iter()
-                        .any(|c| matches!(c.mnemonic, "op_3d" | "battle_setup" | "begin_battle"));
+                    let guarded = story::guarded(code, i);
+                    let end = i + 1 + guarded.len();
+                    let sortie = story::starts_battle(guarded);
                     // (A battle's setup asks nothing: its army changes are all it gives.)
                     if sortie || get("answer") != 0 || self.army_only {
                         // "Ready to set out?": the story goes on as if the player said yes.
@@ -610,31 +600,14 @@ fn growth_after_joining(text: &str) -> String {
     out
 }
 
-/// Whether `r` asks whether to set out (a question whose yes starts a battle: `op_3d`, a
-/// battle's setup).
+/// Whether `r` asks whether to set out ([`story::asks_sortie`]).
 fn sortie(r: &Record) -> bool {
-    r.code.iter().enumerate().any(|(i, c)| {
-        c.mnemonic == "if_answer"
-            && r.code[i + 1..]
-                .iter()
-                .take(usize::from(c.operands.get("skip").unwrap_or(0)))
-                .any(|g| matches!(g.mnemonic, "op_3d" | "battle_setup" | "begin_battle"))
-    })
+    story::asks_sortie(&r.code)
 }
 
 /// Whether `r` leaves its group's parallel control (moves the story on).
 fn leaves(r: &Record) -> bool {
-    r.code.iter().any(|c| c.mnemonic == "leave_parallel")
-}
-
-/// Whether `r` changes the army, the inventory or the original's flags.
-fn has_effects(r: &Record) -> bool {
-    r.code.iter().any(|c| {
-        matches!(
-            c.mnemonic,
-            "set_allegiance" | "add_item" | "set_shop_items" | "data" | "set_flag"
-        )
-    })
+    story::leaves_parallel(&r.code)
 }
 
 impl<'c, 'a> Writer<'c, 'a> {
@@ -663,13 +636,11 @@ impl<'c, 'a> Writer<'c, 'a> {
             .map(|r| r.trigger.group)
             .collect();
         let chatter = |r: &Record| {
-            r.trigger.kind == TALK
-                && !leaves(r)
-                && progressing.contains(&r.trigger.group)
-                && !has_effects(r)
-                // A talk that asks leads to the records of its options.
-                && !r.code.iter().any(|c| c.mnemonic == "choice")
-                && !sortie(r)
+            story::is_chatter(
+                r.trigger.kind,
+                progressing.contains(&r.trigger.group),
+                &r.code,
+            )
         };
         let mut taken = BTreeSet::new();
         for (i, rec) in block.records.iter().enumerate().skip(from) {
@@ -781,9 +752,7 @@ impl<'c, 'a> Writer<'c, 'a> {
                 let _ = writeln!(self.out.text, "@label after_{after}");
                 continue;
             }
-            if rec.code.iter().any(|c| c.mnemonic == "game_over")
-                && !rec.code.iter().any(|c| c.mnemonic == "leave_parallel")
-            {
+            if rec.code.iter().any(|c| c.mnemonic == "game_over") && !leaves(rec) {
                 // A game over that no choice leads to (a failed errand): not part of the story.
                 continue;
             }
@@ -1442,6 +1411,7 @@ pub fn continue_campaign(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scenario::TALK;
     use crate::scenario::{Arg, ArgKind, Trigger};
     use std::collections::BTreeMap;
 

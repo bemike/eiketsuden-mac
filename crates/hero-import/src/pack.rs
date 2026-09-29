@@ -2195,9 +2195,6 @@ pub const CHAPTER_FILES: [usize; 3] = [2, 3, 4];
 /// after it, instead of the node it went on to.
 pub const BASE_CAMPAIGN_LAST_BATTLE: &str = "c1_xuzhou2";
 
-/// Record kind of a person one talks to (FORMATS §13.2).
-const TALK_RECORD: u8 = 3;
-
 /// A battle to convert: its id, pairing, the base battle, the outro of a chapter's battle with
 /// its reward gold, and a chapter battle's block (a map may be fought in several blocks).
 type BattleJob<'a> = (
@@ -2481,7 +2478,7 @@ fn convert_battles(
                 .map(|b| {
                     b.records
                         .iter()
-                        .find(|r| r.trigger.kind == TALK_RECORD)
+                        .find(|r| r.trigger.kind == crate::scenario::TALK)
                         .and_then(|r| names.person_names.get(&r.trigger.word(0)).cloned())
                 })
                 .collect();

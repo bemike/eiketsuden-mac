@@ -422,6 +422,89 @@ pub fn trigger_kind_name(kind: u8) -> &'static str {
     }
 }
 
+/// Record kind of a person one talks to (FORMATS §13.2).
+pub const TALK: u8 = 3;
+
+/// Readings of a record's script that the story converter (`chapters`) and the scenario outline
+/// (`flow`) share, so that the outline documents what the conversion does.
+pub mod story {
+    use super::{Instr, TALK};
+
+    /// Whether the script leaves its group's parallel control (moves the story on).
+    pub fn leaves_parallel<I: AsRef<Instr>>(code: &[I]) -> bool {
+        code.iter().any(|c| c.as_ref().mnemonic == "leave_parallel")
+    }
+
+    /// Whether the script changes the army, the inventory or the original's flags: officers
+    /// joining or leaving, items, the shop, gold, flags, levels and classes.
+    pub fn changes_state<I: AsRef<Instr>>(code: &[I]) -> bool {
+        code.iter().any(|c| {
+            matches!(
+                c.as_ref().mnemonic,
+                "set_allegiance"
+                    | "set_country"
+                    | "add_item"
+                    | "set_shop_items"
+                    | "data"
+                    | "set_flag"
+                    | "add_levels"
+                    | "set_class"
+            )
+        })
+    }
+
+    /// Whether an instruction sets a battle up (its setup, rosters, or its start): a block
+    /// with one is a battle, or a battle's preparation when the battle map comes later.
+    pub fn sets_up_battle(instr: &Instr) -> bool {
+        matches!(
+            instr.mnemonic,
+            "battle_setup" | "battle_roster" | "begin_battle"
+        )
+    }
+
+    /// Whether instructions an answer guards start a battle (`op_3d`, a battle's setup).
+    pub fn starts_battle<I: AsRef<Instr>>(guarded: &[I]) -> bool {
+        guarded.iter().any(|g| {
+            matches!(
+                g.as_ref().mnemonic,
+                "op_3d" | "battle_setup" | "begin_battle"
+            )
+        })
+    }
+
+    /// The instructions the `if_answer` at `code[at]` guards.
+    pub fn guarded<I: AsRef<Instr>>(code: &[I], at: usize) -> &[I] {
+        let skip = usize::from(code[at].as_ref().operands.get("skip").unwrap_or(0));
+        &code[at + 1..(at + 1 + skip).min(code.len())]
+    }
+
+    /// Whether the script asks whether to set out: a question whose yes starts a battle.
+    pub fn asks_sortie<I: AsRef<Instr>>(code: &[I]) -> bool {
+        code.iter()
+            .enumerate()
+            .any(|(i, c)| c.as_ref().mnemonic == "if_answer" && starts_battle(guarded(code, i)))
+    }
+
+    /// Whether a record of `kind` with this script is optional chatter: a talk that does not
+    /// move the story on, in a group where another record does (`group_progresses`), and that
+    /// changes nothing, asks nothing and is no call to set out.
+    pub fn is_chatter<I: AsRef<Instr>>(kind: u8, group_progresses: bool, code: &[I]) -> bool {
+        kind == TALK
+            && group_progresses
+            && !leaves_parallel(code)
+            && !changes_state(code)
+            // A talk that asks leads to the records of its options.
+            && !code.iter().any(|c| c.as_ref().mnemonic == "choice")
+            && !asks_sortie(code)
+    }
+}
+
+impl AsRef<Instr> for Instr {
+    fn as_ref(&self) -> &Instr {
+        self
+    }
+}
+
 /// A trigger record and its script.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Record {
@@ -729,6 +812,56 @@ pub fn build_scene(blocks: &[Vec<([u8; 8], Vec<u8>)>]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn talks_that_change_nothing_are_chatter() {
+        let op = |mnemonic: &'static str, args: &[(&'static str, u16)]| Instr {
+            offset: 0,
+            opcode: 0,
+            mnemonic,
+            operands: Operands::Fields {
+                args: args
+                    .iter()
+                    .map(|&(name, value)| Arg {
+                        name,
+                        kind: ArgKind::Number,
+                        value,
+                    })
+                    .collect(),
+            },
+        };
+        let chatter = |kind, progresses, code: &[Instr]| story::is_chatter(kind, progresses, code);
+        let talk = [op("dialogue", &[("text", 1)])];
+        assert!(chatter(TALK, true, &talk));
+        // Not a talk, or in a group nothing moves on: part of the story.
+        assert!(!chatter(0, true, &talk));
+        assert!(!chatter(TALK, false, &talk));
+        // A talk that moves the story on, changes the army (a level too), asks, or asks
+        // whether to set out.
+        for extra in [
+            op("leave_parallel", &[]),
+            op("add_levels", &[("person", 9), ("levels", 1)]),
+            op("set_class", &[("person", 9), ("class", 1)]),
+            op("set_country", &[("person", 9), ("country", 0)]),
+            op("choice", &[]),
+        ] {
+            let code = [op("dialogue", &[("text", 1)]), extra.clone()];
+            assert!(!chatter(TALK, true, &code), "{}", extra.mnemonic);
+        }
+        let sortie = [
+            op("if_answer", &[("answer", 0), ("skip", 1)]),
+            op("op_3d", &[]),
+        ];
+        assert!(story::asks_sortie(&sortie));
+        assert!(!chatter(TALK, true, &sortie));
+        // An answer that guards something else.
+        let other = [
+            op("if_answer", &[("answer", 0), ("skip", 1)]),
+            op("dialogue", &[("text", 1)]),
+            op("op_3d", &[]),
+        ];
+        assert!(!story::asks_sortie(&other));
+    }
 
     fn script(parts: &[&[u8]]) -> Vec<u8> {
         let mut s: Vec<u8> = parts.concat();

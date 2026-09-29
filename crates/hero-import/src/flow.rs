@@ -6,7 +6,7 @@
 //! [`Detail::Text`] (every record with the lines it shows: stays on the player's computer).
 
 use crate::extract::{BlockOut, InstrOut, RecordOut, ScenarioFile};
-use crate::scenario::Operands;
+use crate::scenario::{story, Operands, TALK};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -18,9 +18,6 @@ pub(crate) enum Detail {
     /// The summaries, then every record with the lines it shows.
     Text,
 }
-
-/// Record kind of a person one talks to (FORMATS §13.2).
-const TALK: u8 = 3;
 
 /// A map id as its kind and number (FORMATS §13.3 `load_map`).
 fn map_label(map: u16) -> String {
@@ -37,16 +34,7 @@ fn get(i: &InstrOut, name: &str) -> u16 {
 }
 
 fn leaves(r: &RecordOut) -> bool {
-    r.code.iter().any(|c| c.instr.mnemonic == "leave_parallel")
-}
-
-fn has_effects(r: &RecordOut) -> bool {
-    r.code.iter().any(|c| {
-        matches!(
-            c.instr.mnemonic,
-            "set_allegiance" | "add_item" | "set_shop_items" | "data" | "set_flag"
-        )
-    })
+    story::leaves_parallel(&r.code)
 }
 
 /// A person as the extraction resolved it, else its number.
@@ -92,13 +80,8 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
         .collect();
     let battle_map = all()
         .filter(|c| c.instr.mnemonic == "load_map")
-        .any(|c| get(c, "map") & 0xf000 == 0x3000);
-    let sets_up = all().any(|c| {
-        matches!(
-            c.instr.mnemonic,
-            "battle_setup" | "battle_roster" | "begin_battle"
-        )
-    });
+        .any(|c| get(c, "map") & 0xf000 == crate::battles::BATTLE_MAP);
+    let sets_up = all().any(|c| story::sets_up_battle(&c.instr));
     let kind = if battle_map && sets_up {
         "전투"
     } else if sets_up {
@@ -109,6 +92,9 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
         "연출"
     };
     let groups: BTreeSet<u8> = block.records.iter().map(|r| r.trigger.group).collect();
+    // Chatter as the converter reads it (`scenario::story`), over the whole block: the
+    // converter reads a block from where its story starts (after a battle, `records[from..]`),
+    // which only matters for a group whose moving record comes before that start.
     let progressing: BTreeSet<u8> = block
         .records
         .iter()
@@ -124,11 +110,11 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
         .records
         .iter()
         .filter(|r| {
-            r.trigger.kind == TALK
-                && !leaves(r)
-                && progressing.contains(&r.trigger.group)
-                && !has_effects(r)
-                && !r.code.iter().any(|c| c.instr.mnemonic == "choice")
+            story::is_chatter(
+                r.trigger.kind,
+                progressing.contains(&r.trigger.group),
+                &r.code,
+            )
         })
         .count();
     let mut head = format!(
@@ -252,11 +238,10 @@ fn summary(block: &BlockOut, text: bool) -> Vec<String> {
                     break;
                 }
                 "if_answer" => {
-                    let skip = usize::from(get(c, "skip"));
-                    let guarded = &r.code[at + 1..(at + 1 + skip).min(r.code.len())];
-                    let sortie = guarded.iter().any(|g| {
-                        matches!(g.instr.mnemonic, "op_3d" | "battle_setup" | "begin_battle")
-                    });
+                    // (The count as the script gives it, for the listing.)
+                    let skip = get(c, "skip");
+                    let guarded = story::guarded(&r.code, at);
+                    let sortie = story::starts_battle(guarded);
                     let then: Vec<&str> = guarded
                         .iter()
                         .map(|g| g.instr.mnemonic)
