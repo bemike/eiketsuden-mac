@@ -1000,6 +1000,14 @@ mod tests {
         assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
         // Chapter 4's detachment comes back as Xuchang's setup says.
         assert!(scene("c4_s1_b6_before").contains("@join zhao_yun\n"));
+        // The original's event pictures, shown over the story (chapter 2 opens with one).
+        for n in 3..=33 {
+            assert!(
+                out.join(format!("gfx/pictures/orig_{n:02}.png")).is_file(),
+                "{n}"
+            );
+        }
+        assert!(scene("c2_s0_story0").contains("@picture orig_12\n"));
         // Saying yes to join ends the talk (no refusal after it).
         assert!(story.contains("@goto rend_"), "{story}");
         // A battle's events test the story's flags when it is fought (Xuchang's turn 12).

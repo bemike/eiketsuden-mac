@@ -293,6 +293,12 @@ impl MediaCheck {
                         &format!("gfx/bg/{key}.png"),
                         "background",
                     ),
+                    Cmd::Picture(Some(key)) => self.require(
+                        Severity::Error,
+                        &ctx,
+                        &format!("gfx/pictures/{key}.png"),
+                        "picture",
+                    ),
                     Cmd::Duel { left, right, bg } => {
                         if let Some(bg) = bg {
                             self.require(

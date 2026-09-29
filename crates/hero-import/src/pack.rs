@@ -98,7 +98,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 14: the battle frame's buttons and weather box (`BATTLE_FRAME_MENU` …).
 /// 15: the chapters past the base campaign (`campaign.toml`, [`CHAPTER_DRAMA_FILE`], their
 /// battles), and dramas as a list.
-pub const PACK_FORMAT_VERSION: u32 = 15;
+/// 16: the event pictures (`gfx/pictures/`, [`picture_key`]) and the stories' `@picture`.
+pub const PACK_FORMAT_VERSION: u32 = 16;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -560,6 +561,7 @@ fn convert(
         &exe,
         &map_records,
         map_store.as_ref(),
+        &ui_frames.pictures,
         output,
         with_exe(KindReport::new(Status::Extracted, false, "")),
     )?;
@@ -844,7 +846,7 @@ fn status_slot([x, y]: [u32; 2]) -> [[u32; 4]; 3] {
 }
 
 /// The screen frames [`convert_ui`] wrote.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UiFrames {
     /// [`BATTLE_FRAME`] and `[presentation.battle_frame]`.
     pub battle: bool,
@@ -852,6 +854,19 @@ pub struct UiFrames {
     pub camp: bool,
     /// [`STATUS_FRAME`] and `[presentation.status_frame]`.
     pub status: bool,
+    /// The event pictures written ([`picture_key`]), by their `show_picture` number.
+    pub pictures: BTreeSet<u8>,
+}
+
+/// `PACKGRP.R3` entries of the event pictures (224×144; `show_picture` numbers them the same).
+pub const PACKGRP_PICTURES: std::ops::RangeInclusive<usize> = 3..=33;
+/// Palette slot of the event pictures: they use colours 0–7 only, which every slot but 4
+/// shares (FORMATS §6).
+pub const PICTURE_PALETTE_SLOT: usize = 0;
+
+/// Media key of event picture `n` (`gfx/pictures/<key>.png`, drama `@picture`).
+pub fn picture_key(n: u8) -> String {
+    format!("orig_{n:02}")
 }
 
 /// The original's screen frames: `PACKGRP.R3` entries [`PACKGRP_BATTLE_FRAME`] (the battle
@@ -952,6 +967,34 @@ fn convert_ui(
         Err(e) => report.errors.push(format!(
             "PACKGRP.R3 entry {PACKGRP_STATUS_FRAME} (status window): {e}"
         )),
+    }
+    // The event pictures.
+    let mut pictures = 0;
+    for entry in PACKGRP_PICTURES {
+        let picture = table
+            .get(entry)
+            .ok_or_else(|| format!("no entry {entry}"))
+            .and_then(|payload| crate::tfdce::decode(payload).map_err(|e| e.to_string()))
+            .and_then(|image| {
+                planar::decode(&image.planar, image.width, image.height).map_err(|e| e.to_string())
+            });
+        match picture {
+            Ok(picture) => {
+                let key = picture_key(entry as u8);
+                let png = encode_png(&picture, &bank[PICTURE_PALETTE_SLOT], false)
+                    .map_err(|e| output_error(Path::new(&key), std::io::Error::other(e)))?;
+                out.write(&format!("gfx/pictures/{key}.png"), &png)?;
+                report.outputs += 1;
+                frames.pictures.insert(entry as u8);
+                pictures += 1;
+            }
+            Err(e) => report
+                .errors
+                .push(format!("PACKGRP.R3 entry {entry} (event picture): {e}")),
+        }
+    }
+    if pictures > 0 {
+        written.push("event pictures");
     }
     report.status = match (written.len(), report.errors.is_empty()) {
         (_, true) => Status::Extracted,
@@ -1907,6 +1950,7 @@ fn convert_battles(
     exe: &Exe,
     maps: &[MapRecord],
     store: Option<&MapStore>,
+    event_pictures: &BTreeSet<u8>,
     out: &mut Output,
     mut report: KindReport,
 ) -> Result<BattlesResult, ExtractError> {
@@ -2119,6 +2163,7 @@ fn convert_battles(
                     route_flag: &route_flag,
                     places: &places,
                     settable: &settable,
+                    pictures: event_pictures,
                 };
                 let story = match part {
                     chapters::Part::Story { block } => Some((
@@ -4714,6 +4759,7 @@ mod tests {
                 battle: true,
                 camp: true,
                 status: true,
+                pictures: BTreeSet::new(),
             },
         )
         .unwrap();
