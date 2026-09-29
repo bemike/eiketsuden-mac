@@ -91,7 +91,8 @@ fn pursue_choice_skips_the_gift() {
         [
             Step::Joined {
                 officer: "jian_yong".into(),
-                name: "간옹".into()
+                name: "간옹".into(),
+                returned: false
             },
             // The officer's own portrait key, not the id.
             line("간옹", Some("jianyong"), "저도 힘을 보태겠습니다."),
@@ -136,6 +137,27 @@ fn guard_choice_receives_the_gift() {
     assert!(matches!(steps[2], Step::Joined { .. }));
     assert_eq!(campaign.flag("pursue"), 0);
     assert_eq!((campaign.gold, campaign.item_count("bean")), (600, 4));
+}
+
+#[test]
+fn an_officer_back_from_away_returns() {
+    let pack = load_fixture();
+    let mut campaign = CampaignState::new_game(&pack);
+    campaign.join(&pack, "jian_yong").unwrap();
+    campaign.set_away("jian_yong").unwrap();
+    let mut runner = DramaRunner::new(&pack, "oath").unwrap();
+    run_until_pause(&mut runner, &pack, &mut campaign);
+    runner.choose(&pack, 0).unwrap();
+    let steps = run_until_pause(&mut runner, &pack, &mut campaign);
+    assert!(
+        steps.contains(&Step::Joined {
+            officer: "jian_yong".into(),
+            name: "간옹".into(),
+            returned: true
+        }),
+        "{steps:?}"
+    );
+    assert!(!campaign.officer("jian_yong").unwrap().away);
 }
 
 #[test]

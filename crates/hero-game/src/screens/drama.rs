@@ -630,7 +630,7 @@ impl Notice {
 }
 
 /// Banner for an officer joining: name, then hanja, courtesy name, class and level.
-fn joined_notice(pack: &Pack, officer: &str, name: &str) -> Notice {
+fn joined_notice(pack: &Pack, officer: &str, name: &str, returned: bool) -> Notice {
     let def = pack.officer(officer);
     let subtitle = def.map(|d| {
         let class = pack
@@ -647,7 +647,12 @@ fn joined_notice(pack: &Pack, officer: &str, name: &str) -> Notice {
         parts.join(" · ")
     });
     Notice {
-        title: format!("{name} 합류!"),
+        // One back from `@away` returns with what they had (the story says so too).
+        title: if returned {
+            format!("{name} 복귀")
+        } else {
+            format!("{name} 합류!")
+        },
         subtitle,
         art: NoticeArt::Portrait(def.map_or(officer, |d| d.portrait_key()).to_string()),
         age: 0.0,
@@ -1273,8 +1278,12 @@ impl DramaScreen {
                 let choice = ChoiceBox::new(&ctx.gfx, None, &labels, None).with_bottom(bottom);
                 self.current = Current::Choice { choice, options };
             }
-            Step::Joined { officer, name } => {
-                let notice = joined_notice(pack, &officer, &name);
+            Step::Joined {
+                officer,
+                name,
+                returned,
+            } => {
+                let notice = joined_notice(pack, &officer, &name, returned);
                 self.backlog.push(None, &format!("【{}】", notice.title));
                 if skipping {
                     ctx.toast(notice.title);
@@ -1806,8 +1815,12 @@ mod tests {
     #[test]
     fn notices() {
         let pack = crate::screens::camp::test_pack();
-        let n = joined_notice(&pack, "guan_yu", "관우");
+        let n = joined_notice(&pack, "guan_yu", "관우", false);
         assert_eq!(n.title, "관우 합류!");
+        assert_eq!(
+            joined_notice(&pack, "guan_yu", "관우", true).title,
+            "관우 복귀"
+        );
         assert!(n.subtitle.as_deref().unwrap().contains("關羽"));
         assert_eq!(n.art, NoticeArt::Portrait("guan_yu".into()));
         let n = received_notice(&pack, 500, None).unwrap();

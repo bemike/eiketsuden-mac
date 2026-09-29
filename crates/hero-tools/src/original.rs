@@ -1057,6 +1057,35 @@ mod tests {
         ));
         // The re-staged Xuzhou keeps the slots under units arriving later.
         assert_eq!(pack.battles["c1_xuzhou2"].deploy.max, 9);
+        // The prologue's and chapter 1's deploy (the slot filter and the deploy limit also run
+        // for them): (battle, max, slots) as the conversion gives them now, so that a change to
+        // the filter is seen here.
+        for (battle, max, slots) in [
+            ("p1_sishui", 3, 3),
+            ("p2_hulao", 3, 3),
+            ("c1_beihai", 6, 7),
+            ("c1_guangchuan", 4, 4),
+            ("c1_guangling", 7, 7),
+            ("c1_huainan", 9, 9),
+            ("c1_jieqiao_a", 5, 7),
+            ("c1_jieqiao_b", 5, 7),
+            ("c1_julu", 5, 7),
+            ("c1_pengcheng1", 7, 7),
+            ("c1_pengcheng2", 7, 7),
+            ("c1_qinghe", 5, 5),
+            ("c1_taishan", 7, 7),
+            ("c1_xiaopei", 7, 7),
+            ("c1_xiapi", 7, 7),
+            ("c1_xiapi_b", 7, 7),
+            ("c1_xiaqiu1", 7, 7),
+            ("c1_xiaqiu2", 7, 7),
+            ("c1_xindu", 4, 7),
+            ("c1_xuzhou1", 7, 7),
+            ("c1_xuzhou2", 9, 9),
+        ] {
+            let deploy = &pack.battles[battle].deploy;
+            assert_eq!((deploy.max, deploy.slots.len()), (max, slots), "{battle}");
+        }
         // Losing Yiling goes on to the original's ending 4; the last scene ends in one of three.
         assert!(matches!(
             pack.campaign.node("c3_s4_b6_battle"),
