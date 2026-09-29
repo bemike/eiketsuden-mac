@@ -1827,6 +1827,7 @@ fn convert_rules(
     if options.terrain_defs.is_empty()
         && options.class_defs.is_empty()
         && options.strategy_defs.is_empty()
+        && options.item_defs.is_empty()
     {
         report.status = Status::MissingSource;
         report.summary = "the pack chain has no rules to start from".into();
@@ -5057,6 +5058,26 @@ mod tests {
         // Without any plain cell a missing terrain cannot be drawn.
         let only_river = learn_tiles(&[(&map(&[&[3]]), 1)]);
         assert!(tileset(&only_river, &terrain).is_err());
+    }
+
+    #[test]
+    fn items_alone_are_rules_to_convert() {
+        let src = TempDir::new("pack-items-only");
+        write_pack_install(src.path());
+        let out = TempDir::new("pack-items-only-out");
+        let item: ItemDef =
+            toml::from_str("id = \"bean\"\nname = \"콩\"\nkind = \"consumable\"\nprice = 1\n")
+                .unwrap();
+        let options = PackOptions {
+            extends: "../base".into(),
+            item_defs: vec![item],
+            ..PackOptions::default()
+        };
+        let pack = out.path().join("p");
+        let index = write_pack(src.path(), &pack, &options).unwrap();
+        let rules = &index.assets["rules"];
+        assert_ne!(rules.status, Status::MissingSource, "{rules:?}");
+        assert!(pack.join(ITEM_RULES).is_file());
     }
 
     #[test]
