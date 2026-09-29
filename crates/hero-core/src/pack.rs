@@ -68,19 +68,70 @@ fn default_canvas() -> [u32; 2] {
 }
 
 /// `[presentation]` of `pack.toml`: how the frontend lays the pack's media out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Presentation {
     /// Size of the virtual canvas the game renders to, `[width, height]` in pixels, within
     /// [`MIN_CANVAS`]..=[`MAX_CANVAS`]. Default [`DEFAULT_CANVAS`].
     #[serde(default = "default_canvas")]
     pub canvas: [u32; 2],
+    /// A picture the battle screen is drawn in; without one the battle screen lays itself out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battle_frame: Option<BattleFrame>,
 }
 
 impl Default for Presentation {
     fn default() -> Self {
         Presentation {
             canvas: DEFAULT_CANVAS,
+            battle_frame: None,
         }
+    }
+}
+
+/// `[presentation.battle_frame]`: a picture of the whole canvas that the battle screen is drawn
+/// in (the original's battle screen), and where its parts go, as `[x, y, width, height]` in
+/// canvas pixels. The map shows through `map`; the rest of the picture is drawn over it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BattleFrame {
+    /// Media key of the picture, `gfx/<image>.png`, the size of the canvas.
+    pub image: String,
+    /// The map.
+    pub map: [u32; 4],
+    /// Where the unit, terrain and forecast windows go, one under the other.
+    pub info: [u32; 4],
+    /// Where the battle's name, the turn and the phase go.
+    pub title: [u32; 4],
+    /// Where the weather and the gold go.
+    pub status: [u32; 4],
+}
+
+impl BattleFrame {
+    /// Why the frame does not fit a `canvas` sized canvas, if it does not.
+    pub fn check(&self, canvas: [u32; 2]) -> Result<(), String> {
+        if !validate::is_media_key(&self.image) {
+            return Err(format!(
+                "battle_frame.image `{}` is not a media key",
+                self.image
+            ));
+        }
+        let [cw, ch] = canvas;
+        for (name, [x, y, w, h]) in [
+            ("map", self.map),
+            ("info", self.info),
+            ("title", self.title),
+            ("status", self.status),
+        ] {
+            let inside = u64::from(x) + u64::from(w) <= u64::from(cw)
+                && u64::from(y) + u64::from(h) <= u64::from(ch);
+            if w == 0 || h == 0 || !inside {
+                return Err(format!(
+                    "battle_frame.{name} [{x}, {y}, {w}, {h}] must be a non-empty area inside the \
+                     [{cw}, {ch}] canvas"
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -395,6 +446,17 @@ impl PackManifest {
                 format!("presentation.canvas [{w}, {h}] must be between [{min_w}, {min_h}] and [{max_w}, {max_h}]"),
             ));
         }
+        if let Some(frame) = &self.presentation.battle_frame {
+            if !validate::is_media_key(&frame.image) {
+                return Err(parse_error(
+                    file,
+                    format!(
+                        "presentation.battle_frame.image `{}` is not a media key",
+                        frame.image
+                    ),
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -581,6 +643,26 @@ impl Pack {
 
         let mut manifest = chain.layers()[0].manifest.clone();
         manifest.presentation = chain.presentation();
+        if let Some(frame) = &manifest.presentation.battle_frame {
+            // The frame and the canvas may come from different layers: a pack that changes the
+            // canvas of a pack with a frame declares its own frame (a frame cannot be removed).
+            frame.check(manifest.presentation.canvas).map_err(|e| {
+                let top = &chain.layers()[0].dir;
+                let from = chain.battle_frame_dir().unwrap_or(top);
+                let inherited = if from == top {
+                    String::new()
+                } else {
+                    format!(
+                        " (the battle frame of `{}`; declare one that fits this pack's canvas)",
+                        chain::join_path(from, MANIFEST_FILE)
+                    )
+                };
+                parse_error(
+                    &chain::join_path(top, MANIFEST_FILE),
+                    format!("presentation.{e}{inherited}"),
+                )
+            })?;
+        }
         let top = &chain.layers()[0].dir;
         let parent_scenes = scene_dirs
             .into_iter()

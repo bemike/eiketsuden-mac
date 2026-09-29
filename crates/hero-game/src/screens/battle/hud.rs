@@ -91,6 +91,94 @@ pub fn draw_top_bar(ctx: &Ctx, name: &str, hud: &HudView, turn_limit: u32, gold:
     }
 }
 
+/// The pack's battle frame over everything outside the map area `map` (the map shows through
+/// it). Without its picture (still loading, missing, or not the canvas size) those parts are
+/// filled plainly.
+pub fn draw_battle_frame(ctx: &Ctx, picture: Option<&Texture2D>, map: Rect) {
+    let canvas = ctx.gfx.size();
+    let picture = picture.filter(|t| vec2(t.width(), t.height()) == canvas);
+    let parts = [
+        Rect::new(0.0, 0.0, canvas.x, map.y),
+        Rect::new(0.0, map.bottom(), canvas.x, canvas.y - map.bottom()),
+        Rect::new(0.0, map.y, map.x, map.h),
+        Rect::new(map.right(), map.y, canvas.x - map.right(), map.h),
+    ];
+    for part in parts.into_iter().filter(|p| p.w > 0.0 && p.h > 0.0) {
+        match picture {
+            Some(tex) => draw_texture_ex(
+                tex,
+                part.x,
+                part.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(part.size()),
+                    source: Some(part),
+                    ..Default::default()
+                },
+            ),
+            None => fill_rect(part, theme::WIN_BOTTOM),
+        }
+    }
+}
+
+/// The top bar's content in a battle frame: the battle's name, the turn and the phase in
+/// `title`, the weather and the gold in `status`, each line shortened to its area.
+pub fn draw_frame_title(
+    ctx: &Ctx,
+    title: Rect,
+    status: Rect,
+    name: &str,
+    hud: &HudView,
+    turn_limit: u32,
+    gold: i64,
+) {
+    let gfx = &ctx.gfx;
+    let small = TextStyle::small(theme::TEXT).shadow(theme::TEXT_SHADOW);
+    let fit = |text: &str, width: f32| -> String {
+        let mut out = text.to_string();
+        while !out.is_empty() && gfx.text_width(&out, FontId::Small, 1) > width {
+            out.pop();
+        }
+        out
+    };
+    let phase = text::phase_title(hud.phase);
+    let turn = format!("제 {}턴 / {turn_limit}", hud.turn);
+    let right = gfx.text_width(&turn, FontId::Small, 1) + gfx.text_width(&phase, FontId::Small, 1);
+    let y = title.y + (title.h - 12.0).max(0.0) / 2.0;
+    let shown = fit(name, title.w - right - 16.0);
+    gfx.text(&shown, title.x + 3.0, y, small.color(theme::TEXT_ACCENT));
+    let phase_w = gfx.text_width(&phase, FontId::Small, 1);
+    let x = title.right() - phase_w - 3.0;
+    gfx.text(&phase, x, y, small.color(side_color(hud.phase)));
+    let turn_w = gfx.text_width(&turn, FontId::Small, 1);
+    gfx.text(&turn, x - turn_w - 6.0, y, small);
+
+    let line = |row: f32| status.y + 2.0 + row * 13.0;
+    draw_icon(
+        ctx,
+        text::weather_icon(hud.weather),
+        vec2(status.x + 2.0, line(0.0) - 2.0),
+    );
+    let weather = fit(text::weather_name(hud.weather), status.w - 22.0);
+    gfx.text(&weather, status.x + 20.0, line(0.0), small);
+    if status.h >= 26.0 {
+        let g = crate::ui::format::thousands(gold);
+        let shown = if hud.gold_found > 0 {
+            format!("{g} +{}", hud.gold_found)
+        } else {
+            g
+        };
+        draw_icon(ctx, "gold", vec2(status.x + 2.0, line(1.0) - 2.0));
+        let shown = fit(&shown, status.w - 22.0);
+        gfx.text(
+            &shown,
+            status.x + 20.0,
+            line(1.0),
+            small.color(theme::TEXT_ACCENT),
+        );
+    }
+}
+
 /// Labelled thin gauge row: `label` (dim), bar, `value` right-aligned after the bar.
 fn gauge_row(gfx: &Gfx, at: Vec2, label: &str, fill: (f32, f32), kind: GaugeKind, shown: &str) {
     let (x, y) = (at.x, at.y);

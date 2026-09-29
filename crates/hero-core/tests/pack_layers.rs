@@ -710,3 +710,38 @@ fn validation_contexts_name_the_file_in_use() {
         format_issues(&issues)
     );
 }
+
+#[test]
+fn an_inherited_battle_frame_that_does_not_fit_names_its_pack() {
+    // `mini_ext` (640x480) gets a battle frame; a child that shrinks the canvas cannot keep it.
+    let mut files = Files::new();
+    for (key, text) in fixture_files_at("mini_ext", "../mini_ext") {
+        files.insert(key, text);
+    }
+    files.extend(fixture_files_at("mini", "../mini"));
+    let parent = files.get_mut("../mini_ext/pack.toml").unwrap();
+    parent.push_str(
+        "\n[presentation.battle_frame]\nimage = \"ui/frame\"\nmap = [16, 32, 416, 352]\n\
+         info = [448, 74, 176, 196]\ntitle = [224, 8, 174, 16]\nstatus = [448, 34, 78, 28]\n",
+    );
+    files.insert(
+        "pack.toml".into(),
+        manifest("balance", "extends = \"../mini_ext\""),
+    );
+    let pack = load(&files);
+    assert!(
+        pack.manifest.presentation.battle_frame.is_some(),
+        "inherited"
+    );
+    files.insert(
+        "pack.toml".into(),
+        manifest(
+            "balance",
+            "extends = \"../mini_ext\"\n[presentation]\ncanvas = [480, 270]",
+        ),
+    );
+    let (file, msg) = parse_error(load_err(&files));
+    assert_eq!(file, "pack.toml");
+    assert!(msg.contains("battle_frame.map"), "{msg}");
+    assert!(msg.contains("`../mini_ext/pack.toml`"), "{msg}");
+}

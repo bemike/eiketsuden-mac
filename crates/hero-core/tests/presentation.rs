@@ -72,3 +72,40 @@ fn misspelt_keys_fall_back_to_the_default_and_are_reported() {
         "unknown field `presentation.canvs`",
     );
 }
+
+/// A battle frame the size of a 640x400 canvas.
+const FRAME: &str = "canvas = [640, 400]\n\
+    [presentation.battle_frame]\n\
+    image = \"ui/battle_frame\"\n\
+    map = [16, 32, 416, 352]\n\
+    info = [448, 74, 176, 196]\n\
+    title = [224, 8, 174, 16]\n\
+    status = [448, 34, 78, 28]";
+
+#[test]
+fn a_battle_frame_is_read_and_checked_against_the_canvas() {
+    let pack = load(&with_presentation(FRAME));
+    let frame = pack.manifest.presentation.battle_frame.expect("frame");
+    assert_eq!(frame.image, "ui/battle_frame");
+    assert_eq!(frame.map, [16, 32, 416, 352]);
+    // An area outside the canvas, an empty one and a path for a key do not load.
+    for (from, to) in [
+        ("map = [16, 32, 416, 352]", "map = [16, 32, 416, 400]"),
+        ("info = [448, 74, 176, 196]", "info = [448, 74, 0, 196]"),
+        ("image = \"ui/battle_frame\"", "image = \"../ui.png\""),
+    ] {
+        match load_err(&with_presentation(&FRAME.replace(from, to))) {
+            PackError::Parse { file, msg } => {
+                assert_eq!(file, "pack.toml");
+                assert!(msg.contains("battle_frame"), "{to}: {msg}");
+            }
+            other => panic!("{to}: unexpected error {other:?}"),
+        }
+    }
+    // Without a canvas big enough (the default 480x270), the frame does not fit.
+    let small = FRAME.replace("canvas = [640, 400]\n", "");
+    assert!(matches!(
+        load_err(&with_presentation(&small)),
+        PackError::Parse { .. }
+    ));
+}

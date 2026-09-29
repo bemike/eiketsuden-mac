@@ -2,13 +2,15 @@
 //! player's own copy, holding the original art the base pack's keys can already be mapped to.
 //!
 //! ```text
-//! <out>/pack.toml                     id "original", `extends` the base pack, 640×480 canvas
+//! <out>/pack.toml                     id "original", `extends` the base pack, 640×400 canvas,
+//!                                     the battle frame
 //! <out>/original-pack.json            what was converted, from which files, and which officer
 //!                                     got which portrait (also lets a later run replace the files)
 //! <out>/gfx/portraits/<officer>.png   FACEDAT portraits of the base pack's officers
 //! <out>/gfx/units/<sprite>_<side>.png HEXZCHR battle-map icons of the 19 classes as unit sheets
 //! <out>/gfx/units/units.toml          32×32 frames standing on 32-px tiles
 //! <out>/gfx/tiles/terrain.png, .toml  a 32-px tileset learned from the original battle maps
+//! <out>/gfx/ui/orig_battle_frame.png the original's battle screen frame (PACKGRP entry 1)
 //! <out>/maps/original.toml            the original battle maps (`[[map]]`, id `hexz_NN`) ...
 //! <out>/gfx/maps/hexz_NN.png          ... and their picture layers
 //! <out>/battles/<battle>.toml         the base pack's prologue and chapter 1 battles re-staged
@@ -83,11 +85,13 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 5: `rules` (the terrain rules, with the original's closed gate as [`CLOSED_GATE`]).
 /// 6: the class rules in `rules` ([`CLASS_RULES`]).
 /// 7: the strategy rules in `rules` ([`STRATEGY_RULES`]) and the classes' learn lists.
-pub const PACK_FORMAT_VERSION: u32 = 7;
+/// 8: `ui` (the battle frame, [`BATTLE_FRAME`] and `[presentation.battle_frame]`); the canvas is
+/// 640×400.
+pub const PACK_FORMAT_VERSION: u32 = 8;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
-/// Virtual canvas of the pack: the original's 640×480 VGA screen.
-pub const CANVAS: [u32; 2] = [640, 480];
+/// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
+pub const CANVAS: [u32; 2] = [640, 400];
 /// Size of a map tile: one 2×2-chip cell of the original battle maps.
 pub const TILE_PX: usize = 2 * CELL_PX;
 /// Atlas cells per row of `terrain.png`.
@@ -356,7 +360,7 @@ pub fn write_pack(
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
     // Checked before anything is written; the final manifest also lists the map file.
-    pack_toml(&options.extends, edition.id, false, &[], false, &[])
+    pack_toml(&options.extends, edition.id, false, &[], false, &[], false)
         .map_err(|e| output_error(&out.join("pack.toml"), e))?;
     prepare_output(source, out, PACK_INDEX, PACK_FORMAT)?;
     let mut output = Output::dir(out, PACK_FORMAT)?;
@@ -401,7 +405,7 @@ pub fn build_pack_with_progress(
 ) -> Result<MemoryPack, ExtractError> {
     let install = InstallDir::open(source)?;
     let (edition, encoding) = pack_edition(&install, options)?;
-    pack_toml(&options.extends, edition.id, false, &[], false, &[])
+    pack_toml(&options.extends, edition.id, false, &[], false, &[], false)
         .map_err(|e| output_error(Path::new("pack.toml"), e))?;
     let mut output = Output::in_memory(PACK_ID);
     let index = convert(&install, edition, encoding, options, &mut output, progress)?;
@@ -481,6 +485,12 @@ fn convert(
         output,
         with_exe(KindReport::new(Status::Extracted, false, "")),
     )?;
+    let (ui, battle_frame) = convert_ui(
+        install,
+        &exe,
+        output,
+        with_exe(KindReport::new(Status::Extracted, false, "")),
+    )?;
     let known: BTreeSet<&str> = options
         .terrain
         .iter()
@@ -520,6 +530,7 @@ fn convert(
         &battle_files,
         drama,
         &rule_files,
+        battle_frame,
     )
     .map_err(|e| output_error(&output.root.join("pack.toml"), e))?;
     output.write("pack.toml", manifest.as_bytes())?;
@@ -531,6 +542,7 @@ fn convert(
     assets.insert("maps".to_string(), maps);
     assets.insert("battles".to_string(), battles);
     assets.insert("rules".to_string(), rules);
+    assets.insert("ui".to_string(), ui);
     let index = PackIndex {
         format: PACK_FORMAT.into(),
         format_version: PACK_FORMAT_VERSION,
@@ -547,6 +559,103 @@ fn convert(
     };
     output.write_json(PACK_INDEX, &index)?;
     Ok(index)
+}
+
+// ----- ui ------------------------------------------------------------------------------------
+
+/// Media key of the battle frame the pack writes (`gfx/ui/orig_battle_frame.png`).
+pub const BATTLE_FRAME: &str = "ui/orig_battle_frame";
+/// `PACKGRP.R3` entry of the battle screen's frame (FORMATS §6.6).
+pub const PACKGRP_BATTLE_FRAME: usize = 1;
+/// The frame's map hole: 13 × 11 cells of 32 px (measured on the frame; checked when converting).
+pub const BATTLE_FRAME_MAP: [u32; 4] = [16, 32, 416, 352];
+/// The frame's blue panel on the right, where the unit and terrain windows go.
+pub const BATTLE_FRAME_INFO: [u32; 4] = [448, 74, 176, 196];
+/// The frame's blue box at the top, for the battle's name, the turn and the phase.
+pub const BATTLE_FRAME_TITLE: [u32; 4] = [224, 8, 174, 16];
+/// The frame's black box at the top of the right column, for the weather and the gold.
+pub const BATTLE_FRAME_STATUS: [u32; 4] = [448, 34, 78, 28];
+
+/// The original's battle screen frame as the pack's battle frame: `PACKGRP.R3` entry
+/// [`PACKGRP_BATTLE_FRAME`] drawn in the battle maps' palette slot (the frame is on screen with
+/// the map, whose palette sets its colours 8–15), checked to have the canvas size and an empty
+/// map hole where [`BATTLE_FRAME_MAP`] says. Returns the report and whether it was written.
+fn convert_ui(
+    install: &InstallDir,
+    exe: &Exe,
+    out: &mut Output,
+    mut report: KindReport,
+) -> Result<(KindReport, bool), ExtractError> {
+    let Some(data) = read_source(install, "PACKGRP.R3", &mut report)? else {
+        report.status = Status::MissingSource;
+        report.summary = "PACKGRP.R3 missing".into();
+        return Ok((report, false));
+    };
+    report.status = Status::Failed;
+    let bank = match &exe.bank {
+        Ok(bank) => bank,
+        Err(e) => {
+            report.summary = "MAIN.EXE palette not found".into();
+            report.errors.push(e.clone());
+            return Ok((report, false));
+        }
+    };
+    let frame = crate::table6::Table6::parse(&data)
+        .map_err(|e| e.to_string())
+        .and_then(|table| {
+            table
+                .get(PACKGRP_BATTLE_FRAME)
+                .ok_or_else(|| format!("no entry {PACKGRP_BATTLE_FRAME}"))
+                .and_then(|payload| crate::tfdce::decode(payload).map_err(|e| e.to_string()))
+        })
+        .and_then(|image| {
+            planar::decode(&image.planar, image.width, image.height).map_err(|e| e.to_string())
+        });
+    let frame = match frame {
+        Ok(f) => f,
+        Err(e) => {
+            report.summary = "the battle frame is not readable".into();
+            report.errors.push(format!("PACKGRP.R3: {e}"));
+            return Ok((report, false));
+        }
+    };
+    if let Err(e) = check_battle_frame(&frame) {
+        report.summary = "the battle frame has another layout".into();
+        report
+            .errors
+            .push(format!("PACKGRP.R3 entry {PACKGRP_BATTLE_FRAME}: {e}"));
+        return Ok((report, false));
+    }
+    let [cw, ch] = CANVAS;
+    let png = encode_png(&frame, &bank[MAP_PALETTE_SLOT], false)
+        .map_err(|e| output_error(Path::new(BATTLE_FRAME), std::io::Error::other(e)))?;
+    out.write(&format!("gfx/{BATTLE_FRAME}.png"), &png)?;
+    report.outputs += 1;
+    report.status = Status::Extracted;
+    report.summary = format!("battle frame {cw}×{ch}");
+    Ok((report, true))
+}
+
+/// Whether `frame` has the layout the pack's `[presentation.battle_frame]` describes: the
+/// canvas size, and nothing but colour 0 in the map hole [`BATTLE_FRAME_MAP`].
+fn check_battle_frame(frame: &IndexedImage) -> Result<(), String> {
+    let [cw, ch] = CANVAS;
+    if (frame.width, frame.height) != (cw as usize, ch as usize) {
+        return Err(format!(
+            "{}×{} pixels; the pack expects {cw}×{ch}",
+            frame.width, frame.height
+        ));
+    }
+    let [mx, my, mw, mh] = BATTLE_FRAME_MAP.map(|v| v as usize);
+    let hole_empty = (my..my + mh).all(|y| {
+        frame.pixels[y * frame.width + mx..y * frame.width + mx + mw]
+            .iter()
+            .all(|&p| p == 0)
+    });
+    if !hole_empty {
+        return Err(format!("the map hole {BATTLE_FRAME_MAP:?} is not empty"));
+    }
+    Ok(())
 }
 
 // ----- rules ---------------------------------------------------------------------------------
@@ -1097,6 +1206,7 @@ fn pack_toml(
     battles: &[String],
     dramas: bool,
     rules: &[(&str, &str)],
+    battle_frame: bool,
 ) -> Result<String, String> {
     if extends.is_empty()
         || Path::new(extends).is_absolute()
@@ -1136,6 +1246,19 @@ fn pack_toml(
             .collect();
         format!("\n[rules]\n{}", lines.concat())
     };
+    let frame = if battle_frame {
+        let area = |[x, y, w, h]: [u32; 4]| format!("[{x}, {y}, {w}, {h}]");
+        format!(
+            "\n[presentation.battle_frame]\nimage = {}\nmap = {}\ninfo = {}\ntitle = {}\nstatus = {}\n",
+            toml_str(BATTLE_FRAME),
+            area(BATTLE_FRAME_MAP),
+            area(BATTLE_FRAME_INFO),
+            area(BATTLE_FRAME_TITLE),
+            area(BATTLE_FRAME_STATUS)
+        )
+    } else {
+        String::new()
+    };
     Ok(format!(
         "# Original mode, written by `hero-tools original pack` ({tool}) from the player's own copy\n\
          # of KOEI's Sangokushi Eiketsuden ({edition}). It holds converted game art: keep it on this\n\
@@ -1154,6 +1277,7 @@ fn pack_toml(
          \n\
          [presentation]\n\
          canvas = [{w}, {h}]\n\
+         {frame}\
          {rules}",
         tool = crate::tool_version(),
         edition = edition.as_str(),
@@ -3198,12 +3322,31 @@ mod tests {
 
     #[test]
     fn manifest_needs_a_relative_extends() {
-        let toml = pack_toml("../base", EditionId::KoreanDos, false, &[], false, &[]).unwrap();
+        let toml = pack_toml(
+            "../base",
+            EditionId::KoreanDos,
+            false,
+            &[],
+            false,
+            &[],
+            false,
+        )
+        .unwrap();
         assert!(toml.contains("\nid = \"original\"\n"), "{toml}");
         assert!(toml.contains("\nextends = \"../base\"\n"), "{toml}");
-        assert!(toml.contains("canvas = [640, 480]"), "{toml}");
+        assert!(toml.contains("canvas = [640, 400]"), "{toml}");
+        assert!(!toml.contains("battle_frame"), "{toml}");
         assert!(!toml.contains("maps"), "{toml}");
-        let toml = pack_toml("../base", EditionId::KoreanDos, true, &[], false, &[]).unwrap();
+        let toml = pack_toml(
+            "../base",
+            EditionId::KoreanDos,
+            true,
+            &[],
+            false,
+            &[],
+            false,
+        )
+        .unwrap();
         assert!(
             toml.contains(
                 "\nextends = \"../base\"\nmaps = [\"maps/original.toml\"]\n\n[presentation]"
@@ -3214,13 +3357,27 @@ mod tests {
             "battles/p1_sishui.toml".to_string(),
             "battles/p2_hulao.toml".to_string(),
         ];
-        let toml = pack_toml("../base", EditionId::KoreanDos, true, &battles, true, &[]).unwrap();
+        let toml = pack_toml(
+            "../base",
+            EditionId::KoreanDos,
+            true,
+            &battles,
+            true,
+            &[],
+            true,
+        )
+        .unwrap();
         let manifest: hero_core::pack::PackManifest = toml::from_str(&toml).unwrap();
         assert_eq!(manifest.battles, battles);
+        // The battle frame, with the areas measured on the original's frame, fits the canvas.
+        let frame = manifest.presentation.battle_frame.expect("battle frame");
+        assert_eq!(frame.image, BATTLE_FRAME);
+        assert_eq!(frame.map, BATTLE_FRAME_MAP);
+        assert_eq!(frame.check(manifest.presentation.canvas), Ok(()));
         assert_eq!(manifest.dramas, [DRAMA_FILE]);
         for bad in ["", "C:/data/base", "/data/base", "..\\base"] {
             assert!(
-                pack_toml(bad, EditionId::KoreanDos, false, &[], false, &[]).is_err(),
+                pack_toml(bad, EditionId::KoreanDos, false, &[], false, &[], false).is_err(),
                 "{bad}"
             );
         }
@@ -3731,6 +3888,31 @@ mod tests {
             support_exp: None,
             desc: String::new(),
         }
+    }
+
+    #[test]
+    fn a_battle_frame_needs_the_canvas_size_and_an_empty_map_hole() {
+        let [w, h] = CANVAS.map(|v| v as usize);
+        let mut frame = IndexedImage {
+            width: w,
+            height: h,
+            pixels: vec![3; w * h],
+        };
+        let [mx, my, mw, mh] = BATTLE_FRAME_MAP.map(|v| v as usize);
+        for y in my..my + mh {
+            frame.pixels[y * w + mx..y * w + mx + mw].fill(0);
+        }
+        assert_eq!(check_battle_frame(&frame), Ok(()));
+        // A pixel drawn in the hole, or another size (small enough that the hole would not fit
+        // in it), is another layout, not a crash.
+        frame.pixels[(my + 5) * w + mx + 5] = 1;
+        assert!(check_battle_frame(&frame).unwrap_err().contains("map hole"));
+        let small = IndexedImage {
+            width: 320,
+            height: 200,
+            pixels: vec![0; 320 * 200],
+        };
+        assert!(check_battle_frame(&small).unwrap_err().contains("320×200"));
     }
 
     fn strategy_def(id: &str, mp: i32, range: &str) -> StrategyDef {

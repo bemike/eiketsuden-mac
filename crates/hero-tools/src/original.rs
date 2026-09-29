@@ -466,7 +466,7 @@ mod tests {
         assert!(manifest.contains("extends = \"../base\""), "{manifest}");
         let pack = crate::load_pack(&out).unwrap();
         assert_eq!(pack.layers.len(), 2);
-        assert_eq!(pack.manifest.presentation.canvas, [640, 480]);
+        assert_eq!(pack.manifest.presentation.canvas, [640, 400]);
         let index = pack::write_pack(
             &game,
             &out,
@@ -705,6 +705,16 @@ mod tests {
             .terrain
             .iter()
             .any(|t| t.id.as_str() == hero_import::pack::CLOSED_GATE));
+        // The original's battle frame: its map hole is where the pack says (checked when
+        // converting), and the pack validates with it (the picture is the canvas size).
+        assert_eq!(
+            json["assets"]["ui"]["status"], "extracted",
+            "{:#?}",
+            json["assets"]["ui"]
+        );
+        let frame = pack.manifest.presentation.battle_frame.as_ref().unwrap();
+        assert_eq!(frame.image, hero_import::pack::BATTLE_FRAME);
+        assert!(out.join(format!("gfx/{}.png", frame.image)).is_file());
         let maps = std::fs::read_to_string(out.join("maps/original.toml")).unwrap();
         assert!(
             maps.contains("\"a\" = \"closed_gate\""),

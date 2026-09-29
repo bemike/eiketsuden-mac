@@ -23,7 +23,10 @@
 //! Media files are not read here: the frontend and `Pack::missing_media` look them up in every
 //! layer, top first (see [`PackLayer::dir`]).
 
-use super::{parse_error, read, FileSource, PackError, PackManifest, Presentation, MANIFEST_FILE};
+use super::{
+    parse_error, read, BattleFrame, FileSource, PackError, PackManifest, Presentation,
+    MANIFEST_FILE,
+};
 use std::collections::BTreeSet;
 
 /// Most packs in one chain: a pack and at most three packs it extends, directly or indirectly.
@@ -155,6 +158,9 @@ pub struct PackChain {
     layers: Vec<PackLayer>,
     /// `[presentation]` fields, each from the nearest layer that sets it.
     canvas: Option<[u32; 2]>,
+    battle_frame: Option<Option<BattleFrame>>,
+    /// Directory of the layer whose `battle_frame` is used.
+    battle_frame_dir: Option<String>,
     /// Directory of the parent still to be read, relative to the top pack.
     next: Option<String>,
 }
@@ -166,6 +172,8 @@ impl PackChain {
         let mut chain = PackChain {
             layers: Vec::new(),
             canvas: None,
+            battle_frame: None,
+            battle_frame_dir: None,
             next: None,
         };
         chain.add(String::new(), top_manifest)?;
@@ -244,7 +252,13 @@ impl PackChain {
         let default = Presentation::default();
         Presentation {
             canvas: self.canvas.unwrap_or(default.canvas),
+            battle_frame: self.battle_frame.clone().unwrap_or(default.battle_frame),
         }
+    }
+
+    /// Directory of the layer the inherited `battle_frame` comes from, if any declares one.
+    pub fn battle_frame_dir(&self) -> Option<&str> {
+        self.battle_frame_dir.as_deref()
     }
 
     /// Decide which layer provides each file (see the module docs). Fails when the chain is not
@@ -369,6 +383,10 @@ impl PackChain {
         let declared = presentation_fields(text);
         if self.canvas.is_none() && declared.iter().any(|f| f == "canvas") {
             self.canvas = Some(manifest.presentation.canvas);
+        }
+        if self.battle_frame.is_none() && declared.iter().any(|f| f == "battle_frame") {
+            self.battle_frame = Some(manifest.presentation.battle_frame.clone());
+            self.battle_frame_dir = Some(dir.clone());
         }
         self.layers.push(PackLayer { dir, manifest });
         self.next = parent;

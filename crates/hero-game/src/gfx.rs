@@ -852,7 +852,10 @@ mod tests {
     #[test]
     fn canvas_sizes_come_from_the_presentation_profile() {
         assert_eq!(canvas_size(&Presentation::default()), DEFAULT_CANVAS);
-        let p = |w, h| Presentation { canvas: [w, h] };
+        let p = |w, h| Presentation {
+            canvas: [w, h],
+            battle_frame: None,
+        };
         assert_eq!(canvas_size(&p(640, 480)), vec2(640.0, 480.0));
         assert_eq!(canvas_size(&p(1280, 800)), vec2(1280.0, 800.0));
     }
