@@ -1271,6 +1271,9 @@ pub fn original_strategies(
         );
         if i >= GREAT_SUPPORT_FIRST {
             s2.area = Area::AllInRange;
+            if s.area != s2.area {
+                notes.push(format!("{}: area {:?} -> all_in_range", s.id, s.area));
+            }
         }
         s2.effects = s
             .effects
@@ -1312,7 +1315,8 @@ const GREAT_SUPPORT_FIRST: usize = 30;
 /// `100 × (4 × reach + element + 2)` (fire 0, water 1, rock 2), morale-downs (18–20) take
 /// `(reach + 2) × 10`, and the support strategies (21–35) restore `(step + 1) × 600` troops and
 /// `(step + 3) × 10` morale, the step being the reach code (21–29) or `(i − 30) % 3` (30–35).
-/// Other effects stay as they are.
+/// Effects are matched by kind: a heal or morale-up a pack gives such a strategy gets the
+/// original's amount too. Other effects stay as they are.
 fn original_effect(i: usize, reach: u8, e: &Effect) -> Effect {
     let reach = i32::from(reach);
     let step = if i >= GREAT_SUPPORT_FIRST {
