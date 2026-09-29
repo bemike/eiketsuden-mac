@@ -388,10 +388,11 @@ fn picture_texture_key(key: &str) -> String {
 }
 
 /// Where a picture of `size` goes on the canvas: centred above the text box, at the largest
-/// whole scale that fits there (pixel art stays sharp).
+/// whole scale that fits there (pixel art stays sharp), or scaled down to fit when it is larger.
 fn picture_rect(canvas: Vec2, size: Vec2) -> Rect {
     let room = vec2(canvas.x * 0.8, canvas.y * 0.55);
-    let scale = (room.x / size.x).min(room.y / size.y).floor().max(1.0);
+    let fit = (room.x / size.x).min(room.y / size.y);
+    let scale = if fit >= 1.0 { fit.floor() } else { fit };
     let (w, h) = (size.x * scale, size.y * scale);
     Rect::new(
         ((canvas.x - w) / 2.0).round(),
@@ -988,6 +989,7 @@ impl DramaScreen {
         }
         self.stage.fade = self.stage.fade_target;
         self.stage.mix = 1.0;
+        self.stage.picture_alpha = self.stage.picture_target;
         self.stage.leaving.clear();
         for p in self.stage.slots.iter_mut().flatten() {
             p.alpha = 1.0;
@@ -1754,6 +1756,9 @@ mod tests {
         );
         let r = picture_rect(vec2(1280.0, 800.0), vec2(224.0, 144.0));
         assert_eq!((r.w, r.h, r.x), (672.0, 432.0, 304.0));
+        // A picture larger than the room is scaled down to fit it.
+        let r = picture_rect(vec2(640.0, 400.0), vec2(1024.0, 768.0));
+        assert!(r.h <= 220.0 && r.w <= 512.0 && r.x >= 0.0, "{r:?}");
     }
 
     #[test]

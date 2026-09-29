@@ -1043,7 +1043,7 @@ caught; write free names in Korean or with a capital letter.
 | command | effect |
 |---|---|
 | `@bg <key>` / `@bg none` | Background image `gfx/bg/<key>.png` / clear it. |
-| `@picture <key>` / `@picture none` | Picture of the event `gfx/pictures/<key>.png`, framed and centred above the text box at the largest whole scale that fits, over the background until another replaces it / clear it (it fades). |
+| `@picture <key>` / `@picture none` | Picture of the event `gfx/pictures/<key>.png`, framed and centred above the text box at the largest whole scale that fits (scaled down when larger), over the background and the portraits until another replaces it / clear it (it fades). On a small canvas a large picture can cover the centre portrait. |
 | `@bgm <key>` / `@bgm stop` | Music `bgm/<key>.ogg` (or `.wav`) / stop the music. |
 | `@sfx <key>` | Play sound `sfx/<key>.ogg` or `.wav`. |
 | `@show <who> <left\|center\|right>` | Show a portrait in a slot (`l`, `c`, `r` also work). `who` is an officer id or display name (their portrait key is used), otherwise it is taken as a portrait key itself. |

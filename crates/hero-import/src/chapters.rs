@@ -170,7 +170,7 @@ struct Writer<'c, 'a> {
     rec_end: Option<Option<usize>>,
     /// Write only the army's changes (a battle's setup, [`before_scene`]).
     army_only: bool,
-    /// A picture is shown (`@picture`): the next screen change clears it.
+    /// A picture is shown (`@picture`): the next instruction but a narration clears it.
     picture: bool,
 }
 
@@ -257,6 +257,12 @@ impl Writer<'_, '_> {
         while i < code.len() {
             let instr = &code[i];
             let get = |name: &str| instr.operands.get(name).unwrap_or(0);
+            // A picture stays for the narration after it; the next other instruction closes it
+            // (FORMATS §13.3 `show_picture`).
+            if self.picture && !matches!(instr.mnemonic, "narration" | "show_picture") {
+                let _ = writeln!(self.out.text, "@picture none");
+                self.picture = false;
+            }
             match instr.mnemonic {
                 "goto_block" => return Flow::Goto(usize::from(get("block"))),
                 "game_over" => return Flow::GameOver,
@@ -447,11 +453,6 @@ impl Writer<'_, '_> {
                 } else {
                     self.skipped.insert("pictures the pack does not have");
                 }
-            }
-            // The screen changes (another place): the picture goes.
-            "show_screen" | "load_map" if self.picture => {
-                let _ = writeln!(out.text, "@picture none");
-                self.picture = false;
             }
             "add_levels" | "set_class" => {
                 self.skipped.insert("level and class changes");
@@ -1918,14 +1919,14 @@ mod tests {
     }
 
     #[test]
-    fn an_event_picture_shows_until_the_screen_changes() {
+    fn an_event_picture_shows_over_the_narration_after_it() {
         let b = block(vec![record(
             RUN,
             0,
             vec![
                 instr("show_picture", &[("picture", 12), ("variant", 0)]),
                 instr("narration", &[("text", 11)]),
-                instr("show_screen", &[]),
+                // The next other instruction closes it (a dialogue here).
                 instr("dialogue", &[("text", 4)]),
                 // One the pack does not have is left out (and noted).
                 instr("show_picture", &[("picture", 40), ("variant", 0)]),

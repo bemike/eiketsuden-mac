@@ -861,7 +861,7 @@ pub struct UiFrames {
 /// `PACKGRP.R3` entries of the event pictures (224×144; `show_picture` numbers them the same).
 pub const PACKGRP_PICTURES: std::ops::RangeInclusive<usize> = 3..=33;
 /// Palette slot of the event pictures: they use colours 0–7 only, which every slot but 4
-/// shares (FORMATS §6).
+/// shares (FORMATS §7).
 pub const PICTURE_PALETTE_SLOT: usize = 0;
 
 /// Media key of event picture `n` (`gfx/pictures/<key>.png`, drama `@picture`).
