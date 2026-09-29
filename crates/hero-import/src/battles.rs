@@ -65,13 +65,14 @@
 //!   the base pack's items by name.
 
 use crate::bakdata::{Item, Officer};
-use crate::scenario::{BattleHeader, Instr, Operands, Record, RosterUnit, Scene};
+use crate::scenario::{BattleHeader, Block, Instr, Operands, Record, RosterUnit, Scene};
 use hero_core::battledef::{
     AiMode, BattleDef, Condition, EventAction, EventDef, FlagCond, MapDef, Side, TreasureDef,
     Trigger, UnitSpawn,
 };
 use hero_core::geom::Pos;
 use hero_core::script::Compare;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
@@ -158,7 +159,7 @@ const ANY_UNIT: u16 = 0x400;
 /// `BAKDATA` person of Liu Bei.
 pub(crate) const LIU_BEI: u16 = 0;
 /// Person value of setup slots that any deployed officer may take.
-const ANY_OFFICER: u16 = 0x400;
+pub(crate) const ANY_OFFICER: u16 = 0x400;
 /// `data` kinds: add gold / run the battle routine.
 const DATA_GOLD: u16 = 2;
 const DATA_ROUTINE: u16 = 4;
@@ -212,15 +213,72 @@ pub struct OriginalBattle {
     pub records: Vec<Record>,
 }
 
+/// Whether `block` starts a battle (`begin_battle`).
+fn starts_battle(block: &Block) -> bool {
+    block
+        .records
+        .iter()
+        .any(|r| r.code.iter().any(|c| c.mnemonic == "begin_battle"))
+}
+
+/// Whether `block` loads a battle map.
+fn loads_battle_map(block: &Block) -> bool {
+    block.records.iter().flat_map(|r| &r.code).any(|c| {
+        c.mnemonic == "load_map"
+            && c.operands
+                .get("map")
+                .is_some_and(|m| m & 0xf000 == BATTLE_MAP)
+    })
+}
+
+/// Whether block `index` of `scene` only sets a battle up (map and rosters) and the block after
+/// it fights it (starts it and holds its triggers, without loading a map of its own): SNR3's
+/// Maicheng.
+pub fn fought_in_next_block(scene: &Scene, index: usize) -> bool {
+    let (Some(this), Some(next)) = (scene.blocks.get(index), scene.blocks.get(index + 1)) else {
+        return false;
+    };
+    loads_battle_map(this) && !starts_battle(this) && starts_battle(next) && !loads_battle_map(next)
+}
+
+/// The battle block `index` of `scene` with its triggers: the block itself, or, when the block
+/// after fights it ([`fought_in_next_block`]), the two joined, the second's groups one up (the
+/// setup block holds group 0), as one battle block.
+pub fn battle_block(scene: &Scene, index: usize) -> Cow<'_, Block> {
+    let block = &scene.blocks[index];
+    if !fought_in_next_block(scene, index) {
+        return Cow::Borrowed(block);
+    }
+    let mut joined = block.clone();
+    joined.records.extend(
+        scene.blocks[index + 1]
+            .records
+            .iter()
+            .cloned()
+            .map(|mut r| {
+                r.trigger.group += 1;
+                r
+            }),
+    );
+    Cow::Owned(joined)
+}
+
 /// Find the battle of `scene` fought on battle map `map` with the scenario flags `flags` set (see
-/// the module docs for which `battle_setup` and rosters belong to it).
-pub fn find_battle(scene: &Scene, map: u8, flags: &[u8]) -> Result<OriginalBattle, String> {
+/// the module docs for which `battle_setup` and rosters belong to it): the first block that
+/// loads the map, or block `only` (a map fought in several blocks, one per route).
+pub fn find_battle(
+    scene: &Scene,
+    map: u8,
+    flags: &[u8],
+    only: Option<usize>,
+) -> Result<OriginalBattle, String> {
     let wanted = BATTLE_MAP | u16::from(map);
     let is_load = |op: &Operands| op.get("map") == Some(wanted);
     let (block_index, record_index) = scene
         .blocks
         .iter()
         .enumerate()
+        .filter(|(b, _)| only.is_none_or(|o| o == *b))
         .find_map(|(b, block)| {
             block.records.iter().enumerate().find_map(|(r, rec)| {
                 rec.code
@@ -230,7 +288,7 @@ pub fn find_battle(scene: &Scene, map: u8, flags: &[u8]) -> Result<OriginalBattl
             })
         })
         .ok_or_else(|| format!("no block loads battle map {map}"))?;
-    let block = &scene.blocks[block_index];
+    let block = &*battle_block(scene, block_index);
 
     let (mut rosters, mut later_rosters, mut other_route_rosters) = (Vec::new(), 0, 0);
     for (r, rec) in block.records.iter().enumerate() {
@@ -513,6 +571,20 @@ pub struct Converted {
     /// Drama scenes of the original's mid-battle events, as `.drama` text (empty without any).
     pub drama: String,
     pub notes: Vec<String>,
+    /// Officers a chapter's battle moves in or out of Liu Bei's army (`set_country`): the
+    /// officer and whether they join. The battle sets [`army_flag`]; the campaign acts on it
+    /// after the battle.
+    pub army: Vec<(String, bool)>,
+}
+
+/// The campaign flag a chapter's battle sets when `officer` joins Liu Bei's army (`joins`) or
+/// leaves it (`set_country`).
+pub fn army_flag(officer: &str, joins: bool) -> String {
+    if joins {
+        format!("orig_join_{officer}")
+    } else {
+        format!("orig_away_{officer}")
+    }
 }
 
 /// The text section of a scene (`SNRnM`), decoded.
@@ -770,6 +842,9 @@ struct Branch {
 /// The converter of one battle's records into events and drama scenes.
 struct EventWriter<'a, 'b> {
     battle_id: &'a str,
+    /// A battle of a chapter past the base campaign: its flags are the campaign's
+    /// (`orig_f<n>`), which the chapter's story reads after it.
+    chapter: bool,
     names: &'a Names,
     roles: &'a [(u16, &'a str)],
     /// Scenario flags set for the route (`if_flags` holds for them).
@@ -795,6 +870,8 @@ struct EventWriter<'a, 'b> {
     notes: Vec<String>,
     /// Kinds of things left out, reported once per battle.
     skipped: BTreeSet<&'static str>,
+    /// Officers moved in or out of the army ([`Converted::army`]).
+    army: Vec<(String, bool)>,
 }
 
 impl EventWriter<'_, '_> {
@@ -893,7 +970,11 @@ impl EventWriter<'_, '_> {
 
     /// The battle flag of a shared scenario flag.
     fn flag_name(&self, flag: u8) -> String {
-        format!("orig_{}_{flag}", self.battle_id)
+        if self.chapter {
+            crate::chapters::flag(flag)
+        } else {
+            format!("orig_{}_{flag}", self.battle_id)
+        }
     }
 
     /// Whether an `if_flags` condition holds when the battle's events run: the route's flags are
@@ -1320,14 +1401,20 @@ impl EventWriter<'_, '_> {
                 }
                 "set_flag" => {
                     let flag = get("flag") as u8;
-                    if self.shared_flags.contains(&flag) {
+                    // A chapter's battle keeps every flag: the story after it may read it.
+                    if self.shared_flags.contains(&flag) || self.chapter {
                         flush(&mut scene, actions, self);
                         actions.push(EventAction::SetFlag {
                             flag: self.flag_name(flag),
                             value: i64::from(get("clear") == 0),
                         });
                     } else if !self.local_flags.contains(&flag) {
-                        self.skipped.insert("campaign flags set during battles");
+                        // A flag the story reads later (a route, a deed): the campaign's.
+                        flush(&mut scene, actions, self);
+                        actions.push(EventAction::SetFlag {
+                            flag: crate::chapters::flag(flag),
+                            value: i64::from(get("clear") == 0),
+                        });
                     }
                 }
                 "leave_parallel" => {
@@ -1348,6 +1435,38 @@ impl EventWriter<'_, '_> {
                     }
                     Err(e) => self.notes.push(format!("record {record}: objective: {e}")),
                 },
+                // In a chapter's battle an officer joins (country 0, persuaded) or leaves the
+                // army: a campaign flag the story after the battle acts on. The persuaded unit
+                // leaves the field.
+                "set_country" if self.chapter => {
+                    let person = get("person");
+                    match self.names.officers.get(&person).cloned() {
+                        Some(id) => {
+                            let joins = get("country") == 0;
+                            flush(&mut scene, actions, self);
+                            actions.push(EventAction::SetFlag {
+                                flag: army_flag(&id, joins),
+                                value: 1,
+                            });
+                            if joins {
+                                if let Ok(target) = self.named(person) {
+                                    if !actions.contains(&EventAction::Retreat {
+                                        target: target.clone(),
+                                    }) {
+                                        actions.push(EventAction::Retreat { target });
+                                    }
+                                }
+                            }
+                            if !self.army.contains(&(id.clone(), joins)) {
+                                self.army.push((id, joins));
+                            }
+                        }
+                        None => self.notes.push(format!(
+                            "record {record}: `set_country` of {} (no pack officer) is not converted",
+                            self.names.person_label(person)
+                        )),
+                    }
+                }
                 "set_country" | "set_allegiance" | "set_class" | "set_officer_bit"
                 | "withdraw_unit" => {
                     self.notes.push(format!(
@@ -1868,6 +1987,7 @@ pub fn convert(
     }
     let mut writer = EventWriter {
         battle_id: &base.id,
+        chapter: pairing.battle.is_empty(),
         names,
         roles,
         route: pairing.flags,
@@ -1884,6 +2004,7 @@ pub fn convert(
         drama: String::new(),
         notes: Vec::new(),
         skipped: BTreeSet::new(),
+        army: Vec::new(),
     };
     // Where a script that ended with `end` in phase `i` moves the battle on: the actions to
     // add (victory, or the next stage and the scripts on the way), if it leaves the phase.
@@ -2032,6 +2153,7 @@ pub fn convert(
         }
     }
     let drama = std::mem::take(&mut writer.drama);
+    let army = std::mem::take(&mut writer.army);
     notes.append(&mut writer.notes);
     for what in &writer.skipped {
         notes.push(format!("not converted: {what}"));
@@ -2094,8 +2216,18 @@ pub fn convert(
         if item.is_none() && c.gold == 0 {
             continue;
         }
+        let pos = Pos::new(i32::from(c.x), i32::from(c.y));
+        if treasures.iter().any(|t: &TreasureDef| t.pos == pos) {
+            // The original has another record for the cell (a second find, or one of the
+            // route's alternatives): a tile holds one treasure.
+            notes.push(format!(
+                "a second treasure at ({}, {}) left out: the first one stays",
+                c.x, c.y
+            ));
+            continue;
+        }
         treasures.push(TreasureDef {
-            pos: Pos::new(i32::from(c.x), i32::from(c.y)),
+            pos,
             item,
             gold: i64::from(c.gold),
         });
@@ -2105,6 +2237,7 @@ pub fn convert(
         battle,
         drama,
         notes,
+        army,
     })
 }
 
@@ -2388,7 +2521,7 @@ mod tests {
 
     #[test]
     fn finds_the_setup_whose_target_is_in_the_roster() {
-        let b = find_battle(&scene(), 2, &[]).unwrap();
+        let b = find_battle(&scene(), 2, &[], None).unwrap();
         assert_eq!(
             (b.block, b.header.turn_limit),
             (1, 25),
@@ -2437,12 +2570,12 @@ mod tests {
             joins,
             [(7, 3, UNIT_IN_AREA, &[302][..]), (10, 4, 9, &[303][..])]
         );
-        assert!(find_battle(&scene(), 3, &[]).is_err());
+        assert!(find_battle(&scene(), 3, &[], None).is_err());
     }
 
     #[test]
     fn phases_follow_the_trigger_groups() {
-        let b = find_battle(&scene(), 2, &[]).unwrap();
+        let b = find_battle(&scene(), 2, &[], None).unwrap();
         let p = phases(&b.records);
         assert_eq!(p.len(), 3);
         assert_eq!(
@@ -2688,7 +2821,7 @@ item = "wine"
     }
 
     fn converted() -> Converted {
-        let orig = find_battle(&scene(), 2, &[]).unwrap();
+        let orig = find_battle(&scene(), 2, &[], None).unwrap();
         let text = text();
         let mut cells = |pos: Pos, op: u8| -> Result<CellChange, String> {
             assert_eq!(op, 2);
@@ -2990,7 +3123,7 @@ item = "wine"
                 vec![fields("narration", &[("text", 0x50)])],
             ),
         ];
-        let orig = find_battle(&scene, 2, &[]).unwrap();
+        let orig = find_battle(&scene, 2, &[], None).unwrap();
         let text = text();
         let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
         let c = convert(
@@ -3043,7 +3176,7 @@ item = "wine"
                 Err("text left out: SNR1M.R3 missing".into())
             }
         }
-        let orig = find_battle(&scene(), 2, &[]).unwrap();
+        let orig = find_battle(&scene(), 2, &[], None).unwrap();
         let mut cells = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
         let c = convert(
             &base_battle(),
@@ -3091,7 +3224,7 @@ item = "wine"
             .insert(1, fields("narration", &[("text", 0x30)]));
         let text = text();
         let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
-        let orig = find_battle(&scene, 2, &[]).unwrap();
+        let orig = find_battle(&scene, 2, &[], None).unwrap();
         let run = |pairing: &Pairing,
                    none: &mut dyn FnMut(Pos, u8) -> Result<CellChange, String>| {
             convert(
@@ -3199,7 +3332,7 @@ item = "wine"
         text.strings
             .insert(0x60, "1, [장수]를 설득\r\n2,성문 도달".into());
         let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
-        let orig = find_battle(&scene, 2, &[]).unwrap();
+        let orig = find_battle(&scene, 2, &[], None).unwrap();
         let converted = convert(
             &base_battle(),
             &orig,
@@ -3262,7 +3395,7 @@ item = "wine"
             .insert(0, fields("set_flag", &[("flag", 91), ("clear", 0)]));
         let text = text();
         let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
-        let orig = find_battle(&scene, 2, &[]).unwrap();
+        let orig = find_battle(&scene, 2, &[], None).unwrap();
         convert(
             &base_battle(),
             &orig,

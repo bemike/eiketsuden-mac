@@ -128,6 +128,25 @@ fn stale_deployments_are_normalised_to_the_battle() {
     assert_eq!(placed(&st), ["liu_bei"]);
 }
 
+/// Another troop's battle: the forbidden lord stays behind, and losing units cannot lose it
+/// through the lord.
+#[test]
+fn a_battle_without_the_lord_places_the_troop_only() {
+    let mut def = battle(OPEN_MAP);
+    def.deploy.max = 2;
+    def.deploy.required = vec!["guan_yu".into()];
+    def.deploy.forbidden = vec!["liu_bei".into()];
+    let pack = pack_with(def);
+    let roster = ["liu_bei", "guan_yu", "zhang_fei"]
+        .iter()
+        .map(|id| officer_state(&pack, id))
+        .collect();
+    let camp = campaign(roster, &[]);
+    let st = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
+    assert_eq!(placed(&st), ["guan_yu", "zhang_fei"]);
+    assert!(st.units.iter().all(|u| !u.lord));
+}
+
 #[test]
 fn spawns_use_class_or_officer_stats_and_groups_start_hidden() {
     let mut def = battle(OPEN_MAP);

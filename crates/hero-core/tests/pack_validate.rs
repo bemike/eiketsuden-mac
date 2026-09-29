@@ -399,15 +399,6 @@ fn deploy_checks() {
             &[(
                 B02,
                 "forbidden = [\"zhang_fei\"]",
-                "forbidden = [\"liu_bei\"]",
-            )],
-            "battle b02",
-            "the lord `liu_bei` is always deployed",
-        ),
-        error(
-            &[(
-                B02,
-                "forbidden = [\"zhang_fei\"]",
                 "forbidden = [\"jian_yong\"]",
             )],
             "battle b02",
@@ -543,6 +534,21 @@ fn unit_checks() {
             "officer `guan_yu` is in the starting army: the battle places the army's `guan_yu` here",
         ),
     ]);
+}
+
+#[test]
+fn a_battle_may_be_fought_without_the_lord() {
+    // Another troop's battle (the original's Maicheng): the lord is forbidden, and does not
+    // count among the officers who must be deployed.
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        B02,
+        "forbidden = [\"zhang_fei\"]",
+        "forbidden = [\"zhang_fei\", \"liu_bei\"]",
+    );
+    let issues = load(&files).validate();
+    assert!(issues.is_empty(), "{}", format_issues(&issues));
 }
 
 #[test]

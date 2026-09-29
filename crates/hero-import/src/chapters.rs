@@ -31,6 +31,14 @@ use std::fmt::Write as _;
 pub const GAME_OVER_FLAG: &str = "orig_game_over";
 /// The ending node of a game over in a converted chapter.
 pub const GAME_OVER_NODE: &str = "orig_game_over";
+/// Campaign flag a story scene sets to one more than the original's ending it ends in
+/// (`ending n`); a campaign branch after the scene leads to [`ending_node`].
+pub const ENDING_FLAG: &str = "orig_ending";
+
+/// The ending node of the original's ending `n`.
+pub fn ending_node(n: u8) -> String {
+    format!("orig_ending_{n}")
+}
 
 /// Record kind of a person one talks to (FORMATS §13.2).
 const TALK: u8 = 3;
@@ -48,6 +56,10 @@ pub enum Part {
 pub fn parts(scene: &Scene) -> Vec<Part> {
     let mut out = Vec::new();
     for (i, block) in scene.blocks.iter().enumerate() {
+        // The second block of a battle fought in the block after its setup.
+        if i > 0 && battles::fought_in_next_block(scene, i - 1) {
+            continue;
+        }
         let code = || block.records.iter().flat_map(|r| &r.code);
         let battle_map = code()
             .filter(|c| c.mnemonic == "load_map")
@@ -85,6 +97,8 @@ pub struct StoryScene {
     pub shop: Vec<String>,
     /// Gold the outro gives (the battle's reward; outros only).
     pub gold: i64,
+    /// The original's endings the scene may end in (it sets [`ENDING_FLAG`] to one more).
+    pub endings: BTreeSet<u8>,
     /// Where the story goes on after the scene.
     pub next: Next,
     pub notes: Vec<String>,
@@ -98,11 +112,13 @@ pub enum Next {
     Default,
     /// The part of block `n` of the same scene (`goto_block`).
     Block(usize),
-    /// By the value of the route flag the part's scene sets: the block of each value, the next
-    /// part for any other (the choices and yes/no questions that `goto_block` elsewhere).
+    /// By the value of the route flag the part's scene sets: the block of each value; for any
+    /// other, block `otherwise` or the next part (the choices, questions and flag checks that
+    /// `goto_block` elsewhere).
     Routes {
         flag: String,
         targets: Vec<(i64, usize)>,
+        otherwise: Option<usize>,
     },
 }
 
@@ -116,6 +132,8 @@ pub struct StoryContext<'a> {
     pub block: usize,
     /// The campaign flag the scene sets for its routes.
     pub route_flag: &'a str,
+    /// What each block of the scene is called (its first caption): where one can walk to.
+    pub places: &'a [Option<String>],
 }
 
 /// How a script ends.
@@ -127,6 +145,8 @@ enum Flow {
     Goto(usize),
     /// `game_over`.
     GameOver,
+    /// `ending n`: one of the original's endings.
+    Ending(u8),
 }
 
 /// The state of a scene being written.
@@ -164,10 +184,21 @@ impl Writer<'_, '_> {
         let _ = writeln!(self.out.text, "@set {GAME_OVER_FLAG} = 1\n@end");
     }
 
+    /// End the scene on a game over or one of the original's endings.
+    fn stop(&mut self, flow: Flow) {
+        match flow {
+            Flow::Ending(n) => {
+                self.out.endings.insert(n);
+                let _ = writeln!(self.out.text, "@set {ENDING_FLAG} = {}\n@end", n + 1);
+            }
+            _ => self.game_over(),
+        }
+    }
+
     /// End a branch of a choice or question by `flow`: `retry` asks again at label `ask`.
     fn close(&mut self, flow: Flow, retry: bool, ask: usize, after: usize) {
         match flow {
-            Flow::GameOver => self.game_over(),
+            f @ (Flow::GameOver | Flow::Ending(_)) => self.stop(f),
             Flow::Goto(b) if b == self.ctx.block => {
                 let _ = writeln!(self.out.text, "@goto ask_{ask}");
             }
@@ -190,6 +221,7 @@ impl Writer<'_, '_> {
             match instr.mnemonic {
                 "goto_block" => return Flow::Goto(usize::from(get("block"))),
                 "game_over" => return Flow::GameOver,
+                "ending" => return Flow::Ending(get("ending") as u8),
                 "if_answer" => {
                     // The instructions it guards run when the player answered `answer` (0 =
                     // yes) to the question just asked.
@@ -208,22 +240,42 @@ impl Writer<'_, '_> {
                         self.out.text,
                         "@label ask_{ask}\n@choice\n- 예 -> yes_{ask}\n- 아니오 -> after_{after}\n@label yes_{ask}"
                     );
-                    let flow = self.lines(guarded);
+                    let flow = match self.lines(guarded) {
+                        // Back to the block itself: the story goes on here.
+                        Flow::Goto(b) if b == self.ctx.block => Flow::Continue,
+                        flow => flow,
+                    };
                     self.close(flow, false, ask, after);
                     let _ = writeln!(self.out.text, "@label after_{after}");
                     i = end;
                     continue;
                 }
                 "if_flags" => {
-                    // Read as every flag clear (the story's first time through): the guarded
-                    // instructions run unless the condition needs a flag set.
-                    if let Operands::Condition { skip, all_set, .. } = &instr.operands {
-                        self.skipped
-                            .insert("parts guarded by original flags (read as clear)");
-                        if !all_set.is_empty() {
-                            i += 1 + usize::from(*skip);
-                            continue;
+                    // The instructions it guards run when every flag of `all_set` is set and
+                    // every flag of `all_clear` clear: the original's flags are campaign flags
+                    // (`orig_f<n>`), and a jump there goes elsewhere only then.
+                    if let Operands::Condition {
+                        skip,
+                        all_set,
+                        all_clear,
+                    } = &instr.operands
+                    {
+                        let end = (i + 1 + usize::from(*skip)).min(code.len());
+                        let k = self.label();
+                        for f in all_set {
+                            let _ = writeln!(self.out.text, "@if {} == 0 -> skip_{k}", flag(*f));
                         }
+                        for f in all_clear {
+                            let _ = writeln!(self.out.text, "@if {} != 0 -> skip_{k}", flag(*f));
+                        }
+                        match self.lines(&code[i + 1..end]) {
+                            f @ (Flow::GameOver | Flow::Ending(_)) => self.stop(f),
+                            Flow::Goto(b) if b != self.ctx.block => self.route(b),
+                            _ => {}
+                        }
+                        let _ = writeln!(self.out.text, "@label skip_{k}");
+                        i = end;
+                        continue;
                     }
                 }
                 _ => self.effect(instr),
@@ -300,6 +352,10 @@ impl Writer<'_, '_> {
                     self.skipped.insert("items without a pack item");
                 }
             },
+            "set_flag" => {
+                let value = i64::from(get("clear") == 0);
+                let _ = writeln!(out.text, "@set {} = {value}", flag(get("flag") as u8));
+            }
             "set_shop_items" => {
                 if let Operands::Bytes { bytes } = &instr.operands {
                     out.shop = bytes
@@ -336,13 +392,38 @@ impl Writer<'_, '_> {
             ));
         }
         if !self.routes.is_empty() {
+            // A scene played again (a town one walks back to) starts without the last route.
+            self.out.text = format!(
+                "@set {} = 0
+{}",
+                self.ctx.route_flag, self.out.text
+            );
+            let otherwise = match self.out.next {
+                Next::Block(b) => Some(b),
+                _ => None,
+            };
             self.out.next = Next::Routes {
                 flag: self.ctx.route_flag.to_string(),
                 targets: self.routes,
+                otherwise,
             };
         }
         self.out
     }
+}
+
+/// The campaign flag of the original's flag `n` (FORMATS §13.3 `set_flag`).
+pub fn flag(n: u8) -> String {
+    format!("orig_f{n}")
+}
+
+/// Record kinds of a place one walks to (FORMATS §13.2): a town's location, a place on the
+/// campaign map.
+const PLACES: [u8; 2] = [2, 5];
+
+/// Whether `r` is walking to a place that goes to another block: an option of where to go.
+fn walks(r: &Record) -> bool {
+    PLACES.contains(&r.trigger.kind) && r.code.iter().any(|c| c.mnemonic == "goto_block")
 }
 
 /// Whether `r` leaves its group's parallel control (moves the story on).
@@ -395,13 +476,26 @@ impl<'c, 'a> Writer<'c, 'a> {
             if taken.contains(&i) || chatter(rec) {
                 continue;
             }
+            // Walking to places of the group that lead to other blocks: where to go is a
+            // choice (a place one cannot go to yet, and the one here, ask again).
+            if walks(rec) {
+                let group: Vec<usize> = (i..block.records.len())
+                    .take_while(|&k| block.records[k].trigger.group == rec.trigger.group)
+                    .filter(|&k| walks(&block.records[k]))
+                    .collect();
+                if group.len() > 1 {
+                    self.walk(block, &group);
+                    taken.extend(group);
+                    continue;
+                }
+            }
             // A choice ends its record's script: option `k` goes on with record `i + 1 + k`; an
             // option that neither leaves the group nor goes elsewhere asks again.
             if let Some(at) = rec.code.iter().position(|c| c.mnemonic == "choice") {
                 match self.lines(&rec.code[..at]) {
                     Flow::Continue => {}
-                    Flow::GameOver => {
-                        self.game_over();
+                    f @ (Flow::GameOver | Flow::Ending(_)) => {
+                        self.stop(f);
                         break;
                     }
                     Flow::Goto(b) => {
@@ -473,8 +567,8 @@ impl<'c, 'a> Writer<'c, 'a> {
             }
             match self.lines(&rec.code) {
                 Flow::Continue => {}
-                Flow::GameOver => {
-                    self.game_over();
+                f @ (Flow::GameOver | Flow::Ending(_)) => {
+                    self.stop(f);
                     break;
                 }
                 // The block ends there.
@@ -485,6 +579,47 @@ impl<'c, 'a> Writer<'c, 'a> {
                 Flow::Goto(_) => {}
             }
         }
+    }
+}
+
+impl Writer<'_, '_> {
+    /// A choice of the places the records `walks` of `block` walk to.
+    fn walk(&mut self, block: &Block, walks: &[usize]) {
+        let ctx = self.ctx;
+        let (ask, after) = (self.label(), self.label());
+        let _ = writeln!(
+            self.out.text,
+            "@label ask_{ask}
+@choice"
+        );
+        let mut options = Vec::new();
+        for &k in walks {
+            let to = block.records[k]
+                .code
+                .iter()
+                .find(|c| c.mnemonic == "goto_block")
+                .and_then(|c| c.operands.get("block"))
+                .map(usize::from);
+            // Staying here is not an option.
+            if to.is_none_or(|b| b == ctx.block) {
+                continue;
+            }
+            let place = to
+                .and_then(|b| ctx.places.get(b).cloned().flatten())
+                .unwrap_or_else(|| "다른 곳".to_string());
+            let _ = writeln!(
+                self.out.text,
+                "- {} 쪽으로 간다 -> opt_{ask}_{k}",
+                place.replace("->", "→")
+            );
+            options.push(k);
+        }
+        for k in options {
+            let _ = writeln!(self.out.text, "@label opt_{ask}_{k}");
+            let flow = self.lines(&block.records[k].code);
+            self.close(flow, true, ask, after);
+        }
+        let _ = writeln!(self.out.text, "@label after_{after}");
     }
 }
 
@@ -525,11 +660,11 @@ pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
             .unwrap_or(won);
         match w.lines(&first.code) {
             Flow::Goto(b) if b != ctx.block => w.out.next = Next::Block(b),
-            Flow::GameOver => w.game_over(),
+            f @ (Flow::GameOver | Flow::Ending(_)) => w.stop(f),
             _ => {}
         }
     }
-    if w.out.next == Next::Default && !w.out.game_over {
+    if w.out.next == Next::Default && !w.out.game_over && w.out.endings.is_empty() {
         let last_stage = block
             .records
             .iter()
@@ -546,6 +681,36 @@ pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
         }
     }
     w.finish()
+}
+
+/// Record kind of the script the original runs when the battle is lost.
+const BATTLE_LOST: u8 = 8;
+
+/// What the original plays when a battle of `block` is lost and the story goes on (a
+/// `battle_lost` script without `game_over`, of the last stage that has one): a drama scene whose
+/// `next` is where the story goes on ([`Next::Default`]: the block after the battle's). `None`
+/// when losing ends the game.
+pub fn defeat_scene(block: &Block, ctx: &StoryContext) -> Option<StoryScene> {
+    let last = block
+        .records
+        .iter()
+        .filter(|r| r.trigger.kind == BATTLE_LOST)
+        .map(|r| r.trigger.group)
+        .max()?;
+    let lost = block
+        .records
+        .iter()
+        .find(|r| r.trigger.kind == BATTLE_LOST && r.trigger.group == last)?;
+    if lost.code.iter().any(|c| c.mnemonic == "game_over") {
+        return None;
+    }
+    let mut w = Writer::new(ctx, false);
+    match w.lines(&lost.code) {
+        Flow::Goto(b) if b != ctx.block => w.out.next = Next::Block(b),
+        f @ (Flow::GameOver | Flow::Ending(_)) => w.stop(f),
+        _ => {}
+    }
+    Some(w.finish())
 }
 
 /// A base for re-staging a battle the base pack does not have: the original's name and
@@ -623,28 +788,58 @@ pub struct Step {
     pub kind: StepKind,
     /// Where the campaign goes after it.
     pub next: Next,
+    /// How its scene (a story's, a battle's outro) may end the campaign.
+    pub ends: Ends,
+}
+
+/// How a scene may end the campaign.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Ends {
+    /// It may set [`GAME_OVER_FLAG`].
+    pub game_over: bool,
+    /// The original's endings it may set [`ENDING_FLAG`] for.
+    pub endings: BTreeSet<u8>,
+}
+
+impl Ends {
+    pub fn of(scene: &StoryScene) -> Ends {
+        Ends {
+            game_over: scene.game_over,
+            endings: scene.endings.clone(),
+        }
+    }
 }
 
 /// What a [`Step`] plays.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StepKind {
-    /// Drama scene `scene`; `game_over`: it may set [`GAME_OVER_FLAG`].
-    Story { scene: String, game_over: bool },
-    /// Battle `battle`, prepared in a camp titled `title` whose shop sells `shop`; `game_over`:
-    /// its outro may set [`GAME_OVER_FLAG`].
+    /// Drama scene `scene`.
+    Story { scene: String },
+    /// Battle `battle`, prepared in a camp titled `title` whose shop sells `shop`, and what the
+    /// campaign plays when it is lost, when the original goes on then.
     Battle {
         battle: String,
         title: String,
         shop: Vec<String>,
-        game_over: bool,
+        defeat: Option<Defeat>,
     },
+}
+
+/// What the original plays when a battle is lost and the story goes on (`battle_lost`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Defeat {
+    /// Its drama scene.
+    pub scene: String,
+    /// Where the story goes on ([`Next::Default`]: the block after the battle's).
+    pub next: Next,
+    pub ends: Ends,
 }
 
 impl Step {
     /// The id of the step's first node.
     fn first_node(&self) -> String {
         match &self.kind {
-            StepKind::Story { scene, .. } => scene.clone(),
+            StepKind::Story { scene } => scene.clone(),
             StepKind::Battle { battle, .. } => format!("{battle}_camp"),
         }
     }
@@ -671,33 +866,51 @@ fn step_after(at: &[(usize, usize, usize)], i: usize, next: &Next) -> Option<usi
     }
 }
 
-/// Which of the steps at `at` (in order, each going on as its `next` says) the story reaches from
-/// the first; the others are the alternatives of a choice the conversion does not offer.
-pub fn reachable(at: &[(usize, usize, usize)], next: &[Next]) -> Vec<bool> {
+/// Where a lost battle at `at` goes on by `next`: [`Next::Default`] is the block after it.
+pub fn after_defeat(at: (usize, usize, usize), next: &Next) -> Next {
+    match next {
+        Next::Default => Next::Block(at.2 + 1),
+        other => other.clone(),
+    }
+}
+
+/// Which of the steps at `at` (in order, each going on as its `nexts` say: a story's or battle's
+/// next, a lost battle's) the story reaches from the first; the others are the alternatives of a
+/// choice the conversion does not offer.
+pub fn reachable(at: &[(usize, usize, usize)], nexts: &[Vec<Next>]) -> Vec<bool> {
     let mut seen = vec![false; at.len()];
     let mut todo: Vec<usize> = if at.is_empty() { Vec::new() } else { vec![0] };
     while let Some(i) = todo.pop() {
         if std::mem::replace(&mut seen[i], true) {
             continue;
         }
-        match &next[i] {
-            Next::Routes { targets, .. } => {
-                todo.extend(step_after(at, i, &Next::Default));
-                for (_, b) in targets {
-                    todo.extend(step_after(at, i, &Next::Block(*b)));
+        for next in &nexts[i] {
+            match next {
+                Next::Routes {
+                    targets, otherwise, ..
+                } => {
+                    todo.extend(step_after(
+                        at,
+                        i,
+                        &otherwise.map_or(Next::Default, Next::Block),
+                    ));
+                    for (_, b) in targets {
+                        todo.extend(step_after(at, i, &Next::Block(*b)));
+                    }
                 }
+                n => todo.extend(step_after(at, i, n)),
             }
-            n => todo.extend(step_after(at, i, n)),
         }
     }
     seen
 }
 
 /// `base` with the steps played after its battle node that fights `after_battle`, instead of
-/// the node it went on to, and ending with `ending` (a node id and a title); the steps are
-/// joined as their [`Next`] says (routes become branches on their flags), and a game over of
-/// the story's choices goes to [`GAME_OVER_NODE`]. `None` when the base campaign has no such
-/// battle node.
+/// the node it went on to, and ending with `ending` (a node id and a title) when the story runs
+/// out; the steps are joined as their [`Next`] says (routes become branches on their flags), a
+/// game over goes to [`GAME_OVER_NODE`] and the original's endings to their [`ending_node`]s, and
+/// a battle the original goes on after losing plays its defeat scene. `None` when the base
+/// campaign has no such battle node.
 pub fn continue_campaign(
     base: &CampaignDef,
     after_battle: &str,
@@ -721,12 +934,48 @@ pub fn continue_campaign(
     };
     let mut nodes: Vec<Node> = Vec::new();
     let mut game_over = false;
+    let mut endings = BTreeSet::new();
+    // `next` behind the checks of a scene `own` that may end the campaign as `ends` says.
+    let mut checked = |nodes: &mut Vec<Node>, own: &str, ends: &Ends, next: String| {
+        let mut next = next;
+        for &n in ends.endings.iter().rev() {
+            let id = format!("{own}_ending{n}");
+            nodes.push(Node::Branch {
+                id: id.clone(),
+                flag: ENDING_FLAG.to_string(),
+                cmp: Compare::Eq,
+                value: i64::from(n) + 1,
+                then: ending_node(n),
+                otherwise: next,
+            });
+            endings.insert(n);
+            next = id;
+        }
+        if ends.game_over {
+            game_over = true;
+            let id = format!("{own}_check");
+            nodes.push(Node::Branch {
+                id: id.clone(),
+                flag: GAME_OVER_FLAG.to_string(),
+                cmp: Compare::Eq,
+                value: 1,
+                then: GAME_OVER_NODE.to_string(),
+                otherwise: next,
+            });
+            next = id;
+        }
+        next
+    };
     for (i, step) in steps.iter().enumerate() {
         let first = step.first_node();
         // Where the step goes on: its routes' branches, else the target.
-        let default = target(i, &Next::Default);
         let next = match &step.next {
-            Next::Routes { flag, targets } => {
+            Next::Routes {
+                flag,
+                targets,
+                otherwise,
+            } => {
+                let default = target(i, &otherwise.map_or(Next::Default, Next::Block));
                 let ids: Vec<String> = (0..targets.len())
                     .map(|k| format!("{first}_route{}", k + 1))
                     .collect();
@@ -744,30 +993,9 @@ pub fn continue_campaign(
             }
             other => target(i, other),
         };
-        // A step whose scene may end the game goes on through a check of the flag.
-        let (own, may_end) = match &step.kind {
-            StepKind::Story { scene, game_over } => (scene.clone(), *game_over),
-            StepKind::Battle {
-                battle, game_over, ..
-            } => (battle.clone(), *game_over),
-        };
-        let next = if may_end {
-            game_over = true;
-            let check = format!("{own}_check");
-            nodes.push(Node::Branch {
-                id: check.clone(),
-                flag: GAME_OVER_FLAG.to_string(),
-                cmp: Compare::Eq,
-                value: 1,
-                then: GAME_OVER_NODE.to_string(),
-                otherwise: next,
-            });
-            check
-        } else {
-            next
-        };
         match &step.kind {
-            StepKind::Story { scene, .. } => {
+            StepKind::Story { scene } => {
+                let next = checked(&mut nodes, scene, &step.ends, next);
                 nodes.push(Node::Drama {
                     id: scene.clone(),
                     scene: scene.clone(),
@@ -778,8 +1006,19 @@ pub fn continue_campaign(
                 battle,
                 title,
                 shop,
-                ..
+                defeat,
             } => {
+                let next = checked(&mut nodes, battle, &step.ends, next);
+                let on_defeat = defeat.as_ref().map(|d| {
+                    let after = target(i, &after_defeat(step.at, &d.next));
+                    let after = checked(&mut nodes, &d.scene, &d.ends, after);
+                    nodes.push(Node::Drama {
+                        id: d.scene.clone(),
+                        scene: d.scene.clone(),
+                        next: after,
+                    });
+                    d.scene.clone()
+                });
                 let fight = format!("{battle}_battle");
                 nodes.push(Node::Camp {
                     id: first,
@@ -792,16 +1031,33 @@ pub fn continue_campaign(
                     id: fight,
                     battle: battle.clone(),
                     next,
-                    on_defeat: None,
+                    on_defeat,
                 });
             }
         }
     }
-    nodes.push(Node::Ending {
-        id: ending_id.clone(),
-        scene: None,
-        title: ending.1.to_string(),
-    });
+    // The chapter's end, when the story runs out rather than ending in one of the original's.
+    let first = steps
+        .first()
+        .map_or_else(|| ending_id.clone(), Step::first_node);
+    if first == ending_id
+        || nodes
+            .iter()
+            .any(|n| successors(n).contains(&ending_id.as_str()))
+    {
+        nodes.push(Node::Ending {
+            id: ending_id.clone(),
+            scene: None,
+            title: ending.1.to_string(),
+        });
+    }
+    for n in endings {
+        nodes.push(Node::Ending {
+            id: ending_node(n),
+            scene: None,
+            title: format!("엔딩 {}", u32::from(n) + 1),
+        });
+    }
     if game_over {
         nodes.push(Node::Ending {
             id: GAME_OVER_NODE.to_string(),
@@ -809,9 +1065,6 @@ pub fn continue_campaign(
             title: "게임 오버".to_string(),
         });
     }
-    let first = steps
-        .first()
-        .map_or_else(|| ending_id.clone(), Step::first_node);
     if let Node::Battle { next, .. } = &mut campaign.nodes[at] {
         *next = first.clone();
     }
@@ -986,6 +1239,7 @@ mod tests {
             song_key,
             block: 2,
             route_flag: "route",
+            places: &[],
         }
     }
 
@@ -1129,7 +1383,8 @@ mod tests {
         let s = story_scene(&b, &ctx(&names, &song_key));
         assert_eq!(
             s.text,
-            "@label ask_1\n@choice\n- 예. -> opt_1_0\n- 아니오. -> opt_1_1\n\
+            // The route flag starts clear (a scene played again).
+            "@set route = 0\n@label ask_1\n@choice\n- 예. -> opt_1_0\n- 아니오. -> opt_1_1\n\
              @label opt_1_0\nyuan_shao: 처형하라!\n@set route = 1\n@end\n\
              @label opt_1_1\n@goto ask_1\n@label after_2\n"
         );
@@ -1137,7 +1392,8 @@ mod tests {
             s.next,
             Next::Routes {
                 flag: "route".into(),
-                targets: vec![(1, 5)]
+                targets: vec![(1, 5)],
+                otherwise: None,
             }
         );
         parses(&s.text);
@@ -1197,7 +1453,7 @@ mod tests {
                 BATTLE_WON,
                 4,
                 vec![
-                    // The version for a flag the battle set is left out (flags read as clear).
+                    // Versions by a flag the battle sets: the campaign checks it (`orig_f150`).
                     if_flags(1, vec![150], vec![]),
                     instr("dialogue", &[("text", 2)]),
                     if_flags(1, vec![], vec![150]),
@@ -1232,10 +1488,12 @@ mod tests {
         assert_eq!(s.gold, 700);
         assert_eq!(
             s.text,
-            "yuan_shao: 처형하라!\nyuan_shao: 실례했소.\n손건: 돌아왔습니다.\n\
-             @label ask_1\n@choice\n- 예. -> opt_1_0\n- 아니오. -> opt_1_1\n\
-             @label opt_1_0\n@join yuan_shao\n@goto after_2\n\
-             @label opt_1_1\n@goto after_2\n@label after_2\n"
+            "@if orig_f150 == 0 -> skip_1\nyuan_shao: 흥.\nliu_bei: 무슨 일입니까?\n@label skip_1\n\
+             @if orig_f150 != 0 -> skip_2\nyuan_shao: 처형하라!\n@label skip_2\n\
+             yuan_shao: 실례했소.\n손건: 돌아왔습니다.\n\
+             @label ask_3\n@choice\n- 예. -> opt_3_0\n- 아니오. -> opt_3_1\n\
+             @label opt_3_0\n@join yuan_shao\n@goto after_4\n\
+             @label opt_3_1\n@goto after_4\n@label after_4\n"
         );
         assert_eq!(s.next, Next::Default);
         parses(&s.text);
@@ -1262,9 +1520,12 @@ mod tests {
             at,
             kind: StepKind::Story {
                 scene: scene.into(),
-                game_over,
             },
             next,
+            ends: Ends {
+                game_over,
+                endings: BTreeSet::new(),
+            },
         };
         let steps = [
             // A game over, else a route to block 3 (s3), else on (b2).
@@ -1275,6 +1536,7 @@ mod tests {
                 Next::Routes {
                     flag: "r".into(),
                     targets: vec![(1, 3)],
+                    otherwise: None,
                 },
             ),
             Step {
@@ -1283,9 +1545,10 @@ mod tests {
                     battle: "b2".into(),
                     title: "연주 — 출진 준비".into(),
                     shop: vec!["bean".into()],
-                    game_over: false,
+                    defeat: None,
                 },
                 next: Next::Default,
+                ends: Ends::default(),
             },
             // On with block 4: the first part at or after it (s4 of the next scene: none in
             // this one).
@@ -1344,6 +1607,84 @@ mod tests {
         assert!(matches!(node("fight"), Node::Battle { next, .. } if next == "end1"));
         assert!(matches!(node("end1"), Node::Drama { scene, next, .. }
             if scene == "close" && next == "s1"));
+    }
+
+    #[test]
+    fn a_lost_battle_the_story_goes_on_after_and_the_originals_endings() {
+        let base: CampaignDef = toml::from_str(
+            "title = \"t\"\nstart = \"camp\"\nstarting_officers = [\"liu_bei\"]\n\
+             [[node]]\ntype = \"camp\"\nid = \"camp\"\nbattle = \"b1\"\nnext = \"fight\"\n\
+             [[node]]\ntype = \"battle\"\nid = \"fight\"\nbattle = \"b1\"\nnext = \"end1\"\n\
+             [[node]]\ntype = \"ending\"\nid = \"end1\"\ntitle = \"1장\"\n",
+        )
+        .unwrap();
+        let steps = [
+            // Lost, the story goes on with the block after the battle (s1, an ending).
+            Step {
+                at: (3, 4, 6),
+                kind: StepKind::Battle {
+                    battle: "yiling".into(),
+                    title: "이릉".into(),
+                    shop: Vec::new(),
+                    defeat: Some(Defeat {
+                        scene: "yiling_defeat".into(),
+                        next: Next::Default,
+                        ends: Ends::default(),
+                    }),
+                },
+                next: Next::Block(8),
+                ends: Ends::default(),
+            },
+            Step {
+                at: (3, 4, 7),
+                kind: StepKind::Story { scene: "s1".into() },
+                next: Next::Default,
+                ends: Ends {
+                    game_over: false,
+                    endings: BTreeSet::from([3]),
+                },
+            },
+            Step {
+                at: (3, 4, 8),
+                kind: StepKind::Story { scene: "s2".into() },
+                next: Next::Default,
+                ends: Ends {
+                    game_over: false,
+                    endings: BTreeSet::from([0, 1]),
+                },
+            },
+        ];
+        let c = continue_campaign(&base, "b1", &steps, ("end2", "끝")).unwrap();
+        let node = |id: &str| c.nodes.iter().find(|n| n.id() == id);
+        assert!(
+            matches!(node("yiling_battle"), Some(Node::Battle { next, on_defeat, .. })
+            if next == "s2" && on_defeat.as_deref() == Some("yiling_defeat"))
+        );
+        assert!(matches!(node("yiling_defeat"), Some(Node::Drama { next, .. }) if next == "s1"));
+        assert!(matches!(node("s1"), Some(Node::Drama { next, .. }) if next == "s1_ending3"));
+        assert!(
+            matches!(node("s1_ending3"), Some(Node::Branch { flag, value: 4, then, .. })
+            if flag == ENDING_FLAG && *then == ending_node(3))
+        );
+        // s2: ending 0, else 1, else the chapter's end.
+        assert!(matches!(node("s2"), Some(Node::Drama { next, .. }) if next == "s2_ending0"));
+        assert!(
+            matches!(node("s2_ending0"), Some(Node::Branch { otherwise, .. })
+            if otherwise == "s2_ending1")
+        );
+        assert!(
+            matches!(node("s2_ending1"), Some(Node::Branch { otherwise, .. })
+            if otherwise == "end2")
+        );
+        for n in [0, 1, 3] {
+            assert!(
+                matches!(node(&ending_node(n)), Some(Node::Ending { .. })),
+                "{n}"
+            );
+        }
+        assert!(node(&ending_node(2)).is_none());
+        let text = toml::to_string(&c).unwrap();
+        assert_eq!(toml::from_str::<CampaignDef>(&text).unwrap(), c);
     }
 
     #[test]
