@@ -361,7 +361,12 @@ impl Writer<'_, '_> {
 
     /// One instruction that is not a jump.
     fn effect(&mut self, instr: &Instr) {
-        if self.army_only && !matches!(instr.mnemonic, "set_allegiance" | "set_country") {
+        if self.army_only
+            && !matches!(
+                instr.mnemonic,
+                "set_allegiance" | "set_country" | "add_levels" | "set_class"
+            )
+        {
             return;
         }
         let ctx = self.ctx;
@@ -466,9 +471,27 @@ impl Writer<'_, '_> {
                     self.skipped.insert("pictures the pack does not have");
                 }
             }
-            "add_levels" | "set_class" => {
-                self.skipped.insert("level and class changes");
-            }
+            "add_levels" => match officer(get("person")) {
+                Some(id) => {
+                    let _ = writeln!(out.text, "@level {id} {}", get("levels").max(1));
+                }
+                None => {
+                    self.skipped
+                        .insert("levels of persons without a pack officer");
+                }
+            },
+            "set_class" => match (
+                officer(get("person")),
+                names.classes.get(&(get("class") as u8)),
+            ) {
+                (Some(id), Some(class)) => {
+                    let _ = writeln!(out.text, "@class {id} {class}");
+                }
+                _ => {
+                    self.skipped
+                        .insert("classes of persons or classes the pack does not have");
+                }
+            },
             "data" if get("kind") == DATA_GOLD => {
                 if self.gold_as_reward {
                     out.gold += i64::from(get("value"));
@@ -484,6 +507,7 @@ impl Writer<'_, '_> {
     }
 
     fn finish(mut self) -> StoryScene {
+        self.out.text = growth_after_joining(&self.out.text);
         if !self.skipped.is_empty() {
             self.out.notes.push(format!(
                 "left out: {}",
@@ -523,6 +547,58 @@ const PLACES: [u8; 2] = [2, 5];
 /// Whether `r` is walking to a place that goes to another block: an option of where to go.
 fn walks(r: &Record) -> bool {
     PLACES.contains(&r.trigger.kind) && r.code.iter().any(|c| c.mnemonic == "goto_block")
+}
+
+/// `text` with each `@level`/`@class` of an officer moved after the `@join` of that officer
+/// that follows it (the original changes an officer who is out of the army, then takes them
+/// back: 조운 joining as heavy cavalry at level +7; `@level` on one not in the army changes
+/// nothing). Only across plain lines: a label, a jump, a condition or a choice stops the move.
+fn growth_after_joining(text: &str) -> String {
+    let mut lines: Vec<&str> = text.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let officer = lines[i]
+            .strip_prefix("@level ")
+            .or_else(|| lines[i].strip_prefix("@class "))
+            .and_then(|rest| rest.split_whitespace().next());
+        let Some(officer) = officer else {
+            i += 1;
+            continue;
+        };
+        let join = format!("@join {officer}");
+        let stops = |l: &str| {
+            ["@label", "@goto", "@if", "@choice", "@end", "- "]
+                .iter()
+                .any(|p| l.starts_with(p))
+        };
+        let target = lines[i + 1..]
+            .iter()
+            .position(|l| *l == join || stops(l))
+            .map(|k| i + 1 + k)
+            .filter(|&k| lines[k] == join);
+        match target {
+            Some(k) => {
+                let line = lines.remove(i);
+                // After the join and the lines moved there before (their order kept).
+                let mut at = k;
+                while lines.get(at).is_some_and(|l| {
+                    l.strip_prefix("@level ")
+                        .or_else(|| l.strip_prefix("@class "))
+                        .and_then(|rest| rest.split_whitespace().next())
+                        == Some(officer)
+                }) {
+                    at += 1;
+                }
+                lines.insert(at, line);
+            }
+            None => i += 1,
+        }
+    }
+    let mut out = lines.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 /// Whether `r` asks whether to set out (a question whose yes starts a battle: `op_3d`, a
@@ -2204,6 +2280,46 @@ mod tests {
         let s = before_scene(&b, &ctx(&names, &song_key));
         assert_eq!(s.text, "@join yuan_shao\n");
         assert_eq!(s.next, Next::Default);
+    }
+
+    #[test]
+    fn growth_of_an_officer_out_of_the_army_follows_their_return() {
+        assert_eq!(
+            growth_after_joining(
+                "@away zhao_yun\n@class zhao_yun heavy_cavalry\n@level zhao_yun 7\n@join zhao_yun\nzhao_yun: 예.\n"
+            ),
+            "@away zhao_yun\n@join zhao_yun\n@class zhao_yun heavy_cavalry\n@level zhao_yun 7\nzhao_yun: 예.\n"
+        );
+        // A branch between: left where it is.
+        let kept = "@level zhao_yun 7\n@label a\n@join zhao_yun\n";
+        assert_eq!(growth_after_joining(kept), kept);
+    }
+
+    #[test]
+    fn a_story_raises_levels_and_changes_classes() {
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("set_class", &[("person", 9), ("class", 1)]),
+                instr("add_levels", &[("person", 9), ("levels", 7)]),
+                // One the pack does not have: noted.
+                instr("add_levels", &[("person", 63), ("levels", 1)]),
+            ],
+        )]);
+        let song_key = |_: u16| None;
+        let mut names = names();
+        names.classes.insert(1, "light_cavalry".into());
+        let s = story_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(
+            s.text,
+            "@class yuan_shao light_cavalry\n@level yuan_shao 7\n"
+        );
+        assert!(
+            s.notes.iter().any(|n| n.contains("levels of persons")),
+            "{:?}",
+            s.notes
+        );
     }
 
     #[test]

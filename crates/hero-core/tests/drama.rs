@@ -178,6 +178,37 @@ fn flags_and_conditions() {
 }
 
 #[test]
+fn a_story_raises_levels_and_changes_classes() {
+    let pack = pack_with_scene(
+        "\n== growth\n@level guan_yu 3\n@level liu_bei 200\n@class guan_yu archer\n@level jian_yong 2\n",
+    );
+    let mut campaign = CampaignState::new_game(&pack);
+    campaign.add_item("bronze_sword", 1);
+    campaign.equip(&pack, "guan_yu", "bronze_sword").unwrap();
+    let level = campaign.officer("guan_yu").unwrap().level;
+    let mut runner = DramaRunner::new(&pack, "growth").unwrap();
+    // Nothing to show: the changes happen as the scene goes.
+    assert_eq!(
+        run_until_pause(&mut runner, &pack, &mut campaign),
+        [Step::End]
+    );
+    let guan_yu = campaign.officer("guan_yu").unwrap();
+    assert_eq!(
+        (guan_yu.level, guan_yu.class.as_str()),
+        (level + 3, "archer")
+    );
+    // The sword is not for archers: back to the inventory.
+    assert_eq!(guan_yu.equip.weapon, None);
+    assert_eq!(campaign.item_count("bronze_sword"), 1);
+    // Up to the level cap; an officer not in the army is left out.
+    assert_eq!(
+        campaign.officer("liu_bei").unwrap().level,
+        pack.rules.level_cap
+    );
+    assert!(campaign.officer("jian_yong").is_none());
+}
+
+#[test]
 fn side_effects_follow_the_campaign_rules() {
     let pack = pack_with_scene("\n== effects\n@leave jian_yong\n@leave zhang_fei\n@gold +100\n@gold -700\n@wait 250\n@sfx confirm\n@bgm stop\n@bg none\n@hide left\n@fade in\n");
     let mut campaign = CampaignState::new_game(&pack);

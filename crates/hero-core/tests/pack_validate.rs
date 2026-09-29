@@ -925,6 +925,16 @@ fn drama_checks() {
             "@item names unknown item `peach`",
         ),
         error(
+            &[(STORY, "@item bean", "@item bean\n@level mi_zhu 2")],
+            "scene oath",
+            "@level names unknown officer `mi_zhu`",
+        ),
+        error(
+            &[(STORY, "@item bean", "@item bean\n@class guan_yu sage")],
+            "scene oath",
+            "@class names unknown class `sage`",
+        ),
+        error(
             &[(BATTLE_DRAMAS, "zhang_bao: 덤벼라!", "zhang_liang: 덤벼라!")],
             "scene b01_duel",
             "speaker `zhang_liang` looks like an officer id",

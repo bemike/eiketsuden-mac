@@ -1522,6 +1522,19 @@ impl<'a> Validator<'a> {
                             self.error(&ctx, format!("@item names unknown item `{item}`"));
                         }
                     }
+                    Cmd::Level { officer, .. } => {
+                        if pack.officer(officer).is_none() {
+                            self.error(&ctx, format!("@level names unknown officer `{officer}`"));
+                        }
+                    }
+                    Cmd::Class { officer, class } => {
+                        if pack.officer(officer).is_none() {
+                            self.error(&ctx, format!("@class names unknown officer `{officer}`"));
+                        }
+                        if pack.class(class).is_none() {
+                            self.error(&ctx, format!("@class names unknown class `{class}`"));
+                        }
+                    }
                     Cmd::Say { speaker, .. }
                         if looks_like_id(speaker) && pack.officer(speaker).is_none() =>
                     {

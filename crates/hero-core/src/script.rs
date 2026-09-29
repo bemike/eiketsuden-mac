@@ -198,6 +198,18 @@ pub enum Cmd {
     /// Officer of the player's army goes away for now, keeping their progress (`@join` brings
     /// them back).
     Away(String),
+    /// An officer of the army gains levels (outside battle: the level only; HP and MP follow
+    /// from it in the next battle).
+    Level {
+        officer: String,
+        levels: u32,
+    },
+    /// An officer of the army changes class (equipment the new class may not use goes back to
+    /// the inventory).
+    Class {
+        officer: String,
+        class: String,
+    },
     Gold(i64),
     /// Give an item to the army inventory.
     Item(String),
@@ -566,6 +578,35 @@ impl Parser<'_> {
             "join" => Cmd::Join(need("an officer id")?),
             "leave" => Cmd::Leave(need("an officer id")?),
             "away" => Cmd::Away(need("an officer id")?),
+            "level" => {
+                let mut parts = arg.split_whitespace();
+                match (
+                    parts.next(),
+                    parts.next().map(str::parse::<u32>),
+                    parts.next(),
+                ) {
+                    (Some(officer), Some(Ok(levels)), None) if levels > 0 => Cmd::Level {
+                        officer: officer.to_string(),
+                        levels,
+                    },
+                    _ => {
+                        return Err(self.err(
+                            line,
+                            "@level needs `<officer> <levels>` (levels at least 1)",
+                        ))
+                    }
+                }
+            }
+            "class" => {
+                let mut parts = arg.split_whitespace();
+                match (parts.next(), parts.next(), parts.next()) {
+                    (Some(officer), Some(class), None) => Cmd::Class {
+                        officer: officer.to_string(),
+                        class: class.to_string(),
+                    },
+                    _ => return Err(self.err(line, "@class needs `<officer> <class>`")),
+                }
+            }
             "gold" => Cmd::Gold(
                 v_parse(arg).ok_or_else(|| self.err(line, "@gold needs an integer like +100"))?,
             ),
@@ -672,6 +713,31 @@ liu_bei: 어지러운 세상이로구나.
         let s = &scenes[0];
         assert_eq!(s.id, "prologue");
         assert_eq!(s.cmds[0], Cmd::Bg(Some("village".into())));
+        let l = parse_drama("t.drama", "== l\n@level guan_yu 2\n@class guan_yu archer\n").unwrap();
+        assert_eq!(
+            l[0].cmds[..2],
+            [
+                Cmd::Level {
+                    officer: "guan_yu".into(),
+                    levels: 2
+                },
+                Cmd::Class {
+                    officer: "guan_yu".into(),
+                    class: "archer".into()
+                }
+            ]
+        );
+        for bad in [
+            "@level guan_yu",
+            "@level guan_yu 0",
+            "@level guan_yu x",
+            "@class guan_yu",
+        ] {
+            assert!(
+                parse_drama("t.drama", &format!("== b\n{bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
         let p = parse_drama("t.drama", "== p\n@picture flood\n@picture none\n").unwrap();
         assert_eq!(
             p[0].cmds,

@@ -128,6 +128,8 @@ pub enum CampaignError {
     NotInArmy(Id),
     #[error("unknown item `{0}`")]
     UnknownItem(Id),
+    #[error("unknown class `{0}`")]
+    UnknownClass(Id),
     #[error("item `{0}` is not in the inventory")]
     NotOwned(Id),
     #[error("not enough gold: need {need}, have {have}")]
@@ -492,15 +494,23 @@ impl CampaignState {
             }
             _ => return Err(cannot("the item has no effect outside battle".into())),
         };
-        let family = pack
-            .class(&new_class)
-            .ok_or_else(|| cannot(format!("unknown class `{new_class}`")))?
-            .family
-            .clone();
+        if pack.class(&new_class).is_none() {
+            return Err(cannot(format!("unknown class `{new_class}`")));
+        }
         self.remove_item(item)?;
+        self.change_class(pack, officer, new_class);
+        Ok(())
+    }
+
+    /// `officer` becomes `class`: equipment the new class family may not use goes back to the
+    /// inventory. The class must exist.
+    fn change_class(&mut self, pack: &Pack, officer: &str, class: Id) {
+        let family = pack
+            .class(&class)
+            .map_or_else(String::new, |c| c.family.clone());
         let mut returned = Vec::new();
         if let Some(state) = self.officer_mut(officer) {
-            state.class = new_class;
+            state.class = class;
             let slots = [
                 &mut state.equip.weapon,
                 &mut state.equip.armor,
@@ -519,6 +529,39 @@ impl CampaignState {
         for id in returned {
             self.add_item(&id, 1);
         }
+    }
+
+    /// `@class`: `officer` of the army becomes `class` (the story's change; no item, no
+    /// promotion level), as [`CampaignState::use_item`] changes it.
+    pub fn set_class(
+        &mut self,
+        pack: &Pack,
+        officer: &str,
+        class: &str,
+    ) -> Result<(), CampaignError> {
+        if self.officer(officer).is_none() {
+            return Err(CampaignError::NotInArmy(officer.to_string()));
+        }
+        if pack.class(class).is_none() {
+            return Err(CampaignError::UnknownClass(class.to_string()));
+        }
+        self.change_class(pack, officer, class.to_string());
+        Ok(())
+    }
+
+    /// `@level`: `officer` of the army gains `levels`, up to the level cap. Only the level
+    /// changes: HP, MP and the strategies known follow from it in battle.
+    pub fn add_levels(
+        &mut self,
+        pack: &Pack,
+        officer: &str,
+        levels: u32,
+    ) -> Result<(), CampaignError> {
+        let cap = pack.rules.level_cap;
+        let state = self
+            .officer_mut(officer)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
+        state.level = state.level.saturating_add(levels).min(cap);
         Ok(())
     }
 

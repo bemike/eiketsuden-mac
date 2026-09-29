@@ -987,6 +987,11 @@ mod tests {
         assert!(story.contains("@join liu_pi"), "{story}");
         // Whose plan to follow at Xinye (the siege or Bowang).
         assert!(story.contains("장비의 뜻을 따른다 -> "), "{story}");
+        // Zhao Yun joins as heavy cavalry, seven levels up (after his return).
+        assert!(
+            story.contains("@join zhao_yun\n@class zhao_yun heavy_cavalry\n@level zhao_yun 7\n"),
+            "{story}"
+        );
         // Jiangling goes on in the next block: one battle (no story scene for that block).
         assert!(!story.contains("== c3_s0_story3\n"), "{story}");
         assert!(pack.battles["c3_s0_b2"].events.len() > 4);
