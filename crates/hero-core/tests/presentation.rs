@@ -109,3 +109,36 @@ fn a_battle_frame_is_read_and_checked_against_the_canvas() {
         PackError::Parse { .. }
     ));
 }
+
+/// A camp frame the size of a 640x400 canvas.
+const CAMP: &str = "canvas = [640, 400]\n\
+    [presentation.camp_frame]\n\
+    image = \"ui/camp_frame\"\n\
+    view = [17, 15, 511, 322]\n\
+    portrait = [552, 24, 64, 80]\n\
+    gold = [568, 136, 52, 15]\n\
+    level = [584, 160, 36, 15]\n\
+    place = [568, 200, 52, 15]\n\
+    caption = [12, 352, 244, 32]\n\
+    clock = [270, 352, 100, 32]";
+
+#[test]
+fn a_camp_frame_needs_a_view_the_camp_screens_fit_in() {
+    let pack = load(&with_presentation(CAMP));
+    let frame = pack.manifest.presentation.camp_frame.expect("frame");
+    assert_eq!(frame.view, [17, 15, 511, 322]);
+    // The camp screens are laid out in the view: smaller than the smallest canvas is an error,
+    // like an area outside the canvas.
+    for (from, to) in [
+        ("view = [17, 15, 511, 322]", "view = [17, 15, 400, 322]"),
+        ("clock = [270, 352, 100, 32]", "clock = [600, 352, 100, 32]"),
+    ] {
+        match load_err(&with_presentation(&CAMP.replace(from, to))) {
+            PackError::Parse { file, msg } => {
+                assert_eq!(file, "pack.toml");
+                assert!(msg.contains("camp_frame"), "{to}: {msg}");
+            }
+            other => panic!("{to}: unexpected error {other:?}"),
+        }
+    }
+}

@@ -425,6 +425,10 @@ impl OfficersScreen {
 }
 
 impl Screen for OfficersScreen {
+    fn in_camp_frame(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &'static str {
         "camp-officers"
     }

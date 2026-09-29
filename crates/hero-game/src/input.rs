@@ -148,6 +148,40 @@ impl Input {
         Input::default()
     }
 
+    /// Positions relative to the part `view` of the canvas (a screen shown inside a frame, see
+    /// [`crate::gfx::Canvas::set_view`]): the pointer, taps, presses and drags move by its
+    /// top-left corner and the canvas is its size, so a position outside it is off the canvas.
+    /// [`Input::leave_view`] undoes it.
+    pub fn enter_view(&mut self, view: Rect) {
+        // A tap on the frame around the view is not for the screen in it.
+        if self.tap.is_some_and(|t| !view.contains(t)) {
+            self.tap = None;
+        }
+        self.shift(-view.point());
+        self.canvas = view.size();
+    }
+
+    /// Undo [`Input::enter_view`] for the same `view` on a `canvas` sized canvas.
+    pub fn leave_view(&mut self, view: Rect, canvas: Vec2) {
+        self.shift(view.point());
+        self.canvas = canvas;
+    }
+
+    fn shift(&mut self, by: Vec2) {
+        self.pointer += by;
+        self.prev_pointer += by;
+        if let Some(t) = self.tap.as_mut() {
+            *t += by;
+        }
+        if let Some(p) = self.press.as_mut() {
+            p.origin += by;
+        }
+        if let Some(d) = self.drag.as_mut() {
+            d.origin += by;
+            d.pos += by;
+        }
+    }
+
     /// Read macroquad's input state for this frame. Called by the app once per frame.
     pub fn update(&mut self, dt: f32, canvas: &Canvas) {
         self.consumed = false;
@@ -340,6 +374,27 @@ fn in_canvas(p: Vec2, canvas: Vec2) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_moves_positions_to_its_corner_and_back() {
+        let mut input = Input {
+            pointer: vec2(100.0, 50.0),
+            tap: Some(vec2(100.0, 50.0)),
+            canvas: vec2(640.0, 400.0),
+            ..Input::default()
+        };
+        let view = Rect::new(16.0, 16.0, 512.0, 320.0);
+        input.enter_view(view);
+        assert_eq!(input.pointer(), Some(vec2(84.0, 34.0)));
+        assert_eq!(input.tap(), Some(vec2(84.0, 34.0)));
+        input.leave_view(view, vec2(640.0, 400.0));
+        assert_eq!(input.pointer(), Some(vec2(100.0, 50.0)));
+        // A tap on the frame around the view is dropped, and the pointer there is off the view.
+        input.pointer = vec2(600.0, 50.0);
+        input.tap = Some(vec2(600.0, 50.0));
+        input.enter_view(view);
+        assert_eq!((input.pointer(), input.tap()), (None, None));
+    }
 
     #[test]
     fn repeat_fires_after_delay_then_at_rate() {

@@ -70,7 +70,8 @@ enum Stage {
     /// Reading the `pack.toml` at `path` (relative to the top pack): the top pack's first
     /// (`chain` is `None` then), then each parent's.
     Chain {
-        chain: Option<PackChain>,
+        /// Boxed: a chain is much bigger than the other stages.
+        chain: Option<Box<PackChain>>,
         manifests: BTreeMap<String, String>,
         path: String,
         request: FileRequest,
@@ -185,7 +186,7 @@ impl LoadingScreen {
         self.status = path.clone();
         let request = FileRequest::new(ctx.data_root.top_pack().path(&path));
         self.stage = Stage::Chain {
-            chain,
+            chain: chain.map(Box::new),
             manifests,
             path,
             request,
@@ -290,6 +291,7 @@ impl LoadingScreen {
                     };
                     return Transition::None;
                 };
+                let chain = chain.map(|c| *c);
                 // Packs read so far, for the fonts of the error screen.
                 let known = parent_dirs(chain.as_ref());
                 // A read error already names the file (path or URL).

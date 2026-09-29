@@ -316,6 +316,10 @@ impl ShopScreen {
 }
 
 impl Screen for ShopScreen {
+    fn in_camp_frame(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &'static str {
         "camp-shop"
     }

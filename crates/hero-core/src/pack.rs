@@ -77,6 +77,9 @@ pub struct Presentation {
     /// A picture the battle screen is drawn in; without one the battle screen lays itself out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battle_frame: Option<BattleFrame>,
+    /// A picture the camp screens are drawn in; without one they fill the canvas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camp_frame: Option<CampFrame>,
 }
 
 impl Default for Presentation {
@@ -84,6 +87,7 @@ impl Default for Presentation {
         Presentation {
             canvas: DEFAULT_CANVAS,
             battle_frame: None,
+            camp_frame: None,
         }
     }
 }
@@ -109,30 +113,95 @@ pub struct BattleFrame {
 impl BattleFrame {
     /// Why the frame does not fit a `canvas` sized canvas, if it does not.
     pub fn check(&self, canvas: [u32; 2]) -> Result<(), String> {
-        if !validate::is_media_key(&self.image) {
+        check_frame(
+            "battle_frame",
+            &self.image,
+            &[
+                ("map", self.map),
+                ("info", self.info),
+                ("title", self.title),
+                ("status", self.status),
+            ],
+            canvas,
+        )
+    }
+}
+
+/// `[presentation.camp_frame]`: a picture of the whole canvas that the camp screens are drawn in
+/// (the original's main screen), and where its parts go, as `[x, y, width, height]` in canvas
+/// pixels. The camp screens are laid out in `view` as if it were the whole canvas (so it must be
+/// at least [`MIN_CANVAS`]); the rest of the picture is drawn over them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampFrame {
+    /// Media key of the picture, `gfx/<image>.png`, the size of the canvas.
+    pub image: String,
+    /// Where the camp screens go.
+    pub view: [u32; 4],
+    /// The portrait of the army's leader (the first officer of the roster).
+    pub portrait: [u32; 4],
+    /// The army's gold.
+    pub gold: [u32; 4],
+    /// The leader's level.
+    pub level: [u32; 4],
+    /// Where the army is: the camp's heading up to ` — `.
+    pub place: [u32; 4],
+    /// The camp's whole heading.
+    pub caption: [u32; 4],
+    /// The play time.
+    pub clock: [u32; 4],
+}
+
+impl CampFrame {
+    /// Why the frame does not fit a `canvas` sized canvas, if it does not.
+    pub fn check(&self, canvas: [u32; 2]) -> Result<(), String> {
+        check_frame(
+            "camp_frame",
+            &self.image,
+            &[
+                ("view", self.view),
+                ("portrait", self.portrait),
+                ("gold", self.gold),
+                ("level", self.level),
+                ("place", self.place),
+                ("caption", self.caption),
+                ("clock", self.clock),
+            ],
+            canvas,
+        )?;
+        let [_, _, w, h] = self.view;
+        let [min_w, min_h] = MIN_CANVAS;
+        if w < min_w || h < min_h {
             return Err(format!(
-                "battle_frame.image `{}` is not a media key",
-                self.image
+                "camp_frame.view is {w}×{h}; the camp screens need at least {min_w}×{min_h}"
             ));
-        }
-        let [cw, ch] = canvas;
-        for (name, [x, y, w, h]) in [
-            ("map", self.map),
-            ("info", self.info),
-            ("title", self.title),
-            ("status", self.status),
-        ] {
-            let inside = u64::from(x) + u64::from(w) <= u64::from(cw)
-                && u64::from(y) + u64::from(h) <= u64::from(ch);
-            if w == 0 || h == 0 || !inside {
-                return Err(format!(
-                    "battle_frame.{name} [{x}, {y}, {w}, {h}] must be a non-empty area inside the \
-                     [{cw}, {ch}] canvas"
-                ));
-            }
         }
         Ok(())
     }
+}
+
+/// Why a frame `what` with picture `image` and `areas` does not fit a `canvas` sized canvas.
+fn check_frame(
+    what: &str,
+    image: &str,
+    areas: &[(&str, [u32; 4])],
+    canvas: [u32; 2],
+) -> Result<(), String> {
+    if !validate::is_media_key(image) {
+        return Err(format!("{what}.image `{image}` is not a media key"));
+    }
+    let [cw, ch] = canvas;
+    for &(name, [x, y, w, h]) in areas {
+        let inside = u64::from(x) + u64::from(w) <= u64::from(cw)
+            && u64::from(y) + u64::from(h) <= u64::from(ch);
+        if w == 0 || h == 0 || !inside {
+            return Err(format!(
+                "{what}.{name} [{x}, {y}, {w}, {h}] must be a non-empty area inside the \
+                 [{cw}, {ch}] canvas"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// `pack.toml`. All paths are relative to the pack directory and use `/`.
@@ -446,14 +515,21 @@ impl PackManifest {
                 format!("presentation.canvas [{w}, {h}] must be between [{min_w}, {min_h}] and [{max_w}, {max_h}]"),
             ));
         }
-        if let Some(frame) = &self.presentation.battle_frame {
-            if !validate::is_media_key(&frame.image) {
+        let images = [
+            (
+                "battle_frame",
+                self.presentation.battle_frame.as_ref().map(|f| &f.image),
+            ),
+            (
+                "camp_frame",
+                self.presentation.camp_frame.as_ref().map(|f| &f.image),
+            ),
+        ];
+        for (what, image) in images {
+            if let Some(image) = image.filter(|i| !validate::is_media_key(i)) {
                 return Err(parse_error(
                     file,
-                    format!(
-                        "presentation.battle_frame.image `{}` is not a media key",
-                        frame.image
-                    ),
+                    format!("presentation.{what}.image `{image}` is not a media key"),
                 ));
             }
         }
@@ -643,25 +719,45 @@ impl Pack {
 
         let mut manifest = chain.layers()[0].manifest.clone();
         manifest.presentation = chain.presentation();
-        if let Some(frame) = &manifest.presentation.battle_frame {
-            // The frame and the canvas may come from different layers: a pack that changes the
-            // canvas of a pack with a frame declares its own frame (a frame cannot be removed).
-            frame.check(manifest.presentation.canvas).map_err(|e| {
-                let top = &chain.layers()[0].dir;
-                let from = chain.battle_frame_dir().unwrap_or(top);
-                let inherited = if from == top {
-                    String::new()
-                } else {
-                    format!(
-                        " (the battle frame of `{}`; declare one that fits this pack's canvas)",
-                        chain::join_path(from, MANIFEST_FILE)
-                    )
-                };
-                parse_error(
-                    &chain::join_path(top, MANIFEST_FILE),
-                    format!("presentation.{e}{inherited}"),
+        let presentation = &manifest.presentation;
+        let checks = [
+            (
+                "battle frame",
+                chain.battle_frame_dir(),
+                presentation
+                    .battle_frame
+                    .as_ref()
+                    .map(|f| f.check(presentation.canvas)),
+            ),
+            (
+                "camp frame",
+                chain.camp_frame_dir(),
+                presentation
+                    .camp_frame
+                    .as_ref()
+                    .map(|f| f.check(presentation.canvas)),
+            ),
+        ];
+        for (what, from, checked) in checks {
+            // The frames and the canvas may come from different layers: a pack that changes
+            // the canvas of a pack with a frame declares its own frame (one cannot be removed).
+            let Some(Err(e)) = checked else {
+                continue;
+            };
+            let top = &chain.layers()[0].dir;
+            let from = from.unwrap_or(top);
+            let inherited = if from == top {
+                String::new()
+            } else {
+                format!(
+                    " (the {what} of `{}`; declare one that fits this pack's canvas)",
+                    chain::join_path(from, MANIFEST_FILE)
                 )
-            })?;
+            };
+            return Err(parse_error(
+                &chain::join_path(top, MANIFEST_FILE),
+                format!("presentation.{e}{inherited}"),
+            ));
         }
         let top = &chain.layers()[0].dir;
         let parent_scenes = scene_dirs

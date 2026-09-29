@@ -115,6 +115,7 @@ items = "rules/items.toml"
 | `presentation.canvas` | `[width, height]` | no (`[480, 270]`) | Size in pixels of the virtual canvas the game draws on, from `[480, 270]` to `[1280, 800]`. Media is laid out for this size (the base pack: 16 px tiles, 30 × 17 visible). |
 
 | `presentation.battle_frame` | table | no | A picture the battle screen is drawn in, see below. |
+| `presentation.camp_frame` | table | no | A picture the camp screens are drawn in, see below. |
 
 ```toml
 [presentation]
@@ -152,6 +153,24 @@ frame's layout and fills its parts plainly then (and while the picture loads). A
 parent's frame and cannot remove it: a child that changes the canvas declares a frame that fits it
 (loading fails otherwise, naming the pack the frame came from).
 
+**Camp frame.** With `[presentation.camp_frame]` the camp screens (the hub and the deploy, equipment,
+shop, tools and officer screens) are drawn in a picture of the whole canvas (like the original's main
+screen). They are laid out in its `view` as if it were the whole canvas, so `view` must be at least
+480×270; the pointer and taps are measured in it too, and a tap on the frame around it does nothing.
+The picture is drawn over everything outside `view` and the other areas are filled in (same rules as
+the battle frame for the picture, the areas and inheritance):
+
+| field | meaning |
+|---|---|
+| `image` | Media key of the picture, `gfx/<image>.png`, the size of the canvas. |
+| `view` | Where the camp screens go. |
+| `portrait` | The portrait of the army's leader (the first officer of the roster), stretched to the area. |
+| `gold` | The army's gold. |
+| `level` | The leader's level. |
+| `place` | Where the army is: the camp node's `title` up to ` — `. |
+| `caption` | The camp node's whole `title`. |
+| `clock` | The play time. |
+
 Paths are relative to the pack directory, use `/`, must not contain `..`, `\` or `:`, and no file may be
 listed twice. The web build fetches exactly these files (and those of the packs it extends), so a file
 that is not listed is never loaded.
@@ -182,7 +201,7 @@ What the chain provides:
 | `battles` | The **union** of every pack's battle files. A battle whose `id` a nearer pack defines again **overrides** the farther pack's battle with that id. Within one pack a battle id must still be unique. |
 | `dramas` | The same for scene ids: every pack's scenes, a nearer pack's scene replacing a farther pack's scene with the same id (`== b01_outro` in a child replaces the parent's `b01_outro`). |
 | `maps` | The same for map ids. A battle's `use` is resolved after the whole chain is merged, so a child's map with the id of a parent's map also replaces it in the parent's battles (a mod can redraw a map without copying the battles). |
-| `[presentation]` | Inherited **field by field**: each field (`canvas`, `battle_frame`) comes from the nearest pack that sets it; without any, `[480, 270]`. A field a child leaves out keeps the parent's value, so an empty `[presentation]` changes nothing. |
+| `[presentation]` | Inherited **field by field**: each field (`canvas`, `battle_frame`, `camp_frame`) comes from the nearest pack that sets it; without any, `[480, 270]`. A field a child leaves out keeps the parent's value, so an empty `[presentation]` changes nothing. |
 | media (`gfx/`, `bgm/`, `sfx/`, `fonts/`) | Every media file is looked up in the top pack first, then in each parent in chain order; the first pack that has the file wins. This includes the media index files `gfx/units/units.toml`, `gfx/tiles/terrain.toml`, `gfx/fx/fx.toml` and `gfx/ui/icons.toml`: a child's index **replaces** its parent's as a whole, so copy the entries you keep. |
 | `credits.txt` | **Every** pack's, nearest first: the credits screen shows the child's credits, then each parent's, so a mod keeps the attributions of the pack it builds on without copying them. List only the child's own credits: a copy of the parent's text is shown twice (an identical file is shown once). |
 | `id`, `name`, `version`, `authors`, `license`, `description` | The top pack's. Save games remember the top pack's `id`, so saves of the parent pack do not load in the child and vice versa; each pack also has its own save slots (autosave included), so playing one pack never overwrites another's saves. |

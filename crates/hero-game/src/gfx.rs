@@ -83,6 +83,8 @@ pub struct Canvas {
     size: Vec2,
     target: RenderTarget,
     camera: Camera2D,
+    /// A part of the canvas screens draw into as if it were the whole canvas ([`Canvas::set_view`]).
+    view: Option<Rect>,
     scale: u32,
     present: Rect,
     screen: (f32, f32),
@@ -98,6 +100,7 @@ impl Canvas {
             size,
             target,
             camera,
+            view: None,
             scale,
             present: present_rect(sw, sh, size, scale),
             screen: (sw, sh),
@@ -113,9 +116,27 @@ impl Canvas {
         (target, camera)
     }
 
-    /// Virtual canvas size in pixels.
+    /// Virtual canvas size in pixels; the size of the view while one is set.
     pub fn size(&self) -> Vec2 {
+        self.view.map_or(self.size, |v| v.size())
+    }
+
+    /// Size of the whole canvas, whether or not a view is set.
+    pub fn full_size(&self) -> Vec2 {
         self.size
+    }
+
+    /// Draw into the part `view` of the canvas as if it were the whole canvas: positions start
+    /// at its top-left corner and [`Canvas::size`] is its size (a screen shown inside a frame).
+    /// Nothing is clipped, so the frame is drawn over it afterwards. `None` goes back to the
+    /// whole canvas. Takes effect at once when drawing into the canvas.
+    pub fn set_view(&mut self, view: Option<Rect>) {
+        self.view = view;
+        let area = view.unwrap_or(Rect::new(0.0, 0.0, self.size.x, self.size.y));
+        let mut camera =
+            Camera2D::from_display_rect(Rect::new(-area.x, -area.y, self.size.x, self.size.y));
+        camera.render_target = Some(self.target.clone());
+        self.camera = camera;
     }
 
     /// Switch to another virtual size (a pack's presentation profile); recreates the render
@@ -130,6 +151,7 @@ impl Canvas {
         let (target, camera) = Self::make_target(size, self.scale);
         self.target = target;
         self.camera = camera;
+        self.view = None;
         self.present = present_rect(sw, sh, size, self.scale);
         self.apply_present_filter();
     }
@@ -855,6 +877,7 @@ mod tests {
         let p = |w, h| Presentation {
             canvas: [w, h],
             battle_frame: None,
+            camp_frame: None,
         };
         assert_eq!(canvas_size(&p(640, 480)), vec2(640.0, 480.0));
         assert_eq!(canvas_size(&p(1280, 800)), vec2(1280.0, 800.0));
