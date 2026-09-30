@@ -1,0 +1,81 @@
+# 시험 전투 — 사수관 (the base pack's only battle and its scenes).
+#
+# The base pack is the engine's minimal frame (docs/DECISIONS.md D21): the game is played with the
+# original, converted from the player's own copy ("원작 데이터" on the title screen). Without it, this
+# battle lets one try the engine. The Sishui scenes were written for Eiketsuden Reloaded after the
+# public-domain novel (chapter 5); scenes played inside a battle (intro, events, outro) leave the
+# background and music alone so the dialogue appears over the battle map.
+# Speakers are officer ids (see officers.toml).
+
+== test_opening
+@bg black
+@bgm title
+@title 시험 전투
+@narr 원작 데이터 없이 엔진을 시험해 보는 전투입니다.
+@narr 원작으로 플레이하려면 타이틀의 "원작 데이터"에서 가지고 있는 원작의 설치 폴더를 고르세요.
+@label ask
+@choice
+  - 조작 방법을 듣는다 -> help
+  - 사수관으로 출진한다 -> go
+@label help
+@narr 결정은 Z·Enter·Space, 취소와 메뉴는 X·Esc, 커서는 방향키입니다.
+@narr 대사 도중에도 F5로 순간 저장, F9로 순간 불러오기를 할 수 있습니다.
+@goto ask
+@label go
+@gold +500
+
+== sishui_intro
+@narr 사수관. 좁은 골짜기를 사수가 가로지르고, 그 너머 관문 앞에 화웅의 군세가 진을 쳤다.
+@show hua_xiong right
+hua_xiong: 또 왔느냐, 연합군의 쥐새끼들아! 이번에는 어느 놈이 목을 바치러 왔느냐!
+@show liu_bei left
+liu_bei: 저자가 화웅인가. 과연 기세가 대단하구나.
+@hide left
+@show guan_yu left
+guan_yu: 형님, 화웅에게 가는 길만 열어 주십시오. 그자의 목은 이 관우가 거두겠습니다.
+@hide left
+@show zhang_fei left
+zhang_fei: 에잇, 둘째 형님이 화웅을 차지하면 나는 졸개들이나 실컷 두들겨 주지!
+@hide all
+@narr 【화웅을 물리치면 승리합니다. 유비가 퇴각하면 패배합니다.】
+@narr 【관우를 화웅의 상하좌우 옆 칸으로 보내면 일기토가 벌어지고 전투가 끝납니다.
+    군량고와 보물고에 부대를 세우면 물건을 얻을 수 있으니, 그 전에 챙겨 두세요.】
+
+== sishui_hu_zhen_falls
+@show hua_xiong right
+hua_xiong: 호진 이놈, 고작 저런 것들에게 밀리다니! 쓸모없는 놈 같으니.
+    좋다, 관문 앞으로 오는 놈은 이 화웅이 직접 베어 주마!
+@hide all
+
+== sishui_duel
+@show guan_yu left
+@show hua_xiong right
+guan_yu: 화웅! 연합군의 관우가 네 목을 받으러 왔다!
+hua_xiong: 관우? 들어 본 적도 없는 이름이로구나. 어디서 굴러먹던 말뼈다귀냐!
+guan_yu: 곧 알게 될 것이다. 네 목이 떨어지기 전에.
+@sfx hit_heavy
+@wait 400
+@narr 청룡언월도가 번쩍이는 순간, 두 필의 말이 엇갈렸다.
+@sfx hit_heavy
+@wait 600
+hua_xiong: 이, 이럴 수가…….
+@hide right
+@sfx retreat
+@narr 단 한 합이었다. 화웅은 말 위에서 굴러떨어졌다.
+guan_yu: 동탁의 졸개들은 들어라! 화웅의 목은 관운장이 거두었다!
+@hide all
+
+== sishui_outro
+@narr 대장을 잃은 동탁군은 사수관을 버리고 호로관 쪽으로 달아났다.
+@show liu_bei left
+@show guan_yu right
+liu_bei: 화웅이 쓰러졌네. 모두 수고했네.
+guan_yu: 형님, 관문 앞의 적이 흩어지고 있습니다. 진류로 돌아가 승전을 알립시다.
+@hide right
+@show zhang_fei right
+zhang_fei: 하하! 이제 연합군 놈들도 우리 형제를 우습게 보지는 못하겠지!
+@hide all
+
+# ---------------------------------------------------------------------------------------------------
+# Between the battles: the wine is still warm; Lü Bu at Hulao Pass
+# ---------------------------------------------------------------------------------------------------

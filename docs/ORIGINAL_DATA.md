@@ -223,7 +223,7 @@ eiketsuden --data data/original
   | 무장 | `BAKDATA` + `SNR0D`–`SNR4D`(합류) + `FACEDAT` | `officers.toml`(`officers`), 추가 무장의 `gfx/portraits/orig_p<번호>.png` | 체인(기본 팩)의 무장을 모두 옮기고, 얼굴과 같은 이름 대응으로 원작 무장이 하나로 정해지면 **통솔·무력·지력**(0–100으로 자름, FORMATS §14 [검증])과 **병종·레벨·장비**를 원작 값으로 바꾼다(팩에 없는 병종은 체인 것을 둠; id·이름·얼굴·소개·군주 여부는 체인 것). `BAKDATA`는 시나리오가 바꾸기 전의 상태이고, 합류 때의 병종 변경·레벨 증가(`set_class`·`add_levels`)는 원작 캠페인이 `@class`·`@level`로 재생한다(FORMATS §14, D21). 이름이 같은 원작 무장이 여럿이면 그 기록들이 모두 같은 값만 옮긴다(능력치가 다르면 능력치를, 병종·레벨·소지품이 다르면 병종·레벨·장비를 체인 것으로 두고 적는다). 원작 캠페인(서장~4장)에서 유비군에 합류하는(`set_country` 소속 0, `set_allegiance` 군 0) 원작 무장 중 체인 무장이 맡지 않는 사람은 `orig_p<BAKDATA 번호>`로 **더한다**: 이름·병종(원작 병종의 스프라이트를 쓰는 팩 병종)·레벨(1–레벨 상한)·능력치와 소지품 중 무기·병법서·말(팩 아이템 종류가 무기·방어구·장신구, 칸마다 첫 것)과 얼굴까지 `BAKDATA` 값. 전에는 이들의 합류가 빠졌다. 바꾼 값과 더한 무장은 `original-pack.json`의 `officers`에 적는다 (DECISIONS D21) |
   | 유닛 | `HEXZCHR` | `gfx/units/<병종>_<진영>.png` 19병종 × 3, 무장 전용 5종 × 3, 혼란 1종 × 3 + `units.toml`(32×32 프레임, `[officers]`, `[statuses]`) | 병종 순서대로 두 색 아이콘(32×32 두 프레임, 오른쪽을 봄). 엔진 시트의 오른쪽·아래 열은 원본, 왼쪽·위 열은 좌우 반전, 걷기 행은 두 프레임 교대(대기 애니메이션이 원작처럼 두 프레임을 오감), 공격 = 첫 프레임, 피격 = 둘째 프레임. **주황 = 아군·우군, 초록 = 적군**은 원작 코드가 고르는 대로입니다([FORMATS §8.2](reverse-engineering/FORMATS.md#planar)). 원작처럼 유비는 처음 세 병종에서 38–40(깃발 단병·장병·백마 전차), 여포는 45, 조조는 46으로 그립니다(진영과 상관없이 한 그림). 유비가 그 밖의 병종이면 병종 그림입니다(원작에는 이 경우가 없고, 그 코드는 38 + 병종 번호를 그대로 씀). 혼란한 유닛은 원작처럼 누구든 43(아군 측)·44(적군 측)로 그립니다(상태 `& 0x02` = 혼란, 무장 아이콘보다 먼저). 무장 아이콘 하나를 만들지 못하면 그 무장만 병종 그림으로 두고 `original-pack.json`에 적습니다 |
   | 지형 타일 | `HEXZMAP` + `HEXZCHP` | `gfx/tiles/terrain.png`·`terrain.toml`(`tile_size = 32`) | 원작 맵의 2×2 칩 칸(32 px, 유닛이 움직이는 격자) = 엔진 타일 하나. 지형마다, 이웃 마스크(`auto` 층의 4비트)마다 **원작 맵 58개에서 가장 자주 나오는 칸**을 고름. 맵에 없는 마스크는 가장 가까운 관찰 마스크를 빌리고, 이웃과 무관한 지형(평지·마을·병영 등)은 가장 흔한 칸 하나. 원작에 없는 `road`는 평지 칸 |
-  | 전투 | `SNR0D`·`SNR1D` + `BAKDATA` | `battles/<전투>.toml` 21개(기본 팩 서장·1장의 전투 id를 대체) | 기본 팩 전투마다 원작의 같은 전투(`battles.rs`의 대응표)를 찾아 **원작 맵(`use = "hexz_NN"`), 턴 제한, 배치 칸, 적·우군 명단**(무장 = 얼굴과 같은 대응(별칭 포함)의 기본 팩 무장, 아니면 `BAKDATA` 이름과 그 인물의 무력·지력·통솔을 가진 일반 유닛; 병종·레벨·AI는 원작 값), **보물**(금·아이템 칸), 유비의 **목표 칸**, 나중에 합류하는 부대와 그 **합류 조건**(턴·칸·영역·격파·인접 → `spawn` 이벤트)을 원작대로 둔다. 이름·목표 문구·전후 대사 장면·음악·보상과, 남은 무장만 가리키는 기본 팩 이벤트(관우-화웅 일기토 등)는 기본 팩 것. 기본 팩이 원작 인물의 자리를 다른 인물로 바꾼 곳(산적 두목 창희·하곤·석맹)은 역할 대응표로 그 무장이 맡는다. 옮기지 못한 것(원작 명단에 없는 기본 팩 무장, 그 무장이나 기본 맵의 칸을 가리키는 이벤트·조건, 기본 팩의 증원 그룹)은 전투 파일 주석과 `original-pack.json`에 적는다 |
+  | 전투 | `SNR0D`·`SNR1D` + `BAKDATA` | `battles/<전투>.toml`(기본 팩에 남은 시험 전투 `p1_sishui`를 대체; 기본 팩이 서장·1장 21개를 담던 때는 21개) | 기본 팩 전투마다 원작의 같은 전투(`battles.rs`의 대응표)를 찾아 **원작 맵(`use = "hexz_NN"`), 턴 제한, 배치 칸, 적·우군 명단**(무장 = 얼굴과 같은 대응(별칭 포함)의 기본 팩 무장, 아니면 `BAKDATA` 이름과 그 인물의 무력·지력·통솔을 가진 일반 유닛; 병종·레벨·AI는 원작 값), **보물**(금·아이템 칸), 유비의 **목표 칸**, 나중에 합류하는 부대와 그 **합류 조건**(턴·칸·영역·격파·인접 → `spawn` 이벤트)을 원작대로 둔다. 이름·목표 문구·전후 대사 장면·음악·보상과, 남은 무장만 가리키는 기본 팩 이벤트(관우-화웅 일기토 등)는 기본 팩 것. 기본 팩이 원작 인물의 자리를 다른 인물로 바꾼 곳(산적 두목 창희·하곤·석맹)은 역할 대응표로 그 무장이 맡는다. 옮기지 못한 것(원작 명단에 없는 기본 팩 무장, 그 무장이나 기본 맵의 칸을 가리키는 이벤트·조건, 기본 팩의 증원 그룹)은 전투 파일 주석과 `original-pack.json`에 적는다 |
   | 지형 규칙 | `MAIN.EXE`(병종 → 이동 종류, 이동 종류 × 지형 비용, 지형 효과 표) | `rules/terrain.toml`(`pack.toml`의 `[rules] terrain`) | 팩 체인의 지형 규칙에서 원작 지형 코드가 있는 지형의 이동 비용(255 = 들어갈 수 없음)과 방어(지형 효과)를 원작 값으로 바꾼다. 원작의 이동 종류 넷은 같은 병종들에게 팩이 준 이동 종류 이름을 따르고, 팩이 원작이 묶은 병종들을 다른 이동 종류로 나누면 변환하지 않는다. 원작의 성문(코드 10)은 닫힌 성문이라, 기본 팩의 열린 `gate`는 그대로 두고 그 복사본인 `closed_gate`(성문 타일, 체인이 쓰지 않는 글리프, 예: `K`)를 더해 전투 맵의 규칙 격자에 쓴다(규칙 변환이 실패하면 성문이 있는 맵은 변환하지 않아 기본 전투가 남는다). 원작 이동 종류 둘이 비용이 다른데 팩에서 같은 이름이면 변환하지 않는다. 기본 팩과 다른 값은 `original-pack.json`에 적는다. 원작에 없는 지형(길)과 그 밖의 필드는 팩 것 |
   | 병종 규칙 | `MAIN.EXE`(공격·방어 계수, 이동력, 공격 범위, 병력·병력 성장 표) | `rules/classes.toml`(`pack.toml`의 `[rules] classes`) | 팩 체인의 병종 중 원작 병종의 스프라이트로 그리는 병종(여럿이면 그중 스프라이트와 같은 id인 병종, 그런 병종이 없으면 그 스프라이트의 병종 모두)의 `atk`·`def`(계수 ÷ 5), `move`, `hp`(표 × 100)·`hp_growth`(표 × 10), `range`(0 `adjacent4`, 1 `adjacent8`, 2 `archer`, 3 `crossbow`, 4 `catapult`, 255 없음)를 원작 값으로 바꾼다. 기본 팩과 다른 값은 `original-pack.json`에 적는다. 습득 목록은 책략 규칙 행, 그 밖의 필드는 팩 것 |
   | 책략 규칙 | `MAIN.EXE`(책략 도달·MP 표, 책략 × 병종 습득 레벨 행렬) | `rules/strategies.toml`(`[rules] strategies`), `rules/classes.toml`의 `strategies` | 원작 책략 36개를 순서대로 기본 팩 id(`STRATEGY_IDS`)로 옮겨 MP와 도달(0 `range8`, 1 `range12`, 2 `range20`, 3 `range28`)을 원작 값으로 바꾸고, 공격 위력·사기 저하량·지원의 병력·사기 기본값(600/1200/1800, 30/40/50)과 大 지원의 도달(단계별 range8/12/20)을 원작 식대로 넣는다(FORMATS §10.4 책략 효과). 병종 규칙의 대상 병종은 습득 목록을 원작 행렬대로 다시 쓴다(체인에 있는 책략만). 승급한 병종은 엔진 규칙대로 앞 병종들의 목록도 알고, 그래서 원작 목록에 없거나 더 이른 레벨의 책략이 생기면 적는다(한국어판에는 없음). 설명과 원작에 없는 책략(기본 팩의 폭파)은 팩 것 |
@@ -242,8 +242,8 @@ eiketsuden --data data/original
   옮김, DECISIONS D18), 원작 전투 중 곡 바꾸기는 옮기지 않으며 전투 파일 주석에 적습니다. 조건이 맞지 않을 때의 분기(하비 적교 칸에서 세 장수를 만나기 전 유비의 대사)는 이벤트의 `unless`로,
   전투 중에 바뀌는 목표 문구는 `set_objective`로 옮깁니다(번호와 `[이름]` 표시를 떼어 한 줄로). 기본 팩 이벤트가 맡지 않는 일기토(하비의 세 장수 등)는 원작 대사 사이에 원작 기마 그림으로 된 일기토 장면(`@duel`, FORMATS §13.6)으로 보여 줍니다(배경은 원작처럼 무장이 선 칸의 지형: `@duel … terrain`과 지형마다의 `gfx/duel/terrain_<지형>.png`). 기본 팩 이벤트 가운데
   기본 맵의 칸이나 원작에 없는 무장·증원 그룹을 쓰는 것은 빠지고, 그 대사 장면은 원작 대사가 대신합니다. 원작 AI 방식은
-  `MAIN.EXE`의 AI 코드 이름(대기·최단 적공격·부동·이동·무공격이동)대로 옮깁니다(FORMATS §13.4). 위의 "전투" 행(기본 팩 서장·1장 전투 21개를 다시 짠 것)은 원작 캠페인이 틀지 않지만,
-  체인에 남은 기본 팩 전투가 원작 규칙과 맵으로도 맞도록 계속 만듭니다(그래서 검증이 "is not used by any campaign battle node" 경고 21개를 냅니다, D21). 서장·1장은 "원작 캠페인" 행의 전투(`c0_…`·`c1_…`)로 플레이하며, 계교 전투의 적 명단은 원작이 거록을 거쳤는지(플래그 133)로 고르는데 장 변환은 플래그 없이 읽어 청하 루트의 명단으로 고정됩니다(BACKLOG). 전투 장면 연출은 엔진에 없어 원작의 전투 장면 그림(`HEXBCHR`)은 쓰지 않고, 일기토만 기마 그림(`HEXICHR`)으로 보여 줍니다. 서장·1장 밖의 원작 맵은 2–4장 전투가 씁니다.
+  `MAIN.EXE`의 AI 코드 이름(대기·최단 적공격·부동·이동·무공격이동)대로 옮깁니다(FORMATS §13.4). 위의 "전투" 행(기본 팩의 시험 전투를 다시 짠 것)은 원작 캠페인이 틀지 않지만,
+  체인에 남은 기본 팩 전투가 원작 규칙과 맵으로도 맞도록 계속 만듭니다(그래서 검증이 "is not used by any campaign battle node" 경고 하나를 냅니다, D21). 서장·1장은 "원작 캠페인" 행의 전투(`c0_…`·`c1_…`)로 플레이하며, 계교 전투의 적 명단은 원작이 거록을 거쳤는지(플래그 133)로 고르는데 장 변환은 플래그 없이 읽어 청하 루트의 명단으로 고정됩니다(BACKLOG). 전투 장면 연출은 엔진에 없어 원작의 전투 장면 그림(`HEXBCHR`)은 쓰지 않고, 일기토만 기마 그림(`HEXICHR`)으로 보여 줍니다. 서장·1장 밖의 원작 맵은 2–4장 전투가 씁니다.
 * **공유 금지**: 팩 안의 그림은 원작 데이터에서 변환한 것입니다. `data/original/`은 `.gitignore`에 있으며, 자기 PC에서만
   쓰세요.
 
@@ -325,14 +325,14 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
 * **구현됨 (4.5절)**: `hero-tools original pack`이 사용자의 정품에서 읽은 결과를 기본 팩 옆의 로컬 폴더
   `data/original/`(`.gitignore`에 등록)에 **팩**으로 씁니다. 그 `pack.toml`은 `extends = "../base"`와
   `[presentation] canvas = [640, 400]`(원작 화면 틀의 크기)을 적고, 변환에 성공한 것만 담습니다: 무장 얼굴, 19병종의
-  유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋(기본 팩 전투 21개가 모두 원작 맵 그림으로 다시 짜여
+  유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋(기본 팩의 시험 전투도 원작 맵 그림으로 다시 짜여
   있어, 그 칸들은 원작 맵이 없는 전투(원작 모드 위에 모드가 더한 기본 맵 전투)나 전투 변환·맵 그림을 읽지 못해
   대신 그릴 때만 쓰임. `tile_size`(32)는 그림 층 크기 확인에 늘 쓰임), 원작 전투 맵 58개(맵 파일: 칩 격자 = 그림 층,
   지형 격자 = 규칙 층, [DECISIONS.md](DECISIONS.md) D9)와, 그 위에서 원작대로 짠 전투·이야기·캠페인, 병종·지형·책략·아이템 규칙,
   화면 틀·삽화, 음악(아래와 4.5절 표). 변환하지 못한 종류는 체인을 통해 기본 팩에서 옵니다. 플레이어는 게임 안에서 원작 폴더를 고르고, 게임이 실행할 때마다 같은 팩을
   메모리에서 만들어 씁니다(4.1절, [DECISIONS.md](DECISIONS.md) D10). 파일로 쓴 팩은 `eiketsuden --data data/original`로
   실행합니다(개발·검증용).
-* **구현됨**: 기본 팩 서장·1장의 전투 21개를 원작 전투의 맵·배치·명단·보물·증원·전투 중 이벤트로 다시 짠 전투 파일과
+* **구현됨**: 기본 팩의 시험 전투를 원작 전투의 맵·배치·명단·보물·증원·전투 중 이벤트로 다시 짠 전투 파일과
   그 대사 장면([DECISIONS.md](DECISIONS.md) D11·D12, 원작 캠페인은 쓰지 않음), 서장부터 원작의 엔딩 4개까지 원작의 전투와 마을·캠페인 맵 이야기로 만든 캠페인
   (D18·D21, 서장·1장은 실물 확인 전), 원작의 병종·지형·책략·회복 아이템 규칙과 책략·사기 식(D19), 무장의 원작 능력치와 원작 캠페인에서 합류하는 원작 무장(D21), 전투·캠프 화면 틀과 상태 창(D15),
   일기토 연출(D17), 음악(D16, 게임이 시작 뒤 렌더링), 사건 삽화(4.5절).
@@ -452,7 +452,7 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   them) and a 32-px terrain tileset learned from the 58 original battle maps (per terrain and
   neighbour mask the 2×2-chip block the maps show most often). It also holds the 58 original battle maps as a
   map file (`maps/original.toml`, ids `hexz_NN`): the chips as a picture layer (`gfx/maps/hexz_NN.png`) and the
-  terrain bytes as the rules grid. The 21 battles of the base pack's prologue and chapter 1 are re-staged as the
+  terrain bytes as the rules grid. The base pack's battles (now its one test battle; the prologue's and chapter 1's 21 before D21) are re-staged as the
   original battles (`battles/<id>.toml`, replacing the base battles): the original map, turn limit, deployment
   tiles, enemy and allied rosters (officers by name, otherwise generic units with the `BAKDATA` name; class,
   level and AI from the original), treasures, Liu Bei's objective tile and the units that join later with their

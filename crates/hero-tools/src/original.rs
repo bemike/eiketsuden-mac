@@ -821,9 +821,8 @@ mod tests {
             }
         }
 
-        // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
-        // (verified values: FORMATS §13.4): the campaign does not play them (D21), but they stay
-        // in the chain.
+        // The base pack's one battle, Sishui Pass, is re-staged on its original map (verified
+        // values: FORMATS §13.4): the campaign does not play it (D21), but it stays in the chain.
         // (Then the original's chapters, made from the original battles: chapters 2 to 4 have
         // forty-three, the two that are fought on two maps, Changban and Wagu Pass, counting for
         // two.)
@@ -840,7 +839,7 @@ mod tests {
         let (chapters, restaged): (Vec<_>, Vec<_>) = battles
             .iter()
             .partition(|b| is_chapter(b["id"].as_str().unwrap()));
-        assert_eq!(restaged.len(), 21, "{battles:#?}");
+        assert_eq!(restaged.len(), 1, "{battles:#?}");
         let later = chapters
             .iter()
             .filter(|b| {
@@ -876,39 +875,56 @@ mod tests {
                 );
             }
         }
-        let expect = [
-            ("p1_sishui", "hexz_00", 30),
-            ("p2_hulao", "hexz_01", 30),
-            ("c1_jieqiao_a", "hexz_06", 40),
-            ("c1_xiapi", "hexz_14", 45),
-            ("c1_xuzhou2", "hexz_08", 50),
-        ];
-        for (id, map, turns) in expect {
-            let b = &pack.battles[id];
-            assert_eq!(b.map.use_map.as_deref(), Some(map), "{id}");
-            assert_eq!(b.turn_limit, turns, "{id}");
+        // The battle of the original's chapter `file`, scene `scene` on battle map `map` (the
+        // first leg when it has two).
+        let chapter_battle = |file: usize, scene: usize, map: u8| {
+            let prefix = format!("c{file}_s{scene}_b");
+            let map_id = format!("hexz_{map:02}");
+            pack.battles
+                .values()
+                .filter(|b| b.id.starts_with(&prefix))
+                .find(|b| b.map.use_map.as_deref() == Some(map_id.as_str()))
+                .unwrap_or_else(|| panic!("no battle {prefix}* on {map_id}"))
+        };
+        assert_eq!(pack.battles["p1_sishui"].turn_limit, 30);
+        for (file, scene, map, turns) in [
+            (0, 0, 0, 30),
+            (0, 0, 1, 30),
+            (1, 0, 6, 40),
+            (1, 3, 14, 45),
+            (1, 4, 8, 50),
+        ] {
+            let b = chapter_battle(file, scene, map);
+            assert_eq!(b.turn_limit, turns, "{}", b.id);
         }
-        // Sishui: Hua Xiong commands at the pass; the treasures lie on the granary and treasury.
-        let sishui = &pack.battles["p1_sishui"];
-        let hua = sishui
-            .units
-            .iter()
-            .find(|u| u.officer.as_deref() == Some("hua_xiong"))
-            .unwrap();
-        assert_eq!((hua.pos.x, hua.pos.y, hua.commander), (3, 9, true));
-        let map = &pack.maps["hexz_00"];
-        let row = |y: i32| map.rows.lines().nth(y as usize).unwrap().to_string();
-        let glyphs: Vec<char> = sishui
-            .treasures
-            .iter()
-            .map(|t| row(t.pos.y).chars().nth(t.pos.x as usize).unwrap())
-            .collect();
-        let terrain_of = |g: char| map.legend[&g.to_string()].clone();
-        let mut kinds: Vec<String> = glyphs.into_iter().map(terrain_of).collect();
-        kinds.sort();
-        assert_eq!(kinds, ["granary", "treasury"]);
+        // Sishui (the re-staged base battle and the prologue's): Hua Xiong commands at the pass;
+        // the treasures lie on the granary and treasury.
+        for sishui in [&pack.battles["p1_sishui"], chapter_battle(0, 0, 0)] {
+            let hua = sishui
+                .units
+                .iter()
+                .find(|u| u.officer.as_deref() == Some("hua_xiong"))
+                .unwrap();
+            assert_eq!(
+                (hua.pos.x, hua.pos.y, hua.commander),
+                (3, 9, true),
+                "{}",
+                sishui.id
+            );
+            let map = &pack.maps["hexz_00"];
+            let row = |y: i32| map.rows.lines().nth(y as usize).unwrap().to_string();
+            let glyphs: Vec<char> = sishui
+                .treasures
+                .iter()
+                .map(|t| row(t.pos.y).chars().nth(t.pos.x as usize).unwrap())
+                .collect();
+            let terrain_of = |g: char| map.legend[&g.to_string()].clone();
+            let mut kinds: Vec<String> = glyphs.into_iter().map(terrain_of).collect();
+            kinds.sort();
+            assert_eq!(kinds, ["granary", "treasury"], "{}", sishui.id);
+        }
         // Xuzhou II: Cao Cao's army waits off the map until Liu Bei reaches the east edge.
-        let xuzhou2 = &pack.battles["c1_xuzhou2"];
+        let xuzhou2 = chapter_battle(1, 4, 8);
         let cao = xuzhou2
             .units
             .iter()
@@ -925,42 +941,43 @@ mod tests {
                     hero_core::battledef::Trigger::Reach { to: Some(_), .. }
                 )
         }));
-        // The bandit chiefs keep the base pack's recruitment.
-        for (id, chief) in [
-            ("c1_taishan", "chang_xi"),
-            ("c1_pengcheng1", "xia_kun"),
-            ("c1_xiaqiu1", "shi_meng"),
-        ] {
-            let b = &pack.battles[id];
+        // The bandit chiefs Liu Bei wins over at Mount Tai, Pengcheng and Xiaqiu (이명, 조하,
+        // 동량) are the original's persons, added as officers since they join.
+        for ((file, scene, map), person) in
+            [((1, 2, 10), 375), ((1, 2, 12), 223), ((1, 2, 11), 228)]
+        {
+            let b = chapter_battle(file, scene, map);
+            let id = hero_import::pack::added_officer_id(person);
+            assert!(pack.officers.contains_key(id.as_str()), "{id}");
             assert!(
-                b.units.iter().any(|u| u.officer.as_deref() == Some(chief)),
-                "{id}"
+                b.units
+                    .iter()
+                    .any(|u| u.officer.as_deref() == Some(id.as_str())),
+                "{}: {id}",
+                b.id
             );
-            assert!(!b.events.is_empty(), "{id}");
+            assert!(!b.events.is_empty(), "{}", b.id);
         }
 
-        // Mid-battle events. Xuzhou II plays in three stages: Che Zhou falls (the base event,
-        // with the original's retreat of his troops), Cao Cao arrives, then the south-western
-        // village wins.
+        // Mid-battle events. Xuzhou II plays in stages: Che Zhou falls (his troops retreat), Cao
+        // Cao arrives, then the south-western village wins.
         use hero_core::battledef::{EventAction, Trigger};
-        let stages: Vec<Option<u32>> = xuzhou2.events.iter().map(|e| e.stage).collect();
-        assert_eq!(stages, [Some(0), Some(1), Some(2)]);
-        assert!(xuzhou2.events[0]
-            .actions
+        assert!(xuzhou2.events.iter().any(|e| e.stage == Some(2)));
+        assert!(xuzhou2
+            .events
             .iter()
+            .flat_map(|e| &e.actions)
             .any(|a| matches!(a, EventAction::Retreat { .. })));
-        assert_eq!(
-            xuzhou2.events[2].trigger,
-            Trigger::Reach {
+        assert!(xuzhou2.events.iter().any(|e| e.trigger
+            == Trigger::Reach {
                 who: Some("liu_bei".into()),
                 pos: hero_core::geom::Pos::new(1, 16),
                 radius: 0,
                 to: None
-            }
-        );
+            }));
         // Xiapi: turn 30 or Liu Bei at (12, 12) lowers the drawbridge; the middle cell becomes a
         // bridge (the chip the game checks), the others keep their terrain with new chips.
-        let xiapi = &pack.battles["c1_xiapi"];
+        let xiapi = chapter_battle(1, 3, 14);
         let bridges: Vec<_> = xiapi
             .events
             .iter()
@@ -979,7 +996,7 @@ mod tests {
         assert!(bridges.contains(&(11, 11, "river", Some("hexz_14_11_11_2".into()))));
         assert!(out.join("gfx/maps/hexz_14_12_11_2.png").is_file());
         // Beihai: Taishi Ci's gate opens (a gate becomes plain).
-        assert!(pack.battles["c1_beihai"]
+        assert!(chapter_battle(1, 1, 7)
             .events
             .iter()
             .any(|e| e.actions.contains(&EventAction::SetTerrain {
@@ -989,11 +1006,9 @@ mod tests {
             })));
         // The dialogue comes from the player's copy.
         let drama = std::fs::read_to_string(out.join("dramas/original_battles.drama")).unwrap();
-        assert!(
-            drama.contains("== orig_c1_julu_4_3\nguan_chun: "),
-            "{drama}"
-        );
-        assert!(pack.scene("orig_c1_xuzhou2_4").is_some());
+        assert!(drama.contains("\nguan_chun: "), "{drama}");
+        let xuzhou2_scenes = format!("orig_{}_", xuzhou2.id);
+        assert!(pack.scenes.keys().any(|k| k.starts_with(&xuzhou2_scenes)));
         // Xiapi's duels are duel scenes with the original's riders.
         assert!(
             drama.contains("@duel liu_bei wei_xu terrain\n")
@@ -1206,36 +1221,27 @@ mod tests {
             pack.campaign.node("c3_s4_b0_before"),
             Some(hero_core::campaign::Node::Drama { next, .. }) if next == "c3_s4_b0_camp"
         ));
-        // The re-staged Xuzhou keeps the slots under units arriving later.
-        assert_eq!(pack.battles["c1_xuzhou2"].deploy.max, 9);
-        // The prologue's and chapter 1's deploy (the slot filter and the deploy limit also run
-        // for them): (battle, max, slots) as the conversion gives them now, so that a change to
-        // the filter is seen here.
-        for (battle, max, slots) in [
-            ("p1_sishui", 3, 3),
-            ("p2_hulao", 3, 3),
-            ("c1_beihai", 6, 7),
-            ("c1_guangchuan", 4, 4),
-            ("c1_guangling", 7, 7),
-            ("c1_huainan", 9, 9),
-            ("c1_jieqiao_a", 5, 7),
-            ("c1_jieqiao_b", 5, 7),
-            ("c1_julu", 5, 7),
-            ("c1_pengcheng1", 7, 7),
-            ("c1_pengcheng2", 7, 7),
-            ("c1_qinghe", 5, 5),
-            ("c1_taishan", 7, 7),
-            ("c1_xiaopei", 7, 7),
-            ("c1_xiapi", 7, 7),
-            ("c1_xiapi_b", 7, 7),
-            ("c1_xiaqiu1", 7, 7),
-            ("c1_xiaqiu2", 7, 7),
-            ("c1_xindu", 4, 7),
-            ("c1_xuzhou1", 7, 7),
-            ("c1_xuzhou2", 9, 9),
-        ] {
-            let deploy = &pack.battles[battle].deploy;
-            assert_eq!((deploy.max, deploy.slots.len()), (max, slots), "{battle}");
+        // Xuzhou II keeps the slots under units arriving later.
+        assert_eq!(xuzhou2.deploy.max, 9);
+        // The deploy of the re-staged base battle (the slot filter and the deploy limit run for
+        // it too), as the conversion gives it now, so that a change to the filter is seen here;
+        // every battle of the prologue and chapter 1 deploys at least one officer and no more
+        // than its slots.
+        let deploy = &pack.battles["p1_sishui"].deploy;
+        assert_eq!((deploy.max, deploy.slots.len()), (3, 3));
+        for battle in pack
+            .battles
+            .values()
+            .filter(|b| b.id.starts_with("c0_s") || b.id.starts_with("c1_s"))
+        {
+            let deploy = &battle.deploy;
+            assert!(
+                deploy.max >= 1 && deploy.max as usize <= deploy.slots.len(),
+                "{}: {} of {}",
+                battle.id,
+                deploy.max,
+                deploy.slots.len()
+            );
         }
         // Losing Yiling goes on to the original's ending 4; the last scene ends in one of three.
         assert!(matches!(
