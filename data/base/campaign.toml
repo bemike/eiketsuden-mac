@@ -5,13 +5,14 @@
 # this campaign's title, starting officers and gold). Without the original, this campaign is one test
 # battle: a short note on how to play the original, the Sishui Pass camp and battle, and an end.
 #
-# The starting army is the original's (the three brothers). The 500 gold are those Cao Cao hands Liu Bei
-# in the Chenliu camp before the first shop in the PC original.
+# The starting army is the original's (the three brothers). The game starts with no gold: the original
+# mode takes this campaign's starting gold, and the original's prologue gives the 500 gold Cao Cao hands
+# Liu Bei before the first shop by itself. The test opening gives them the same way (`@gold +500`).
 
 title = "유비전"
 start = "test_opening"
 starting_officers = ["liu_bei", "guan_yu", "zhang_fei"]
-starting_gold = 500
+starting_gold = 0
 
 [[node]]
 type = "drama"
