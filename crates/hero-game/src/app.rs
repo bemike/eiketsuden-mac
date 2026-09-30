@@ -11,7 +11,9 @@
 //!   [`Transition::Pop`] back, [`Transition::Replace`] the top screen;
 //! * [`Transition::Flow`] to move through the game flow ([`crate::flow::Flow`]: title, new game,
 //!   next campaign node, ...), which replaces the whole stack;
-//! * [`Transition::Quit`] (native only).
+//! * [`Transition::Quit`] (native only);
+//! * [`Transition::QuickSave`] / [`Transition::QuickLoad`], what the F5 / F9 keys do
+//!   ([`crate::quicksave`]), for menus that offer them.
 //!
 //! Stack changes fade to black and back ([`FADE_SECONDS`] each way) unless the screen being
 //! pushed or popped is an overlay ([`Screen::is_overlay`]), which appears instantly on top of
@@ -25,12 +27,13 @@
 //! sounds) and `&Ctx` in `draw`.
 
 use crate::assets::Media;
-use crate::audio::Audio;
+use crate::audio::{sfx, Audio};
 use crate::flow::{Flow, Session};
 use crate::gfx::{fill_rect, Gfx, TextStyle};
 use crate::input::Input;
 use crate::platform::storage::KeyValueStore;
 use crate::platform::{DataRoot, LaunchOptions};
+use crate::quicksave::{self, ResumePoint};
 use crate::settings::Settings;
 use crate::ui::theme;
 use crate::ui::toast::Toasts;
@@ -144,6 +147,10 @@ pub enum Transition {
     Flow(Flow),
     /// Close the game (ignored on the web).
     Quit,
+    /// Write the quick save slot now (the F5 key), without any transition.
+    QuickSave,
+    /// Load the quick save slot (the F9 key): replaces the whole stack like [`Transition::Flow`].
+    QuickLoad,
 }
 
 impl Transition {
@@ -179,6 +186,15 @@ pub trait Screen {
     /// were the whole canvas, and the frame is drawn around it (`screens::camp::frame`).
     fn in_camp_frame(&self) -> bool {
         false
+    }
+
+    /// Where this screen is, for a quick save ([`crate::quicksave`]). Called on **every** screen
+    /// of the stack, bottom to top; the default reports nothing, which is right for every screen
+    /// whose state is fully in the session's campaign (camp, menus, settings). A screen with
+    /// state of its own that the campaign lacks (a scene half-way, a battle) reports it, or
+    /// [`ResumePoint::Unavailable`] when it cannot be saved at this instant.
+    fn resume_point(&self, _ctx: &Ctx) -> Option<ResumePoint> {
+        None
     }
 }
 
@@ -320,6 +336,52 @@ impl App {
             self.ctx.commit_settings();
             self.ctx.input.consume();
         }
+        if is_key_pressed(quicksave::SAVE_KEY) {
+            self.handle(Transition::QuickSave);
+        }
+        if is_key_pressed(quicksave::LOAD_KEY) {
+            self.handle(Transition::QuickLoad);
+        }
+    }
+
+    /// Write the quick save slot. Ignored during a fade (the stack is about to change and would
+    /// be saved half-way); the result is reported with a toast.
+    fn quick_save(&mut self) {
+        // No game running (title, loading ...): there is nothing to save, so F5 does nothing.
+        if !matches!(self.fade, Fade::Idle) || self.ctx.session.is_none() {
+            return;
+        }
+        match quicksave::save(&mut self.ctx, &self.stack) {
+            Ok(()) => {
+                self.ctx.sfx(sfx::CONFIRM);
+                self.ctx.toast("순간 저장했습니다.");
+            }
+            Err(why) => {
+                macroquad::logging::warn!("quick save failed: {}", why);
+                self.ctx.sfx(sfx::ERROR);
+                self.ctx.toast(format!("순간 저장을 할 수 없습니다: {why}"));
+            }
+        }
+    }
+
+    /// Load the quick save slot: fades out and continues the save like 이어하기. `None` (and a
+    /// toast) when there is nothing to load, so a stray F9 never costs the current progress.
+    fn quick_load(&mut self) -> Option<Transition> {
+        if !matches!(self.fade, Fade::Idle) {
+            return None;
+        }
+        match quicksave::read(&self.ctx) {
+            Ok(save) => {
+                self.ctx.toast("순간 저장을 불러옵니다.");
+                Some(Transition::Flow(Flow::Continue(Box::new(save))))
+            }
+            Err(why) => {
+                self.ctx.sfx(sfx::ERROR);
+                self.ctx
+                    .toast(format!("순간 저장을 불러올 수 없습니다: {why}"));
+                None
+            }
+        }
     }
 
     fn handle(&mut self, transition: Transition) {
@@ -328,6 +390,12 @@ impl App {
             Transition::Quit => {
                 if crate::platform::can_quit() {
                     self.quit = true;
+                }
+            }
+            Transition::QuickSave => self.quick_save(),
+            Transition::QuickLoad => {
+                if let Some(flow) = self.quick_load() {
+                    self.handle(flow);
                 }
             }
             Transition::Push(screen) if screen.is_overlay() => self.apply(Transition::Push(screen)),
@@ -347,6 +415,8 @@ impl App {
         let ctx = &mut self.ctx;
         match transition {
             Transition::None | Transition::Quit => {}
+            // Both are resolved in `handle` before a transition can be applied.
+            Transition::QuickSave | Transition::QuickLoad => {}
             Transition::Push(mut screen) => {
                 enter_screen(ctx, screen.as_mut(), Enter::Fresh);
                 self.stack.push(screen);

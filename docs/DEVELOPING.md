@@ -50,9 +50,10 @@ missing sprites and images are drawn as coloured placeholder boxes, missing soun
 fonts fall back to macroquad's built-in Latin font. Every miss is logged once to stderr.
 
 Keys available everywhere: **F3** frame rate / canvas scale and size / media queue overlay, **F11** or
-**Alt+Enter** fullscreen (native only).
+**Alt+Enter** fullscreen (native only), **F5** quick save and **F9** quick load (while a game is running,
+`hero_game::quicksave`, docs/DECISIONS.md D20).
 
-Saves (`save_<pack id>_auto.json`, `save_<pack id>_1.json` … `_8.json`, one set per data pack; a pack id
+Saves (`save_<pack id>_auto.json`, `save_<pack id>_quick.json`, `save_<pack id>_1.json` … `_8.json`, one set per data pack; a pack id
 that cannot be used in a file name becomes `save-<hash>_…`; saves from older builds are moved over automatically), `settings.json` and `crash.log` live in the
 user data directory: `%APPDATA%\EiketsudenReloaded` (Windows),
 `~/Library/Application Support/EiketsudenReloaded` (macOS), `$XDG_DATA_HOME/eiketsuden-reloaded` or

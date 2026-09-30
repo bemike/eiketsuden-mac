@@ -35,12 +35,21 @@
 //! **Scene skip** (after a confirmation) runs the rest of the scene without showing it: side
 //! effects, music and the final background and portraits still apply, choices are still asked
 //! (the skip resumes after them), and officers joining or items received are reported as toasts.
+//!
+//! # Quick save
+//!
+//! A scene can be quick saved (F5, [`crate::quicksave`]) at any moment, mid-line or at a choice.
+//! [`DramaScreen::resume_point`] reports the runner's position, the message on screen and the
+//! steps that built the stage; [`DramaScreen::restore`] plays those steps again instantly. The
+//! campaign is not rebuilt: it is saved as it is, already holding the side effects of the steps
+//! up to the position.
 
 use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::{AssetState, UNKNOWN_PORTRAIT};
 use crate::audio::sfx;
 use crate::flow::Flow;
 use crate::gfx::{fill_gradient_h, fill_rect, Align, FontId, Gfx, TextStyle};
+use crate::quicksave::ResumePoint;
 use crate::screens::duel::{self, DuelView};
 use crate::screens::settings::SettingsScreen;
 use crate::ui::art::{background_state, draw_background, draw_portrait_card};
@@ -52,6 +61,7 @@ use crate::ui::theme;
 use crate::ui::window::{draw_highlight, draw_icon, draw_window_ex, inset, WindowStyle};
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::Pack;
+use hero_core::save::{SceneKind, SceneResume};
 use hero_core::script::{Cmd, Slot};
 use macroquad::prelude::*;
 use std::collections::BTreeMap;
@@ -293,6 +303,31 @@ impl Stage {
 
     fn fade_done(&self) -> bool {
         (self.fade - self.fade_target).abs() < 1e-4
+    }
+
+    /// Apply a step that changes the stage (`instant`: without its animation). The one place
+    /// that says what these steps do, for playing a scene and for replaying a quick save.
+    fn apply(&mut self, step: &Step, instant: bool) {
+        match step {
+            Step::Background(key) => self.set_backdrop(Backdrop::from_step(key.clone()), instant),
+            Step::Picture(key) => self.set_picture(key.clone(), instant),
+            Step::Show { portrait, slot } => self.show(*slot, portrait.clone(), instant),
+            Step::Hide(slot) => self.hide(*slot, instant),
+            Step::FadeOut => self.set_fade(1.0, instant),
+            Step::FadeIn => self.set_fade(0.0, instant),
+            _ => {}
+        }
+    }
+
+    /// Finish every running animation at once (scene skip, restoring a quick save).
+    fn settle(&mut self) {
+        self.fade = self.fade_target;
+        self.mix = 1.0;
+        self.picture_alpha = self.picture_target;
+        self.leaving.clear();
+        for p in self.slots.iter_mut().flatten() {
+            p.alpha = 1.0;
+        }
     }
 
     /// Advance the animations by `dt` scaled by `speed`. `backdrop_ready` holds the cross-fade
@@ -804,6 +839,101 @@ fn tool_rects(gfx: &Gfx, top: f32) -> Vec<(Tool, Rect)> {
     tool_layout(gfx.size().x, top, |s| gfx.text_width(s, FontId::Small, 1))
 }
 
+// ----- quick save bookkeeping ------------------------------------------------------------------
+
+/// What a quick save needs to know about the steps a scene has shown ([`SceneResume`]).
+#[derive(Debug, Default)]
+struct Recorder {
+    /// The steps that changed the stage so far, compacted (see [`Recorder::record`]).
+    stage: Vec<Step>,
+    /// The most recent line, narration, title card or banner step: what is on screen while the
+    /// scene shows one of those.
+    on_screen: Option<Step>,
+    /// The most recent line or narration since the last blocking step, the message kept under
+    /// a choice.
+    last_text: Option<Step>,
+}
+
+impl Recorder {
+    /// Input: each step as the screen starts presenting it. Output: none; updates the lists.
+    ///
+    /// Why compact: replaying a step whose effect a later one overwrites is wasted work, and the
+    /// list is written into every quick save. Backgrounds, pictures and screen fades replace
+    /// each other, and a duel starts over at `@duel`; portraits (`@show` / `@hide`) depend on
+    /// their order, so they are all kept. Music and sounds are not recorded at all: the save
+    /// keeps the music that is playing, and a sound is over the moment it is played.
+    fn record(&mut self, step: &Step) {
+        self.on_screen = matches!(
+            step,
+            Step::Line { .. }
+                | Step::Narration(_)
+                | Step::Title(_)
+                | Step::Joined { .. }
+                | Step::Received { .. }
+        )
+        .then(|| step.clone());
+        if !matches!(step, Step::Choice(_)) && step_blocks(step) {
+            self.last_text = None;
+        }
+        if matches!(step, Step::Line { .. } | Step::Narration(_)) {
+            self.last_text = Some(step.clone());
+        }
+        let steps = &mut self.stage;
+        match step {
+            Step::Background(_) => {
+                steps.retain(|s| !matches!(s, Step::Background(_)));
+                steps.push(step.clone());
+            }
+            Step::Picture(_) => {
+                steps.retain(|s| !matches!(s, Step::Picture(_)));
+                steps.push(step.clone());
+            }
+            Step::FadeOut | Step::FadeIn => {
+                steps.retain(|s| !matches!(s, Step::FadeOut | Step::FadeIn));
+                steps.push(step.clone());
+            }
+            Step::Duel { .. } => {
+                steps.retain(|s| !is_duel_step(s));
+                steps.push(step.clone());
+            }
+            Step::DuelEnd => steps.retain(|s| !is_duel_step(s)),
+            Step::DuelAct { .. } | Step::Show { .. } | Step::Hide(_) => steps.push(step.clone()),
+            _ => {}
+        }
+    }
+}
+
+/// Input: an empty stage and duel, the terrain of a battle scene and the recorded steps.
+/// Output: the stage and duel as they were, finished (no animation running).
+///
+/// Why this does not go through the screen's `present`: replaying needs none of what presenting
+/// does besides changing the stage (no sounds, no message boxes, no backlog), so it works without
+/// a window and can be checked against the live stage in tests.
+fn replay_stage(
+    stage: &mut Stage,
+    duel: &mut Option<DuelView>,
+    terrain: &BTreeMap<String, String>,
+    steps: &[Step],
+) {
+    for step in steps {
+        match step {
+            Step::Duel { left, right, bg } => {
+                let bg = duel::background(bg.as_deref(), left, right, terrain);
+                *duel = Some(DuelView::new(left, right, bg));
+            }
+            Step::DuelAct { side, act } => {
+                if let Some(duel) = duel.as_mut() {
+                    duel.act(*side, *act);
+                    duel.update(0.0, true);
+                }
+            }
+            Step::DuelEnd => *duel = None,
+            other => stage.apply(other, true),
+        }
+    }
+    stage.settle();
+}
+
 // ----- the screen -----------------------------------------------------------------------------
 
 /// Items of the scene menu (short cancel press / right click).
@@ -813,14 +943,18 @@ enum MenuItem {
     Backlog,
     Fast,
     Skip,
+    QuickSave,
+    QuickLoad,
     Settings,
 }
 
-const MENU: [MenuItem; 5] = [
+const MENU: [MenuItem; 7] = [
     MenuItem::Continue,
     MenuItem::Backlog,
     MenuItem::Fast,
     MenuItem::Skip,
+    MenuItem::QuickSave,
+    MenuItem::QuickLoad,
     MenuItem::Settings,
 ];
 
@@ -883,6 +1017,8 @@ pub struct DramaScreen {
     shown_anything: bool,
     /// Whether the last update fast-forwarded (for drawing).
     fast_now: bool,
+    /// What a quick save needs to know about the steps shown so far.
+    recorder: Recorder,
 }
 
 impl DramaScreen {
@@ -910,6 +1046,73 @@ impl DramaScreen {
         terrain: BTreeMap<String, String>,
     ) -> DramaScreen {
         DramaScreen::new_on(ctx, scene, DramaEnd::Pop, terrain)
+    }
+
+    /// Input: the scene record of a quick save. Output: the screen showing that scene where it
+    /// was. A scene that cannot be played (missing from the pack) comes back as an ordinary
+    /// screen that reports the problem and moves on, like [`DramaScreen::node`].
+    ///
+    /// Why the stage is replayed instead of saved as pixels-and-timers: the stage is fully
+    /// determined by the steps that built it, and [`Stage::apply`] is the one implementation of
+    /// what each step does, so a replayed stage cannot drift from a played one. The runner is
+    /// put back at its saved position and is **not** run again, because the saved campaign
+    /// already holds the side effects up to that position.
+    pub fn restore(ctx: &mut Ctx, resume: SceneResume) -> DramaScreen {
+        let end = match &resume.kind {
+            SceneKind::Node => DramaEnd::Advance,
+            SceneKind::Ending { title } => DramaEnd::Ending {
+                title: title.clone(),
+            },
+            SceneKind::Overlay => DramaEnd::Pop,
+        };
+        let mut screen =
+            DramaScreen::new_on(ctx, &resume.runner.scene, end, resume.terrain.clone());
+        let Some(pack) = ctx.pack.clone() else {
+            return screen;
+        };
+        if screen.runner.is_none() {
+            return screen;
+        }
+        screen.runner = Some(resume.runner);
+        replay_stage(
+            &mut screen.stage,
+            &mut screen.duel,
+            &screen.terrain,
+            &resume.stage,
+        );
+        // The recorder starts from what was replayed, so the restored scene can be saved again.
+        for step in &resume.stage {
+            screen.recorder.record(step);
+        }
+        // While skipping a message is only remembered, which is what sits under a choice.
+        if let Some(step) = resume.last_text {
+            screen.skipping = true;
+            let _ = screen.present(ctx, &pack, step);
+            screen.skipping = false;
+        }
+        match (resume.choice, resume.shown) {
+            (Some(options), _) => {
+                let _ = screen.present(ctx, &pack, Step::Choice(options));
+            }
+            (None, Some(step)) => {
+                let _ = screen.present(ctx, &pack, step);
+            }
+            (None, None) => {}
+        }
+        // Last, so the messages shown again above are not counted twice.
+        screen.backlog = Backlog::from_lines(
+            resume
+                .backlog
+                .iter()
+                .map(|(speaker, text)| (speaker.as_deref(), text.as_str())),
+        );
+        match &resume.bgm {
+            Some(key) => ctx.audio.play_bgm(key),
+            None => ctx.audio.stop_bgm(),
+        }
+        // Something was on screen, so later background changes cross-fade as usual.
+        screen.shown_anything = true;
+        screen
     }
 
     fn new(ctx: &mut Ctx, scene: &str, end: DramaEnd) -> DramaScreen {
@@ -954,6 +1157,7 @@ impl DramaScreen {
             skipping: false,
             shown_anything: false,
             fast_now: false,
+            recorder: Recorder::default(),
         }
     }
 
@@ -1017,13 +1221,7 @@ impl DramaScreen {
             self.current = Current::Next;
             self.last_text = None;
         }
-        self.stage.fade = self.stage.fade_target;
-        self.stage.mix = 1.0;
-        self.stage.picture_alpha = self.stage.picture_target;
-        self.stage.leaving.clear();
-        for p in self.stage.slots.iter_mut().flatten() {
-            p.alpha = 1.0;
-        }
+        self.stage.settle();
         if let Some(duel) = self.duel.as_mut() {
             duel.update(0.0, true);
         }
@@ -1040,6 +1238,8 @@ impl DramaScreen {
                 MenuItem::Fast if self.fast_toggle => "빨리 넘기기 끄기",
                 MenuItem::Fast => "빨리 넘기기",
                 MenuItem::Skip => "장면 건너뛰기",
+                MenuItem::QuickSave => "순간 저장 (F5)",
+                MenuItem::QuickLoad => "순간 불러오기 (F9)",
                 MenuItem::Settings => "설정",
             })
             .collect();
@@ -1094,6 +1294,8 @@ impl DramaScreen {
                         MenuItem::Backlog => self.open_backlog(ctx),
                         MenuItem::Fast => self.fast_toggle = !self.fast_toggle,
                         MenuItem::Skip => self.open_skip_confirm(ctx),
+                        MenuItem::QuickSave => return Some(Transition::QuickSave),
+                        MenuItem::QuickLoad => return Some(Transition::QuickLoad),
                         MenuItem::Settings => return Some(Transition::push(SettingsScreen::new())),
                     },
                     ChoiceEvent::Cancelled => {}
@@ -1220,12 +1422,13 @@ impl DramaScreen {
         if !matches!(step, Step::Choice(_)) && step_blocks(&step) {
             self.last_text = None;
         }
+        self.recorder.record(&step);
         match step {
-            Step::Background(key) => {
+            Step::Background(_) => {
                 let instant = skipping || !self.shown_anything;
-                self.stage.set_backdrop(Backdrop::from_step(key), instant);
+                self.stage.apply(&step, instant);
             }
-            Step::Picture(key) => self.stage.set_picture(key, skipping),
+            Step::Picture(_) => self.stage.apply(&step, skipping),
             Step::Music(Some(key)) => ctx.audio.play_bgm(&key),
             Step::Music(None) => ctx.audio.stop_bgm(),
             Step::Sound(key) => {
@@ -1233,16 +1436,14 @@ impl DramaScreen {
                     ctx.sfx(&key);
                 }
             }
-            Step::Show { portrait, slot } => self.stage.show(slot, portrait, skipping),
-            Step::Hide(slot) => self.stage.hide(slot, skipping),
+            Step::Show { .. } | Step::Hide(_) => self.stage.apply(&step, skipping),
             Step::Wait { ms } => {
                 if !skipping {
                     self.current = Current::Wait(ms as f32 / 1000.0);
                 }
             }
             Step::FadeOut | Step::FadeIn => {
-                let target = if step == Step::FadeOut { 1.0 } else { 0.0 };
-                self.stage.set_fade(target, skipping);
+                self.stage.apply(&step, skipping);
                 if !skipping {
                     self.current = Current::Fade;
                 }
@@ -1376,6 +1577,7 @@ impl DramaScreen {
                         self.backlog.push(None, &format!("▶ {text}"));
                     }
                     self.last_text = None;
+                    self.recorder.last_text = None;
                 }
                 _ => self.current = Current::Choice { choice, options },
             },
@@ -1466,6 +1668,14 @@ impl DramaScreen {
             );
         }
     }
+}
+
+/// Steps of the duel scene between `@duel` and `@duel_end`.
+fn is_duel_step(step: &Step) -> bool {
+    matches!(
+        step,
+        Step::Duel { .. } | Step::DuelAct { .. } | Step::DuelEnd
+    )
 }
 
 /// Steps that take time on screen (and replace the message kept under a choice).
@@ -1614,6 +1824,54 @@ impl Screen for DramaScreen {
 
     fn is_overlay(&self) -> bool {
         self.end == DramaEnd::Pop
+    }
+
+    /// Input: the context (for the music). Output: where the scene is and what it shows, or why
+    /// it cannot be saved this instant (no runner: the scene failed to load; done: the screen is
+    /// about to be replaced).
+    ///
+    /// Why a `Wait`, a fade or a duel move in progress saves as "between steps": their effect
+    /// on the stage is in the recorded steps and their timing is not worth keeping; a title
+    /// card or a banner is kept as the step so it shows again.
+    fn resume_point(&self, ctx: &Ctx) -> Option<ResumePoint> {
+        let Some(runner) = &self.runner else {
+            return Some(ResumePoint::Unavailable("장면이 준비되지 않았습니다"));
+        };
+        if matches!(self.current, Current::Done) {
+            return Some(ResumePoint::Unavailable("장면이 끝나 가는 중입니다"));
+        }
+        let (shown, choice) = match &self.current {
+            Current::Text { .. } | Current::Title(_) | Current::Notice(_) => {
+                (self.recorder.on_screen.clone(), None)
+            }
+            Current::Choice { options, .. } => (None, Some(options.clone())),
+            Current::Next | Current::Wait(_) | Current::Fade | Current::Duel | Current::Done => {
+                (None, None)
+            }
+        };
+        let last_text = choice.as_ref().and(self.recorder.last_text.clone());
+        let kind = match &self.end {
+            DramaEnd::Advance => SceneKind::Node,
+            DramaEnd::Ending { title } => SceneKind::Ending {
+                title: title.clone(),
+            },
+            DramaEnd::Pop => SceneKind::Overlay,
+        };
+        Some(ResumePoint::Scene(Box::new(SceneResume {
+            kind,
+            runner: runner.clone(),
+            stage: self.recorder.stage.clone(),
+            shown,
+            last_text,
+            choice,
+            bgm: ctx.audio.bgm().map(str::to_string),
+            terrain: self.terrain.clone(),
+            backlog: self
+                .backlog
+                .entries()
+                .map(|e| (e.speaker.clone(), e.text.clone()))
+                .collect(),
+        })))
     }
 }
 
@@ -1834,5 +2092,196 @@ mod tests {
             "금 1,200 지출"
         );
         assert!(received_notice(&pack, 0, None).is_none());
+    }
+
+    // ----- quick save: recording and replaying the stage -----
+
+    /// What a player sees of a stage, ignoring animation state.
+    fn look(stage: &Stage) -> (Backdrop, [Option<String>; 3], f32, Option<String>, f32) {
+        (
+            stage.backdrop.clone(),
+            [0, 1, 2].map(|i| stage.slots[i].as_ref().map(|p| p.key.clone())),
+            stage.fade_target,
+            stage.picture.clone(),
+            stage.picture_target,
+        )
+    }
+
+    fn show(key: &str, slot: Slot) -> Step {
+        Step::Show {
+            portrait: key.into(),
+            slot,
+        }
+    }
+
+    fn record_all(steps: &[Step]) -> Recorder {
+        let mut rec = Recorder::default();
+        for step in steps {
+            rec.record(step);
+        }
+        rec
+    }
+
+    #[test]
+    fn the_recorder_keeps_a_short_list_of_stage_steps() {
+        let rec = record_all(&[
+            Step::Background(Some("hall".into())),
+            Step::Music(Some("camp".into())),
+            Step::Sound("confirm".into()),
+            show("liu_bei", Slot::Left),
+            Step::Background(Some("field".into())),
+            show("guan_yu", Slot::Right),
+            Step::Hide(Some(Slot::Left)),
+            Step::FadeOut,
+            Step::FadeIn,
+            Step::FadeOut,
+            Step::Picture(Some("map".into())),
+            Step::Picture(None),
+            Step::Wait { ms: 100 },
+        ]);
+        assert_eq!(
+            rec.stage,
+            vec![
+                show("liu_bei", Slot::Left),
+                Step::Background(Some("field".into())),
+                show("guan_yu", Slot::Right),
+                Step::Hide(Some(Slot::Left)),
+                Step::FadeOut,
+                Step::Picture(None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_duel_is_recorded_from_its_start_and_forgotten_at_its_end() {
+        let duel = || Step::Duel {
+            left: "guan_yu".into(),
+            right: "hua_xiong".into(),
+            bg: None,
+        };
+        let act = |act| Step::DuelAct {
+            side: hero_core::script::DuelSide::Left,
+            act,
+        };
+        let charge = act(hero_core::script::DuelAct::Charge);
+        let strike = act(hero_core::script::DuelAct::Strike(4));
+
+        // A first duel that ended leaves nothing; the second starts over at its `@duel`.
+        let mut rec = record_all(&[duel(), charge.clone(), Step::DuelEnd]);
+        assert!(rec.stage.is_empty());
+        for step in [duel(), charge.clone(), strike.clone()] {
+            rec.record(&step);
+        }
+        assert_eq!(rec.stage, vec![duel(), charge.clone(), strike.clone()]);
+        rec.record(&duel());
+        assert_eq!(rec.stage, vec![duel()]);
+
+        // Replaying it gives the same duel as playing it: same fighters, same places.
+        let terrain = BTreeMap::new();
+        let steps = [duel(), charge, strike];
+        let mut played = None;
+        let mut replayed = None;
+        replay_stage(
+            &mut Stage::new(Backdrop::Black),
+            &mut played,
+            &terrain,
+            &steps,
+        );
+        for step in &steps {
+            replay_stage(
+                &mut Stage::new(Backdrop::Black),
+                &mut replayed,
+                &terrain,
+                std::slice::from_ref(step),
+            );
+        }
+        assert!(played.is_some());
+        assert_eq!(format!("{played:?}"), format!("{replayed:?}"));
+    }
+
+    #[test]
+    fn the_recorder_tracks_the_message_on_screen_and_the_one_under_a_choice() {
+        let line = Step::Line {
+            speaker: "유비".into(),
+            portrait: Some("liu_bei".into()),
+            text: "가자.".into(),
+        };
+        let mut rec = Recorder::default();
+        rec.record(&line);
+        assert_eq!(rec.on_screen, Some(line.clone()));
+        assert_eq!(rec.last_text, Some(line.clone()));
+
+        // A choice keeps the message it answers; the message is no longer "on screen".
+        rec.record(&Step::Choice(vec!["a".into(), "b".into()]));
+        assert_eq!(rec.on_screen, None);
+        assert_eq!(rec.last_text, Some(line));
+
+        // Any other step that takes time replaces it.
+        rec.record(&Step::Wait { ms: 10 });
+        assert_eq!(rec.last_text, None);
+
+        let title = Step::Title("제1장".into());
+        rec.record(&title);
+        assert_eq!(rec.on_screen, Some(title));
+        assert_eq!(rec.last_text, None);
+    }
+
+    /// The stage rebuilt from the recorded steps looks like the stage the scene built, at every
+    /// point of every scene of the base pack and whichever way a choice went.
+    #[test]
+    fn a_replayed_stage_equals_the_played_one_everywhere() {
+        use hero_core::campaign::CampaignState;
+        use hero_core::drama::DramaRunner;
+
+        let pack = crate::screens::camp::test_pack();
+        let terrain = BTreeMap::new();
+        let mut compared = 0;
+        for id in pack.scenes.keys() {
+            for pick in 0..2 {
+                let mut campaign = CampaignState::new_game(&pack);
+                let mut runner = DramaRunner::new(&pack, id).unwrap();
+                let mut live = Stage::new(Backdrop::Black);
+                let mut live_duel = None;
+                let mut rec = Recorder::default();
+                let mut steps = 0;
+                loop {
+                    // Alternate answers after the first, so a scene that asks again until it is
+                    // answered differently cannot loop for ever.
+                    if let Some(options) = &runner.pending_choice {
+                        runner
+                            .choose(&pack, (pick + steps) % options.len())
+                            .unwrap();
+                    }
+                    let step = runner.next(&pack, &mut campaign).unwrap();
+                    steps += 1;
+                    assert!(steps < 20_000, "scene {id} does not end");
+                    rec.record(&step);
+                    replay_stage(
+                        &mut live,
+                        &mut live_duel,
+                        &terrain,
+                        std::slice::from_ref(&step),
+                    );
+
+                    let mut replayed = Stage::new(Backdrop::Black);
+                    let mut replayed_duel = None;
+                    replay_stage(&mut replayed, &mut replayed_duel, &terrain, &rec.stage);
+                    assert_eq!(look(&live), look(&replayed), "scene {id}, after {step:?}");
+                    assert_eq!(
+                        format!("{live_duel:?}"),
+                        format!("{replayed_duel:?}"),
+                        "scene {id}, after {step:?}"
+                    );
+                    compared += 1;
+                    if step == Step::End {
+                        break;
+                    }
+                }
+            }
+        }
+        assert!(
+            compared > 500,
+            "the base pack has plenty of steps ({compared})"
+        );
     }
 }

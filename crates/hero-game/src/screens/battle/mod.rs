@@ -14,6 +14,11 @@
 //!   touch onto it and draws the menus and forecasts.
 //! * **AI phases** — one unit at a time from `next_ai_unit` / `ai_actions`, animated like the
 //!   player's actions; holding confirm fast-forwards.
+//! * **Quick save** — F5 saves at any moment ([`crate::quicksave`]): the state is already past
+//!   whatever is animating, so it is saved as it is, together with the drama scenes the
+//!   animation had queued but not started; loading shows those scenes first and then goes on
+//!   from the state. Before the objective window is dismissed (the battle has not begun) there
+//!   is nothing to save but the campaign: loading starts the battle from the top.
 //!
 //! * **Presentation** — the map is drawn with the tile size of the pack's tileset
 //!   (`gfx/tiles/terrain.toml` `tile_size`, 16 pixels without one), from the map's picture layer
@@ -42,6 +47,7 @@ use crate::assets::{AssetState, FirstOf};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
 use crate::gfx::{draw_placeholder, fill_rect, Align, FontId, TextStyle};
+use crate::quicksave::ResumePoint;
 use crate::screens::drama::DramaScreen;
 use crate::screens::error::ErrorScreen;
 use crate::screens::saveload::SaveLoadScreen;
@@ -56,10 +62,11 @@ use hero_core::battle::{Action, BattleEvent, BattleState, MapImage, Outcome, Uni
 use hero_core::battledef::{EventAction, Side};
 use hero_core::geom::Pos;
 use hero_core::pack::{BattleFrame, Pack};
+use hero_core::save::SceneResume;
 use macroquad::prelude::*;
 use player::{Command, Mode, PlayerUi, Request};
 use sprites::{FxDef, UnitsFile};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
 use tileset::{MapRenderer, Tileset, DEFAULT_TILE};
 
@@ -181,16 +188,20 @@ enum BattleMenuItem {
     Units,
     Objective,
     Save,
+    QuickSave,
+    QuickLoad,
     Settings,
     Title,
 }
 
 impl BattleMenuItem {
-    const ALL: [BattleMenuItem; 6] = [
+    const ALL: [BattleMenuItem; 8] = [
         BattleMenuItem::EndTurn,
         BattleMenuItem::Units,
         BattleMenuItem::Objective,
         BattleMenuItem::Save,
+        BattleMenuItem::QuickSave,
+        BattleMenuItem::QuickLoad,
         BattleMenuItem::Settings,
         BattleMenuItem::Title,
     ];
@@ -201,6 +212,8 @@ impl BattleMenuItem {
             BattleMenuItem::Units => "부대 일람",
             BattleMenuItem::Objective => "승리 조건",
             BattleMenuItem::Save => "중단 기록",
+            BattleMenuItem::QuickSave => "순간 저장 (F5)",
+            BattleMenuItem::QuickLoad => "순간 불러오기 (F9)",
             BattleMenuItem::Settings => "설정",
             BattleMenuItem::Title => "타이틀로",
         }
@@ -223,6 +236,15 @@ enum Panel {
 enum Confirm {
     EndTurn,
     Title,
+}
+
+/// A scene waiting to be shown over a battle resumed from a quick save.
+#[derive(Debug, Clone)]
+enum QueuedScene {
+    /// The scene that was half-way: continues where it was.
+    Resume(Box<SceneResume>),
+    /// A scene whose beat had not started: plays from its beginning.
+    Fresh(String),
 }
 
 /// The AI unit being played.
@@ -265,6 +287,9 @@ pub struct BattleScreen {
     cursor_at_press: Option<Pos>,
     ai: Option<AiStep>,
     ai_pause: f32,
+    /// Scenes to show over the battle before it goes on: the scene a quick save was made in
+    /// and the ones its animation had queued (see the module docs).
+    queued_scenes: VecDeque<QueuedScene>,
     /// The pending move can be undone (its events were a plain `Moved`).
     move_undoable: bool,
     /// Jump to the player's units when the queue runs dry after a player phase started.
@@ -314,8 +339,13 @@ impl BattleScreen {
         }
     }
 
-    /// Continue the battle stored in the session (mid-battle save).
-    pub fn resume(ctx: &mut Ctx) -> Box<dyn Screen> {
+    /// Continue the battle stored in the session (mid-battle save). `scene` and `pending_scenes`
+    /// come from a quick save (see the module docs) and are shown before the battle goes on.
+    pub fn resume(
+        ctx: &mut Ctx,
+        scene: Option<SceneResume>,
+        pending_scenes: Vec<String>,
+    ) -> Box<dyn Screen> {
         let pack = ctx.pack.clone();
         let battle = ctx.session.as_ref().and_then(|s| s.battle.clone());
         match (pack, battle) {
@@ -330,7 +360,15 @@ impl BattleScreen {
                             u.name, u.class
                         )],
                     )),
-                    None => Box::new(BattleScreen::new(pack, state, false, ctx.gfx.size())),
+                    None => {
+                        let mut screen = BattleScreen::new(pack, state, false, ctx.gfx.size());
+                        screen.queued_scenes = scene
+                            .map(|s| QueuedScene::Resume(Box::new(s)))
+                            .into_iter()
+                            .chain(pending_scenes.into_iter().map(QueuedScene::Fresh))
+                            .collect();
+                        Box::new(screen)
+                    }
                 }
             }
             (Some(_), Some(state)) => Box::new(ErrorScreen::recoverable(
@@ -395,6 +433,7 @@ impl BattleScreen {
             cursor_at_press: None,
             ai: None,
             ai_pause: 0.0,
+            queued_scenes: VecDeque::new(),
             move_undoable: false,
             focus_player: false,
             idle_time: 0.0,
@@ -726,24 +765,40 @@ impl BattleScreen {
                     }
                 }
                 Cue::Terrain(pos) => self.show_terrain(pos),
-                Cue::Drama(scene) => {
-                    if self.pack.scene(&scene).is_some() {
-                        // The scene runs on the campaign's state: it sees the flags the battle
-                        // has set so far (they would reach the campaign only when it is over).
-                        if let Some(session) = ctx.session.as_mut() {
-                            session.campaign.merge_battle_flags(&self.state);
-                        }
-                        self.waiting = Some(Waiting::Drama);
-                        let terrain = officer_terrain(&self.pack, &self.state);
-                        out = Transition::push(DramaScreen::battle_overlay(ctx, &scene, terrain));
-                    } else {
-                        macroquad::logging::warn!("battle drama scene `{}` not found", scene);
-                        self.events.resume();
-                    }
-                }
+                Cue::Drama(scene) => out = self.open_drama(ctx, &scene),
             }
         }
         out
+    }
+
+    /// Show the drama scene `scene` over the battle.
+    fn open_drama(&mut self, ctx: &mut Ctx, scene: &str) -> Transition {
+        if self.pack.scene(scene).is_none() {
+            macroquad::logging::warn!("battle drama scene `{}` not found", scene);
+            self.events.resume();
+            return Transition::None;
+        }
+        // The scene runs on the campaign's state: it sees the flags the battle has set so far
+        // (they would reach the campaign only when it is over).
+        if let Some(session) = ctx.session.as_mut() {
+            session.campaign.merge_battle_flags(&self.state);
+        }
+        self.waiting = Some(Waiting::Drama);
+        let terrain = officer_terrain(&self.pack, &self.state);
+        Transition::push(DramaScreen::battle_overlay(ctx, scene, terrain))
+    }
+
+    /// Show the next scene a quick save left queued (see [`QueuedScene`]).
+    fn open_queued_scene(&mut self, ctx: &mut Ctx) -> Transition {
+        match self.queued_scenes.pop_front() {
+            Some(QueuedScene::Resume(resume)) => {
+                // Its campaign flags are in the save already; only the screen is rebuilt.
+                self.waiting = Some(Waiting::Drama);
+                Transition::push(DramaScreen::restore(ctx, *resume))
+            }
+            Some(QueuedScene::Fresh(scene)) => self.open_drama(ctx, &scene),
+            None => Transition::None,
+        }
     }
 
     /// Run [`BattleScreen::events_done`] and rebuild the menus once the queued batches have
@@ -1383,6 +1438,8 @@ impl BattleScreen {
                     Transition::None
                 }
             },
+            BattleMenuItem::QuickSave => Transition::QuickSave,
+            BattleMenuItem::QuickLoad => Transition::QuickLoad,
             BattleMenuItem::Settings => {
                 self.waiting = Some(Waiting::Screen);
                 Transition::push(SettingsScreen::new())
@@ -1691,6 +1748,11 @@ impl Screen for BattleScreen {
             Stage::Battle => {}
         }
 
+        // Scenes a quick save left over: shown before the battle goes on (the overlay closing
+        // brings the screen back here for the next one).
+        if !self.queued_scenes.is_empty() {
+            return self.open_queued_scene(ctx);
+        }
         // A batch whose last beat was a drama ran dry when the overlay closed (`resume`).
         self.settle_events(ctx);
         // Animations first; input waits until they are done.
@@ -1876,6 +1938,42 @@ impl Screen for BattleScreen {
             );
         }
     }
+
+    fn resume_point(&self, _ctx: &Ctx) -> Option<ResumePoint> {
+        self.report()
+    }
+}
+
+impl BattleScreen {
+    /// Input: nothing but the screen itself. Output: the battle for a quick save, or `None`
+    /// while a new battle's title card or objective window is up.
+    ///
+    /// Why the state is saved as it is even while a move or an enemy attack is animating: the
+    /// state is the source of truth and is already past the animation (`apply` runs the rules
+    /// first and animates the events after), which loading simply snaps to. What the animation
+    /// still owed the player is the scenes of its queued drama beats, so those are kept.
+    /// Why `None` before the battle begins: `state.begin` has not run, so the saved state would
+    /// load as a battle with no intro; the campaign node alone loads it from the top. A battle
+    /// that was itself resumed is different: its state is a real one, even under its title card.
+    fn report(&self) -> Option<ResumePoint> {
+        if self.fresh && matches!(self.stage, Stage::Title { .. } | Stage::Objective) {
+            return None;
+        }
+        let mut scene = None;
+        let mut pending_scenes = Vec::new();
+        for queued in &self.queued_scenes {
+            match queued {
+                QueuedScene::Resume(resume) => scene = Some(resume.clone()),
+                QueuedScene::Fresh(id) => pending_scenes.push(id.clone()),
+            }
+        }
+        pending_scenes.extend(self.events.pending_dramas());
+        Some(ResumePoint::Battle {
+            state: Box::new(self.state.clone()),
+            pending_scenes,
+            scene,
+        })
+    }
 }
 
 /// The terrain id under each officer of `state` on the map, for the duels of its scenes
@@ -1910,6 +2008,97 @@ mod tests {
     use super::*;
     use crate::screens::drama::OVERLAY_TOOL_TOP;
     use hero_core::battle::UnitState;
+    use hero_core::drama::DramaRunner;
+    use hero_core::save::SceneKind;
+
+    fn screen(fresh: bool) -> BattleScreen {
+        let (pack, state) = testutil::sishui();
+        BattleScreen::new(pack, state, fresh, Vec2::new(480.0, 270.0))
+    }
+
+    fn scene_record() -> SceneResume {
+        SceneResume {
+            kind: SceneKind::Overlay,
+            runner: DramaRunner {
+                scene: "p1_intro".into(),
+                pc: 2,
+                pending_choice: None,
+                finished: false,
+            },
+            stage: Vec::new(),
+            shown: None,
+            last_text: None,
+            choice: None,
+            bgm: None,
+            terrain: BTreeMap::new(),
+            backlog: Vec::new(),
+        }
+    }
+
+    fn battle_report(screen: &BattleScreen) -> (BattleState, Vec<String>, Option<SceneResume>) {
+        match screen.report() {
+            Some(ResumePoint::Battle {
+                state,
+                pending_scenes,
+                scene,
+            }) => (*state, pending_scenes, scene.map(|s| *s)),
+            other => panic!("expected a battle report, got {other:?}"),
+        }
+    }
+
+    /// A new battle has not begun under its title card and objective window: nothing to save but
+    /// the campaign, which loads it from the top. From then on the state is saved as it is.
+    #[test]
+    fn a_new_battle_reports_only_once_it_has_begun() {
+        let mut s = screen(true);
+        assert!(s.report().is_none());
+        s.stage = Stage::Objective;
+        assert!(s.report().is_none());
+        s.stage = Stage::Battle;
+        let (state, pending, scene) = battle_report(&s);
+        assert_eq!(state, s.state);
+        assert!(pending.is_empty() && scene.is_none());
+    }
+
+    /// A battle that was itself resumed has a real state even while its title card is up:
+    /// dropping it there would lose the battle.
+    #[test]
+    fn a_resumed_battle_is_reported_under_its_title_card() {
+        let s = screen(false);
+        assert!(matches!(s.stage, Stage::Title { .. }));
+        let (state, ..) = battle_report(&s);
+        assert_eq!(state, s.state);
+    }
+
+    /// The scenes the animation had queued are kept, after the ones a quick load has yet to
+    /// show, and the scene that was half-way is reported as such.
+    #[test]
+    fn queued_scenes_are_reported_in_order() {
+        let mut s = screen(false);
+        s.stage = Stage::Battle;
+        s.queued_scenes = VecDeque::from([
+            QueuedScene::Resume(Box::new(scene_record())),
+            QueuedScene::Fresh("p1_rein".into()),
+        ]);
+        let beats = anim::plan(
+            &[
+                BattleEvent::Drama {
+                    scene: "p1_duel".into(),
+                },
+                BattleEvent::Drama {
+                    scene: "p1_outro".into(),
+                },
+            ],
+            &s.state,
+            &s.pack,
+            &BTreeMap::new(),
+        );
+        s.events.push(beats);
+
+        let (_, pending, scene) = battle_report(&s);
+        assert_eq!(pending, vec!["p1_rein", "p1_duel", "p1_outro"]);
+        assert_eq!(scene, Some(scene_record()));
+    }
 
     #[test]
     fn duels_see_the_terrain_under_the_officers_and_under_those_just_gone() {

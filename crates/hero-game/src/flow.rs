@@ -42,7 +42,7 @@ use crate::secret::ForbiddenSecret;
 use hero_core::battle::{BattleState, Outcome};
 use hero_core::campaign::{CampaignError, CampaignState, Node};
 use hero_core::pack::Pack;
-use hero_core::save::{SaveGame, SAVE_VERSION};
+use hero_core::save::{SaveGame, SceneResume, PLAIN_SAVE_VERSION};
 use std::rc::Rc;
 
 /// A step in the game flow. See the module docs.
@@ -115,13 +115,15 @@ impl Session {
     /// Snapshot for a save slot.
     pub fn to_save(&self, pack: &Pack) -> SaveGame {
         SaveGame {
-            version: SAVE_VERSION,
+            version: PLAIN_SAVE_VERSION,
             pack_id: pack.manifest.id.clone(),
             pack_version: pack.manifest.version.clone(),
             label: save_label(pack, &self.campaign, self.battle.as_ref()),
             saved_at: unix_now(),
             campaign: self.campaign.clone(),
             battle: self.battle.clone(),
+            scene: None,
+            pending_scenes: Vec::new(),
         }
     }
 }
@@ -184,13 +186,26 @@ pub fn enter(flow: Flow, ctx: &mut Ctx) -> Box<dyn Screen> {
             let Some(pack) = ctx.pack.clone() else {
                 return no_pack();
             };
+            // A scene record that does not fit the pack is refused, never replayed from the
+            // node's start: the saved campaign already holds the effects of the steps before
+            // the saved position (see `SaveGame::check_resume`).
+            if let Err(why) = crate::quicksave::playable(&pack, &save) {
+                return Box::new(ErrorScreen::recoverable(
+                    "기록을 불러올 수 없습니다",
+                    vec![why],
+                ));
+            }
+            let resume = save.scene.clone();
+            let pending_scenes = save.pending_scenes.clone();
             let session = Session::from_save(*save);
             let mid_battle = session.battle.is_some();
             ctx.session = Some(session);
-            if mid_battle {
-                battle_screen(ctx, &pack)
-            } else {
-                show_current_node(ctx, &pack)
+            match resume {
+                // A quick save made in the middle of a scene of the campaign.
+                Some(resume) if !mid_battle => Box::new(DramaScreen::restore(ctx, resume)),
+                // In the middle of a battle: possibly with a scene shown over it.
+                resume if mid_battle => battle_screen(ctx, &pack, resume, pending_scenes),
+                _ => show_current_node(ctx, &pack),
             }
         }
         Flow::Node => match ctx.pack.clone() {
@@ -359,11 +374,18 @@ pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Scree
     }
 }
 
-/// **Plug-in point**: resume the battle stored in the session (mid-battle save).
-pub fn battle_screen(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
+/// **Plug-in point**: resume the battle stored in the session (mid-battle save). `scene` is the
+/// scene that was shown over the battle and `pending_scenes` the ones queued behind it (quick
+/// saves, see [`crate::quicksave`]); they are shown before the battle goes on.
+pub fn battle_screen(
+    ctx: &mut Ctx,
+    pack: &Rc<Pack>,
+    scene: Option<SceneResume>,
+    pending_scenes: Vec<String>,
+) -> Box<dyn Screen> {
     let _ = pack;
     match ctx.session.as_ref().and_then(|s| s.battle.as_ref()) {
-        Some(_) => crate::screens::battle::BattleScreen::resume(ctx),
+        Some(_) => crate::screens::battle::BattleScreen::resume(ctx, scene, pending_scenes),
         None => no_session(),
     }
 }
@@ -388,6 +410,7 @@ fn no_session() -> Box<dyn Screen> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hero_core::save::{ResumeError, SceneKind};
     use std::collections::BTreeMap;
 
     fn campaign() -> CampaignState {
@@ -476,6 +499,112 @@ mod tests {
         assert_eq!(campaign.gold, gold);
         assert_eq!(campaign.item_count("wine"), before.item_count("wine"));
         assert!(!campaign.battles_won.contains(&battle.battle_id));
+    }
+
+    fn record(scene: &str, kind: SceneKind, pc: usize) -> SceneResume {
+        SceneResume {
+            kind,
+            runner: hero_core::drama::DramaRunner {
+                scene: scene.into(),
+                pc,
+                pending_choice: None,
+                finished: false,
+            },
+            stage: Vec::new(),
+            shown: None,
+            last_text: None,
+            choice: None,
+            bgm: None,
+            terrain: BTreeMap::new(),
+            backlog: Vec::new(),
+        }
+    }
+
+    /// A save's scene record is played only against the pack version and the node it was made
+    /// at, the scene it names and a position inside it. Anything else is refused: replaying the
+    /// node from its start would apply the effects the saved campaign already holds a second time.
+    #[test]
+    fn a_scene_record_is_played_only_where_it_belongs() {
+        let pack = crate::screens::camp::test_pack();
+        let (drama, scene) = pack
+            .campaign
+            .nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::Drama { id, scene, .. } => Some((id.clone(), scene.clone())),
+                _ => None,
+            })
+            .expect("the base campaign has a drama node");
+        let camp = pack
+            .campaign
+            .nodes
+            .iter()
+            .find(|n| matches!(n, Node::Camp { .. }))
+            .expect("and a camp")
+            .id()
+            .to_string();
+        let other_scene = pack
+            .scenes
+            .keys()
+            .find(|k| **k != scene)
+            .expect("and another scene")
+            .clone();
+
+        let mut campaign = CampaignState::new_game(&pack);
+        campaign.node = drama.clone();
+        let session = Session::new(campaign);
+        let with = |resume: SceneResume| {
+            let mut save = session.to_save(&pack);
+            save.scene = Some(resume);
+            save
+        };
+        let check = |save: &SaveGame| crate::quicksave::playable(&pack, save);
+
+        let good = with(record(&scene, SceneKind::Node, 1));
+        assert_eq!(check(&good), Ok(()));
+        // No record: always fine.
+        assert_eq!(check(&session.to_save(&pack)), Ok(()));
+
+        // The scene of another node, an ending record on a drama node, a position past the end.
+        let refused = |save: SaveGame| check(&save).is_err();
+        assert!(refused(with(record(&other_scene, SceneKind::Node, 0))));
+        let ending = SceneKind::Ending { title: "x".into() };
+        assert!(refused(with(record(&scene, ending, 0))));
+        let len = pack.scene(&scene).unwrap().cmds.len();
+        assert!(refused(with(record(&scene, SceneKind::Node, len + 1))));
+        assert!(refused(with(record("no_such_scene", SceneKind::Node, 0))));
+
+        // The pack was updated since the save: refused, whatever the position.
+        let mut old = good.clone();
+        old.pack_version = "0.0.0-old".into();
+        assert_eq!(
+            old.check_resume(&pack),
+            Err(ResumeError::PackVersion {
+                saved: "0.0.0-old".into(),
+                current: pack.manifest.version.clone(),
+            })
+        );
+        assert!(check(&old).unwrap_err().contains("0.0.0-old"));
+
+        // The campaign moved to a camp (a save from another version of the pack).
+        let mut at_camp = good.clone();
+        at_camp.campaign.node = camp;
+        assert!(refused(at_camp));
+
+        // A scene over a battle needs the battle, and a campaign scene must not have one.
+        let overlay = with(record(&scene, SceneKind::Overlay, 0));
+        assert_eq!(overlay.check_resume(&pack), Err(ResumeError::NoBattle));
+        let battle =
+            BattleState::new(&pack, "p1_sishui", &overlay.campaign, 7).expect("battle builds");
+        let mut over_battle = overlay;
+        over_battle.battle = Some(battle.clone());
+        assert_eq!(check(&over_battle), Ok(()));
+        let mut node_and_battle = good;
+        node_and_battle.battle = Some(battle);
+        assert_eq!(
+            node_and_battle.check_resume(&pack),
+            Err(ResumeError::UnexpectedBattle)
+        );
     }
 
     #[test]

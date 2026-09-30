@@ -63,6 +63,16 @@ impl Backlog {
         self.entries.iter()
     }
 
+    /// A backlog holding `lines` (speaker, text), oldest first: the lines a quick save kept.
+    /// Only the newest [`BACKLOG_CAPACITY`] of them are taken, as if they had been pushed.
+    pub fn from_lines<'a>(lines: impl IntoIterator<Item = (Option<&'a str>, &'a str)>) -> Backlog {
+        let mut log = Backlog::default();
+        for (speaker, text) in lines {
+            log.push(speaker, text);
+        }
+        log
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -279,6 +289,31 @@ mod tests {
         assert_eq!(v[0].text, "둘째");
         assert_eq!(v[1].speaker, None);
         assert_eq!(v[1].text, "셋째");
+    }
+
+    /// A quick save keeps the backlog as lines; loading rebuilds it the way it was built.
+    #[test]
+    fn a_backlog_is_rebuilt_from_saved_lines() {
+        let mut original = Backlog::default();
+        original.push(Some("유비"), "가자.");
+        original.push(None, "밤이 깊었다");
+        let saved: Vec<(Option<String>, String)> = original
+            .entries()
+            .map(|e| (e.speaker.clone(), e.text.clone()))
+            .collect();
+        let rebuilt = Backlog::from_lines(saved.iter().map(|(s, t)| (s.as_deref(), t.as_str())));
+        assert_eq!(
+            rebuilt.entries().collect::<Vec<_>>(),
+            original.entries().collect::<Vec<_>>()
+        );
+
+        // More lines than the capacity keeps the newest, as pushing them would.
+        let many: Vec<String> = (0..BACKLOG_CAPACITY + 5)
+            .map(|i| format!("줄 {i}"))
+            .collect();
+        let long = Backlog::from_lines(many.iter().map(|t| (None, t.as_str())));
+        assert_eq!(long.len(), BACKLOG_CAPACITY);
+        assert_eq!(long.entries().next().unwrap().text, "줄 5");
     }
 
     #[test]
