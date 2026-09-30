@@ -823,14 +823,15 @@ mod tests {
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
         // (verified values: FORMATS §13.4).
-        // (Then chapters 2 to 4's forty-one, made from the original battles.)
+        // (Then chapters 2 to 4's forty-three, made from the original battles: the two that are
+        // fought on two maps, Changban and Wagu Pass, count for two.)
         let battles = json["battles"].as_array().unwrap();
         let (later, restaged): (Vec<_>, Vec<_>) = battles.iter().partition(|b| {
             let id = b["id"].as_str().unwrap();
             ["c2_s", "c3_s", "c4_s"].iter().any(|c| id.starts_with(c))
         });
         assert_eq!(restaged.len(), 21, "{battles:#?}");
-        assert_eq!(later.len(), 10 + 20 + 11, "{battles:#?}");
+        assert_eq!(later.len(), 11 + 21 + 11, "{battles:#?}");
         let expect = [
             ("p1_sishui", "hexz_00", 30),
             ("p2_hulao", "hexz_01", 30),
@@ -993,9 +994,97 @@ mod tests {
             .map(|k| k.as_str())
             .filter(|k| k.starts_with("c2_s"))
             .collect();
-        assert_eq!(chapter.len(), 10, "{chapter:?}");
+        assert_eq!(chapter.len(), 11, "{chapter:?}");
         assert!(pack.battles.contains_key("c2_s3_b3"));
         assert!(pack.battles["c2_s3_b7"].name.starts_with("장판파"));
+        // Changban is fought on two maps (two battles, the second after the first's camp): the
+        // people are three allied civilians the opening marches to a village; enemies hunt them
+        // by name, and one of them arriving there wins the map (telling the outro that an event
+        // did, so that its script of the battle won is left out).
+        for (id, map, village, next) in [
+            ("c2_s3_b7", "hexz_25", (32, 22), "c2_s3_b7_2_camp"),
+            ("c2_s3_b7_2", "hexz_26", (0, 10), "c2_s3_story8"),
+        ] {
+            use hero_core::battledef::{AiMode, Side};
+            let battle = &pack.battles[id];
+            assert_eq!(battle.map.use_map.as_deref(), Some(map), "{id}");
+            let people: Vec<_> = battle
+                .units
+                .iter()
+                .filter(|u| u.side == Side::Ally && u.class.as_deref() == Some("civilian"))
+                .collect();
+            assert_eq!(people.len(), 3, "{id}");
+            let village = hero_core::geom::Pos::new(village.0, village.1);
+            assert!(
+                people
+                    .iter()
+                    .all(|u| u.ai == AiMode::March && u.ai_pos == Some(village)),
+                "{id}: {people:#?}"
+            );
+            assert!(
+                battle
+                    .units
+                    .iter()
+                    .any(|u| u.ai_target.as_deref() == Some("person_344")),
+                "{id}: the enemy that hunts the people"
+            );
+            // Their tiles are no deploy tiles: the setup's twelve are (Liu Bei, Zhuge Liang
+            // and ten more).
+            assert_eq!(battle.deploy.slots.len(), 12, "{id}");
+            assert!(people.iter().all(|u| !battle.deploy.slots.contains(&u.pos)));
+            assert!(pack.scene(&format!("{id}_outro")).is_some(), "{id}");
+            let flag = hero_import::battles::ended_flag(id);
+            let arrivals = battle
+                .events
+                .iter()
+                .filter(|e| {
+                    matches!(&e.trigger, hero_core::battledef::Trigger::Reach { who: Some(w), pos, .. }
+                        if w.starts_with("person_34") && *pos == village)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(arrivals.len(), 3, "{id}");
+            for e in arrivals {
+                assert!(
+                    e.actions.contains(&EventAction::SetFlag {
+                        flag: flag.clone(),
+                        value: 1
+                    }) && e.actions.last() == Some(&EventAction::Victory),
+                    "{id}: {e:?}"
+                );
+            }
+            // The people really can walk there: with every other unit holding still, they
+            // cross the map on the AI's marching and one arriving wins.
+            let army = crate::simulate::army_for(&pack, id).unwrap();
+            let mut state = hero_core::battle::BattleState::new(&pack, id, &army, 7).unwrap();
+            state.begin(&pack);
+            for _ in 0..60 {
+                if state.outcome.is_some() {
+                    break;
+                }
+                for u in state.units.iter_mut().filter(|u| u.class != "civilian") {
+                    (u.ai, u.ai_target, u.ai_pos) = (AiMode::Hold, None, None);
+                }
+                state.run_ai_phase(&pack);
+            }
+            assert_eq!(
+                state.outcome,
+                Some(hero_core::battle::Outcome::Victory),
+                "{id}: turn {}",
+                state.turn
+            );
+            assert_eq!(state.flag(&flag), 1, "{id}");
+            assert!(
+                (4..=20).contains(&state.turn),
+                "{id}: the people take {} turns",
+                state.turn
+            );
+            // ... and the campaign goes on to the next map's camp (or the story after).
+            let node = pack.campaign.node(&format!("{id}_battle")).unwrap();
+            assert!(
+                matches!(node, hero_core::campaign::Node::Battle { next: n, .. } if n == next),
+                "{id}: {node:?}"
+            );
+        }
         // Gucheng is won by any unit's contact with the stranger (Zhang Fei), as the objective says.
         assert!(pack.battles["c2_s0_b9"].events.iter().any(|e| matches!(
             &e.trigger,
@@ -1034,7 +1123,7 @@ mod tests {
         assert!(bowang.reward_gold > 0);
         // Chapters 3 and 4 (SNR3, SNR4) follow, to the original's endings.
         let count = |c: &str| pack.battles.keys().filter(|k| k.starts_with(c)).count();
-        assert_eq!((count("c3_s"), count("c4_s")), (20, 11));
+        assert_eq!((count("c3_s"), count("c4_s")), (21, 11));
         // Fu is fought in two blocks (two routes): each its own battle.
         assert_ne!(
             pack.battles["c3_s2_b6"].events.len(),
