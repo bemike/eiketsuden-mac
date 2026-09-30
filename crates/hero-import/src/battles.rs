@@ -1167,7 +1167,7 @@ struct Branch {
 /// The converter of one battle's records into events and drama scenes.
 struct EventWriter<'a, 'b> {
     battle_id: &'a str,
-    /// A battle of a chapter past the base campaign: its flags are the campaign's
+    /// A battle of the original's chapters: its flags are the campaign's
     /// (`orig_f<n>`), which the chapter's story reads after it.
     chapter: bool,
     names: &'a Names,

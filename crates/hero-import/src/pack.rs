@@ -72,8 +72,8 @@ use crate::sprites;
 use crate::text::TextEncoding;
 use crate::{ls11, table6};
 use hero_core::data::{
-    Area, ClassDef, Effect, GameRules, ItemDef, Learn, RangeSpec, StrategyDef, StrategyFormulas,
-    TerrainDef,
+    Area, ClassDef, Effect, Equipment, GameRules, ItemDef, ItemKind, Learn, OfficerDef, RangeSpec,
+    StrategyDef, StrategyFormulas, TerrainDef,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -107,7 +107,10 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 18: the game rules in `rules` ([`GAME_RULES`], the original strategy formulas).
 /// 19: duel backgrounds per terrain (`gfx/duel/terrain_<id>.png`, `@duel … terrain`).
 /// 20: the item rules in `rules` ([`ITEM_RULES`], the original's healing amounts).
-pub const PACK_FORMAT_VERSION: u32 = 20;
+/// 21: `officers` ([`OFFICERS_FILE`]: the original's stats, the persons who join in the
+/// converted chapters) and `officers` in the index; the campaign is the original's from the
+/// prologue ([`CHAPTER_FILES`] from 0, D21) instead of the base campaign continued.
+pub const PACK_FORMAT_VERSION: u32 = 21;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -176,6 +179,9 @@ pub struct PackOptions {
     pub extends: String,
     /// Officers of the pack chain.
     pub officers: Vec<BaseOfficer>,
+    /// The pack chain's officers, which the original's `BAKDATA` stats adjust and the persons
+    /// who join Liu Bei's army in the converted chapters extend ([`OFFICERS_FILE`]).
+    pub officer_defs: Vec<OfficerDef>,
     /// Terrain of the pack chain, in file order.
     pub terrain: Vec<BaseTerrain>,
     /// Sprite keys of the pack chain's classes.
@@ -238,6 +244,7 @@ impl PackOptions {
                     portrait: o.portrait.clone().unwrap_or_else(|| o.id.to_string()),
                 })
                 .collect(),
+            officer_defs: parent.officers.values().cloned().collect(),
             terrain: parent
                 .terrain
                 .iter()
@@ -343,6 +350,9 @@ pub struct PackIndex {
     pub maps: Vec<MapRecord>,
     /// Battles re-staged as the original battles.
     pub battles: Vec<BattleRecord>,
+    /// Officers of [`OFFICERS_FILE`] the original changed or added.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub officers: Vec<OfficerRecord>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unmatched_officers: Vec<Unmatched>,
     /// Every file written, relative to the pack folder.
@@ -518,6 +528,7 @@ pub fn write_pack(
         &[],
         &[],
         false,
+        false,
         &[],
         UiFrames::default(),
     )
@@ -571,6 +582,7 @@ pub fn build_pack_with_progress(
         false,
         &[],
         &[],
+        false,
         false,
         &[],
         UiFrames::default(),
@@ -686,11 +698,23 @@ fn convert(
     )?;
     progress(5);
 
+    // The officers come before the battles: the chapters' stories let the added ones join.
+    let (officers, added, officer_records) = convert_officers(
+        install,
+        encoding,
+        edition.id,
+        &exe,
+        options,
+        output,
+        with_exe(KindReport::new(Status::Extracted, false, "")),
+    )?;
+    let officers_written = output.files.iter().any(|f| f == OFFICERS_FILE);
     let (battles, battle_records, dramas, campaign) = convert_battles(
         install,
         encoding,
         edition.id,
         options,
+        &added,
         &known,
         &exe,
         &map_records,
@@ -709,6 +733,7 @@ fn convert(
         &battle_files,
         &dramas,
         campaign,
+        officers_written,
         &rule_files,
         ui_frames,
     )
@@ -724,6 +749,7 @@ fn convert(
     assets.insert("rules".to_string(), rules);
     assets.insert("ui".to_string(), ui);
     assets.insert("music".to_string(), music);
+    assets.insert("officers".to_string(), officers);
     let index = PackIndex {
         format: PACK_FORMAT.into(),
         format_version: PACK_FORMAT_VERSION,
@@ -736,6 +762,7 @@ fn convert(
         portraits: matches,
         maps: map_records,
         battles: battle_records,
+        officers: officer_records,
         unmatched_officers: unmatched,
         files: output.files.clone(),
     };
@@ -2002,7 +2029,7 @@ fn toml_str(s: &str) -> String {
 
 /// The `pack.toml` of the pack; `extends` must be a relative directory. `maps`: list
 /// [`MAPS_FILE`]; `battles`: the battle files; `dramas`: the drama files; `campaign`: list
-/// [`CAMPAIGN_FILE`].
+/// [`CAMPAIGN_FILE`]; `officers`: list [`OFFICERS_FILE`].
 #[allow(clippy::too_many_arguments)]
 fn pack_toml(
     extends: &str,
@@ -2011,6 +2038,7 @@ fn pack_toml(
     battles: &[String],
     dramas: &[&str],
     campaign: bool,
+    officers: bool,
     rules: &[(&str, &str)],
     frames: UiFrames,
 ) -> Result<String, String> {
@@ -2046,6 +2074,11 @@ fn pack_toml(
     };
     let campaign = if campaign {
         format!("campaign = {}\n", toml_str(CAMPAIGN_FILE))
+    } else {
+        String::new()
+    };
+    let officers = if officers {
+        format!("officers = {}\n", toml_str(OFFICERS_FILE))
     } else {
         String::new()
     };
@@ -2137,6 +2170,7 @@ fn pack_toml(
          {battles}\
          {dramas}\
          {campaign}\
+         {officers}\
          \n\
          [presentation]\n\
          canvas = [{w}, {h}]\n\
@@ -2184,16 +2218,13 @@ type BattlesResult = (KindReport, Vec<BattleRecord>, Vec<&'static str>, bool);
 
 /// Drama file of the original battles' mid-battle events.
 pub const DRAMA_FILE: &str = "dramas/original_battles.drama";
-/// Drama file of the story of the original's chapters past the base campaign.
+/// Drama file of the story of the original's chapters.
 pub const CHAPTER_DRAMA_FILE: &str = "dramas/original_chapters.drama";
-/// Campaign file of the pack when it converts chapters past the base campaign.
+/// Campaign file of the pack: the original's story from the prologue to its endings (D21).
 pub const CAMPAIGN_FILE: &str = "campaign.toml";
-/// `SNRnD.R3` files of the chapters past the base campaign that are converted (2: the chapter
-/// from Guandu to Changban).
-pub const CHAPTER_FILES: [usize; 3] = [2, 3, 4];
-/// The base campaign's last battle that follows the original: the converted chapters are played
-/// after it, instead of the node it went on to.
-pub const BASE_CAMPAIGN_LAST_BATTLE: &str = "c1_xuzhou2";
+/// `SNRnD.R3` files of the chapters the campaign is made of: the prologue (0) to the chapter
+/// after Yiling (4).
+pub const CHAPTER_FILES: [usize; 5] = [0, 1, 2, 3, 4];
 
 /// A battle to convert: its id, pairing, the base battle, the outro of a chapter's battle with
 /// its reward gold, and a chapter battle's block (a map may be fought in several blocks) and
@@ -2206,8 +2237,8 @@ type BattleJob<'a> = (
     Option<(usize, u8)>,
 );
 
-/// A part of a chapter past the base campaign: its file, scene and part, and for a story its
-/// scene id and converted scene.
+/// A part of one of the original's chapters: its file, scene and part, and for a story its scene
+/// id and converted scene.
 type ChapterPart = (
     usize,
     usize,
@@ -2215,7 +2246,7 @@ type ChapterPart = (
     Option<(String, chapters::StoryScene)>,
 );
 
-/// Battle id of the original battle of `file`, `scene` and `block` past the base campaign.
+/// Battle id of the original battle of `file`, `scene` and `block` of the original's chapters.
 pub fn chapter_battle_id(file: usize, scene: usize, block: usize) -> String {
     format!("c{file}_s{scene}_b{block}")
 }
@@ -2282,15 +2313,20 @@ pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
     format!("{map_id}_{x}_{y}_{op}")
 }
 
-/// Re-stage the base battles that follow an original battle ([`battles::ORIGINAL_BATTLES`]) on
-/// the converted maps and write them to [`BATTLES_DIR`], with the dialogue of their mid-battle
-/// events in [`DRAMA_FILE`] (the last value: whether it was written).
+/// Make the original's chapters ([`CHAPTER_FILES`]) the campaign of the pack when the chain has a
+/// campaign: their battles, story scenes ([`CHAPTER_DRAMA_FILE`]) and [`CAMPAIGN_FILE`] (the last
+/// value: whether it was written). The base battles that follow an original battle
+/// ([`battles::ORIGINAL_BATTLES`]) are re-staged on the converted maps too: the original's
+/// campaign does not play them, but they stay in the chain and so must fit the original's maps
+/// and rules. Battles go to [`BATTLES_DIR`], the dialogue of their mid-battle events to
+/// [`DRAMA_FILE`].
 #[allow(clippy::too_many_arguments)]
 fn convert_battles(
     install: &InstallDir,
     encoding: TextEncoding,
     edition: EditionId,
     options: &PackOptions,
+    added: &BTreeMap<u16, String>,
     known: &BTreeSet<&str>,
     exe: &Exe,
     maps: &[MapRecord],
@@ -2303,10 +2339,11 @@ fn convert_battles(
         .iter()
         .filter(|p| options.battles.iter().any(|b| b.id == p.battle))
         .collect();
-    if wanted.is_empty() {
+    if wanted.is_empty() && options.campaign.is_none() {
         report.status = Status::Unsupported;
-        report.summary =
-            "the pack chain has none of the base pack's battles that follow the original".into();
+        report.summary = "the pack chain has no campaign and none of the base pack's battles that \
+                          follow the original"
+            .into();
         return Ok((report, Vec::new(), Vec::new(), false));
     }
     report.status = Status::Failed;
@@ -2323,24 +2360,12 @@ fn convert_battles(
             return Ok((report, Vec::new(), Vec::new(), false));
         }
     };
-    let mut names = battles::Names::new(
-        &bak.officers,
-        &bak.items,
-        |person| {
-            let mut ids = options
-                .officers
-                .iter()
-                .filter(|o| is_same_officer(o, person, edition));
-            match (ids.next(), ids.next()) {
-                (Some(o), None) => Some(o.id.clone()),
-                _ => None,
-            }
-        },
-        &CLASS_SPRITES,
-        &options.classes,
-        &item_names(&options.items, edition),
-    );
-    names.player_officers = options.player_officers.iter().cloned().collect();
+    let mut names = pack_names(&bak, options, edition);
+    // The officers [`OFFICERS_FILE`] added play their persons, who are then no civilians.
+    names.officers.extend(added.clone());
+    names
+        .civilians
+        .retain(|person, _| !added.contains_key(person));
 
     // Scenario and message files, read once.
     let mut scenarios: BTreeMap<usize, Option<Vec<u8>>> = BTreeMap::new();
@@ -2392,20 +2417,9 @@ fn convert_battles(
         )
     };
 
-    // The original's chapters past the base campaign: their parts in order, and the story
-    // scenes (read first: the officers who join in them may be named by the battles' events).
-    let continues = options.campaign.as_ref().is_some_and(|c| {
-        c.nodes.iter().any(|n| {
-            matches!(n, hero_core::campaign::Node::Battle { battle, .. }
-                if battle == BASE_CAMPAIGN_LAST_BATTLE)
-        })
-    });
-    if options.campaign.is_some() && !continues {
-        report.notes.push(format!(
-            "the pack chain's campaign has no battle `{BASE_CAMPAIGN_LAST_BATTLE}` to continue \
-             after: the original's later chapters are not converted"
-        ));
-    }
+    // The original's chapters: their parts in order, and the story scenes (read first: the
+    // officers who join in them may be named by the battles' events).
+    let continues = options.campaign.is_some();
     // The original's flags some script of the chapters sets (the others are always clear).
     let mut settable = BTreeSet::new();
     // Every flag the chapters' scripts set or test, and the battles that go on in another block:
@@ -2433,16 +2447,7 @@ fn convert_battles(
                 flags_used.extend(battles::flags_used(&scene));
                 // Officers the chapters bring into the army at some point: the others a
                 // battle's setup assigns are enemies.
-                let joining = scene.instructions().filter_map(|c| match c.mnemonic {
-                    "set_allegiance" if c.operands.get("army") == Some(0) => {
-                        c.operands.get("person")
-                    }
-                    "set_country" if c.operands.get("country") == Some(0) => {
-                        c.operands.get("person")
-                    }
-                    _ => None,
-                });
-                for person in joining {
+                for person in joining(&scene) {
                     if let Some(id) = names.officers.get(&person) {
                         names.player_officers.insert(id.clone());
                     }
@@ -2592,7 +2597,7 @@ fn convert_battles(
     });
     // When officers first join in the chapters' story, in the order the campaign plays it: part
     // `i`'s setup changes at `3 i`, its battle at `3 i + 1`, its scenes after at `3 i + 2`. An
-    // officer who never joins there is in the army from the base campaign.
+    // officer who never joins there is in the army from the start.
     let mut first_join: BTreeMap<String, usize> = BTreeMap::new();
     let mut battle_time: BTreeMap<chapters::Place, usize> = BTreeMap::new();
     for (i, (file, scene, part, story)) in chapter.iter().enumerate() {
@@ -2994,7 +2999,7 @@ fn convert_battles(
             let body = toml::to_string(&converted.battle)
                 .map_err(|e| format!("{id}: cannot write the battle: {e}"))?;
             let what = if pairing.battle.is_empty() {
-                "a battle of a chapter past the base campaign, made from the original battle"
+                "a battle of the original's chapters, made from the original battle"
             } else {
                 "the base pack's battle re-staged as the original battle"
             };
@@ -3067,27 +3072,13 @@ fn convert_battles(
     // The chapters' story and campaign.
     let mut steps = Vec::new();
     let mut story = String::from(
-        "# The story of the original's chapters past the base campaign, converted from the\n\
-         # scenario of the player's own copy by `hero-tools original pack` (do not edit; run the\n\
-         # importer again). Scene `c<file>_s<scene>_story<block>` is block <block> of the scene\n\
-         # (docs/ORIGINAL_DATA.md).\n",
+        "# The story of the original's chapters, converted from the scenario of the player's own\n\
+         # copy by `hero-tools original pack` (do not edit; run the importer again). Scene\n\
+         # `c<file>_s<scene>_story<block>` is block <block> of the scene (docs/ORIGINAL_DATA.md).\n",
     );
-    // What the camps sell: the original's shop stays until a block sets another, so the
-    // chapters start with the base campaign's last camp's.
-    let mut shop: Vec<String> = options
-        .campaign
-        .as_ref()
-        .and_then(|c| {
-            c.nodes.iter().find_map(|n| match n {
-                hero_core::campaign::Node::Camp {
-                    shop,
-                    battle: Some(battle),
-                    ..
-                } if battle == BASE_CAMPAIGN_LAST_BATTLE => Some(shop.clone()),
-                _ => None,
-            })
-        })
-        .unwrap_or_default();
+    // What the camps sell: the original's shop stays until a block sets another (the prologue
+    // sets the first before its first battle).
+    let mut shop: Vec<String> = Vec::new();
     // The camp title of a chapter's battle (leg `leg`), when it was converted.
     let battle_title = |id: &str, leg: u8| {
         records.iter().find(|r| r.id == id).map(|r| {
@@ -3194,29 +3185,18 @@ fn convert_battles(
         let last = CHAPTER_FILES[CHAPTER_FILES.len() - 1];
         let ending_id = format!("orig_c{last}_end");
         let ending_title = format!("제{last}장 완료");
-        match chapters::continue_campaign(
-            campaign,
-            BASE_CAMPAIGN_LAST_BATTLE,
-            &steps,
-            (&ending_id, &ending_title),
-        ) {
-            Some(c) => {
-                let body = toml::to_string(&c).map_err(|e| {
-                    output_error(&out.root.join(CAMPAIGN_FILE), std::io::Error::other(e))
-                })?;
-                let text = format!(
-                    "# The pack chain's campaign, continued after `{BASE_CAMPAIGN_LAST_BATTLE}` with the\n\
-                     # original's later chapters by `hero-tools original pack` (do not edit).\n\n{body}"
-                );
-                out.write(CAMPAIGN_FILE, text.as_bytes())?;
-                out.write(CHAPTER_DRAMA_FILE, story.as_bytes())?;
-                dramas.push(CHAPTER_DRAMA_FILE);
-                wrote_campaign = true;
-            }
-            None => report.errors.push(format!(
-                "the campaign has no battle node for `{BASE_CAMPAIGN_LAST_BATTLE}`"
-            )),
-        }
+        let c = chapters::original_campaign(campaign, &steps, (&ending_id, &ending_title));
+        let body = toml::to_string(&c)
+            .map_err(|e| output_error(&out.root.join(CAMPAIGN_FILE), std::io::Error::other(e)))?;
+        let text = format!(
+            "# The original's campaign from the prologue to its endings, converted from the player's\n\
+             # own copy by `hero-tools original pack` (do not edit): the story and battles of the\n\
+             # scenario files, with the pack chain's starting army (DECISIONS D21).\n\n{body}"
+        );
+        out.write(CAMPAIGN_FILE, text.as_bytes())?;
+        out.write(CHAPTER_DRAMA_FILE, story.as_bytes())?;
+        dramas.push(CHAPTER_DRAMA_FILE);
+        wrote_campaign = true;
     }
     report.outputs =
         records.len() + pictures.len() + duel_files + dramas.len() + usize::from(wrote_campaign);
@@ -3235,8 +3215,8 @@ fn convert_battles(
     let stories = steps.len() - later;
     report.summary = format!(
         "{} of {} base battles re-staged as the original battles on the original maps, {later} \
-         battles and {stories} story scenes of the chapters past the base campaign, {events} \
-         events ({scenes} drama scenes, {} changed-cell pictures, {duel_files} duel pictures)",
+         battles and {stories} story scenes of the original's chapters, {events} events \
+         ({scenes} drama scenes, {} changed-cell pictures, {duel_files} duel pictures)",
         records.len() - later,
         wanted.len(),
         pictures.len()
@@ -3444,6 +3424,408 @@ fn duel_pictures(
     }))
 }
 
+// ----- officers ------------------------------------------------------------------------------
+
+/// Officers file of the pack: the chain's officers with the original's stats, and the persons who
+/// join Liu Bei's army in the converted chapters that no officer of the chain plays.
+pub const OFFICERS_FILE: &str = "officers.toml";
+
+/// Id of the officer the pack adds for `BAKDATA` person `index`.
+pub fn added_officer_id(index: usize) -> String {
+    format!("orig_p{index}")
+}
+
+/// An officer of [`OFFICERS_FILE`] that the original changed or added.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OfficerRecord {
+    pub officer: String,
+    /// `BAKDATA` officer record.
+    pub bakdata: usize,
+    /// Added by the pack: no officer of the chain plays the person.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub added: bool,
+    /// What differs from the chain's officer (`str 75 → 78`), or what an added officer lacks.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<String>,
+}
+
+/// The officers [`original_officers`] makes.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct OriginalOfficers {
+    /// Every officer of the file: the chain's, in its order, then the added ones.
+    pub defs: Vec<OfficerDef>,
+    /// `BAKDATA` person → the officer added for them.
+    pub added: BTreeMap<u16, String>,
+    pub records: Vec<OfficerRecord>,
+    pub notes: Vec<String>,
+}
+
+/// The officers of the original mode.
+///
+/// * In: the release's officers `people` (`BAKDATA`), the chain's officers `defs`, the
+///   `edition` (how names match), `names` (the original's persons, classes and items as the
+///   chain's), the chain's item kinds, the persons `joining` Liu Bei's army in the converted
+///   chapters and the level cap.
+/// * Out: [`OriginalOfficers`].
+/// * Why: a chain officer the release names ([`is_same_officer`], as the portraits match) takes
+///   the original's 통솔·무력·지력, which are verified (FORMATS §14). Class, level and equipment
+///   stay the chain's: the scenario overwrites the initial class and level when an officer joins
+///   (FORMATS §14), and the base pack's story, which the chain may still play, does not replay
+///   those commands. A joining person no chain officer plays is added with every value from
+///   `BAKDATA`, the original's state before its scenario changes it: a chapter's `@join` needs
+///   an officer (without one the joining was left out).
+#[allow(clippy::too_many_arguments)]
+pub fn original_officers(
+    people: &[Officer],
+    defs: &[OfficerDef],
+    edition: EditionId,
+    names: &battles::Names,
+    item_kinds: &BTreeMap<String, ItemKind>,
+    joining: &BTreeSet<u16>,
+    level_cap: u32,
+) -> OriginalOfficers {
+    let mut made = OriginalOfficers::default();
+    // The loader clamps the stats to 0–100 (FORMATS §14).
+    let stat = |v: u8| i32::from(v.min(100));
+    for def in defs {
+        let base = BaseOfficer {
+            id: def.id.clone(),
+            name: def.name.clone(),
+            hanja: def.hanja.clone(),
+            portrait: String::new(),
+        };
+        let found: Vec<&Officer> = people
+            .iter()
+            .filter(|p| is_same_officer(&base, p, edition))
+            .collect();
+        let stats: BTreeSet<(u8, u8, u8)> = found
+            .iter()
+            .map(|p| (p.leadership, p.war, p.intelligence))
+            .collect();
+        let mut def = def.clone();
+        match (found.first(), stats.len()) {
+            (None, _) => {}
+            (Some(p), 1) => {
+                let mut changes = Vec::new();
+                for (label, field, value) in [
+                    ("str", &mut def.strength, stat(p.war)),
+                    ("int", &mut def.int, stat(p.intelligence)),
+                    ("lead", &mut def.lead, stat(p.leadership)),
+                ] {
+                    if *field != value {
+                        changes.push(format!("{label} {} → {value}", *field));
+                        *field = value;
+                    }
+                }
+                if !changes.is_empty() {
+                    made.records.push(OfficerRecord {
+                        officer: def.id.clone(),
+                        bakdata: p.index,
+                        added: false,
+                        changes,
+                    });
+                }
+            }
+            _ => {
+                let list: Vec<String> = found
+                    .iter()
+                    .map(|p| {
+                        format!(
+                            "record {}: {}/{}/{}",
+                            p.index, p.leadership, p.war, p.intelligence
+                        )
+                    })
+                    .collect();
+                made.notes.push(format!(
+                    "{}: several BAKDATA officers of that name have different stats ({}); the \
+                     chain's stats are kept",
+                    def.id,
+                    list.join(", ")
+                ));
+            }
+        }
+        made.defs.push(def);
+    }
+    let taken: BTreeSet<String> = made.defs.iter().map(|d| d.id.clone()).collect();
+    for &person in joining {
+        if names.officers.contains_key(&person) {
+            continue;
+        }
+        let Some(p) = people
+            .get(usize::from(person))
+            .filter(|p| !p.name.is_empty())
+        else {
+            made.notes.push(format!(
+                "person {person} joins Liu Bei's army but has no BAKDATA name; not added"
+            ));
+            continue;
+        };
+        let id = added_officer_id(p.index);
+        if taken.contains(&id) {
+            made.notes.push(format!(
+                "{} ({person}): the chain already has an officer `{id}`; not added",
+                p.name
+            ));
+            continue;
+        }
+        let Some(class) = names.classes.get(&p.class) else {
+            made.notes.push(format!(
+                "{} ({person}): class {} has no pack class; not added",
+                p.name, p.class
+            ));
+            continue;
+        };
+        let mut equip = Equipment::default();
+        let mut changes = Vec::new();
+        for item in &p.items {
+            let Some(item_id) = names.items.get(item) else {
+                changes.push(format!("item {item} has no pack item; left out"));
+                continue;
+            };
+            let slot = match item_kinds.get(item_id) {
+                Some(ItemKind::Weapon) => &mut equip.weapon,
+                Some(ItemKind::Armor) => &mut equip.armor,
+                Some(ItemKind::Accessory) => &mut equip.accessory,
+                _ => {
+                    changes.push(format!("{item_id} is not equipment; left out"));
+                    continue;
+                }
+            };
+            if slot.is_none() {
+                *slot = Some(item_id.clone());
+            } else {
+                changes.push(format!("{item_id}: its slot is taken; left out"));
+            }
+        }
+        let level = u32::from(p.level).clamp(1, level_cap.max(1));
+        if level != u32::from(p.level) {
+            changes.push(format!("level {} → {level}", p.level));
+        }
+        made.defs.push(OfficerDef {
+            id: id.clone(),
+            name: p.name.clone(),
+            // The Chinese release's names are the hanja.
+            hanja: match edition {
+                EditionId::ChineseDos => p.name.clone(),
+                _ => String::new(),
+            },
+            courtesy: String::new(),
+            class: class.clone(),
+            level,
+            strength: stat(p.war),
+            int: stat(p.intelligence),
+            lead: stat(p.leadership),
+            portrait: None,
+            equip,
+            lord: false,
+            fixed_class: false,
+            bio: String::new(),
+        });
+        made.added.insert(person, id.clone());
+        made.records.push(OfficerRecord {
+            officer: id,
+            bakdata: p.index,
+            added: true,
+            changes,
+        });
+    }
+    made
+}
+
+/// The persons scene `scene` brings into Liu Bei's army: `set_country` to country 0 and
+/// `set_allegiance` to army 0.
+fn joining(scene: &crate::scenario::Scene) -> Vec<u16> {
+    scene
+        .instructions()
+        .filter_map(|c| match c.mnemonic {
+            "set_allegiance" if c.operands.get("army") == Some(0) => c.operands.get("person"),
+            "set_country" if c.operands.get("country") == Some(0) => c.operands.get("person"),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The persons the scenes of the scenario files `files` (`SNRnD.R3`) bring into Liu Bei's army
+/// ([`joining`]); a file or scene that cannot be read is an error of `report`.
+fn joining_persons(
+    install: &InstallDir,
+    files: &[usize],
+    report: &mut KindReport,
+) -> Result<BTreeSet<u16>, ExtractError> {
+    let mut persons = BTreeSet::new();
+    for &file in files {
+        let name = format!("SNR{file}D.R3");
+        let Some(bytes) = read_source(install, &name, report)? else {
+            report.errors.push(format!("{name} missing"));
+            continue;
+        };
+        let archive = match ls11::Archive::parse(&bytes) {
+            Ok(a) => a,
+            Err(e) => {
+                report.errors.push(format!("{name}: {e}"));
+                continue;
+            }
+        };
+        for scene_index in 0..archive.len() {
+            let scene = archive
+                .decode(scene_index)
+                .map_err(|e| e.to_string())
+                .and_then(|data| crate::scenario::parse_scene(&data).map_err(|e| e.to_string()));
+            match scene {
+                Ok(scene) => persons.extend(joining(&scene)),
+                Err(e) => report
+                    .errors
+                    .push(format!("{name} scene {scene_index}: {e}")),
+            }
+        }
+    }
+    Ok(persons)
+}
+
+/// The original's persons, classes and items as the pack chain's ([`battles::Names`]): a person
+/// plays the one chain officer of their name.
+fn pack_names(bak: &bakdata::Bakdata, options: &PackOptions, edition: EditionId) -> battles::Names {
+    let mut names = battles::Names::new(
+        &bak.officers,
+        &bak.items,
+        |person| {
+            let mut ids = options
+                .officers
+                .iter()
+                .filter(|o| is_same_officer(o, person, edition));
+            match (ids.next(), ids.next()) {
+                (Some(o), None) => Some(o.id.clone()),
+                _ => None,
+            }
+        },
+        &CLASS_SPRITES,
+        &options.classes,
+        &item_names(&options.items, edition),
+    );
+    names.player_officers = options.player_officers.iter().cloned().collect();
+    names
+}
+
+/// The report, the officers added for `BAKDATA` persons and the officers changed or added.
+type OfficersResult = (KindReport, BTreeMap<u16, String>, Vec<OfficerRecord>);
+
+/// Write [`OFFICERS_FILE`] ([`original_officers`]) and the portraits of the officers it adds.
+#[allow(clippy::too_many_arguments)]
+fn convert_officers(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    edition: EditionId,
+    exe: &Exe,
+    options: &PackOptions,
+    out: &mut Output,
+    mut report: KindReport,
+) -> Result<OfficersResult, ExtractError> {
+    if options.officer_defs.is_empty() {
+        report.status = Status::Unsupported;
+        report.summary = "the pack chain has no officers to start from".into();
+        return Ok((report, BTreeMap::new(), Vec::new()));
+    }
+    report.status = Status::Failed;
+    let Some(bak) = read_source(install, "BAKDATA.R3", &mut report)? else {
+        report.status = Status::MissingSource;
+        report.summary = "BAKDATA.R3 missing".into();
+        return Ok((report, BTreeMap::new(), Vec::new()));
+    };
+    let bak = match bakdata::parse(&bak, encoding) {
+        Ok(b) => b,
+        Err(e) => {
+            report.summary = "BAKDATA.R3 invalid".into();
+            report.errors.push(e.to_string());
+            return Ok((report, BTreeMap::new(), Vec::new()));
+        }
+    };
+    let names = pack_names(&bak, options, edition);
+    // Only the chapters the pack converts play their joining: without a campaign, none.
+    let files: &[usize] = if options.campaign.is_some() {
+        &CHAPTER_FILES
+    } else {
+        &[]
+    };
+    let joining = joining_persons(install, files, &mut report)?;
+    let item_kinds = options
+        .item_defs
+        .iter()
+        .map(|i| (i.id.clone(), i.kind))
+        .collect();
+    let level_cap = options
+        .game_rules
+        .as_ref()
+        .map_or(u32::MAX, |r| r.level_cap);
+    let made = original_officers(
+        &bak.officers,
+        &options.officer_defs,
+        edition,
+        &names,
+        &item_kinds,
+        &joining,
+        level_cap,
+    );
+
+    // The added officers' portraits (an officer without one shows a name card).
+    if !made.added.is_empty() {
+        let bytes = read_source(install, crate::extract::PORTRAIT_SOURCE, &mut report)?;
+        let faces = bytes
+            .as_deref()
+            .ok_or_else(|| "FACEDAT.R3 missing".to_string())
+            .and_then(|f| table6::Table6::parse(f).map_err(|e| e.to_string()));
+        let pal = exe
+            .bank
+            .as_ref()
+            .map(|b| b[PORTRAIT_PALETTE_SLOT])
+            .map_err(Clone::clone);
+        for (&person, id) in &made.added {
+            let png = match (&faces, &pal) {
+                (Ok(faces), Ok(pal)) => {
+                    let entry = bak.officers[usize::from(person)].portrait;
+                    portrait_png(faces, entry, pal)
+                        .map_err(|e| format!("FACEDAT.R3 entry {entry}: {e}"))
+                }
+                (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+            };
+            match png {
+                Ok(png) => {
+                    out.write(&format!("gfx/portraits/{id}.png"), &png)?;
+                    report.outputs += 1;
+                }
+                Err(e) => report.errors.push(format!("{id}: portrait: {e}")),
+            }
+        }
+    }
+
+    #[derive(Serialize)]
+    struct File<'a> {
+        officer: &'a [OfficerDef],
+    }
+    let body = toml::to_string(&File {
+        officer: &made.defs,
+    })
+    .map_err(|e| output_error(Path::new(OFFICERS_FILE), std::io::Error::other(e)))?;
+    let header = "# Officers of the original mode: the pack chain's with the stats read from the player's\n\
+                  # BAKDATA.R3 (docs/reverse-engineering/FORMATS.md §14), and the persons who join Liu Bei's\n\
+                  # army in the converted chapters, written by `hero-tools original pack` (do not edit; run\n\
+                  # the importer again).\n\n";
+    out.write(OFFICERS_FILE, (header.to_string() + &body).as_bytes())?;
+    report.outputs += 1;
+    let changed = made.records.iter().filter(|r| !r.added).count();
+    report.summary = format!(
+        "{} officers: {changed} with the original's stats changed, {} added",
+        made.defs.len(),
+        made.added.len()
+    );
+    report.notes.extend(made.notes);
+    report.status = if report.errors.is_empty() {
+        Status::Extracted
+    } else {
+        Status::Partial
+    };
+    Ok((report, made.added, made.records))
+}
+
 // ----- portraits -----------------------------------------------------------------------------
 
 /// Base-pack officers whose Korean name the Korean release spells differently:
@@ -3518,6 +3900,21 @@ pub fn match_officer(officer: &BaseOfficer, table: &[Officer], edition: EditionI
 }
 
 type PortraitResult = (KindReport, Vec<PortraitMatch>, Vec<Unmatched>);
+
+/// The PNG of `FACEDAT` entry `entry` in palette `pal`.
+fn portrait_png(
+    faces: &table6::Table6<'_>,
+    entry: u16,
+    pal: &Palette16,
+) -> Result<Vec<u8>, String> {
+    let payload = faces.get(usize::from(entry)).unwrap_or_default();
+    crate::tfdce::decode(payload)
+        .map_err(|e| e.to_string())
+        .and_then(|img| {
+            planar::decode(&img.planar, img.width, img.height).map_err(|e| e.to_string())
+        })
+        .and_then(|img| encode_png(&img, pal, false).map_err(|e| e.to_string()))
+}
 
 fn convert_portraits(
     install: &InstallDir,
@@ -3607,14 +4004,7 @@ fn convert_portraits(
                 continue;
             }
         };
-        let payload = faces.get(usize::from(portrait)).unwrap_or_default();
-        let png = crate::tfdce::decode(payload)
-            .map_err(|e| e.to_string())
-            .and_then(|img| {
-                planar::decode(&img.planar, img.width, img.height).map_err(|e| e.to_string())
-            })
-            .and_then(|img| encode_png(&img, &pal, false).map_err(|e| e.to_string()));
-        match png {
+        match portrait_png(&faces, portrait, &pal) {
             Ok(png) => {
                 out.write(&format!("gfx/portraits/{}.png", officer.portrait), &png)?;
                 written.insert(officer.portrait.as_str());
@@ -4893,6 +5283,262 @@ mod tests {
         }
     }
 
+    fn officer_def(id: &str, name: &str, [strength, int, lead]: [i32; 3]) -> OfficerDef {
+        toml::from_str(&format!(
+            "id = \"{id}\"\nname = \"{name}\"\nclass = \"short_infantry\"\nlevel = 1\n\
+             str = {strength}\nint = {int}\nlead = {lead}\n"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn officers_take_the_originals_stats_and_joining_persons_are_added() {
+        let with = |mut o: Officer, [lead, war, int]: [u8; 3], class: u8, level: u8| {
+            (o.leadership, o.war, o.intelligence) = (lead, war, int);
+            (o.class, o.level) = (class, level);
+            o
+        };
+        let mut jian = with(officer(3, "간옹", "", 7), [40, 30, 120], 15, 0);
+        jian.items = vec![0, 1, 2, 9, 3];
+        let people = [
+            with(officer(0, "유비", "ﾘｭｳﾋﾞ", 0), [91, 75, 64], 0, 1),
+            with(officer(1, "관우", "", 1), [100, 98, 80], 6, 1),
+            // A second 관우 with other stats: which one the officer is cannot be told.
+            with(officer(2, "관우", "", 2), [90, 90, 80], 6, 1),
+            jian,
+            officer(4, "", "", 0),
+            // A civilian: the test pack has no such class.
+            with(officer(5, "민중", "", 5), [1, 1, 1], 17, 1),
+        ];
+        let defs = [
+            officer_def("liu_bei", "유비", [70, 60, 90]),
+            officer_def("guan_yu", "관우", [1, 1, 1]),
+            officer_def("ours", "없는사람", [5, 5, 5]),
+        ];
+        let names = battles::Names {
+            officers: BTreeMap::from([(0, "liu_bei".into())]),
+            person_names: BTreeMap::new(),
+            classes: BTreeMap::from([(0, "short_infantry".into()), (15, "sorcerer".into())]),
+            items: BTreeMap::from([
+                (0, "sword".into()),
+                (1, "book".into()),
+                (2, "bean".into()),
+                (3, "axe".into()),
+            ]),
+            player_officers: BTreeSet::new(),
+            civilians: BTreeMap::new(),
+        };
+        let kinds = BTreeMap::from([
+            ("sword".to_string(), ItemKind::Weapon),
+            ("axe".to_string(), ItemKind::Weapon),
+            ("book".to_string(), ItemKind::Armor),
+            ("bean".to_string(), ItemKind::Consumable),
+        ]);
+        let made = original_officers(
+            &people,
+            &defs,
+            EditionId::KoreanDos,
+            &names,
+            &kinds,
+            &BTreeSet::from([0, 3, 4, 5]),
+            50,
+        );
+        // The chain's officer takes the original's stats and keeps the rest.
+        let liu = &made.defs[0];
+        assert_eq!((liu.strength, liu.int, liu.lead), (75, 64, 91));
+        assert_eq!((liu.class.as_str(), liu.level), ("short_infantry", 1));
+        assert_eq!(
+            made.records[0],
+            OfficerRecord {
+                officer: "liu_bei".into(),
+                bakdata: 0,
+                added: false,
+                changes: vec![
+                    "str 70 → 75".into(),
+                    "int 60 → 64".into(),
+                    "lead 90 → 91".into()
+                ],
+            }
+        );
+        // Two records of the name with different stats: kept, and said.
+        assert_eq!(made.defs[1], defs[1]);
+        assert!(
+            made.notes.iter().any(|n| n.starts_with("guan_yu:")),
+            "{:?}",
+            made.notes
+        );
+        // A character of the chain the release does not have: kept.
+        assert_eq!(made.defs[2], defs[2]);
+        // A joining person without an officer is added with the original's values; Liu Bei
+        // (already an officer), a nameless person and one of a class the pack lacks are not.
+        assert_eq!(made.defs.len(), 4);
+        assert_eq!(made.added, BTreeMap::from([(3, "orig_p3".to_string())]));
+        let added = &made.defs[3];
+        assert_eq!(added.id, "orig_p3");
+        assert_eq!(added.name, "간옹");
+        assert_eq!((added.class.as_str(), added.level), ("sorcerer", 1));
+        assert_eq!((added.strength, added.int, added.lead), (30, 100, 40));
+        assert_eq!(added.equip.weapon.as_deref(), Some("sword"));
+        assert_eq!(added.equip.armor.as_deref(), Some("book"));
+        assert_eq!(added.equip.accessory, None);
+        assert!(!added.lord);
+        let record = made.records.iter().find(|r| r.added).unwrap();
+        assert_eq!(record.officer, "orig_p3");
+        assert_eq!(
+            record.changes,
+            [
+                "bean is not equipment; left out",
+                "item 9 has no pack item; left out",
+                "axe: its slot is taken; left out",
+                "level 0 → 1",
+            ]
+        );
+        assert!(
+            made.notes.iter().any(|n| n.starts_with("person 4 ")),
+            "{:?}",
+            made.notes
+        );
+        assert!(
+            made.notes
+                .iter()
+                .any(|n| n.contains("민중") && n.contains("class 17")),
+            "{:?}",
+            made.notes
+        );
+        // The Chinese release's names are hanja.
+        let chinese = original_officers(
+            &people,
+            &[],
+            EditionId::ChineseDos,
+            &names,
+            &kinds,
+            &BTreeSet::from([3]),
+            50,
+        );
+        assert_eq!(chinese.defs[0].hanja, "간옹");
+    }
+
+    #[test]
+    fn the_officers_file_has_the_originals_stats_and_the_joining_persons() {
+        let src = TempDir::new("pack-officers");
+        write_pack_install(src.path());
+        // 간옹 (portrait entry 2 of the fixture's three) joins in a scene of every chapter file,
+        // after a narration.
+        std::fs::write(
+            src.path().join("BAKDATA.R3"),
+            bakdata::build(
+                TextEncoding::EucKr,
+                &[
+                    ("유비", [91, 75, 64], 0, 1),
+                    ("관우", [100, 98, 80], 6, 1),
+                    ("간옹", [40, 30, 70], 15, 4),
+                ],
+                &[],
+            ),
+        )
+        .unwrap();
+        // narration, then set_country person 2 → country 0.
+        let scene =
+            crate::scenario::build_scene(&[vec![([0; 8], vec![0x08, 0, 0, 0x28, 2, 0, 0, 0xff])]]);
+        for file in CHAPTER_FILES {
+            std::fs::write(
+                src.path().join(format!("SNR{file}D.R3")),
+                ls11::build(&[&scene]),
+            )
+            .unwrap();
+        }
+        let campaign: hero_core::campaign::CampaignDef = toml::from_str(
+            "title = \"t\"\nstart = \"b\"\nstarting_officers = [\"liu_bei\"]\n\
+             [[node]]\ntype = \"battle\"\nid = \"b\"\nbattle = \"b1\"\n\
+             next = \"end\"\n[[node]]\ntype = \"ending\"\nid = \"end\"\ntitle = \"끝\"\n",
+        )
+        .unwrap();
+        let chained = PackOptions {
+            officer_defs: vec![
+                officer_def("liu_bei", "유비", [70, 60, 90]),
+                officer_def("ours", "없는사람", [5, 5, 5]),
+            ],
+            classes: vec![
+                ("short_infantry".into(), "short_infantry".into()),
+                ("sorcerer".into(), "sorcerer".into()),
+            ],
+            campaign: Some(campaign),
+            ..options()
+        };
+        let out = TempDir::new("pack-officers-out");
+        let pack = out.path().join("p");
+        let index = write_pack(src.path(), &pack, &chained).unwrap();
+        let report = &index.assets["officers"];
+        assert_eq!(report.status, Status::Extracted, "{report:#?}");
+        assert_eq!(
+            report.summary,
+            "3 officers: 1 with the original's stats changed, 1 added"
+        );
+        let manifest = std::fs::read_to_string(pack.join("pack.toml")).unwrap();
+        assert!(
+            manifest.contains("\nofficers = \"officers.toml\"\n"),
+            "{manifest}"
+        );
+        #[derive(serde::Deserialize)]
+        struct File {
+            officer: Vec<OfficerDef>,
+        }
+        let file: File =
+            toml::from_str(&std::fs::read_to_string(pack.join(OFFICERS_FILE)).unwrap()).unwrap();
+        let ids: Vec<&str> = file.officer.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, ["liu_bei", "ours", "orig_p2"]);
+        assert_eq!(file.officer[0].lead, 91);
+        assert_eq!(file.officer[1], chained.officer_defs[1]);
+        assert_eq!(file.officer[2].class, "sorcerer");
+        assert_eq!(file.officer[2].level, 4);
+        assert!(pack.join("gfx/portraits/orig_p2.png").is_file());
+        assert!(index
+            .officers
+            .iter()
+            .any(|r| r.officer == "orig_p2" && r.added && r.bakdata == 2));
+        // The campaign is the original's story from the prologue's first scene, with the
+        // chain's starting army; the person joins in it.
+        let campaign: hero_core::campaign::CampaignDef =
+            toml::from_str(&std::fs::read_to_string(pack.join(CAMPAIGN_FILE)).unwrap()).unwrap();
+        assert_eq!(campaign.start, "c0_s0_story0");
+        assert_eq!(campaign.starting_officers, ["liu_bei"]);
+        let ids: Vec<&str> = campaign.nodes.iter().map(|n| n.id()).collect();
+        assert_eq!(
+            ids,
+            [
+                "c0_s0_story0",
+                "c1_s0_story0",
+                "c2_s0_story0",
+                "c3_s0_story0",
+                "c4_s0_story0",
+                "orig_c4_end"
+            ]
+        );
+        let story = std::fs::read_to_string(pack.join(CHAPTER_DRAMA_FILE)).unwrap();
+        assert!(
+            story.contains(
+                "== c0_s0_story0\n@narr 유비는 관우와 장비를 만나 도원에서 형제의 의를 맺었다.\n\
+                 @join orig_p2\n"
+            ),
+            "{story}"
+        );
+        // Without the chapters to convert, nobody is added.
+        let alone = PackOptions {
+            campaign: None,
+            ..chained.clone()
+        };
+        let index = write_pack(src.path(), &out.path().join("q"), &alone).unwrap();
+        assert_eq!(
+            index.assets["officers"].summary,
+            "2 officers: 1 with the original's stats changed, 0 added"
+        );
+        // A chain without officers leaves the file to it.
+        let index = write_pack(src.path(), &out.path().join("r"), &options()).unwrap();
+        assert_eq!(index.assets["officers"].status, Status::Unsupported);
+        let manifest = std::fs::read_to_string(out.path().join("r/pack.toml")).unwrap();
+        assert!(!manifest.contains("officers"), "{manifest}");
+    }
+
     #[test]
     fn officers_are_matched_by_name_alias_and_reading() {
         let table = [
@@ -5253,6 +5899,7 @@ mod tests {
             &[],
             &[],
             false,
+            false,
             &[],
             UiFrames::default(),
         )
@@ -5269,6 +5916,7 @@ mod tests {
             true,
             &[],
             &[],
+            false,
             false,
             &[],
             UiFrames::default(),
@@ -5291,6 +5939,7 @@ mod tests {
             &battles,
             &[DRAMA_FILE, CHAPTER_DRAMA_FILE],
             true,
+            true,
             &[],
             UiFrames {
                 battle: true,
@@ -5302,6 +5951,7 @@ mod tests {
         .unwrap();
         let manifest: hero_core::pack::PackManifest = toml::from_str(&toml).unwrap();
         assert_eq!(manifest.battles, battles);
+        assert_eq!(manifest.officers.as_deref(), Some(OFFICERS_FILE));
         // The battle frame, with the areas measured on the original's frame, fits the canvas.
         let frame = manifest.presentation.battle_frame.expect("battle frame");
         assert_eq!(frame.image, BATTLE_FRAME);
@@ -5328,6 +5978,7 @@ mod tests {
                     false,
                     &[],
                     &[],
+                    false,
                     false,
                     &[],
                     UiFrames::default()
