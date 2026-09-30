@@ -3474,7 +3474,9 @@ pub struct OriginalOfficers {
 ///   `@class` after `@join`). So a chain officer the release names ([`is_same_officer`], as the
 ///   portraits match) takes the original's 통솔·무력·지력 (verified, FORMATS §14), class, level
 ///   and equipment ([`original_equip`]); the chain's id, name, portrait, biography and lord stay.
-///   A class the pack lacks keeps the chain's. A joining person no chain officer plays is added
+///   A class the pack lacks keeps the chain's. When several records have the officer's name,
+///   each value must be the same in all of them (stats; class, level and items), else the
+///   chain's stays and the record says why: which record is the officer cannot be told. A joining person no chain officer plays is added
 ///   with every value from `BAKDATA`: a chapter's `@join` needs an officer (without one the
 ///   joining was left out).
 #[allow(clippy::too_many_arguments)]
@@ -3505,6 +3507,12 @@ pub fn original_officers(
             .iter()
             .map(|p| (p.leadership, p.war, p.intelligence))
             .collect();
+        // Records of the name may agree on the stats but not on class, level or items: those
+        // then stay the chain's (which record is the officer cannot be told).
+        let states: BTreeSet<(u8, u8, &[u8])> = found
+            .iter()
+            .map(|p| (p.class, p.level, p.items.as_slice()))
+            .collect();
         let mut def = def.clone();
         match (found.first(), stats.len()) {
             (None, _) => {}
@@ -3520,7 +3528,16 @@ pub fn original_officers(
                         *field = value;
                     }
                 }
-                match names.classes.get(&p.class) {
+                match names.classes.get(&p.class).filter(|_| states.len() == 1) {
+                    _ if states.len() > 1 => changes.push(format!(
+                        "several BAKDATA records of that name have different classes, levels or \
+                         items (records {}); the chain's class, level and equipment kept",
+                        found
+                            .iter()
+                            .map(|p| p.index.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
                     Some(class) if *class != def.class => {
                         changes.push(format!("class {} → {class}", def.class));
                         def.class = class.clone();
@@ -3531,24 +3548,26 @@ pub fn original_officers(
                         p.class, def.class
                     )),
                 }
-                let level = original_level(p.level, level_cap);
-                if level != def.level {
-                    changes.push(format!("level {} → {level}", def.level));
-                    def.level = level;
-                }
-                let (equip, notes) = original_equip(&p.items, names, item_kinds);
-                changes.extend(notes);
-                for (slot, old, new) in [
-                    ("weapon", &def.equip.weapon, &equip.weapon),
-                    ("armor", &def.equip.armor, &equip.armor),
-                    ("accessory", &def.equip.accessory, &equip.accessory),
-                ] {
-                    if old != new {
-                        let show = |i: &Option<String>| i.clone().unwrap_or_else(|| "-".into());
-                        changes.push(format!("{slot} {} → {}", show(old), show(new)));
+                if states.len() == 1 {
+                    let level = original_level(p.level, level_cap);
+                    if level != def.level {
+                        changes.push(format!("level {} → {level}", def.level));
+                        def.level = level;
                     }
+                    let (equip, notes) = original_equip(&p.items, names, item_kinds);
+                    changes.extend(notes);
+                    for (slot, old, new) in [
+                        ("weapon", &def.equip.weapon, &equip.weapon),
+                        ("armor", &def.equip.armor, &equip.armor),
+                        ("accessory", &def.equip.accessory, &equip.accessory),
+                    ] {
+                        if old != new {
+                            let show = |i: &Option<String>| i.clone().unwrap_or_else(|| "-".into());
+                            changes.push(format!("{slot} {} → {}", show(old), show(new)));
+                        }
+                    }
+                    def.equip = equip;
                 }
-                def.equip = equip;
                 if !changes.is_empty() {
                     made.records.push(OfficerRecord {
                         officer: def.id.clone(),
@@ -5365,6 +5384,9 @@ mod tests {
                 z
             },
             with(officer(7, "조운", "", 7), [91, 96, 76], 17, 5),
+            // Two 마초 records with the same stats but other classes and levels.
+            with(officer(8, "마초", "", 8), [80, 97, 26], 6, 20),
+            with(officer(9, "마초", "", 9), [80, 97, 26], 7, 30),
         ];
         let defs = [
             officer_def("liu_bei", "유비", [70, 60, 90]),
@@ -5378,6 +5400,7 @@ mod tests {
                 ..officer_def("zhang_fei", "장비", [1, 1, 1])
             },
             officer_def("zhao_yun", "조운", [1, 1, 1]),
+            officer_def("ma_chao", "마초", [1, 1, 1]),
         ];
         let names = battles::Names {
             officers: BTreeMap::from([(0, "liu_bei".into())]),
@@ -5456,11 +5479,28 @@ mod tests {
         // A class the pack lacks keeps the chain's.
         let zhao = &made.defs[4];
         assert_eq!((zhao.class.as_str(), zhao.level), ("short_infantry", 5));
+        // Records of the name that agree on the stats but not on class and level: the stats are
+        // the original's, the class and level stay the chain's (whichever record comes first).
+        let ma = &made.defs[5];
+        assert_eq!((ma.strength, ma.int, ma.lead), (97, 26, 80));
+        assert_eq!((ma.class.as_str(), ma.level), ("short_infantry", 1));
+        let changes = &made
+            .records
+            .iter()
+            .find(|r| r.officer == "ma_chao")
+            .unwrap()
+            .changes;
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.contains("different classes, levels or items (records 8, 9)")),
+            "{changes:?}"
+        );
         // A joining person without an officer is added with the original's values; Liu Bei
         // (already an officer), a nameless person and one of a class the pack lacks are not.
-        assert_eq!(made.defs.len(), 6);
+        assert_eq!(made.defs.len(), 7);
         assert_eq!(made.added, BTreeMap::from([(3, "orig_p3".to_string())]));
-        let added = &made.defs[5];
+        let added = &made.defs[6];
         assert_eq!(added.id, "orig_p3");
         assert_eq!(added.name, "간옹");
         assert_eq!((added.class.as_str(), added.level), ("sorcerer", 1));
