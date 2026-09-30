@@ -12,7 +12,7 @@
   <meta name="color-scheme" content="dark light">
   <!-- The application icon's banner (crates/hero-game/icon, tools/assets/build_icon.py). -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%231c2f78'/%3E%3Crect x='1.5' y='1.5' width='13' height='13' fill='none' stroke='%23e8d9a8'/%3E%3Crect x='5' y='3' width='1' height='10' fill='%23e8d9a8'/%3E%3Crect x='6' y='4' width='6' height='5' fill='%23c8402f'/%3E%3C/svg%3E">
-  <!-- Galmuri (SIL OFL 1.1, the game's own font) for headings. -->
+  <!-- Galmuri (SIL OFL 1.1, the game's own font) for the title and the step numbers. -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
   <style>
     :root {
@@ -34,9 +34,9 @@
         --ink: #ece2c8;
         --muted: #a3977c;
         --line: #353026;
-        --accent: #d4553d;
+        --accent: #e2694f;
         --accent-ink: #fff8ec;
-        --banner: #5a74d0;
+        --banner: #3a4fa0;
         --code-bg: #25221b;
       }
     }
@@ -46,9 +46,9 @@
       --ink: #ece2c8;
       --muted: #a3977c;
       --line: #353026;
-      --accent: #d4553d;
+      --accent: #e2694f;
       --accent-ink: #fff8ec;
-      --banner: #5a74d0;
+      --banner: #3a4fa0;
       --code-bg: #25221b;
     }
     * { box-sizing: border-box; }
@@ -163,7 +163,7 @@
       <div class="seal" aria-hidden="true">
         <svg width="40" height="40" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="5" y="3" width="1" height="10" fill="#e8d9a8"/><rect x="6" y="4" width="6" height="5" fill="#c8402f"/></svg>
       </div>
-      <h1 class="pixel">영걸전 Reloaded<small>EIKETSUDEN RELOADED</small></h1>
+      <h1 class="pixel">영걸전 Reloaded <small lang="en">EIKETSUDEN RELOADED</small></h1>
       <p class="lead">1995년 『삼국지 영걸전』을 오늘날의 Windows · macOS · Linux에서 <b>원작대로</b> 플레이하는 오픈소스 엔진입니다.
         가지고 있는 원작의 설치 폴더를 고르면, 엔진이 원작의 그림·맵·이야기·음악을 읽어 그대로 돌립니다.</p>
       <p class="lead-en" lang="en">An open-source engine that runs your own copy of the 1995 Three Kingdoms tactics RPG on modern systems.</p>
@@ -186,14 +186,14 @@
             들어 있지 않으며, 원작은 여러분의 PC에서 읽기만 합니다.</p>
         </div>
         <figure class="shot">
-          <img src="img/battle.png" width="960" height="540" alt="기본 팩의 시험 전투(사수관) 화면: 격자 전장 위의 아군과 적군 부대">
+          <img src="img/battle.png" width="960" height="540" alt="기본 팩의 시험 전투(사수관) 화면: 전장 위에 화웅의 얼굴과 대사창이 떠 있다">
           <figcaption>원작 없이 엔진을 시험해 보는 기본 팩의 사수관 전투. 원작 모드에서는 원작의 화면으로 바뀝니다.</figcaption>
         </figure>
       </div>
       <div class="wrap gallery">
         <figure class="shot">
-          <img src="img/title.png" width="960" height="540" loading="lazy" alt="타이틀 화면: 강을 사이에 두고 마주한 두 군대와 새 게임·이어하기 메뉴">
-          <figcaption>타이틀 화면</figcaption>
+          <img src="img/field-map.png" width="960" height="540" loading="lazy" alt="사수관 전장: 강과 다리 너머 관문 앞에 진을 친 적군, 아래쪽 대사창의 전투 해설">
+          <figcaption>전투 화면(사수관)</figcaption>
         </figure>
         <figure class="shot">
           <img src="img/camp.png" width="960" height="540" loading="lazy" alt="출진 준비 화면: 다음 전투의 승리·패배 조건과 출진 부대 목록">
@@ -210,7 +210,8 @@
           <div class="card">
             <h3>원작 모드</h3>
             <p>원작 설치 폴더를 고르면 얼굴·유닛·지형·전투 맵, 전투·캠프·상태 창의 화면 틀, 음악, 규칙 표를 원작 그대로 씁니다.
-              서장부터 엔딩까지 전투 60개와 그 대사·일기토, 마을 이야기, 무장의 능력치와 합류가 원작 파일에서 변환됩니다.</p>
+              서장부터 엔딩까지 전투 60개와 그 대사·일기토, 마을 이야기, 무장의 능력치와 합류가 원작 파일에서 변환됩니다
+              (서장·1장 변환은 실물 원작으로 아직 확인 전).</p>
           </div>
           <div class="card">
             <h3>원작 규칙 재현</h3>
@@ -233,7 +234,7 @@
     <section>
       <div class="wrap">
         <h2>플레이하기</h2>
-        <p class="sub">원작이 필요합니다. 설치도, 명령줄도 필요 없습니다.</p>
+        <p class="sub">원작이 필요합니다. 설치 과정 없이 압축을 풀어 실행합니다.</p>
         <ol class="steps">
           <li>
             <h3>내려받기</h3>
@@ -248,7 +249,7 @@
             <p>타이틀의 <b>원작 데이터</b>에서 가지고 있는 원작의 설치 폴더를 고릅니다. 다음 실행부터는 바로 원작으로 시작합니다.</p>
           </li>
         </ol>
-        <p class="note">지원 판본: 한국어 DOS/V판(실물 검증), 번체 중문 DOS판. macOS에서 처음 실행이 막히면
+        <p class="note">지원 판본: 한국어 DOS/V판(실물 검증), 번체 중문 DOS판(실물 미검증). macOS에서 처음 실행이 막히면
           <a href="https://github.com/jeiel85/eiketsuden-reloaded#플레이하기">README의 안내</a>를 보세요.
           원작 폴더를 고르지 않으면 기본 팩의 시험 전투로 시작합니다. 브라우저는 PC의 원작 폴더를 읽을 수 없어 웹 버전은 없습니다.</p>
       </div>
@@ -261,7 +262,7 @@
         <table class="status">
           <tr>
             <th>원작 전투</th>
-            <td>60개 모두 원작 모드로 플레이 가능<span class="meter"><i style="width:100%"></i></span></td>
+            <td>60개 모두 원작 모드로 플레이 가능(서장·1장 19개는 실물 확인 전)<span class="meter"><i style="width:100%"></i></span></td>
           </tr>
           <tr>
             <th>원작 캠페인</th>
@@ -299,11 +300,15 @@
         <ul>
           <li><b>Original mode:</b> pick your installation folder under “원작 데이터” on the title screen and the game plays your copy with
             its portraits, units, maps, screen frames, music and rule tables — all 60 battles and the story from the prologue to the endings.
-            Supported: the Korean DOS/V release (verified) and the Traditional Chinese DOS release.</li>
+            The conversion of the prologue and chapter 1 is not yet checked on a real copy.
+            Supported: the Korean DOS/V release (verified) and the Traditional Chinese DOS release (not yet verified).</li>
           <li><b>Faithful rules</b> from the fan community's reverse-engineered formulas of the PC version.</li>
           <li><b>License-clean:</b> no KOEI graphics, music, text or code ships with the engine; your copy is only read on your own computer.</li>
           <li><b>Moddable:</b> rules, officers, maps and scripts are plain TOML and <code>.drama</code> files.</li>
         </ul>
+        <p>The game's text is currently Korean only.</p>
+        <p><small>Not affiliated with KOEI TECMO: an independent fan project, not made, endorsed or supported by KOEI TECMO GAMES CO., LTD.
+          You need your own copy of the original to play it. <i>Sangokushi</i>, <i>Sangokushi Eiketsuden</i> and KOEI TECMO are trademarks of their respective owners.</small></p>
         <p><a href="https://github.com/jeiel85/eiketsuden-reloaded/releases/latest">Download the latest release</a> ·
           <a href="https://github.com/jeiel85/eiketsuden-reloaded#english">Read the README</a></p>
       </div>
