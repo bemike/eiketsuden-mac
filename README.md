@@ -6,11 +6,9 @@
 *An open-source engine that runs your copy of the classic Three Kingdoms tactics RPG "Sangokushi Eiketsuden" on modern systems*
 
 [![CI](https://github.com/jeiel85/eiketsuden-reloaded/actions/workflows/ci.yml/badge.svg)](https://github.com/jeiel85/eiketsuden-reloaded/actions/workflows/ci.yml)
-[![Web demo](https://img.shields.io/badge/%EB%B0%94%EB%A1%9C_%ED%94%8C%EB%A0%88%EC%9D%B4-Web_demo-c8402f)](https://jeiel85.github.io/eiketsuden-reloaded/)
 [![License: GPL-3.0](https://img.shields.io/badge/code-GPL--3.0--or--later-blue)](LICENSE)
 [![Media: CC0 / CC-BY / OFL / PD](https://img.shields.io/badge/media-CC0%20%C2%B7%20CC--BY%20%C2%B7%20OFL%20%C2%B7%20PD-green)](CREDITS.md)
 
-**[▶ 브라우저에서 바로 플레이](https://jeiel85.github.io/eiketsuden-reloaded/)** ·
 **[⬇ Windows / macOS / Linux 다운로드](https://github.com/jeiel85/eiketsuden-reloaded/releases)** ·
 [English](#english)
 
@@ -38,10 +36,9 @@
   자세한 내용은 [docs/RULES.md](docs/RULES.md).
 * **라이선스 청정 배포물** — 저장소와 배포물에는 원작의 그래픽·음악·대사·실행 파일이 한 바이트도 들어 있지 않습니다.
   원작은 사용자의 PC에서만 읽습니다.
-* **기본 팩 (원작 없이 체험)** — 원작이 없어도 엔진을 돌려 볼 수 있도록 서장·제1장(전투 21개, 새로 쓴 대사 119장면)을
-  담은 라이선스 청정 팩을 함께 배포합니다. 그림은 CC0 에셋·자체 제작·퍼블릭 도메인 고화, 음악은 CC-BY/CC0 곡입니다
-  ([CREDITS.md](CREDITS.md)). 원작 모드가 아직 이 팩에 일부 기대고 있어 유지하지만, **콘텐츠는 더 늘리지 않습니다**
-  (D21). 원작 모드가 기본 팩 콘텐츠 없이 서게 되면 엔진에 필요한 최소 틀로 줄일 예정입니다.
+* **기본 팩 (엔진의 최소 틀)** — 규칙 기본값, 원작 무장과 이름으로 짝짓는 무장 명단, 엔진이 쓰는 라이선스 청정 그림·음악·
+  폰트·효과음(CC0 에셋·자체 제작·퍼블릭 도메인 고화·CC-BY/CC0 곡, [CREDITS.md](CREDITS.md)), 그리고 원작 없이 엔진을
+  시험해 보는 **사수관 전투 하나**만 담습니다. 이야기와 캠페인은 원작 모드가 사용자의 원작에서 만듭니다(D21).
 * **모딩** — 규칙·무장·전투 맵·캠페인·대사가 모두 사람이 읽을 수 있는 TOML과 `.drama` 스크립트입니다.
   레이어드 팩(`extends`)으로 기본 팩 위에 바꿀 파일만 담은 모드를 만들 수 있습니다. [docs/MODDING.md](docs/MODDING.md)
 
@@ -50,11 +47,10 @@
 
 원작으로 플레이하려면 **데스크톱 빌드**(Windows · macOS · Linux)를 받아 실행한 뒤, 타이틀의 **원작 데이터**에서 가지고 있는
 원작의 설치 폴더를 고르세요. 다음 실행부터는 바로 원작 모드로 시작합니다. 지금 고를 수 있는 판본은 한국어 DOS/V판과 번체 중문 DOS판이며,
-실물로 검증한 것은 한국어 DOS/V판입니다([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md) 2절). 원작 폴더를 고르지 않으면 기본 팩으로 시작합니다.
+실물로 검증한 것은 한국어 DOS/V판입니다([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md) 2절). 원작 폴더를 고르지 않으면 기본 팩의 시험 전투(사수관)로 시작합니다.
 
 | 방법 | |
 |---|---|
-| 웹 | <https://jeiel85.github.io/eiketsuden-reloaded/> — 설치 없이 최신 Chrome · Edge · Firefox · Safari에서 실행. 브라우저는 로컬 원작 폴더를 읽을 수 없어 **기본 팩만** 돌아갑니다(엔진 체험용). 기록은 브라우저 저장소(localStorage)에 남습니다. |
 | Windows | [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases)에서 `…-windows-x64.zip`을 받아 압축을 풀고 `eiketsuden.exe` 실행 (`data` 폴더를 실행 파일 옆에 그대로 두세요) |
 | macOS | `…-macos-arm64.tar.gz`(Apple Silicon) 또는 `…-macos-x64.tar.gz`(Intel)를 풀고 터미널에서 `./eiketsuden` 실행. Apple 공증을 받지 않은 실행 파일이라 처음 실행이 막히면 **시스템 설정 → 개인정보 보호 및 보안**에서 '그래도 열기'를 누르거나, 터미널에서 `xattr -dr com.apple.quarantine <압축을 푼 폴더>` 후 다시 실행하세요. (Finder에서 우클릭 → 열기로 넘기는 방법은 macOS 14 이하에서만 됩니다.) |
 | Linux | `…-linux-x64.tar.gz`를 풀고 `./eiketsuden` 실행 |
@@ -82,7 +78,8 @@ Rust(stable, 1.85+)가 필요합니다. Linux에서는 `libx11-dev libxi-dev lib
 cargo run --release -p hero-game
 ```
 
-웹 빌드(WebAssembly)는 `rustup target add wasm32-unknown-unknown` 후:
+웹 빌드(WebAssembly)는 `rustup target add wasm32-unknown-unknown` 후(브라우저는 로컬 원작 폴더를 읽을 수 없어 웹에는 원작 모드가
+없고 기본 팩의 시험 전투만 돕니다. 웹 데모는 배포하지 않습니다, D21):
 
 ```bash
 tools/web/build.sh --serve 8080
@@ -96,7 +93,7 @@ Windows PowerShell에서는 `pwsh tools/web/build.ps1 -Serve 8080`. 자세한 �
 cargo run --release -p hero-tools -- validate data/base
 ```
 
-`simulate data/base`는 모든 전투를 AI 대 AI로 돌려 봅니다. `--campaign`을 붙이면 캠페인을 처음부터 따라가며
+`simulate <팩>`은 팩의 모든 전투를 AI 대 AI로 돌려 봅니다. `--campaign`을 붙이면 캠페인을 처음부터 따라가며
 앞 전투의 군대를 이어받습니다.
 
 ## 구조
@@ -107,7 +104,7 @@ cargo run --release -p hero-tools -- validate data/base
 | `crates/hero-game` | 게임 실행 파일 (macroquad, 네이티브 + WebAssembly) |
 | `crates/hero-tools` | `validate` · `simulate` · `info` · `original` 명령줄 도구 |
 | `crates/hero-import` | 원작 데이터 임포터 (실험적, 클린룸 구현) |
-| `data/base` | 기본 데이터 팩: 규칙, 무장, 캠페인, 전투, 대사, 그래픽, 음악 |
+| `data/base` | 기본 데이터 팩(엔진의 최소 틀): 규칙, 무장 명단, 그래픽, 음악, 폰트, 효과음, 시험 전투 하나 |
 | `tools/assets` | 에셋 파이프라인 (출처 URL·SHA-256 고정, 결정적 빌드) |
 
 설계 문서: [ENGINE(개발 방식)](docs/ENGINE.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [RULES](docs/RULES.md) · [MODDING](docs/MODDING.md) ·
@@ -125,7 +122,7 @@ cargo run --release -p hero-tools -- validate data/base
 |---|---|---|
 | 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(실물 확인 전), 2장 10개, 3장 20개, 4장 11개 (두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
 | 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장부터 원작 이야기를 변환한 원작 캠페인(엔딩 4개, 서장·1장은 실물 확인 전) |
-| 기본 팩 콘텐츠에서 독립 | 원작 모드가 기본 팩의 이야기·전투 뼈대·무장 데이터 없이 원작 파일만으로 서는 것 | 거의 — 이야기·전투·캠페인, 무장(능력치·병종·레벨·장비, 합류하는 원작 무장), 일반 유닛의 능력치가 원작에서 옴. 남은 의존: 시작 무장 목록(체인 캠페인), 규칙 파일의 틀 |
+| 기본 팩 콘텐츠에서 독립 | 원작 모드가 기본 팩의 이야기·전투 뼈대·무장 데이터 없이 원작 파일만으로 서는 것 | `███████████████` 완료(실물 확인 전) — 이야기·전투·캠페인, 무장(능력치·병종·레벨·장비, 합류하는 원작 무장), 일반 유닛의 능력치가 원작에서 옴. 기본 팩은 최소 틀(규칙 기본값·무장 명단·그림·음악·폰트·시험 전투)로 줄임(D21 4단계). 기본 팩에서 오는 것: 시작 무장 목록, 규칙 파일의 틀, 원작에서 변환하지 않는 그림·소리 |
 | 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환(서장~4장)·규칙 표(병종·지형·책략·아이템·사기)·원작 UI(전투 틀·캠프·상태 창)·음악(곡 배정은 들어 보기 전 추론) |
 | 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
 
@@ -135,10 +132,7 @@ cargo run --release -p hero-tools -- validate data/base
 
 ## 로드맵
 
-1. **원작 모드를 기본 팩 콘텐츠에서 독립시키기**: 서장·1장 이야기와 전투를 원작 시나리오에서 변환하고(들어감, 실물 확인
-   필요) 무장과 일반 유닛의 값을 `BAKDATA`에서 가져옵니다(들어감)(D21 3단계)
-2. **기본 팩 줄이기**: 1이 끝나면 기본 팩을 엔진에 필요한 최소 틀(규칙 기본값·폰트·UI·효과음·테스트용 전투)로 줄이고,
-   웹 데모를 내립니다(D21 4단계)
+* 서장·1장 원작 변환과 원작 무장 값의 실물 확인(D21 3단계는 들어감, 기본 팩은 최소 틀로 줄였고 웹 데모는 내림)
 * 원작 모드 다듬기: 위 "원작 모드의 남은 일"([BACKLOG](BACKLOG.md))
 * 원작 데이터 임포터: Steam판·PC-98판 지원 ([남은 과제](docs/reverse-engineering/STATUS.md); 정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
 * 캠페인 경로를 따라가는 밸런스 시뮬레이션
@@ -189,12 +183,11 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   affinity, counters, morale and confusion, strategies, weather) — see [docs/RULES.md](docs/RULES.md).
 * License-clean distribution: no KOEI graphics, music, text or code is in this repository or its releases; the
   original is only read on the player's own computer.
-* **Base pack** (try the engine without the original): the prologue and chapter 1 (21 battles, 119 scenes of
-  newly written Korean dialogue based on the public-domain novel) with CC0 pixel art, public-domain paintings
-  and CC-BY/CC0 music ([CREDITS.md](CREDITS.md)). The original mode still depends on it, so it stays, but it
-  gets **no new content**; once the original mode stands on the original's files alone it will shrink to the
-  minimum the engine needs. The web demo can only run the base pack, because a browser cannot read a local
-  installation folder.
+* **Base pack** (the engine's minimal frame): default rules, the officer list the original's persons are
+  matched to, the license-clean art, music, fonts and sounds the engine uses (CC0 pixel art, public-domain
+  paintings, CC-BY/CC0 music, [CREDITS.md](CREDITS.md)) and **one test battle** (Sishui Pass) to try the engine
+  without the original. The story and campaign come from the player's copy (D21). There is no web demo: a
+  browser cannot read a local installation folder.
 * A fully data-driven, moddable format ([docs/MODDING.md](docs/MODDING.md)); a layered pack (`extends`) holds
   only the files a mod changes.
 * How the engine is built — the OpenRCT2 model without reverse-engineering the original's code: a new engine
@@ -209,7 +202,7 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   included). What remains is checking the prologue and chapter 1 on a real copy and the polish listed in the Korean
   "진행 상황" section above.
 
-**Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
+**Download:**
 [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`
 
 On macOS the release executable is not notarized: if the first start is blocked, click **Open Anyway**

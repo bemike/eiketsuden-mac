@@ -2227,19 +2227,28 @@ mod tests {
     }
 
     /// The stage rebuilt from the recorded steps looks like the stage the scene built, at every
-    /// point of every scene of the base pack and whichever way a choice went.
+    /// point of every scene of the base pack and of the engine's test pack, whichever way a
+    /// choice went.
     #[test]
     fn a_replayed_stage_equals_the_played_one_everywhere() {
         use hero_core::campaign::CampaignState;
         use hero_core::drama::DramaRunner;
 
-        let pack = crate::screens::camp::test_pack();
+        let mini = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../hero-core/tests/fixtures/mini");
+        let packs = [
+            crate::screens::camp::test_pack(),
+            Pack::load(&hero_core::pack::DirSource { root: mini }).expect("the test pack loads"),
+        ];
         let terrain = BTreeMap::new();
         let mut compared = 0;
-        for id in pack.scenes.keys() {
+        for (pack, id) in packs
+            .iter()
+            .flat_map(|p| p.scenes.keys().map(move |id| (p, id)))
+        {
             for pick in 0..2 {
-                let mut campaign = CampaignState::new_game(&pack);
-                let mut runner = DramaRunner::new(&pack, id).unwrap();
+                let mut campaign = CampaignState::new_game(pack);
+                let mut runner = DramaRunner::new(pack, id).unwrap();
                 let mut live = Stage::new(Backdrop::Black);
                 let mut live_duel = None;
                 let mut rec = Recorder::default();
@@ -2248,11 +2257,9 @@ mod tests {
                     // Alternate answers after the first, so a scene that asks again until it is
                     // answered differently cannot loop for ever.
                     if let Some(options) = &runner.pending_choice {
-                        runner
-                            .choose(&pack, (pick + steps) % options.len())
-                            .unwrap();
+                        runner.choose(pack, (pick + steps) % options.len()).unwrap();
                     }
-                    let step = runner.next(&pack, &mut campaign).unwrap();
+                    let step = runner.next(pack, &mut campaign).unwrap();
                     steps += 1;
                     assert!(steps < 20_000, "scene {id} does not end");
                     rec.record(&step);
@@ -2280,8 +2287,8 @@ mod tests {
             }
         }
         assert!(
-            compared > 500,
-            "the base pack has plenty of steps ({compared})"
+            compared > 150,
+            "the packs have plenty of steps ({compared})"
         );
     }
 }

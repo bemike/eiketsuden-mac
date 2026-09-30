@@ -426,12 +426,49 @@ mod tests {
         }
     }
 
+    /// The base pack with a scene node whose branch leads, on flag `t_flag`, to an ending
+    /// (`t_end`) or else to the base campaign's camp: the shape of a scene with a bad ending.
+    fn pack_with_branch() -> (Pack, String) {
+        use hero_core::script::Compare;
+        let mut pack = crate::screens::camp::test_pack();
+        let camp = pack
+            .campaign
+            .nodes
+            .iter()
+            .find(|n| matches!(n, Node::Camp { .. }))
+            .expect("the base campaign has a camp")
+            .id()
+            .to_string();
+        let scene = pack.scenes.keys().next().expect("a scene").clone();
+        pack.campaign.nodes.extend([
+            Node::Drama {
+                id: "t_scene".into(),
+                scene,
+                next: "t_branch".into(),
+            },
+            Node::Branch {
+                id: "t_branch".into(),
+                flag: "t_flag".into(),
+                cmp: Compare::Eq,
+                value: 1,
+                then: "t_end".into(),
+                otherwise: camp.clone(),
+            },
+            Node::Ending {
+                id: "t_end".into(),
+                scene: None,
+                title: "끝".into(),
+            },
+        ]);
+        (pack, camp)
+    }
+
     #[test]
     fn arriving_at_an_ending_keeps_the_previous_autosave() {
-        let pack = crate::screens::camp::test_pack();
-        assert!(autosaves_at(&pack, "c1_jade_belt"));
-        assert!(autosaves_at(&pack, "c1_camp_guangling"));
-        assert!(!autosaves_at(&pack, "c1_bad_end"));
+        let (pack, camp) = pack_with_branch();
+        assert!(autosaves_at(&pack, "t_scene"));
+        assert!(autosaves_at(&pack, &camp));
+        assert!(!autosaves_at(&pack, "t_end"));
         let endings: Vec<&str> = pack
             .campaign
             .nodes
@@ -442,18 +479,18 @@ mod tests {
         assert!(!endings.is_empty());
         assert!(endings.iter().all(|id| !autosaves_at(&pack, id)));
 
-        // The jade-belt scene: a careless answer resolves the branch to the bad ending, which
-        // must not replace the autosave made at the scene (the retry point).
+        // A scene whose answer resolves the branch to the bad ending, which must not replace the
+        // autosave made at the scene (the retry point).
         let mut campaign = CampaignState::new_game(&pack);
-        campaign.node = "c1_jade_belt".into();
-        campaign.flags.insert("c1_exposed".into(), 1);
+        campaign.node = "t_scene".into();
+        campaign.flags.insert("t_flag".into(), 1);
         let next = campaign.advance(&pack).unwrap();
-        assert_eq!(next, "c1_bad_end");
+        assert_eq!(next, "t_end");
         assert!(!autosaves_at(&pack, &next));
-        campaign.node = "c1_jade_belt".into();
-        campaign.flags.insert("c1_exposed".into(), 0);
+        campaign.node = "t_scene".into();
+        campaign.flags.insert("t_flag".into(), 0);
         let next = campaign.advance(&pack).unwrap();
-        assert_eq!(next, "c1_camp_guangling");
+        assert_eq!(next, camp);
         assert!(autosaves_at(&pack, &next));
     }
 
@@ -462,7 +499,7 @@ mod tests {
         use hero_core::battle::DefeatReason;
         use hero_core::battledef::Side;
 
-        let pack = crate::screens::camp::test_pack();
+        let (pack, _) = pack_with_branch();
         let mut campaign = CampaignState::new_game(&pack);
         campaign.add_item("bean", 3);
         let gold = campaign.gold;
@@ -470,7 +507,7 @@ mod tests {
         battle.outcome = Some(Outcome::Defeat(DefeatReason::LordRetreated));
         // During the lost battle: an event set a flag, one bean was used, an officer levelled
         // up, and gold and an item were found (those are kept only after a victory).
-        battle.flags.insert("c1_exposed".into(), 1);
+        battle.flags.insert("t_flag".into(), 1);
         battle.inventory.insert("bean".into(), 2);
         battle.items_used.insert("bean".into(), 1);
         let unit = battle
@@ -489,10 +526,10 @@ mod tests {
         assert_eq!(broken.node, before.node);
 
         // `on_defeat` leads to a branch on the flag the battle set.
-        let node = apply_defeat(&mut campaign, &pack, &battle, "c1_br_exposed").unwrap();
-        assert_eq!(node, "c1_bad_end");
-        assert_eq!(campaign.node, "c1_bad_end");
-        assert_eq!(campaign.flag("c1_exposed"), 1);
+        let node = apply_defeat(&mut campaign, &pack, &battle, "t_branch").unwrap();
+        assert_eq!(node, "t_end");
+        assert_eq!(campaign.node, "t_end");
+        assert_eq!(campaign.flag("t_flag"), 1);
         assert_eq!(campaign.item_count("bean"), 2);
         let state = campaign.roster.iter().find(|o| o.id == officer).unwrap();
         assert_eq!(state.level, level);

@@ -580,9 +580,8 @@ mod tests {
     }
 
     #[test]
-    fn the_base_packs_questions_are_answered() {
-        // `c1_jade_belt` asks who the heroes are until 5 or 6 is chosen, then what to do next
-        // until 2 is chosen.
+    fn the_base_packs_question_is_asked_again_until_it_goes_on() {
+        // `test_opening` explains the controls and asks again until the player sets out.
         let pack = crate::load_pack(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base"))
             .unwrap();
         let choices = Choices::new();
@@ -595,18 +594,13 @@ mod tests {
             asked: BTreeMap::new(),
         };
         let mut campaign = CampaignState::new_game(&pack);
-        sim.play_scene(&mut campaign, "c1_jade_belt").unwrap();
-        assert!(
-            sim.chose
-                .iter()
-                .any(|c| c.ends_with("소인의 눈으로는 알 수 없습니다")),
-            "{:?}",
-            sim.chose
-        );
-        assert!(
-            sim.chose.last().unwrap().ends_with("원술을 막겠다고 한다"),
-            "{:?}",
-            sim.chose
+        sim.play_scene(&mut campaign, "test_opening").unwrap();
+        assert_eq!(
+            sim.chose,
+            [
+                "test_opening: 조작 방법을 듣는다",
+                "test_opening: 사수관으로 출진한다"
+            ]
         );
     }
 

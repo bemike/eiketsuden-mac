@@ -68,8 +68,8 @@ tools/web/build.sh --serve 8080                 # Linux / macOS
 ```
 
 Both scripts build `eiketsuden.wasm` (release; `-Dev` / `--dev` for the debug profile), assemble
-`target/web-dist/` with `tools/web/assemble.py` (Python 3.11+; the same step the GitHub Pages workflow
-runs): `index.html`, `mq_js_bundle.js`, `hero_web.js`, the wasm and `data/base/`, and, with a port, serve it through
+`target/web-dist/` with `tools/web/assemble.py` (Python 3.11+; there is no published web demo any
+more, DECISIONS D21, but the web build still works for trying the engine): `index.html`, `mq_js_bundle.js`, `hero_web.js`, the wasm and `data/base/`, and, with a port, serve it through
 `tools/web/serve.py` — `python -m http.server` with caching disabled, so a reload always picks up a
 rebuilt wasm. `-Data` / `--data` copies another pack to `<out>/data/base/` (the web build always
 loads the top pack from there) together with every pack it `extends`, each at the path its child's
@@ -77,7 +77,7 @@ loads the top pack from there) together with every pack it `extends`, each at th
 (see [MODDING.md](MODDING.md#layered-packs-extends), "Layered packs in the web build"). The site's copies
 of the fonts keep only the Hanja the game can show (those in the packs' text files and in the wasm's
 own strings), about 0.8 MB less to download (gzip); without fontTools they are copied whole, with a
-warning (the Pages workflow passes `--require-font-subset`, which makes that an error). So a Hanja
+warning (`--require-font-subset` makes that an error). So a Hanja
 the game's code shows must be written in a string literal (`"英傑傳"`), not as a `char` or a computed
 code point, or the web build draws it as a blank. Open `http://localhost:8080/`, or
 `http://localhost:8080/#gallery` for the UI gallery. Browsers refuse to load WebAssembly from
@@ -172,20 +172,12 @@ animation (walk cycles, blinking cursors, the credits scroll) they must be ident
 
 ## Publishing
 
-Three workflows live in `.github/workflows`: `ci.yml` (format, clippy native and wasm, tests, pack
+Two workflows live in `.github/workflows`: `ci.yml` (format, clippy native and wasm, tests, pack
 validation, battle simulation, the wasm build, and the asset pipeline's lint and unit tests — including
 the font Hanja coverage check, the web build scripts' tests and the JS plugin version check — on every
-push and pull request), `pages.yml` (the web demo, deployed only after CI passed on a push to `main`)
-and `release.yml` (release archives, built only after the rules tests and the base pack validation
-pass).
-
-**Web demo, one-time setup.** In the GitHub repository open **Settings → Pages → Build and
-deployment** and set **Source** to **GitHub Actions**. Until then the *Web demo (GitHub Pages)*
-workflow stops at its first step (`actions/configure-pages`) with an error saying Pages is not enabled;
-the default `GITHUB_TOKEN` cannot turn it on by itself. After changing the setting, re-run the workflow
-(**Actions → Web demo (GitHub Pages) → Run workflow**) or push to `main`. Every push to `main` whose
-CI passes then publishes the demo at `https://<owner>.github.io/<repository>/`
-(<https://jeiel85.github.io/eiketsuden-reloaded/> for the main repository).
+push and pull request) and `release.yml` (release archives, built only after the rules tests and the
+base pack validation pass). The web demo (`pages.yml`) was taken down with the base pack's story
+(DECISIONS D21): a browser cannot read the player's original, so it could only show the test battle.
 
 **Releases.** First set `version` in `[workspace.package]` of the root `Cargo.toml` (shown on the
 title screen as `v…`) to the new version and commit it, then tag that commit `vX.Y.Z` and push the tag:

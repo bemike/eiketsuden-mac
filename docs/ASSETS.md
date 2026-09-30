@@ -218,7 +218,8 @@ Any resolution with a **4:5 aspect** (recommended 192×240), head-and-shoulders,
 ## Drama backgrounds — `gfx/bg/<key>.png`
 
 16:9 images (recommended 960×540) shown behind drama scenes, scaled to cover the canvas (on a 4:3 canvas such as
-640×480 the sides are cropped; packs for such a canvas may ship 4:3 art). Keys used by the base pack:
+640×480 the sides are cropped; packs for such a canvas may ship 4:3 art). Keys the base pack ships (its test battle's scenes use
+`black`; the camp screens draw `camp` behind them):
 `palace`, `town`, `village`, `camp`, `field`, `river`, `mountain`, `castle`, `night`, `black` (plain black is also
 implied by `@bg none`).
 
