@@ -36,7 +36,9 @@
   자체 제작, 초상화는 청대 삽화집 『增像全圖三國演義』(퍼블릭 도메인), 배경은 중국 고화(퍼블릭 도메인), 음악은
   CC-BY/CC0 곡입니다. 출처는 [CREDITS.md](CREDITS.md)에 모두 있습니다.
 * **원작 모드 (실험적)** — OpenRCT2처럼, 정품을 가진 사용자는 타이틀의 "원작 데이터"에서 자기 PC의 원작 설치 폴더를
-  고르면 원작의 얼굴·유닛·지형·전투 맵 그림으로 플레이할 수 있습니다(네이티브 빌드, 명령줄 불필요, 원작 파일은 읽기만 함).
+  고르면 원작의 얼굴·유닛·지형·전투 맵과 화면 틀(전투·캠프·상태 창), 음악, 병종·지형·책략·회복 아이템·혼란 규칙 표로
+  플레이할 수 있습니다. 서장부터 원작의 엔딩까지 전투 60개와 그 대사·일기토, 제2~4장의 마을 이야기(대사 장면과
+  선택지)가 사용자의 원작 파일에서 변환됩니다(서장·1장 이야기는 기본 팩의 것. 네이티브 빌드, 명령줄 불필요, 원작 파일은 읽기만 함).
   [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)
 * **모딩** — 규칙·무장·전투 맵·캠페인·대사가 모두 사람이 읽을 수 있는 TOML과 `.drama` 스크립트입니다.
   레이어드 팩(`extends`)으로 기본 팩 위에 바꿀 파일만 담은 모드를 만들 수 있습니다. [docs/MODDING.md](docs/MODDING.md)
@@ -112,20 +114,21 @@ cargo run --release -p hero-tools -- validate data/base
 | 영역 | 기준 | 진행 |
 |---|---|---|
 | 기본 팩 캠페인(원작 없이 플레이) | 원작 전투 60개 중 새로 만든 전투가 대응하는 것 | `█████░░░░░░░░░░` 19/60 (32%) — 서장·1장 21개 전투, 새로 쓴 대사 119장면 |
-| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(기본 팩 21개 전투), 2장 10개, 3장 20개, 4장 11개(두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
+| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(기본 팩 21개 전투), 2장 10개, 3장 20개, 4장 11개 (두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
 | 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장·1장은 기본 팩 이야기, 2–4장은 원작 이야기를 변환(엔딩 4개) |
-| 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환·규칙 표·원작 UI·음악 |
+| 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환(서장~4장)·규칙 표(병종·지형·책략·아이템·사기)·원작 UI(전투 틀·캠프·상태 창)·음악(곡 배정은 들어 보기 전 추론) |
 | 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
 
-남은 일: 루트마다 다른 원작 출진 설정, 전투 중 도착하는 아군 부대(4장 허창), 전투 중의 삽화, 서장·1장 이야기의 원작 변환,
-원작 모드 난이도 확인, 영어 번역([BACKLOG](BACKLOG.md)).
+원작 모드의 남은 일: 루트마다 다른 원작 출진 설정, 전투 중 도착하는 아군 부대(4장 허창), 장 전투의 개막 대사와 전투 중
+삽화, 서장·1장 이야기의 원작 변환, 음악 곡 배정 확인과 루프 시작점, 직접 플레이로 난이도 확인([BACKLOG](BACKLOG.md)).
+기본 팩의 제2장 이후와 영어 번역은 별도의 콘텐츠 작업입니다.
 
 ## 로드맵
 
-* 제2장(관도 ~ 장판파) 이후 캠페인, 원작의 IF 루트(촉한의 천하통일)까지
-* 원작 모드: 정품에서 변환한 팩이 기본 팩을 확장(`extends`)해, 변환된 에셋부터 원작의 모습으로 바꾸는 방식
-  ([docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md) 8절)
-* 원작 데이터 임포터: 원작 모드 팩 변환기, 시나리오 변환, 규칙 표, OPL2 음악, Steam판 지원 ([남은 과제](docs/reverse-engineering/STATUS.md); 정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
+* 기본 팩(원작 없이 플레이)의 제2장(관도 ~ 장판파) 이후 캠페인과 원작의 IF 루트(촉한의 천하통일). 원작 모드는 이미
+  원작의 엔딩까지 이어집니다
+* 원작 모드 다듬기: 위 "원작 모드의 남은 일"([BACKLOG](BACKLOG.md))
+* 원작 데이터 임포터: Steam판·PC-98판 지원 ([남은 과제](docs/reverse-engineering/STATUS.md); 정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
 * 캠페인 경로를 따라가는 밸런스 시뮬레이션, 영어 번역
 
 ## 원작 데이터 분석 자료
@@ -181,7 +184,9 @@ Linux and in the browser via WebAssembly.
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
 * Progress: 100% by battles: all 60 of the original's battles are playable in the "original mode", a pack
   converted from the player's own copy that extends the base pack, from the prologue to the original's endings
-  (towns become dialogue scenes with choices; details in the Korean "진행 상황" section above).
+  with the original's maps, screen frames, music and rule tables (towns become dialogue scenes with choices;
+  Changban's escort of the people and the battles fought on two maps are included; details in the Korean
+  "진행 상황" section above).
 
 **Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
 [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`
