@@ -15,7 +15,8 @@ permissions:
   pages: write
   id-token: write
 
-# A running deployment is not cancelled (GitHub's recommendation for Pages).
+# A running deployment is not cancelled (GitHub's recommendation for Pages); every run deploys the
+# tip of main (see the checkout step), so the order of runs does not matter.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -30,7 +31,11 @@ jobs:
       # Fails at once, with a clear message, when the repository's Pages source is not set to
       # "GitHub Actions" (a one-time setting, see docs/DEVELOPING.md "Publishing").
       - uses: actions/configure-pages@v5
+      # Always the current tip of main, not the pushed commit: GitHub does not order runs within a
+      # concurrency group, so a late run of an older push would otherwise roll the site back.
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
