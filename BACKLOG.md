@@ -96,7 +96,7 @@
   - 영향 범위: hero-import `pack.rs`(`original_officers`·`convert_officers`), 원작 모드의 역할 대응표(`battles.rs`)
 
 - [x] ~~**기본 팩 줄이기와 웹 데모 내리기**~~ — 옮김(2026-09-30, D21 4단계). 기본 팩은 규칙·무장 명단·미디어와 시험 전투 하나,
-  웹 데모 워크플로(`pages.yml`)는 지움. 이미 올라간 GitHub Pages 사이트는 저장소 설정(Settings → Pages)에서 내려야 한다.
+  웹 데모 워크플로(`pages.yml`)는 지움. 같은 주소에는 이후 정적 소개 페이지(`site/`)를 새 `pages.yml`로 올림.
 
 ## 순간 저장 (2026-09-30, D20)
 

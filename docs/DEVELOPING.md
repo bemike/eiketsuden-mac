@@ -172,12 +172,19 @@ animation (walk cycles, blinking cursors, the credits scroll) they must be ident
 
 ## Publishing
 
-Two workflows live in `.github/workflows`: `ci.yml` (format, clippy native and wasm, tests, pack
+Three workflows live in `.github/workflows`: `ci.yml` (format, clippy native and wasm, tests, pack
 validation, battle simulation, the wasm build, and the asset pipeline's lint and unit tests — including
 the font Hanja coverage check, the web build scripts' tests and the JS plugin version check — on every
-push and pull request) and `release.yml` (release archives, built only after the rules tests and the
-base pack validation pass). The web demo (`pages.yml`) was taken down with the base pack's story
-(DECISIONS D21): a browser cannot read the player's original, so it could only show the test battle.
+push and pull request), `release.yml` (release archives, built only after the rules tests and the
+base pack validation pass) and `pages.yml`, which publishes the static landing page in `site/` to
+GitHub Pages (<https://jeiel85.github.io/eiketsuden-reloaded/>) on every push to main that changes
+`site/` (or by hand, **Run workflow**). It deploys the folder as it is, with no build step; the
+repository's Pages source must be set to "GitHub Actions" once (Settings → Pages, or
+`gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`). The page's screenshots
+(`site/img/`) are of the base pack only, never of the original; they were taken from the web build,
+whose title screen lacks the native-only "원작 데이터" entry, so the page shows no title screen. The web demo that `pages.yml` used
+to deploy was taken down with the base pack's story (DECISIONS D21): a browser cannot read the
+player's original, so it could only show the test battle.
 
 **Releases.** First set `version` in `[workspace.package]` of the root `Cargo.toml` (shown on the
 title screen as `v…`) to the new version and commit it, then tag that commit `vX.Y.Z` and push the tag:

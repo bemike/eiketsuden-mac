@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>영걸전 Reloaded</title>
+  <meta name="description" content="삼국지 영걸전(1995)을 현대 Windows · macOS · Linux에서 원작대로 돌리는 오픈소스 엔진. 가지고 있는 원작을 읽어 플레이합니다.">
+  <meta property="og:title" content="영걸전 Reloaded">
+  <meta property="og:description" content="삼국지 영걸전(1995)을 현대 시스템에서 원작대로 돌리는 오픈소스 엔진 — An open-source engine that runs your copy of Sangokushi Eiketsuden on modern systems.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://jeiel85.github.io/eiketsuden-reloaded/img/battle.png">
+  <meta name="color-scheme" content="dark light">
+  <!-- The application icon's banner (crates/hero-game/icon, tools/assets/build_icon.py). -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%231c2f78'/%3E%3Crect x='1.5' y='1.5' width='13' height='13' fill='none' stroke='%23e8d9a8'/%3E%3Crect x='5' y='3' width='1' height='10' fill='%23e8d9a8'/%3E%3Crect x='6' y='4' width='6' height='5' fill='%23c8402f'/%3E%3C/svg%3E">
+  <!-- Galmuri (SIL OFL 1.1, the game's own font) for the title and the step numbers. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
+  <style>
+    :root {
+      --bg: #f4ecd8;
+      --surface: #fbf6ea;
+      --ink: #231d14;
+      --muted: #6b5f4a;
+      --line: #d8ccb0;
+      --accent: #a8321f;
+      --accent-ink: #fff8ec;
+      --banner: #1c2f78;
+      --code-bg: #ebe1c8;
+      --hero-ink: #f4ead0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #12110e;
+        --surface: #1b1914;
+        --ink: #ece2c8;
+        --muted: #a3977c;
+        --line: #353026;
+        --accent: #e2694f;
+        --accent-ink: #fff8ec;
+        --banner: #3a4fa0;
+        --code-bg: #25221b;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #12110e;
+      --surface: #1b1914;
+      --ink: #ece2c8;
+      --muted: #a3977c;
+      --line: #353026;
+      --accent: #e2694f;
+      --accent-ink: #fff8ec;
+      --banner: #3a4fa0;
+      --code-bg: #25221b;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+      font-size: 16px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere;
+    }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    .pixel { font-family: "Galmuri11", "Galmuri9", monospace; letter-spacing: 0.02em; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+    /* Hero: a public-domain painting (the base pack's `field` background) under a dark wash. */
+    .hero {
+      position: relative; color: var(--hero-ink); overflow: hidden;
+      background: #1a1712 url("img/field.jpg") center 40% / cover no-repeat;
+    }
+    .hero::before {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(18,15,10,0.55) 0%, rgba(18,15,10,0.78) 70%, rgba(18,15,10,0.92) 100%);
+    }
+    .hero .wrap { position: relative; padding-top: 72px; padding-bottom: 64px; }
+    .hero .seal {
+      display: inline-grid; place-items: center; width: 64px; height: 64px; margin-bottom: 20px;
+      border: 3px solid #e8d9a8; background: var(--banner); image-rendering: pixelated;
+    }
+    .hero h1 { margin: 0; font-size: clamp(36px, 7vw, 64px); line-height: 1.15; font-weight: 700; }
+    .hero h1 small { display: block; margin-top: 6px; font-size: 0.34em; color: #d9c79a; letter-spacing: 0.08em; }
+    .hero .lead { max-width: 640px; margin: 24px 0 0; font-size: clamp(17px, 2.4vw, 20px); color: #efe3c4; }
+    .hero .lead-en { max-width: 640px; margin: 8px 0 0; font-size: 15px; color: #c8b890; font-style: italic; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 22px;
+      border: 2px solid transparent; text-decoration: none; font-weight: 700; font-size: 16px;
+    }
+    .btn-primary { background: #a8321f; color: #fff8ec; border-color: #c8402f; }
+    .btn-primary:hover { background: #bd3a24; }
+    .btn-ghost { color: #f4ead0; border-color: rgba(244,234,208,0.55); }
+    .btn-ghost:hover { background: rgba(244,234,208,0.1); }
+    .platforms { margin-top: 14px; font-size: 14px; color: #bfae86; }
+
+    section { padding: 64px 0; border-bottom: 1px solid var(--line); }
+    section:last-of-type { border-bottom: 0; }
+    h2 { margin: 0 0 8px; font-size: clamp(24px, 3.6vw, 30px); line-height: 1.3; }
+    h2 + .sub { margin: 0 0 32px; color: var(--muted); }
+    h3 { margin: 0 0 8px; font-size: 18px; line-height: 1.4; }
+    p { margin: 0 0 12px; }
+
+    .intro { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
+    .shot { margin: 0; }
+    .shot img {
+      display: block; width: 100%; height: auto; image-rendering: pixelated;
+      border: 3px solid var(--ink); background: #000;
+    }
+    .shot figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+    .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 40px; }
+
+    .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .card { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent); }
+    .card p { color: var(--muted); font-size: 15px; margin: 0; }
+    .card code, .steps code, .en code {
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.88em;
+      background: var(--code-bg); padding: 1px 5px;
+    }
+
+    .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: step; }
+    .steps li { padding: 24px; background: var(--surface); border: 1px solid var(--line); counter-increment: step; }
+    .steps li::before {
+      content: counter(step); display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 12px;
+      background: var(--banner); color: #f4ead0; font-family: "Galmuri11", monospace; font-size: 18px;
+    }
+    .steps p { color: var(--muted); font-size: 15px; margin: 0; }
+    .note { margin-top: 20px; font-size: 14px; color: var(--muted); }
+
+    .status { width: 100%; border-collapse: collapse; font-size: 15px; }
+    .status th, .status td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .status th { width: 34%; font-weight: 700; }
+    .meter { display: block; height: 8px; margin-top: 6px; background: var(--line); }
+    .meter i { display: block; height: 100%; background: var(--accent); }
+
+    .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .links a {
+      display: block; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line);
+      text-decoration: none; color: var(--ink);
+    }
+    .links a:hover { border-color: var(--accent); }
+    .links b { display: block; color: var(--accent); }
+    .links span { font-size: 14px; color: var(--muted); }
+
+    .en { font-size: 15px; }
+    .en ul { padding-left: 20px; margin: 0 0 12px; }
+    .en li { margin-bottom: 6px; }
+
+    footer { padding: 40px 0 56px; font-size: 13px; color: var(--muted); }
+    footer p { margin: 0 0 8px; }
+
+    @media (max-width: 800px) {
+      .intro { grid-template-columns: 1fr; gap: 28px; }
+      .features, .steps, .links, .gallery { grid-template-columns: 1fr; }
+      .hero .wrap { padding-top: 48px; padding-bottom: 48px; }
+      section { padding: 48px 0; }
+      .status th { width: auto; }
+      .status th, .status td { display: block; padding: 4px 0; border: 0; }
+      .status tr { display: block; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="seal" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="5" y="3" width="1" height="10" fill="#e8d9a8"/><rect x="6" y="4" width="6" height="5" fill="#c8402f"/></svg>
+      </div>
+      <h1 class="pixel">영걸전 Reloaded <small lang="en">EIKETSUDEN RELOADED</small></h1>
+      <p class="lead">1995년 『삼국지 영걸전』을 오늘날의 Windows · macOS · Linux에서 <b>원작대로</b> 플레이하는 오픈소스 엔진입니다.
+        가지고 있는 원작의 설치 폴더를 고르면, 엔진이 원작의 그림·맵·이야기·음악을 읽어 그대로 돌립니다.</p>
+      <p class="lead-en" lang="en">An open-source engine that runs your own copy of the 1995 Three Kingdoms tactics RPG on modern systems.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/jeiel85/eiketsuden-reloaded/releases/latest">⬇ 최신 버전 받기</a>
+        <a class="btn btn-ghost" href="https://github.com/jeiel85/eiketsuden-reloaded">GitHub 저장소</a>
+      </div>
+      <p class="platforms">Windows x64 · macOS (Apple Silicon · Intel) · Linux x64 — 무료, GPL-3.0</p>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="wrap intro">
+        <div>
+          <h2>원작을 되살리는 엔진</h2>
+          <p><a href="https://openrct2.io/">OpenRCT2</a>가 롤러코스터 타이쿤 2를, <a href="https://www.openttd.org/">OpenTTD</a>가
+            트랜스포트 타이쿤을 되살린 것처럼, 영걸전 Reloaded는 KOEI의 『삼국지 영걸전』을 돌리는 엔진을 Rust로 처음부터 새로 만든 프로젝트입니다.</p>
+          <p>새 게임을 만드는 것이 아니라 원작을 재현하는 것이 목표입니다. 저장소와 배포물에는 원작의 그래픽·음악·대사·실행 파일이 한 바이트도
+            들어 있지 않으며, 원작은 여러분의 PC에서 읽기만 합니다.</p>
+        </div>
+        <figure class="shot">
+          <img src="img/battle.png" width="960" height="540" alt="기본 팩의 시험 전투(사수관) 화면: 전장 위에 화웅의 얼굴과 대사창이 떠 있다">
+          <figcaption>원작 없이 엔진을 시험해 보는 기본 팩의 사수관 전투. 원작 모드에서는 원작의 화면으로 바뀝니다.</figcaption>
+        </figure>
+      </div>
+      <div class="wrap gallery">
+        <figure class="shot">
+          <img src="img/field-map.png" width="960" height="540" loading="lazy" alt="사수관 전장: 강과 다리 너머 관문 앞에 진을 친 적군, 아래쪽 대사창의 전투 해설">
+          <figcaption>전투 화면(사수관)</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="img/camp.png" width="960" height="540" loading="lazy" alt="출진 준비 화면: 다음 전투의 승리·패배 조건과 출진 부대 목록">
+          <figcaption>출진 준비(캠프) 화면</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>무엇을 하나요</h2>
+        <p class="sub">원작 모드가 이 프로젝트의 본체입니다.</p>
+        <div class="features">
+          <div class="card">
+            <h3>원작 모드</h3>
+            <p>원작 설치 폴더를 고르면 얼굴·유닛·지형·전투 맵, 전투·캠프·상태 창의 화면 틀, 음악, 규칙 표를 원작 그대로 씁니다.
+              서장부터 엔딩까지 전투 60개와 그 대사·일기토, 마을 이야기, 무장의 능력치와 합류가 원작 파일에서 변환됩니다
+              (서장·1장 변환은 실물 원작으로 아직 확인 전).</p>
+          </div>
+          <div class="card">
+            <h3>원작 규칙 재현</h3>
+            <p>PC판의 규칙을 팬 커뮤니티가 역분석한 공식 그대로 옮겼습니다. 공격력·방어력, 확정 데미지 <code>(공격 − 방어/2)×지형</code>,
+              병종 상성, 반격, 사기와 혼란, 책략, 날씨까지.</p>
+          </div>
+          <div class="card">
+            <h3>현대적인 편의</h3>
+            <p>어디서나 순간 저장(F5)과 불러오기(F9), 대사 빨리 넘기기와 최근 대사 다시 보기, 전체 화면, 마우스·터치 조작.</p>
+          </div>
+          <div class="card">
+            <h3>열린 데이터와 모딩</h3>
+            <p>규칙·무장·맵·캠페인·대사가 모두 사람이 읽을 수 있는 TOML과 <code>.drama</code> 스크립트입니다.
+              바꿀 파일만 담은 모드를 기본 팩 위에 겹쳐 만들 수 있습니다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>플레이하기</h2>
+        <p class="sub">원작이 필요합니다. 설치 과정 없이 압축을 풀어 실행합니다.</p>
+        <ol class="steps">
+          <li>
+            <h3>내려받기</h3>
+            <p><a href="https://github.com/jeiel85/eiketsuden-reloaded/releases/latest">Releases</a>에서 운영체제에 맞는 압축 파일을 받아 풉니다.</p>
+          </li>
+          <li>
+            <h3>실행하기</h3>
+            <p><code>eiketsuden</code> 실행 파일을 엽니다. <code>data</code> 폴더는 실행 파일 옆에 그대로 두세요.</p>
+          </li>
+          <li>
+            <h3>원작 고르기</h3>
+            <p>타이틀의 <b>원작 데이터</b>에서 가지고 있는 원작의 설치 폴더를 고릅니다. 다음 실행부터는 바로 원작으로 시작합니다.</p>
+          </li>
+        </ol>
+        <p class="note">지원 판본: 한국어 DOS/V판(실물 검증), 번체 중문 DOS판(실물 미검증). macOS에서 처음 실행이 막히면
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded#플레이하기">README의 안내</a>를 보세요.
+          원작 폴더를 고르지 않으면 기본 팩의 시험 전투로 시작합니다. 브라우저는 PC의 원작 폴더를 읽을 수 없어 웹 버전은 없습니다.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>진행 상황</h2>
+        <p class="sub">진행률은 원작 모드만 기준으로 잽니다. 최신 상황은 <a href="https://github.com/jeiel85/eiketsuden-reloaded#진행-상황">README</a>에 있습니다.</p>
+        <table class="status">
+          <tr>
+            <th>원작 전투</th>
+            <td>60개 모두 원작 모드로 플레이 가능(서장·1장 19개는 실물 확인 전)<span class="meter"><i style="width:100%"></i></span></td>
+          </tr>
+          <tr>
+            <th>원작 캠페인</th>
+            <td>서장부터 원작의 엔딩 4개까지 이어짐<span class="meter"><i style="width:100%"></i></span></td>
+          </tr>
+          <tr>
+            <th>남은 일</th>
+            <td>서장·1장 변환의 실물 확인, 루트마다 다른 출진 설정, 음악 곡 배정 확인, 직접 플레이로 난이도 확인.
+              마을은 걸어 다니는 대신 대사 장면과 선택지로 옮겼습니다.</td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>더 알아보기</h2>
+        <p class="sub">엔진을 어떻게 만들고 있는지 모두 공개합니다.</p>
+        <div class="links">
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded/blob/main/docs/ENGINE.md"><b>엔진 개발 방식</b><span>OpenRCT2와 같은 점·다른 점, 검증 방법</span></a>
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded/blob/main/docs/ORIGINAL_DATA.md"><b>원작 데이터</b><span>지원 판본과 원작 모드의 동작</span></a>
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded/blob/main/docs/RULES.md"><b>규칙</b><span>역분석된 원작 공식</span></a>
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded/blob/main/docs/MODDING.md"><b>모딩</b><span>데이터 팩과 드라마 스크립트</span></a>
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded/tree/main/docs/reverse-engineering"><b>원작 파일 분석</b><span>검증된 파일 형식과 방법</span></a>
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded/issues"><b>이슈</b><span>버그 제보와 제안</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="en" lang="en">
+      <div class="wrap">
+        <h2>In English</h2>
+        <p>Eiketsuden Reloaded is a new engine, written from scratch in Rust with <a href="https://github.com/not-fl3/macroquad">macroquad</a>,
+          that runs KOEI's 1995 <i>Sangokushi Eiketsuden</i> on modern Windows, macOS and Linux in the spirit of OpenRCT2 and OpenTTD.</p>
+        <ul>
+          <li><b>Original mode:</b> pick your installation folder under “원작 데이터” on the title screen and the game plays your copy with
+            its portraits, units, maps, screen frames, music and rule tables — all 60 battles and the story from the prologue to the endings.
+            The conversion of the prologue and chapter 1 is not yet checked on a real copy.
+            Supported: the Korean DOS/V release (verified) and the Traditional Chinese DOS release (not yet verified).</li>
+          <li><b>Faithful rules</b> from the fan community's reverse-engineered formulas of the PC version.</li>
+          <li><b>License-clean:</b> no KOEI graphics, music, text or code ships with the engine; your copy is only read on your own computer.</li>
+          <li><b>Moddable:</b> rules, officers, maps and scripts are plain TOML and <code>.drama</code> files.</li>
+        </ul>
+        <p>The game's text is currently Korean only.</p>
+        <p><small>Not affiliated with KOEI TECMO: an independent fan project, not made, endorsed or supported by KOEI TECMO GAMES CO., LTD.
+          You need your own copy of the original to play it. <i>Sangokushi</i>, <i>Sangokushi Eiketsuden</i> and KOEI TECMO are trademarks of their respective owners.</small></p>
+        <p><a href="https://github.com/jeiel85/eiketsuden-reloaded/releases/latest">Download the latest release</a> ·
+          <a href="https://github.com/jeiel85/eiketsuden-reloaded#english">Read the README</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>KOEI TECMO와 관계없는 독립 팬 프로젝트입니다. KOEI TECMO GAMES가 만들거나 승인·지원하는 게임이 아니며, 플레이하려면 원작을 가지고 있어야 합니다.
+        『삼국지』, 『삼국지 영걸전』과 KOEI TECMO는 각 권리자의 상표입니다.</p>
+      <p>코드: <a href="https://github.com/jeiel85/eiketsuden-reloaded/blob/main/LICENSE">GPL-3.0-or-later</a> ·
+        미디어: <a href="https://github.com/jeiel85/eiketsuden-reloaded/blob/main/CREDITS.md">CC0 · CC-BY · OFL · 퍼블릭 도메인</a> ·
+        이 페이지의 그림은 모두 기본 팩의 것입니다(맨 위 배경은 퍼블릭 도메인 회화, 출처는 CREDITS.md).</p>
+    </div>
+  </footer>
+</body>
+</html>
