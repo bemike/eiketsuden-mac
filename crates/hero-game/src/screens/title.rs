@@ -11,6 +11,7 @@ use crate::assets::AssetState;
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
 use crate::gfx::{draw_texture_fit, fill_gradient_v, Align, Fit, TextStyle};
+use crate::quicksave;
 use crate::saves;
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -122,7 +123,16 @@ impl TitleScreen {
                 };
                 match saves::latest(ctx.storage.as_ref(), &pack_id) {
                     Some(slot) => match saves::read(ctx.storage.as_ref(), slot, &pack_id) {
-                        Ok(save) => Transition::Flow(Flow::Continue(Box::new(save))),
+                        Ok(save) => {
+                            match ctx.pack.as_deref().map(|p| quicksave::playable(p, &save)) {
+                                Some(Err(why)) => {
+                                    ctx.sfx(sfx::ERROR);
+                                    ctx.toast(why);
+                                    Transition::None
+                                }
+                                _ => Transition::Flow(Flow::Continue(Box::new(save))),
+                            }
+                        }
                         Err(e) => {
                             ctx.sfx(sfx::ERROR);
                             ctx.toast(e.to_string());

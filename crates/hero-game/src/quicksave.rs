@@ -24,7 +24,7 @@ use crate::flow::{save_label, Session};
 use crate::saves::{self, SaveSlot};
 use hero_core::battle::BattleState;
 use hero_core::pack::Pack;
-use hero_core::save::{SaveGame, SceneResume};
+use hero_core::save::{ResumeError, SaveGame, SceneResume};
 use macroquad::prelude::KeyCode;
 
 /// Key that quick saves.
@@ -106,13 +106,42 @@ pub fn save(ctx: &mut Ctx, stack: &[Box<dyn Screen>]) -> Result<(), String> {
     saves::write(ctx.storage.as_mut(), SaveSlot::Quick, &save).map_err(|e| e.to_string())
 }
 
-/// Input: the context. Output: the quick save of the loaded pack, or a message for a toast
-/// (nothing saved yet, unreadable, another pack).
+/// Input: the context. Output: the quick save of the loaded pack that can be played, or a
+/// message for a toast (nothing saved yet, unreadable, another pack, made with another version
+/// of the pack).
 pub fn read(ctx: &Ctx) -> Result<SaveGame, String> {
-    let Some(pack_id) = ctx.pack_id() else {
+    let (Some(pack), Some(pack_id)) = (ctx.pack.as_deref(), ctx.pack_id()) else {
         return Err("데이터 팩이 로드되지 않았습니다".into());
     };
-    saves::read(ctx.storage.as_ref(), SaveSlot::Quick, pack_id).map_err(|e| e.to_string())
+    let save =
+        saves::read(ctx.storage.as_ref(), SaveSlot::Quick, pack_id).map_err(|e| e.to_string())?;
+    playable(pack, &save)?;
+    Ok(save)
+}
+
+/// Input: the loaded pack and a save about to be continued. Output: `Ok`, or the reason in
+/// words for a toast or error screen.
+///
+/// Why the callers check before switching screens: a save that cannot be played must leave the
+/// running game (or the title screen) untouched, not tear the screen stack down first. See
+/// [`SaveGame::check_resume`] for why such a save is refused and not repaired.
+pub fn playable(pack: &Pack, save: &SaveGame) -> Result<(), String> {
+    save.check_resume(pack).map_err(|e| describe(&e))
+}
+
+/// The player-facing text of a [`ResumeError`].
+pub fn describe(error: &ResumeError) -> String {
+    match error {
+        ResumeError::PackVersion { saved, current } => format!(
+            "장면 도중의 기록은 같은 버전의 데이터 팩에서만 이어 할 수 있습니다 (기록 {saved}, 현재 {current})"
+        ),
+        ResumeError::SceneChanged(scene) => {
+            format!("기록된 장면 `{scene}`이(가) 데이터 팩에서 바뀌었거나 없어졌습니다")
+        }
+        ResumeError::WrongNode(_) | ResumeError::NoBattle | ResumeError::UnexpectedBattle => {
+            "기록이 데이터 팩과 맞지 않습니다".into()
+        }
+    }
 }
 
 #[cfg(test)]

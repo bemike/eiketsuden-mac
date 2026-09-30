@@ -13,6 +13,7 @@ use crate::audio::sfx;
 use crate::flow::Flow;
 use crate::gfx::{fill_rect, Align, TextStyle};
 use crate::platform::unix_now;
+use crate::quicksave;
 use crate::saves::{self, SlotInfo, SlotStatus};
 use crate::ui::dialog::{ChoiceBox, ChoiceEvent, ConfirmDialog, ConfirmEvent};
 use crate::ui::format;
@@ -192,7 +193,13 @@ impl SaveLoadScreen {
         let slot = self.slots[index].slot;
         match action {
             SlotAction::Load => match saves::read(ctx.storage.as_ref(), slot, &self.pack_id) {
-                Ok(save) => return Transition::Flow(Flow::Continue(Box::new(save))),
+                Ok(save) => match ctx.pack.as_deref().map(|p| quicksave::playable(p, &save)) {
+                    Some(Err(why)) => {
+                        ctx.sfx(sfx::ERROR);
+                        ctx.toast(why);
+                    }
+                    _ => return Transition::Flow(Flow::Continue(Box::new(save))),
+                },
                 Err(e) => {
                     ctx.sfx(sfx::ERROR);
                     ctx.toast(e.to_string());

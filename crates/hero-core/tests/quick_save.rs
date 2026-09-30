@@ -8,7 +8,9 @@ use common::*;
 use hero_core::campaign::CampaignState;
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::Pack;
-use hero_core::save::{SaveGame, SceneKind, SceneResume, PLAIN_SAVE_VERSION, SAVE_VERSION};
+use hero_core::save::{
+    ResumeError, SaveGame, SceneKind, SceneResume, PLAIN_SAVE_VERSION, SAVE_VERSION,
+};
 use std::collections::BTreeMap;
 
 /// Everything `DramaRunner` reports from now on until the scene ends, choosing `pick` at each
@@ -163,4 +165,96 @@ fn a_record_that_no_longer_fits_the_pack_is_detected() {
     let mut waiting = ok;
     waiting.runner.pending_choice = Some(vec!["a".into()]);
     assert!(!waiting.fits(&pack));
+}
+
+fn save_of(pack: &Pack, node: &str, scene: Option<SceneResume>) -> SaveGame {
+    let mut campaign = CampaignState::new_game(pack);
+    campaign.node = node.into();
+    let mut save = SaveGame {
+        version: PLAIN_SAVE_VERSION,
+        pack_id: pack.manifest.id.clone(),
+        pack_version: pack.manifest.version.clone(),
+        label: "test".into(),
+        saved_at: 1,
+        campaign,
+        battle: None,
+        scene,
+        pending_scenes: Vec::new(),
+    };
+    save.stamp_version();
+    save
+}
+
+/// A scene record is refused, never replayed from the node's start: the saved campaign already
+/// holds the side effects of the steps before the position, so playing the scene again from its
+/// first line would apply `@gold`, `@item` and `@set` a second time.
+#[test]
+fn a_scene_record_of_another_pack_version_or_node_is_refused() {
+    let pack = load_fixture();
+    let runner = DramaRunner::new(&pack, "oath").unwrap();
+    let record = resume_of(&runner, None);
+
+    // Made against this very pack, at the node that plays the scene: fine.
+    let good = save_of(&pack, "prologue", Some(record.clone()));
+    assert_eq!(good.check_resume(&pack), Ok(()));
+    // No record: nothing to check, whatever the version.
+    let mut plain = save_of(&pack, "prologue", None);
+    plain.pack_version = "0.0.0-old".into();
+    assert_eq!(plain.check_resume(&pack), Ok(()));
+
+    // The pack was updated since the save.
+    let mut old = good.clone();
+    old.pack_version = "0.0.0-old".into();
+    assert_eq!(
+        old.check_resume(&pack),
+        Err(ResumeError::PackVersion {
+            saved: "0.0.0-old".into(),
+            current: pack.manifest.version.clone(),
+        })
+    );
+
+    // The node that played the scene is no longer where the campaign is, or is not a drama.
+    assert_eq!(
+        save_of(&pack, "mercy", Some(record.clone())).check_resume(&pack),
+        Err(ResumeError::WrongNode("mercy".into()))
+    );
+    assert_eq!(
+        save_of(&pack, "camp1", Some(record.clone())).check_resume(&pack),
+        Err(ResumeError::WrongNode("camp1".into()))
+    );
+
+    // The scene was shortened since the save, or is gone.
+    let mut past_the_end = record.clone();
+    past_the_end.runner.pc = pack.scene("oath").unwrap().cmds.len() + 1;
+    assert_eq!(
+        save_of(&pack, "prologue", Some(past_the_end)).check_resume(&pack),
+        Err(ResumeError::SceneChanged("oath".into()))
+    );
+    let mut gone = record.clone();
+    gone.runner.scene = "no_such_scene".into();
+    assert_eq!(
+        save_of(&pack, "prologue", Some(gone)).check_resume(&pack),
+        Err(ResumeError::SceneChanged("no_such_scene".into()))
+    );
+
+    // The ending scene belongs to the ending node only.
+    let mut ending = resume_of(&DramaRunner::new(&pack, "epilogue").unwrap(), None);
+    ending.kind = SceneKind::Ending {
+        title: "끝".into()
+    };
+    assert_eq!(
+        save_of(&pack, "finale", Some(ending.clone())).check_resume(&pack),
+        Ok(())
+    );
+    assert!(save_of(&pack, "prologue", Some(ending))
+        .check_resume(&pack)
+        .is_err());
+
+    // A scene over a battle needs the battle; a campaign scene must not come with one.
+    let mut overlay = record;
+    overlay.kind = SceneKind::Overlay;
+    assert_eq!(
+        save_of(&pack, "prologue", Some(overlay)).check_resume(&pack),
+        Err(ResumeError::NoBattle)
+    );
 }

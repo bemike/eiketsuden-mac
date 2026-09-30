@@ -107,6 +107,22 @@ impl SceneResume {
     }
 }
 
+/// Why the scene record of a save cannot be played against the pack that is loaded
+/// ([`SaveGame::check_resume`]).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ResumeError {
+    #[error("saved with pack version {saved}, but pack version {current} is loaded")]
+    PackVersion { saved: String, current: String },
+    #[error("the saved scene `{0}` is missing or shorter in this pack")]
+    SceneChanged(String),
+    #[error("the saved scene does not belong to campaign node `{0}`")]
+    WrongNode(String),
+    #[error("a scene shown over a battle was saved without the battle")]
+    NoBattle,
+    #[error("a scene of the campaign was saved together with a battle")]
+    UnexpectedBattle,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SaveError {
     #[error("save data is corrupt: {0}")]
@@ -128,6 +144,46 @@ impl SaveGame {
         } else {
             PLAIN_SAVE_VERSION
         };
+    }
+
+    /// Input: the pack that is loaded. Output: `Ok` when the save can be loaded, else why its
+    /// scene record cannot be played. A save without a scene record is always fine.
+    ///
+    /// Why loading is refused rather than falling back to the start of the node: the saved
+    /// campaign already holds the side effects (`@gold`, `@item`, `@set` ...) of the steps
+    /// before the saved position, so playing the node's scene again from its first line would
+    /// apply them a second time. Nor can the position be trusted against a changed scene: the
+    /// same `pc` may name another command. So a record is played only against the very pack
+    /// version it was made with (a changed pack is expected to carry a new version), and
+    /// only when it still fits that pack's scene and campaign node.
+    pub fn check_resume(&self, pack: &crate::pack::Pack) -> Result<(), ResumeError> {
+        use crate::campaign::Node;
+        let Some(scene) = &self.scene else {
+            return Ok(());
+        };
+        if self.pack_version != pack.manifest.version {
+            return Err(ResumeError::PackVersion {
+                saved: self.pack_version.clone(),
+                current: pack.manifest.version.clone(),
+            });
+        }
+        if !scene.fits(pack) {
+            return Err(ResumeError::SceneChanged(scene.runner.scene.clone()));
+        }
+        let same = |id: &str| id == scene.runner.scene;
+        match (&scene.kind, pack.campaign.node(&self.campaign.node)) {
+            (SceneKind::Overlay, _) if self.battle.is_some() => Ok(()),
+            (SceneKind::Overlay, _) => Err(ResumeError::NoBattle),
+            (_, _) if self.battle.is_some() => Err(ResumeError::UnexpectedBattle),
+            (SceneKind::Node, Some(Node::Drama { scene: id, .. })) if same(id) => Ok(()),
+            (
+                SceneKind::Ending { .. },
+                Some(Node::Ending {
+                    scene: Some(id), ..
+                }),
+            ) if same(id) => Ok(()),
+            _ => Err(ResumeError::WrongNode(self.campaign.node.clone())),
+        }
     }
 
     pub fn to_json(&self) -> String {

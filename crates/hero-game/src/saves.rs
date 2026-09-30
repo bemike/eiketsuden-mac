@@ -291,12 +291,32 @@ pub fn migrate_legacy(
     Ok(moved)
 }
 
+/// Which slot wins when two saves carry the same `saved_at`: the quick save, then the autosave,
+/// then the manual slots (each group in list order).
+///
+/// Why: `saved_at` counts whole seconds, so saves made within one second tie. The quick save is
+/// only ever written by a key press in a running game, which comes after the autosave made on
+/// arriving at a node, so on a tie it is the newer one; and a quick save that loses ties would
+/// be ignored by 이어하기 right after an autosave, which is when it is most often made.
+fn tie_rank(slot: SaveSlot) -> u8 {
+    match slot {
+        SaveSlot::Quick => 0,
+        SaveSlot::Auto => 1,
+        SaveSlot::Manual(_) => 2,
+    }
+}
+
 /// The most recently saved loadable slot of `pack_id` (for "continue").
 pub fn latest(store: &dyn KeyValueStore, pack_id: &str) -> Option<SaveSlot> {
-    list(store, pack_id)
+    let mut candidates: Vec<(u64, SaveSlot)> = list(store, pack_id)
         .into_iter()
         .filter_map(|info| info.summary().map(|s| (s.saved_at, info.slot)))
-        // Newest first; on equal timestamps prefer the autosave (it is listed first).
+        .collect();
+    // Stable, so slots of the same rank stay in list order.
+    candidates.sort_by_key(|(_, slot)| tie_rank(*slot));
+    candidates
+        .into_iter()
+        // Newest first; on equal timestamps the slot that comes first wins.
         .fold(
             None,
             |best: Option<(u64, SaveSlot)>, (at, slot)| match best {
@@ -560,6 +580,27 @@ mod tests {
         write(&mut store, SaveSlot::Manual(1), &save("a", 50, "base")).unwrap();
         write(&mut store, SaveSlot::Auto, &save("b", 50, "base")).unwrap();
         assert_eq!(latest(&store, "base"), Some(SaveSlot::Auto));
+    }
+
+    /// Regression: `saved_at` counts whole seconds, and a quick save made in the same second as
+    /// the autosave of the node just entered used to lose the tie, so 이어하기 ignored it.
+    #[test]
+    fn a_quick_save_wins_a_tie_with_the_autosave_and_manual_slots() {
+        let mut store = MemoryStore::default();
+        write(&mut store, SaveSlot::Manual(1), &save("수동", 50, "base")).unwrap();
+        write(&mut store, SaveSlot::Auto, &save("자동", 50, "base")).unwrap();
+        write(&mut store, SaveSlot::Quick, &save("순간", 50, "base")).unwrap();
+        assert_eq!(latest(&store, "base"), Some(SaveSlot::Quick));
+
+        // Only a tie: an older quick save loses to a newer autosave.
+        write(&mut store, SaveSlot::Auto, &save("자동", 51, "base")).unwrap();
+        assert_eq!(latest(&store, "base"), Some(SaveSlot::Auto));
+
+        // Among manual slots the first one still wins a tie.
+        let mut store = MemoryStore::default();
+        write(&mut store, SaveSlot::Manual(3), &save("c", 70, "base")).unwrap();
+        write(&mut store, SaveSlot::Manual(2), &save("b", 70, "base")).unwrap();
+        assert_eq!(latest(&store, "base"), Some(SaveSlot::Manual(2)));
     }
 
     #[test]
