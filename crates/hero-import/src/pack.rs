@@ -2230,7 +2230,7 @@ pub fn chapter_leg_id(file: usize, scene: usize, block: usize, leg: u8) -> Strin
 }
 
 /// Where part `part` of scene `scene` of file `file` is in the scenario.
-fn place(file: usize, scene: usize, part: &chapters::Part) -> chapters::Place {
+fn part_place(file: usize, scene: usize, part: &chapters::Part) -> chapters::Place {
     match *part {
         chapters::Part::Story { block } => (file, scene, block, 0),
         chapters::Part::Battle { block, leg, .. } => (file, scene, block, leg),
@@ -2523,11 +2523,11 @@ fn convert_battles(
                     // What the original plays after the battle is won: its outro.
                     chapters::Part::Battle { .. } => {
                         let battle = chapter_leg_id(file, scene_index, block, leg);
-                        let continued = leg == 0 && battles::has_continuation(&scene, block);
+                        let goes_on = leg == 0 && battles::has_continuation(&scene, block);
                         let outro = chapters::victory_scene_after(
                             &battles::battle_leg(&scene, block, leg),
                             &ctx,
-                            continued.then(|| battles::continuation_flag(&scene)),
+                            goes_on.then(|| battles::continuation_flag(&scene)),
                             Some(&battles::ended_flag(&battle)),
                         );
                         (!outro.text.is_empty()).then(|| (format!("{battle}_outro"), outro))
@@ -2564,7 +2564,7 @@ fn convert_battles(
     // (the original lets one pick it by whom one talks to) is left out.
     let at: Vec<chapters::Place> = chapter
         .iter()
-        .map(|(file, scene, part, _)| place(*file, *scene, part))
+        .map(|(file, scene, part, _)| part_place(*file, *scene, part))
         .collect();
     let next: Vec<Vec<chapters::Next>> = chapter
         .iter()
@@ -2582,7 +2582,7 @@ fn convert_battles(
     chapter.retain(|(file, scene, part, _)| {
         let kept = reached.next().unwrap_or(true);
         if !kept {
-            let (_, _, block, _) = place(*file, *scene, part);
+            let (_, _, block, _) = part_place(*file, *scene, part);
             report.notes.push(format!(
                 "SNR{file} scene {scene} block {block}: an alternative the converted story does \
                  not reach (the original offers it by whom one talks to); left out"
@@ -2596,7 +2596,7 @@ fn convert_battles(
     let mut first_join: BTreeMap<String, usize> = BTreeMap::new();
     let mut battle_time: BTreeMap<chapters::Place, usize> = BTreeMap::new();
     for (i, (file, scene, part, story)) in chapter.iter().enumerate() {
-        let at = place(*file, *scene, part);
+        let at = part_place(*file, *scene, part);
         if matches!(part, chapters::Part::Battle { .. }) {
             battle_time.insert(at, 3 * i + 1);
         }
@@ -2971,6 +2971,24 @@ fn convert_battles(
                     .get_or_insert_with(|| format!("{id}_outro"));
                 army_scenes.insert(id.to_string(), prefix);
             }
+            // An event of the battle ends it: the outro's victory script may be left out then.
+            let flag = battles::ended_flag(id);
+            let ends_by_event = converted
+                .battle
+                .events
+                .iter()
+                .flat_map(|e| &e.actions)
+                .any(|a| matches!(a, hero_core::battledef::EventAction::SetFlag { flag: f, .. } if *f == flag));
+            if pairing.battle.is_empty()
+                && battles::events_end_battle(&original.records)
+                && !ends_by_event
+            {
+                converted.notes.push(
+                    "a record of the last stage that ends it is not converted: the outro's \
+                     victory script always plays"
+                        .into(),
+                );
+            }
             let source = format!("{name} scene {scene_index} block {}", original.block);
             let file = format!("{BATTLES_DIR}/{id}.toml");
             let body = toml::to_string(&converted.battle)
@@ -2993,14 +3011,6 @@ fn convert_battles(
             out.write(&file, text.as_bytes())
                 .map_err(|e| e.to_string())?;
             let base_events = base.events.len();
-            // An event of the battle ends it: the outro's victory script may be left out then.
-            let flag = battles::ended_flag(id);
-            let ends_by_event = converted
-                .battle
-                .events
-                .iter()
-                .flat_map(|e| &e.actions)
-                .any(|a| matches!(a, hero_core::battledef::EventAction::SetFlag { flag: f, .. } if *f == flag));
             Ok((
                 BattleRecord {
                     id: id.to_string(),

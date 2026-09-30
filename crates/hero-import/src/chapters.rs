@@ -938,7 +938,8 @@ pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
 /// `@gold` of its own instead of the battle's reward. `ended` is the flag an event of the battle
 /// sets when it ends the battle by itself ([`battles::ended_flag`]): the victory script is the
 /// one of the record that fires when the battle is won, so it is left out then, when other
-/// records of its group could have moved the battle on.
+/// records of its group could have moved the battle on, and so is the gold it gives (a `@gold`
+/// in the test, not the battle's reward).
 pub fn victory_scene_after(
     block: &Block,
     ctx: &StoryContext,
@@ -970,11 +971,16 @@ pub fn victory_scene_after(
                 let _ = writeln!(w.out.text, "@if {flag} != 0 -> won_{k}");
                 k
             });
+        // Its gold is given only where the script runs: a `@gold` inside the test, not the
+        // battle's reward (the epilogue's gold, which always follows, is the reward).
+        let reward = w.gold_as_reward;
+        w.gold_as_reward &= skip.is_none();
         match w.lines(&first.code) {
             Flow::Goto(b) if b != ctx.block => w.out.next = Next::Block(b),
             f @ (Flow::GameOver | Flow::Ending(_)) => w.stop(f),
             _ => {}
         }
+        w.gold_as_reward = reward;
         if let Some(k) = skip {
             w.close_picture();
             let _ = writeln!(w.out.text, "@label won_{k}");
@@ -2497,6 +2503,54 @@ mod tests {
             "A\nB\n"
         );
         assert_eq!(without_ended_gate("A\n", &flag), "A\n");
+    }
+
+    /// The gold of the victory script that an event's ending skips is skipped with it: it is
+    /// given inside the test as a `@gold`, and the battle's reward is what always follows.
+    #[test]
+    fn the_gold_of_a_skipped_victory_script_is_skipped_too() {
+        let mut scene = two_map_scene();
+        // The first leg's victory script gives 700; the second leg's epilogue gives 500.
+        scene.blocks[0].records[3]
+            .code
+            .insert(0, instr("data", &[("kind", 2), ("value", 700)]));
+        scene.blocks[0].records[8]
+            .code
+            .insert(0, instr("data", &[("kind", 2), ("value", 500)]));
+        let names = names();
+        let song_key = |_: u16| None;
+        let flag = battles::ended_flag("c_b0");
+        let first = battles::battle_leg(&scene, 0, 0);
+        let s = victory_scene_after(&first, &ctx(&names, &song_key), None, Some(&flag));
+        assert_eq!(s.gold, 0, "{}", s.text);
+        assert!(
+            s.text
+                .starts_with(&format!("@if {flag} != 0 -> won_1\n@gold 700\n")),
+            "{}",
+            s.text
+        );
+        // The epilogue after the last stage is played either way: its gold is the reward.
+        let second = battles::battle_leg(&scene, 0, 1);
+        let s = victory_scene_after(&second, &ctx(&names, &song_key), None, Some(&flag));
+        assert_eq!(s.gold, 500, "{}", s.text);
+        assert!(!s.text.contains("@gold"), "{}", s.text);
+    }
+
+    /// Two steps that share a block (the legs of a battle on two maps) follow each other, and a
+    /// jump to their block goes to the first.
+    #[test]
+    fn the_legs_of_a_block_follow_each_other() {
+        let at = [(2, 3, 6, 0), (2, 3, 7, 0), (2, 3, 7, 1), (2, 3, 8, 0)];
+        assert_eq!(step_after(&at, 1, &Next::Default), Some(2));
+        assert_eq!(step_after(&at, 2, &Next::Default), Some(3));
+        assert_eq!(step_after(&at, 0, &Next::Block(7)), Some(1));
+        assert_eq!(step_after(&at, 3, &Next::Block(7)), Some(1));
+        assert_eq!(step_after(&at, 3, &Next::Default), None);
+        // Lost on the second leg, the story goes on with the block after theirs.
+        assert_eq!(after_defeat(at[2], &Next::Default), Next::Block(8));
+        // Everything is reached that the steps lead to in order.
+        let nexts: Vec<Vec<Next>> = at.iter().map(|_| vec![Next::Default]).collect();
+        assert_eq!(reachable(&at, &nexts), [true; 4]);
     }
 
     #[test]
