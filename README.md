@@ -10,6 +10,7 @@
 [![Media: CC0 / CC-BY / OFL / PD](https://img.shields.io/badge/media-CC0%20%C2%B7%20CC--BY%20%C2%B7%20OFL%20%C2%B7%20PD-green)](CREDITS.md)
 
 **[⬇ Windows / macOS / Linux 다운로드](https://github.com/jeiel85/eiketsuden-reloaded/releases)** ·
+[소개 페이지](https://jeiel85.github.io/eiketsuden-reloaded/) ·
 [English](#english)
 
 
@@ -79,7 +80,7 @@ cargo run --release -p hero-game
 ```
 
 웹 빌드(WebAssembly)는 `rustup target add wasm32-unknown-unknown` 후(브라우저는 로컬 원작 폴더를 읽을 수 없어 웹에는 원작 모드가
-없고 기본 팩의 시험 전투만 돕니다. 웹 데모는 배포하지 않습니다, D21):
+없고 기본 팩의 시험 전투만 돕니다. 웹 데모는 배포하지 않고, GitHub Pages에는 `site/`의 소개 페이지만 올립니다, D21):
 
 ```bash
 tools/web/build.sh --serve 8080
@@ -187,7 +188,8 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   matched to, the license-clean art, music, fonts and sounds the engine uses (CC0 pixel art, public-domain
   paintings, CC-BY/CC0 music, [CREDITS.md](CREDITS.md)) and **one test battle** (Sishui Pass) to try the engine
   without the original. The story and campaign come from the player's copy (D21). There is no web demo: a
-  browser cannot read a local installation folder.
+  browser cannot read a local installation folder. The [project page](https://jeiel85.github.io/eiketsuden-reloaded/)
+  is a static introduction (`site/`).
 * A fully data-driven, moddable format ([docs/MODDING.md](docs/MODDING.md)); a layered pack (`extends`) holds
   only the files a mod changes.
 * How the engine is built — the OpenRCT2 model without reverse-engineering the original's code: a new engine
