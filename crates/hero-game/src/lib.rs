@@ -14,7 +14,8 @@
 //! | [`assets`] | async file reads and the lazy media store (textures, sounds, icons) with fallbacks |
 //! | [`platform`] | data pack location, launch options, clock, key/value storage (files or `localStorage`) |
 //! | `original` | the original mode: converting the player's own copy at launch (native only) |
-//! | [`saves`] | save slots (autosave + manual) on top of the storage |
+//! | [`saves`] | save slots (autosave, quick save, manual) on top of the storage |
+//! | [`quicksave`] | quick save / load (F5 / F9) at any moment, incl. mid-scene and mid-battle |
 //! | [`settings`] | player settings persisted as JSON |
 //! | [`screens`] | loading, error, title, save/load, settings, credits, game over, UI gallery |
 //! | [`secret`] | the original's hidden command ("금단의 비법", tapping the lord's portrait) |
@@ -31,6 +32,7 @@ pub mod input;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod original;
 pub mod platform;
+pub mod quicksave;
 pub mod saves;
 pub mod screens;
 pub mod secret;

@@ -13,7 +13,7 @@ use crate::audio::sfx;
 use crate::flow::Flow;
 use crate::gfx::{fill_rect, Align, TextStyle};
 use crate::platform::unix_now;
-use crate::saves::{self, SaveSlot, SlotInfo, SlotStatus};
+use crate::saves::{self, SlotInfo, SlotStatus};
 use crate::ui::dialog::{ChoiceBox, ChoiceEvent, ConfirmDialog, ConfirmEvent};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
@@ -119,7 +119,7 @@ impl SaveLoadScreen {
                     SlotStatus::Unreadable(_) => ("(읽을 수 없는 기록)".to_string(), String::new()),
                 };
                 let enabled = match (&info.status, info.slot) {
-                    (_, SaveSlot::Auto) if saving => false,
+                    (_, slot) if saving && slot.is_system() => false,
                     (SlotStatus::Empty, _) => saving,
                     _ => true,
                 };
@@ -151,7 +151,7 @@ impl SaveLoadScreen {
         let mut actions = Vec::new();
         match (&self.mode, &info.status) {
             (Mode::Load, SlotStatus::Ready(_)) => actions.push(SlotAction::Load),
-            (Mode::Save(_), _) if info.slot != SaveSlot::Auto => actions.push(SlotAction::Save),
+            (Mode::Save(_), _) if !info.slot.is_system() => actions.push(SlotAction::Save),
             _ => {}
         }
         if info.status != SlotStatus::Empty {
@@ -362,6 +362,9 @@ impl Screen for SaveLoadScreen {
                         );
                         if s.mid_battle {
                             detail.push_str("   전투 중");
+                        }
+                        if s.mid_scene {
+                            detail.push_str("   장면 중");
                         }
                         gfx.text(&detail, x, y + 17.0, small);
                     }

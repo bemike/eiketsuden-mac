@@ -1,5 +1,6 @@
-//! Save slots on top of the [`KeyValueStore`]: one autosave slot and [`MANUAL_SLOTS`] manual
-//! slots per data pack, each holding one [`SaveGame`] JSON document (`hero_core::save`).
+//! Save slots on top of the [`KeyValueStore`]: one autosave slot, one quick save slot (F5 / F9,
+//! see [`crate::quicksave`]) and [`MANUAL_SLOTS`] manual slots per data pack, each holding one
+//! [`SaveGame`] JSON document (`hero_core::save`).
 //!
 //! Every pack has its own set of slots (the storage key contains the pack id, see
 //! [`SaveSlot::key`]), so playing another pack (a mod, the original mode) never overwrites the
@@ -21,14 +22,25 @@ pub const MANUAL_SLOTS: u8 = 8;
 pub enum SaveSlot {
     /// Written automatically when the campaign advances.
     Auto,
+    /// Written by the quick save key at any moment, including in the middle of a scene or a
+    /// battle animation; there is only this one.
+    Quick,
     /// Player-chosen slot, `1..=MANUAL_SLOTS`.
     Manual(u8),
 }
 
 impl SaveSlot {
-    /// Every slot in display order: the autosave first.
+    /// Every slot in display order: the autosave, the quick save, then the manual slots.
     pub fn all() -> impl Iterator<Item = SaveSlot> {
-        std::iter::once(SaveSlot::Auto).chain((1..=MANUAL_SLOTS).map(SaveSlot::Manual))
+        [SaveSlot::Auto, SaveSlot::Quick]
+            .into_iter()
+            .chain((1..=MANUAL_SLOTS).map(SaveSlot::Manual))
+    }
+
+    /// Slots the game writes by itself (or by a key): the slot list shows them but does not
+    /// write into them.
+    pub fn is_system(self) -> bool {
+        matches!(self, SaveSlot::Auto | SaveSlot::Quick)
     }
 
     /// Storage key of the slot for the pack `pack_id`.
@@ -48,14 +60,19 @@ impl SaveSlot {
         }
     }
 
-    /// Key used before the slots were split per pack (shared by every pack).
-    fn legacy_key(self) -> String {
-        format!("save_{}", self.suffix())
+    /// Key used before the slots were split per pack (shared by every pack). The quick save
+    /// slot did not exist then, so it has none.
+    fn legacy_key(self) -> Option<String> {
+        match self {
+            SaveSlot::Quick => None,
+            _ => Some(format!("save_{}", self.suffix())),
+        }
     }
 
     fn suffix(self) -> String {
         match self {
             SaveSlot::Auto => "auto".into(),
+            SaveSlot::Quick => "quick".into(),
             SaveSlot::Manual(n) => n.to_string(),
         }
     }
@@ -64,20 +81,21 @@ impl SaveSlot {
     pub fn name(self) -> String {
         match self {
             SaveSlot::Auto => "자동 기록".into(),
+            SaveSlot::Quick => "순간 저장".into(),
             SaveSlot::Manual(n) => format!("기록 {n}"),
         }
     }
 
     fn is_valid(self) -> bool {
         match self {
-            SaveSlot::Auto => true,
+            SaveSlot::Auto | SaveSlot::Quick => true,
             SaveSlot::Manual(n) => (1..=MANUAL_SLOTS).contains(&n),
         }
     }
 }
 
-/// Longest pack id that is used verbatim in a storage key (`save_` + id + `_auto` stays within
-/// the 64-byte key limit of `platform::storage`).
+/// Longest pack id that is used verbatim in a storage key (`save_` + id + `_quick`, the longest
+/// slot suffix, stays within the 64-byte key limit of `platform::storage`).
 pub const MAX_PLAIN_PACK_ID: usize = 50;
 
 fn is_plain_pack_id(id: &str) -> bool {
@@ -105,6 +123,8 @@ pub struct SlotSummary {
     pub play_seconds: u64,
     /// The save was made during a battle.
     pub mid_battle: bool,
+    /// The save was made in the middle of a drama scene (a quick save).
+    pub mid_scene: bool,
     pub pack_version: String,
 }
 
@@ -173,6 +193,7 @@ pub fn list(store: &dyn KeyValueStore, pack_id: &str) -> Vec<SlotInfo> {
                     saved_at: save.saved_at,
                     play_seconds: save.campaign.play_seconds,
                     mid_battle: save.battle.is_some(),
+                    mid_scene: save.scene.is_some(),
                     pack_version: save.pack_version.clone(),
                 }),
                 Err(SaveSlotError::Empty(_)) => SlotStatus::Empty,
@@ -242,7 +263,9 @@ pub fn migrate_legacy(
 ) -> Result<usize, SaveSlotError> {
     let mut moved = 0;
     for slot in SaveSlot::all() {
-        let legacy = slot.legacy_key();
+        let Some(legacy) = slot.legacy_key() else {
+            continue;
+        };
         let Some(json) = store.get(&legacy).map_err(SaveSlotError::Storage)? else {
             continue;
         };
@@ -315,14 +338,20 @@ mod tests {
                 play_seconds: 3600,
             },
             battle: None,
+            scene: None,
+            pending_scenes: Vec::new(),
         }
     }
 
     #[test]
     fn slots_and_keys() {
         let all: Vec<_> = SaveSlot::all().collect();
-        assert_eq!(all.len(), 1 + MANUAL_SLOTS as usize);
+        assert_eq!(all.len(), 2 + MANUAL_SLOTS as usize);
         assert_eq!(all[0], SaveSlot::Auto);
+        assert_eq!(all[1], SaveSlot::Quick);
+        assert_eq!(SaveSlot::Quick.key("base"), "save_base_quick");
+        assert!(SaveSlot::Quick.is_system() && SaveSlot::Auto.is_system());
+        assert!(!SaveSlot::Manual(1).is_system());
         assert_eq!(SaveSlot::Manual(3).key("base"), "save_base_3");
         assert_eq!(SaveSlot::Auto.key("base"), "save_base_auto");
         let mut store = MemoryStore::default();
@@ -358,13 +387,16 @@ mod tests {
         ));
 
         let infos = list(&store, "base");
-        assert_eq!(infos.len(), 9);
+        assert_eq!(infos.len(), 10);
         assert_eq!(infos[0].summary().unwrap().label, "자동");
         assert_eq!(infos[0].summary().unwrap().play_seconds, 3600);
+        // Index 1 is the quick save slot, 2.. the manual slots.
+        assert_eq!(infos[1].slot, SaveSlot::Quick);
         assert_eq!(infos[1].status, SlotStatus::Empty);
+        assert_eq!(infos[2].status, SlotStatus::Empty);
         // The other pack's save lives in the other pack's slots.
-        assert_eq!(infos[5].status, SlotStatus::Empty);
-        assert!(matches!(infos[7].status, SlotStatus::Unreadable(_)));
+        assert_eq!(infos[6].status, SlotStatus::Empty);
+        assert!(matches!(infos[8].status, SlotStatus::Unreadable(_)));
         assert_eq!(
             read(&store, SaveSlot::Manual(5), "other").unwrap().label,
             "다른 팩"
@@ -415,7 +447,7 @@ mod tests {
                 crate::platform::storage::validate_key(&key)
                     .unwrap_or_else(|e| panic!("{id:?} {slot:?}: {e}"));
                 assert!(seen.insert(key.clone()), "duplicate key {key}");
-                assert_ne!(key, slot.legacy_key());
+                assert_ne!(Some(key), slot.legacy_key());
             }
         }
         // Stable across runs and versions.
@@ -490,6 +522,36 @@ mod tests {
             read(&store, SaveSlot::Auto, "base").unwrap().label,
             "옛 자동"
         );
+    }
+
+    /// The quick save is one more slot: 이어하기 (`latest`) takes it when it is the newest, and
+    /// never touches the slots of other packs or the pre-split legacy keys.
+    #[test]
+    fn the_quick_slot_is_its_own_slot() {
+        let mut store = MemoryStore::default();
+        write(&mut store, SaveSlot::Auto, &save("자동", 100, "base")).unwrap();
+        write(&mut store, SaveSlot::Quick, &save("순간", 200, "base")).unwrap();
+        write(&mut store, SaveSlot::Manual(1), &save("수동", 150, "base")).unwrap();
+        write(&mut store, SaveSlot::Quick, &save("다른 팩", 900, "other")).unwrap();
+
+        assert_eq!(read(&store, SaveSlot::Quick, "base").unwrap().label, "순간");
+        assert_eq!(read(&store, SaveSlot::Auto, "base").unwrap().label, "자동");
+        assert_eq!(latest(&store, "base"), Some(SaveSlot::Quick));
+        assert_eq!(latest(&store, "other"), Some(SaveSlot::Quick));
+
+        delete(&mut store, SaveSlot::Quick, "base").unwrap();
+        assert_eq!(latest(&store, "base"), Some(SaveSlot::Manual(1)));
+        assert_eq!(
+            read(&store, SaveSlot::Quick, "other").unwrap().label,
+            "다른 팩"
+        );
+
+        // No legacy key ever existed for it, so migrating leaves it alone.
+        store
+            .set("save_quick", &save("x", 1, "base").to_json())
+            .unwrap();
+        assert_eq!(migrate_legacy(&mut store, "base").unwrap(), 0);
+        assert!(store.get("save_quick").unwrap().is_some());
     }
 
     #[test]

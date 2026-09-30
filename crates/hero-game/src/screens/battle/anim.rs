@@ -761,6 +761,19 @@ impl EventPlayer {
         finished
     }
 
+    /// Scenes of the drama beats still queued, in order: not started yet, so a quick save has
+    /// to keep them (the battle state is already past them). A drama beat that has started is
+    /// no longer here: the overlay showing it is on the screen stack.
+    pub fn pending_dramas(&self) -> Vec<String> {
+        self.queue
+            .iter()
+            .filter_map(|beat| match &beat.kind {
+                BeatKind::Drama(scene) => Some(scene.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Waiting for a drama overlay to close.
     #[cfg(test)]
     pub fn is_blocked(&self) -> bool {
