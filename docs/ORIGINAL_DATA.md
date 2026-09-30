@@ -69,7 +69,7 @@ EUC-KR 한글입니다. 그래서 헤더만으로는 언어를 정하지 않고 
 | `MARK.R3`, `SSCCHR1/2.R3` | | **지원 안 함** | 배치 미해독([FORMATS §9.3](reverse-engineering/FORMATS.md#opening)) |
 | 무장·아이템·마을 사람 | `BAKDATA.R3` | **추출** → `text/officers.json`·`items.json`·`townsfolk.json`, **실물 검증** | 높음. 배치는 직접 분석([FORMATS §14](reverse-engineering/FORMATS.md#bakdata)), 능력치 순서는 공개 수치로, 얼굴 번호는 눈으로 확인. 역할·플래그 바이트는 미확인 |
 | 전투 맵·전투 장면 배경·캠페인 맵·도시/궁궐 화면 | `HEXZMAP`, `HEXBMAP`, `MMAP`, `SMAP`, `PMAP` (+ `MAIN.EXE` 표) | **추출** → `maps/*.json`, `gfx/original/maps/...`, **실물 검증(눈으로)** | 높음. 칩 뱅크 구성·지형 코드·이름·크기를 `MAIN.EXE`의 읽는 코드로 확인([FORMATS §10](reverse-engineering/FORMATS.md#maps)). 58개 전투 맵 모두 칩이 뱅크 안에 있고 눈으로 본 결과 강·숲·성·다리·마을이 제자리. 팔레트 슬롯은 게임이 실행 중에 고르므로 추출기는 슬롯 1(도시 0, 궁궐 2)을 씀. `SMAP`/`PMAP` 물체 목록 `(id, x, y)`의 의미는 **미확인** |
-| 세이브 | `E*.R3S`·`M*.R3S` | 아직 없음(지형·병종·책략 규칙, 전투·이벤트, 음악은 원작 모드 팩, 아래 표) | 로드맵(7절) 참고 |
+| 세이브 | `E*.R3S`·`M*.R3S` | 아직 없음(가져오지 않음) | 로드맵(7절) 참고 |
 
 ### 3.1 6바이트 테이블과 TF-DCE 압축 (요약)
 
@@ -234,15 +234,15 @@ eiketsuden --data data/original
   | 상태 창 | `PACKGRP` 2번 + `MAIN.EXE`(팔레트) | `gfx/ui/orig_status.png`(512×320), `[presentation.status_frame]` | 원작 부대 정보 창을 팔레트 슬롯 0으로 그린다(16색 그림이고 어느 슬롯인지는 [추론]: 메인 화면에서 열리는 창). 제목·무장 칸 6개(유닛 아이콘·Lv·병력)·초상·이름·부대Lv·통솔력·무력·지력·아래 칸(병과)·큰 칸(장비·책략)·페이지·화살표·나머지·종료의 좌표는 그림에서 잰 값이고, 변환할 때 초상 칸과 무장 칸 6개가 검은지(색 0) 확인한다. 엔진의 캠프 무장 정보 화면이 이 창에 그려진다(DECISIONS D15) |
   | 음악 | `MUSIC.R3`·`OPMUSIC.R3`·`EDMUSIC.R3` | `bgm/<키>.wav` 10개(22050 Hz 16비트 모노, 약 43 MB) | 재생기를 옮겨 곡을 연주하고 자체 OPL2 에뮬레이터로 렌더링한다. 게임이 파일째 반복하므로 루프 한 바퀴를 담는다(루프 앞 인트로는 빠지고, 트랙마다 루프 지점이 다른 `ending`은 처음부터 한 번; FORMATS §16). 기본 팩의 음악 키를 대신한다: `title` = OPMUSIC 0, `ending` = EDMUSIC 0, `camp` = 12(출진 준비), `peace` = 5(회의장), `tension` = 11(적 진영의 장면), `sad` = 2(황제의 탄식·방통의 죽음), `defeat` = 4(유비의 죽음), `boss` = 16(여포 같은 강적 등장), `enemy` = 9(전투 중 적장의 대사), `battle` = 18(어느 시나리오도 부르지 않아 게임이 전투 중 트는 곡으로 봄). 곡 배정은 시나리오 `0x38`의 문맥으로 고른 [추론]이다. `hero-tools original pack`은 팩에 쓰고(release 빌드로 팩 변환 전체 약 30초), 게임은 메모리 변환을 마치고 시작한 뒤 백그라운드에서 렌더링해 곡이 끝나는 대로 붙인다(그 전까지는 기본 팩 음악, DECISIONS D16) |
   | 전투 중 이벤트 | `SNR0D`·`SNR1D` 트리거 레코드 + `SNR0M`·`SNR1M` + `MAIN.EXE`(칸 변경 표) | 전투 파일의 `[[events]]`, `dramas/original_battles.drama`(대사 장면 45개), `gfx/maps/hexz_NN_X_Y_OP.png`(바뀐 칸 7개) | 전투 블록의 그룹 3부터를 **단계**로 보고(FORMATS §13.2), 레코드마다 트리거(턴·인접·칸·영역·격파)와 동작을 옮긴다: 대사·안내문·일기토 → 대사 장면(화자 = 같은 이름의 기본 팩 무장, 아니면 원작 이름), 합류 → `spawn`, AI 변경 → `set_ai`, 레벨 → `level_up`, 퇴장 → `retreat`, 금·아이템, 성문·적교 → `set_terrain`(바뀐 칩으로 그린 칸 그림), `battle_end` → 승리, 단계 넘김 → `set_stage`. 경로 플래그(계교)와 한 번만 실행하는 플래그는 변환할 때 판정하고, 한 레코드가 켜고 다른 레코드가 검사하는 플래그(하비의 세 장수, 계교의 군량고)는 전투 플래그 `orig_<전투>_<번호>`와 `when` 조건이 되고, 그 플래그가 성립하지 않을 때 스크립트가 하는 일은 `unless` 조건의 이벤트가 된다. 원작 목표 문구 변경은 `set_objective`가 된다. 기본 팩이 같은 계기의 이벤트를 유지하면(대부분의 일기토 등) 그 이벤트가 이야기를 맡고 원작의 나머지 동작(퇴장·단계 넘김)을 더한다(DECISIONS D12) |
-  | 기본 팩 캠페인 뒤의 장 | `SNR2D`–`SNR4D`·`SNR2M`–`SNR4M` | `battles/c<장>_s<장면>_b<블록>.toml` 41개(2장 10, 3장 20, 4장 11), `dramas/original_chapters.drama`(이야기 장면), `campaign.toml` | 기본 팩 캠페인의 마지막 원작 전투(서주 2차) 뒤에 원작 2–4장(관도~장판파, 형남~이릉, IF)을 원작의 엔딩까지 잇는다(DECISIONS D18). 전투는 원작 헤더로 만든 합성 기본 전투를 원작대로 다시 짜고(이름 = 맵 이름, 목표 = 원작 목표 문구, 승리 = 적장 격파 또는 전멸과 원작 목표 칸, 보병이 못 들어가는 배치 칸은 뺌), 마을·캠페인 맵 블록은 대사 장면이 된다(잡담은 빠짐, 선택지·예/아니오 질문 → `@choice`(그룹을 넘기지 않는 선택은 다시 물음), 다른 블록으로 가는 선택 → 루트 플래그와 캠페인 분기, 게임 오버 선택 → 게임 오버 엔딩, 합류 → `@join`, 다른 군으로 옮겨짐 → `@away`(진행을 지킨 채 출진만 못 함, 다시 소속 0이 되면 `@join`으로 복귀), 아이템·음악 → 드라마 명령, 상점 = `set_shop_items`가 바꿀 때까지 이어지는 목록(첫 목록은 기본 팩 마지막 캠프 것)). 여러 무장이 저마다 출진을 묻는 곳은 "누구의 뜻을 따를까" 선택지가 되고(신야 농성·박망파), 다른 블록에서 이어지는 전투(강릉)는 한 전투로 읽는다. 전투의 마지막 승리 스크립트와 그 뒤 에필로그는 전투의 `outro` 장면이 된다(고성 전투 뒤 장비의 복귀, 여남 뒤 유벽의 합류 선택 등. 그 금은 전투 보상, 전투 중 우군으로 나오는 무장은 출진 금지). 이야기 속 레벨·병종 변경은 `@level`·`@class`가 된다(군을 떠났다 돌아오는 무장은 돌아온 뒤에). 나중에 불려 오는 명단(장판파의 백성)과 두 번째 맵으로 이어지는 전투는 아직 빠진다 |
+  | 기본 팩 캠페인 뒤의 장 | `SNR2D`–`SNR4D`·`SNR2M`–`SNR4M` | `battles/c<장>_s<장면>_b<블록>.toml` 43개(2장 11, 3장 21, 4장 11), `dramas/original_chapters.drama`(이야기 장면), `campaign.toml` | 기본 팩 캠페인의 마지막 원작 전투(서주 2차) 뒤에 원작 2–4장(관도~장판파, 형남~이릉, IF)을 원작의 엔딩까지 잇는다(DECISIONS D18). 전투는 원작 헤더로 만든 합성 기본 전투를 원작대로 다시 짜고(이름 = 맵 이름, 목표 = 원작 목표 문구, 승리 = 적장 격파 또는 전멸과 원작 목표 칸, 보병이 못 들어가는 배치 칸은 뺌), 마을·캠페인 맵 블록은 대사 장면이 된다(잡담은 빠짐, 선택지·예/아니오 질문 → `@choice`(그룹을 넘기지 않는 선택은 다시 물음), 다른 블록으로 가는 선택 → 루트 플래그와 캠페인 분기, 게임 오버 선택 → 게임 오버 엔딩, 합류 → `@join`, 다른 군으로 옮겨짐 → `@away`(진행을 지킨 채 출진만 못 함, 다시 소속 0이 되면 `@join`으로 복귀), 아이템·음악 → 드라마 명령, 상점 = `set_shop_items`가 바꿀 때까지 이어지는 목록(첫 목록은 기본 팩 마지막 캠프 것)). 여러 무장이 저마다 출진을 묻는 곳은 "누구의 뜻을 따를까" 선택지가 되고(신야 농성·박망파), 다른 블록에서 이어지는 전투(강릉)는 한 전투로 읽는다. 전투의 마지막 승리 스크립트와 그 뒤 에필로그는 전투의 `outro` 장면이 된다(고성 전투 뒤 장비의 복귀, 여남 뒤 유벽의 합류 선택 등. 그 금은 전투 보상, 전투 중 우군으로 나오는 무장은 출진 금지). 이야기 속 레벨·병종 변경은 `@level`·`@class`가 된다(군을 떠났다 돌아오는 무장은 돌아온 뒤에). 전투가 `battle_end`로 다른 전투 맵에 이어지면(장판파: 백성이 첫 맵을 건너면 둘째 맵, 와구관) 두 전투로 나뉜다: 첫째는 `c<장>_s<장면>_b<블록>`, 둘째는 그 뒤에 `_2`가 붙고(원작이 그 레코드에서 세우는 출진 설정·명단·맵, 자기 출진 준비 캠프를 가짐), 첫째의 승리 스크립트가 첫째의 `outro`다. 출진 설정에 이름이 든 민중(장판파의 백성 셋)은 출진 칸이 아니라 그 칸에 서는 아군 유닛(`civilian`)이 되고, 개막이 마을 칸으로 행군시키며(`march`) 그 칸에 닿는 것이 그 맵의 승리다. 적은 그들을 이름으로 노린다. 원작 전투 개막의 대사(그룹 2)는 아직 빠진다 |
   | 전투 맵 | `HEXZMAP` + `HEXZCHP` + `MAIN.EXE`(칩 뱅크 목록) | `maps/original.toml`의 `[[map]]` 58개(id `hexz_00`–`hexz_57`) + 맵마다 그림 층 `gfx/maps/hexz_NN.png` | **그림 층** = 맵의 칩 격자를 게임과 같은 뱅크(FORMATS §10.2)로 그대로 그린 것(16 px 칩, 32 px 타일 = 2×2 칩 칸). **규칙 층** = 칸마다의 지형 바이트(칩 통계가 아님). 행의 글자는 원작 지형 코드의 36진수(`0`–`9`, `a`–`h`, FORMATS §10.4 표 그대로)이고 `legend`가 기본 팩 지형 id를 정함(코드 10 문만 원작 모드 지형 `closed_gate`, 지형 규칙 행). 팩 지형이 없는 코드(화염·탁류, 문서에 없는 코드)는 **그 칸의 칩이 다른 맵들에서 가장 많이 쓰인 지형**으로, 맵 밖을 뜻하는 코드 255(실물에서는 맵 32의 한 칸)는 원작에서 이동으로 들어갈 수 없으므로 절벽으로 대신하고 `original-pack.json`과 맵 파일 주석에 기록. id의 번호는 시나리오가 맵을 가리키는 번호. `name`은 이름 항목의 원문(`신야1`처럼 숫자 포함) |
 
-* **한계**: 소속 변경(`set_country`, 산적 두목 영입은 기본 팩 이벤트가 맡음)과 원작 전투 중 곡 바꾸기는 옮기지 않고 전투 파일
-  주석에 적습니다. 조건이 맞지 않을 때의 분기(하비 적교 칸에서 세 장수를 만나기 전 유비의 대사)는 이벤트의 `unless`로,
+* **한계**: 서장·1장 전투의 소속 변경(`set_country`, 산적 두목 영입)은 기본 팩 이벤트가 맡고(2–4장 전투의 것은 캠페인 합류 플래그로
+  옮김, DECISIONS D18), 원작 전투 중 곡 바꾸기는 옮기지 않으며 전투 파일 주석에 적습니다. 조건이 맞지 않을 때의 분기(하비 적교 칸에서 세 장수를 만나기 전 유비의 대사)는 이벤트의 `unless`로,
   전투 중에 바뀌는 목표 문구는 `set_objective`로 옮깁니다(번호와 `[이름]` 표시를 떼어 한 줄로). 기본 팩 이벤트가 맡지 않는 일기토(하비의 세 장수 등)는 원작 대사 사이에 원작 기마 그림으로 된 일기토 장면(`@duel`, FORMATS §13.6)으로 보여 줍니다(배경은 원작처럼 무장이 선 칸의 지형: `@duel … terrain`과 지형마다의 `gfx/duel/terrain_<지형>.png`). 기본 팩 이벤트 가운데
   기본 맵의 칸이나 원작에 없는 무장·증원 그룹을 쓰는 것은 빠지고, 그 대사 장면은 원작 대사가 대신합니다. 원작 AI 방식은
-  `MAIN.EXE`의 AI 코드 이름(대기·최단 적공격·부동·이동·무공격이동)대로 옮깁니다(FORMATS §13.4). 전투 앞뒤 장면·규칙·음악·전투 장면 연출은 아직 기본 팩 것이고, 서장·1장
-  밖의 원작 맵 42개는 쓰는 전투가 없습니다.
+  `MAIN.EXE`의 AI 코드 이름(대기·최단 적공격·부동·이동·무공격이동)대로 옮깁니다(FORMATS §13.4). 서장·1장 전투의 이름·목표 문구·앞뒤 대사 장면·보상은 기본 팩 것이고(규칙·화면 틀·음악은
+  원작의 것), 전투 장면 연출은 엔진에 없어 원작의 전투 장면 그림(`HEXBCHR`)은 쓰지 않고, 일기토만 기마 그림(`HEXICHR`)으로 보여 줍니다. 서장·1장 밖의 원작 맵은 2–4장 전투가 씁니다.
 * **공유 금지**: 팩 안의 그림은 원작 데이터에서 변환한 것입니다. `data/original/`은 `.gitignore`에 있으며, 자기 PC에서만
   쓰세요.
 
@@ -302,14 +302,14 @@ Steam판(2017, 앱 628150)은 지금 새로 살 수 있는 유일한 판본이�
 | P0 프로브 | 판본 식별, 공유용 매니페스트 | **완료** (Steam·PC-98은 식별만) |
 | P1 컨테이너 | LS11(+인코더), 6바이트 테이블 | **완료**. 음악용 테이블 컨테이너는 P7과 함께 |
 | P2 텍스트 | `SNR?M`, `IPPAN0/IPPAN0M` (EUC-KR/Big5) | **완료** (화자별 대사 줄, 마을 사람 대사까지; 실물 검증) |
-| P3 그래픽 | 플레인 셀·팔레트 → PNG | **부분**: 스프라이트·칩·배경 셀·전투 UI 아이콘 완료(실물로 확인), 얼굴(TF-DCE) 완료. `PACKGRP` 화면은 디코딩만 되고 추출 종류는 아직 없음. 오프닝/엔딩(`NPK016`)·`MARK`·`SSCCHR`는 미지원 |
-| P4 맵 | `HEXZMAP` 59개, `HEXBMAP`, `MMAP`, `SMAP`/`PMAP` → 타일 맵 JSON + 참고 PNG | **완료**(실물로 확인, [FORMATS §10](reverse-engineering/FORMATS.md#maps)). 남은 것: 맵별 팔레트 슬롯(P6 시나리오 레코드), `SMAP`/`PMAP` 물체 id의 의미 |
-| P5 규칙·무장 | `BAKDATA` 배치 규명, `MAIN.EXE` 병종·지형·책략 표 서명 검색 | **부분**: `BAKDATA` 완료([FORMATS §14](reverse-engineering/FORMATS.md#bakdata)). `MAIN.EXE`의 지형 규칙(이동 비용·지형 효과)과 병종 규칙(공격·방어 계수, 이동력, 공격 범위) 완료, 병력 식과 책략 표(MP·도달·습득 레벨)·책략 위력·회복량·효과 범위와 원작 책략 식(`strategy_formulas`) 완료 |
-| P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | **부분**: 해독·JSON 추출 완료([FORMATS §13](reverse-engineering/FORMATS.md#scenario), 명령 일부 미확인). 서장·1장 전투의 배치·명단·보물·목표 칸·증원과 전투 중 이벤트(대사 포함)를 원작 모드 전투로 변환(4.5절). 마을·캠페인 장면은 미착수 |
-| P7 음악 | OPL2 시퀀스 → FM 합성 | **완료(CLI)**: 재생기 `SBOPL2.COM` 이식 + 자체 OPL2 에뮬레이터로 10곡을 `bgm/<키>.wav`로([FORMATS §16](reverse-engineering/FORMATS.md), DECISIONS D16). 게임은 시작 뒤 백그라운드로 렌더링해 붙이고, 곡 배정은 청취 확인 전 [추론] |
+| P3 그래픽 | 플레인 셀·팔레트 → PNG | **부분**: 스프라이트·칩·배경 셀·전투 UI 아이콘 완료(실물로 확인), 얼굴(TF-DCE) 완료. `PACKGRP` 화면은 추출 종류는 없지만 원작 모드 팩이 화면 틀 3개와 사건 삽화 31개로 변환(16색 그림 3개의 팔레트 슬롯은 추론). 오프닝/엔딩(`NPK016`)·`MARK`·`SSCCHR`는 미지원 |
+| P4 맵 | `HEXZMAP` 59개, `HEXBMAP`, `MMAP`, `SMAP`/`PMAP` → 타일 맵 JSON + 참고 PNG | **완료**(실물로 확인, [FORMATS §10](reverse-engineering/FORMATS.md#maps)). 남은 것: 맵별 팔레트 슬롯(조사 중, [STATUS 2절](reverse-engineering/STATUS.md#2-부분-해독)), `SMAP`/`PMAP` 물체 id의 의미 |
+| P5 규칙·무장 | `BAKDATA` 배치 규명, `MAIN.EXE` 병종·지형·책략 표 서명 검색 | **부분**: `BAKDATA` 완료([FORMATS §14](reverse-engineering/FORMATS.md#bakdata)). `MAIN.EXE`의 지형 규칙(이동 비용·지형 효과)과 병종 규칙(공격·방어 계수, 이동력, 공격 범위) 완료, 병력 식과 책략 표(MP·도달·습득 레벨)·책략 위력·회복량·효과 범위와 원작 책략 식(`strategy_formulas`), 회복 아이템 회복량, 사기가 떨어질 때의 혼란과 오를 때의 풀림 굴림까지 완료. 남은 것: 스크립트 명령 `2D`(한 편 전체 사기 절반)의 사용처. 무장 능력치는 기본 팩 것 |
+| P6 시나리오 | `SNR?D` 바이트코드 → 우리 이벤트 형식으로 변환 | **부분**: 해독·JSON 추출 완료([FORMATS §13](reverse-engineering/FORMATS.md#scenario), 명령 일부 미확인). 서장·1장 전투 21개와 2–4장 전투 43개(배치·명단·보물·목표 칸·증원과 전투 중 이벤트·대사·일기토, 두 맵에 걸친 장판파·와구관은 전투 둘, 장판파는 백성 호위 포함)를 원작 모드 전투로, 2–4장의 이야기(마을·캠페인 맵 블록의 대사 장면, 선택지·루트 분기·원작 플래그·전투 중 설득·패배 후 진행, 엔딩 4개)를 원작 모드 캠페인으로 변환(4.5절, DECISIONS D18). 남음: 루트마다 다른 출진 설정, 전투 중 도착하는 아군, 장 전투의 개막 대사, 서장·1장 이야기의 원작 변환 |
+| P7 음악 | OPL2 시퀀스 → FM 합성 | **완료(CLI)**: 재생기 `SBOPL2.COM` 이식 + 자체 OPL2 에뮬레이터로 10곡을 `bgm/<키>.wav`로([FORMATS §16](reverse-engineering/FORMATS.md), DECISIONS D16). 게임은 시작 뒤 백그라운드로 렌더링해 붙이고, 곡 배정은 청취 확인 전 [추론]. 루프 앞의 인트로는 엔진이 파일째 반복해서 빠짐 |
 | P8 Steam / PC-98 | Steam 컨테이너(매니페스트 수집 후), 디스크 이미지 리더, Shift-JIS·OPN 변형 | 미착수 — **Steam 매니페스트가 선행 조건**. 암호화가 있으면 법률 검토 전 중단 |
 | P9 세이브 | `ESAVE/MSAVE` 가져오기 | 선택 사항 |
-| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋·원작 전투 맵 58개(그림 층 + 규칙 층)·원작 맵 위의 서장·1장 전투 21개와 그 전투 중 이벤트(4.5절). 규칙·UI·음악은 미착수 |
+| 원작 모드 팩 | 변환물을 기본 팩 키로 옮긴 레이어드 팩(8절) | **부분**: 얼굴·유닛 시트·32 px 지형 타일셋·원작 전투 맵 58개(그림 층 + 규칙 층), 서장~4장의 전투 64개(서장·1장 21개는 기본 팩 전투를 다시 짬)와 전투 중 이벤트, 2–4장 이야기와 캠페인, 규칙 표(지형·병종·책략·아이템·게임 식), 화면 틀(전투·캠프·상태 창)과 사건 삽화, 음악(4.5절). 남은 일은 [STATUS 4절](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계) |
 
 ## 8. 원작 모드 (부분 구현)
 
@@ -327,13 +327,16 @@ OpenRCT2가 RCT2 데이터로 게임을 보여 주듯, 장기 목표는 플레�
   유닛 시트(32×32), 원작 전투 맵에서 학습한 32 px 지형 타일셋(기본 팩 전투 21개가 모두 원작 맵 그림으로 다시 짜여
   있어, 그 칸들은 원작 맵이 없는 전투(원작 모드 위에 모드가 더한 기본 맵 전투)나 전투 변환·맵 그림을 읽지 못해
   대신 그릴 때만 쓰임. `tile_size`(32)는 그림 층 크기 확인에 늘 쓰임), 원작 전투 맵 58개(맵 파일: 칩 격자 = 그림 층,
-  지형 격자 = 규칙 층, [DECISIONS.md](DECISIONS.md) D9). 변환되지 않은 나머지(규칙, 원작 전투, 시나리오, 대사, 음악,
-  UI)는 체인을 통해 기본 팩에서 옵니다. 플레이어는 게임 안에서 원작 폴더를 고르고, 게임이 실행할 때마다 같은 팩을
+  지형 격자 = 규칙 층, [DECISIONS.md](DECISIONS.md) D9)와, 그 위에서 원작대로 짠 전투·이야기·캠페인, 병종·지형·책략·아이템 규칙,
+  화면 틀·삽화, 음악(아래와 4.5절 표). 변환하지 못한 종류는 체인을 통해 기본 팩에서 옵니다. 플레이어는 게임 안에서 원작 폴더를 고르고, 게임이 실행할 때마다 같은 팩을
   메모리에서 만들어 씁니다(4.1절, [DECISIONS.md](DECISIONS.md) D10). 파일로 쓴 팩은 `eiketsuden --data data/original`로
   실행합니다(개발·검증용).
 * **구현됨**: 기본 팩 서장·1장의 전투 21개를 원작 전투의 맵·배치·명단·보물·증원·전투 중 이벤트로 다시 짠 전투 파일과
-  그 대사 장면([DECISIONS.md](DECISIONS.md) D11·D12, 4.5절).
-* **아직 없는 것**: 마을·캠페인 장면(시나리오 변환 P6의 나머지), 원작 배치 UI의 나머지(삽화·틀의 버튼), 게임 안 변환의 음악(P7). 매핑 규칙이 정해지지 않은 것은 추측해서
+  그 대사 장면([DECISIONS.md](DECISIONS.md) D11·D12), 기본 팩 캠페인 뒤에 이어지는 원작 2–4장(전투 43개와 마을·캠페인 맵 이야기,
+  원작의 엔딩 4개까지, D18), 원작의 병종·지형·책략·회복 아이템 규칙과 책략·사기 식(D19), 전투·캠프 화면 틀과 상태 창(D15),
+  일기토 연출(D17), 음악(D16, 게임이 시작 뒤 렌더링), 사건 삽화(4.5절).
+* **아직 없는 것**: 루트마다 다른 원작 출진 설정, 전투 중 도착하는 아군 부대, 장 전투의 개막 대사와 전투 중 삽화, 서장·1장 이야기의 원작 변환,
+  16색 그림의 팔레트 슬롯 확정, 곡 배정 청취 확인과 루프 시작점([BACKLOG](../BACKLOG.md)). 매핑 규칙이 정해지지 않은 것은 추측해서
   넣지 않고, 규명되는 순서대로 팩에 들어갈 항목이 늘어납니다([STATUS 4절](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계)).
 * **제약**: `extends`는 상대 경로만 허용하므로(웹 빌드와 폴더 이동을 위해) 파일로 쓴 원작 모드 팩은 기본 팩과 같은
   드라이브, 예컨대 `data/original/`에 둡니다. 게임이 메모리에서 만든 팩은 기본 팩 옆(`<data>/original`)에 있는 것처럼
@@ -404,7 +407,7 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   visually checked slot is used per archive), unit sprites, map chips and battle UI icons with contact sheets and
   `sprites.json`, the 240 TF-DCE portraits, battle/scene/campaign/town/palace maps with terrain codes
   (`--maps`), scenario scripts with dialogue and strings (`text/snr<n>.json`/`.txt`), townspeople lines and the
-  `BAKDATA` officer/item/townspeople tables. `PACKGRP.R3` screens decode but are not an extraction kind yet. Not
+  `BAKDATA` officer/item/townspeople tables. `PACKGRP.R3` screens decode but are not an extraction kind (the original mode pack converts them). Not
   decoded: `NPK016` opening/ending pictures, `MARK.R3`, `SSCCHR1/2.R3`; the owner's `OPGRP.R3` is damaged.
 * **Usage**: `hero-tools original probe <dir> [--out manifest.json]`, then
   `hero-tools original extract <dir> --out <overlay> [--text] [--sprites] [--portraits] [--maps]`, then
@@ -423,9 +426,10 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   published known answers on a real install. The golden tests are split by topic; on the verified copy all of them pass —
   LS11, edition, 6-byte-table, palette, sprite, map-geometry, map (`golden_korean_maps`), scenario text and facts,
   and the full extraction — as do the TF-DCE checks in `tests/tfdce_golden.rs`.
-* **Roadmap**: P4 maps done (per-map palette slot and the town object ids open); P5 partly done (`BAKDATA`
-  decoded; the `MAIN.EXE` rule tables open); P6 partly done (bytecode decoded and extracted; conversion to the
-  game's event format open); P7 OPL2 music done (rendered to WAV, DECISIONS D16); P8 Steam/PC-98 open.
+* **Roadmap**: P4 maps done (per-map palette slot and the town object ids open); P5 mostly done (`BAKDATA`
+  decoded; the `MAIN.EXE` rule tables converted, ability values stay the base pack's); P6 mostly done (bytecode
+  decoded and extracted; the battles of the prologue and chapters 1–4 and the story of chapters 2–4 converted to
+  the game's event and drama formats); P7 OPL2 music done (rendered to WAV, DECISIONS D16); P8 Steam/PC-98 open.
 * **Original mode in the game (no command line)**: on native builds the title menu's "원작 데이터" (original data)
   opens an in-game folder browser (★ marks folders holding original files; entering one shows the same verdict and
   evidence as `probe`; a folder whose only install is one subfolder, like a DOSBox package, offers that subfolder;
@@ -461,8 +465,11 @@ was used, and the repository and CI contain no original bytes (tests use synthet
   original's riders in `gfx/duel/`). Flags that one record sets
   and another tests become battle flags with `when` conditions (and what a script does while they do not hold,
   events with `unless`); objective texts a script changes become `set_objective`; where the base battle keeps an event for the same
-  occasion (most duels), it keeps telling it and gains the original's other actions. The rules, the battle and camp
-  frames and the music are the original's too (the game renders the music in the background after it starts);
-  everything else (the scenes before and after battles, the rest of the UI) still comes from the base pack. `extends` is relative only, so the pack lives next to the
+  occasion (most duels), it keeps telling it and gains the original's other actions. The rules, the battle, camp and status frames and the music are the original's too (the game
+  renders the music in the background after it starts). Chapters 2 to 4 follow the base campaign after Xuzhou
+  (DECISIONS D18): their 43 battles (Changban and Wagu Pass, fought on two maps, are two battles each; Changban's
+  people are allied civilians the opening marches to a village) and their story — towns and campaign-map blocks as
+  dialogue scenes with choices, route branches, joins and the original's four endings. Only the story of the prologue
+  and chapter 1, and the parts of the UI not listed above, still come from the base pack. `extends` is relative only, so the pack lives next to the
   base pack; there is no original mode on the web. The remaining steps are listed in
   [STATUS.md](reverse-engineering/STATUS.md#4-플레이-가능한-원작-모드까지-남은-단계).

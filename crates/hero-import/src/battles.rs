@@ -37,6 +37,12 @@
 //!   gets `stage`s. Where the base battle keeps an event with the same trigger (the duels the
 //!   base pack tells in its own words), the base event stays and the record is left out.
 //!
+//! * the civilians of a setup ([`Names::civilians`]: the people of Changban): a setup slot that
+//!   names one is an allied `civilian` unit on that tile (not a deploy tile), which the opening
+//!   marches to its village (`march`) and enemies hunt by its tag;
+//! * a battle that goes on with another battle map ([`MapLeg`]: the record that sets the next
+//!   battle up and ends this one with `battle_end`) is two battles, [`battle_leg`] 0 and 1.
+//!
 //! What cannot follow is left out and listed as a note: base units whose officer the original
 //! roster does not have, events and conditions that name them or a tile of the base map,
 //! reinforcement groups, and the parts of the original's scripts the engine has no counterpart
@@ -407,6 +413,82 @@ pub fn battle_block(scene: &Scene, index: usize) -> Cow<'_, Block> {
     joined
 }
 
+/// Where a battle block goes on with another battle map: the battle's script sets the next
+/// battle up (`battle_setup`, `battle_roster`) and ends this one (`battle_end` to a battle map),
+/// and the battle that follows starts right after (SNR2's Changban: the people cross the
+/// first map, then the second is fought). Its groups are those of a battle block of their own,
+/// from the setup record on: the setup and roster, the start, the opening, the phases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapLeg {
+    /// The record of the battle block that sets the next map's battle up.
+    pub record: usize,
+    /// The battle map the battle goes on with.
+    pub next_map: u8,
+}
+
+/// [`MapLeg`] of the battle block `block`, if it has one: a `run` record of a phase group that
+/// ends the battle for another battle map, followed by the next battle's start.
+fn map_leg(block: &Block) -> Option<MapLeg> {
+    block.records.iter().enumerate().find_map(|(i, r)| {
+        let next_map = r
+            .code
+            .iter()
+            .filter(|c| c.mnemonic == "battle_end")
+            .filter_map(|c| c.operands.get("next_map"))
+            .find(|m| m & 0xf000 == BATTLE_MAP)?;
+        let follows = block.records.get(i + 1).is_some_and(|next| {
+            next.trigger.group == r.trigger.group + 1
+                && next.code.iter().any(|c| c.mnemonic == "begin_battle")
+        });
+        (r.trigger.kind == RUN && r.trigger.group >= FIRST_PHASE_GROUP && follows).then_some(
+            MapLeg {
+                record: i,
+                next_map: (next_map & 0xff) as u8,
+            },
+        )
+    })
+}
+
+/// [`MapLeg`] of battle block `index` of `scene` (see [`battle_block`]).
+pub fn battle_map_leg(scene: &Scene, index: usize) -> Option<MapLeg> {
+    map_leg(&battle_block(scene, index))
+}
+
+/// Leg `leg` of the battle of block `index` of `scene`: 0 is the battle up to where it goes on
+/// with another map ([`MapLeg`]), 1 is the battle on that map, as a battle block of its own
+/// (groups counted from the setup record; the `battle_end` that leads there left out). A battle
+/// without a second map has one leg, [`battle_block`].
+pub fn battle_leg(scene: &Scene, index: usize, leg: u8) -> Cow<'_, Block> {
+    let whole = battle_block(scene, index);
+    let Some(split) = map_leg(&whole) else {
+        return whole;
+    };
+    let mut block = Block {
+        offset: whole.offset,
+        records: Vec::new(),
+    };
+    if leg == 0 {
+        block.records = whole.records[..split.record].to_vec();
+    } else {
+        let first = whole.records[split.record].trigger.group;
+        block.records = whole.records[split.record..]
+            .iter()
+            .cloned()
+            .map(|mut r| {
+                r.trigger.group = r.trigger.group.saturating_sub(first);
+                r.code.retain(|c| {
+                    !(c.mnemonic == "battle_end"
+                        && c.operands
+                            .get("next_map")
+                            .is_some_and(|m| m & 0xf000 == BATTLE_MAP))
+                });
+                r
+            })
+            .collect();
+    }
+    Cow::Owned(block)
+}
+
 /// Find the battle of `scene` fought on battle map `map` with the scenario flags `flags` set (see
 /// the module docs for which `battle_setup` and rosters belong to it): the first block that
 /// loads the map, or block `only` (a map fought in several blocks, one per route).
@@ -416,23 +498,44 @@ pub fn find_battle(
     flags: &[u8],
     only: Option<usize>,
 ) -> Result<OriginalBattle, String> {
+    find_battle_leg(scene, map, flags, only, 0)
+}
+
+/// [`find_battle`] for leg `leg` of the battle ([`battle_leg`]): leg 1 is the battle block
+/// `only` goes on with (on `map`) after the map it loaded.
+pub fn find_battle_leg(
+    scene: &Scene,
+    map: u8,
+    flags: &[u8],
+    only: Option<usize>,
+    leg: u8,
+) -> Result<OriginalBattle, String> {
     let wanted = BATTLE_MAP | u16::from(map);
     let is_load = |op: &Operands| op.get("map") == Some(wanted);
-    let (block_index, record_index) = scene
-        .blocks
-        .iter()
-        .enumerate()
-        .filter(|(b, _)| only.is_none_or(|o| o == *b))
-        .find_map(|(b, block)| {
-            block.records.iter().enumerate().find_map(|(r, rec)| {
-                rec.code
-                    .iter()
-                    .any(|i| i.mnemonic == "load_map" && is_load(&i.operands))
-                    .then_some((b, r))
+    let (block_index, record_index) = if leg == 0 {
+        scene
+            .blocks
+            .iter()
+            .enumerate()
+            .filter(|(b, _)| only.is_none_or(|o| o == *b))
+            .find_map(|(b, block)| {
+                block.records.iter().enumerate().find_map(|(r, rec)| {
+                    rec.code
+                        .iter()
+                        .any(|i| i.mnemonic == "load_map" && is_load(&i.operands))
+                        .then_some((b, r))
+                })
             })
-        })
-        .ok_or_else(|| format!("no block loads battle map {map}"))?;
-    let block = &*battle_block(scene, block_index);
+            .ok_or_else(|| format!("no block loads battle map {map}"))?
+    } else {
+        // The battle block goes on with the map (its second leg starts at the first record).
+        let b = only
+            .filter(|&b| battle_map_leg(scene, b).is_some_and(|l| l.next_map == map))
+            .ok_or_else(|| format!("no battle goes on with battle map {map}"))?;
+        (b, 0)
+    };
+    let block = &*battle_leg(scene, block_index, leg);
+    let split = battle_map_leg(scene, block_index).is_some();
 
     let (mut rosters, mut later_rosters, mut other_route_rosters) = (Vec::new(), 0, 0);
     for (r, rec) in block.records.iter().enumerate() {
@@ -477,9 +580,19 @@ pub fn find_battle(
         .flat_map(|(_, units)| units.iter().map(|u| u.person))
         .collect();
 
-    let setups: Vec<(&BattleHeader, &Vec<RosterUnit>)> = scene.blocks[..=block_index]
+    // The setups before the battle: those of the earlier blocks and its own. (A battle with
+    // more than one map has the setup of its later leg in its own block, past the record that
+    // ends the first: the leg's block holds only its own records.)
+    let own: &[Record] = if split {
+        &block.records
+    } else {
+        &scene.blocks[block_index].records
+    };
+    let setups: Vec<(&BattleHeader, &Vec<RosterUnit>)> = scene.blocks[..block_index]
         .iter()
-        .flat_map(|b| b.records.iter().flat_map(|r| r.code.iter()))
+        .flat_map(|b| b.records.iter())
+        .chain(own)
+        .flat_map(|r| r.code.iter())
         .filter_map(|i| match &i.operands {
             Operands::BattleSetup { header, units } => Some((header, units)),
             _ => None,
@@ -653,6 +766,10 @@ pub struct Names {
     /// Officers of the player's army in the pack chain (the campaign's starting officers and
     /// those that join in its scenes): events may name them in any battle.
     pub player_officers: BTreeSet<String>,
+    /// The original's civilians (`BAKDATA` persons of the civilian class that no base-pack
+    /// officer plays: the people of Changban): person → the civilian class of the pack and the
+    /// person's level. A setup slot naming one is a fixed allied unit, not a place to deploy.
+    pub civilians: BTreeMap<u16, (String, u32)>,
 }
 
 impl Names {
@@ -673,7 +790,7 @@ impl Names {
             .iter()
             .map(|o| (o.index as u16, o.name.clone()))
             .collect();
-        let classes = class_sprites
+        let classes: BTreeMap<u8, String> = class_sprites
             .iter()
             .enumerate()
             .filter_map(|(i, sprite)| {
@@ -691,12 +808,27 @@ impl Names {
                 }
             })
             .collect();
+        let civilians = class_sprites
+            .iter()
+            .position(|sprite| *sprite == "civilian")
+            .and_then(|number| {
+                let class = classes.get(&(number as u8))?;
+                Some(
+                    people
+                        .iter()
+                        .filter(|o| usize::from(o.class) == number && officer_of(o).is_none())
+                        .map(|o| (o.index as u16, (class.clone(), u32::from(o.level))))
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
         Names {
             officers,
             person_names,
             classes,
             items,
             player_officers: BTreeSet::new(),
+            civilians,
         }
     }
 
@@ -729,6 +861,54 @@ pub fn army_flag(officer: &str, joins: bool) -> String {
     } else {
         format!("orig_away_{officer}")
     }
+}
+
+/// Whether a trigger record is an objective of Liu Bei's: he stands on a tile or in an area and
+/// the script runs the battle routine (`data` kind 4).
+fn is_routine(r: &Record) -> bool {
+    !r.trigger.inverted
+        && matches!(r.trigger.kind, UNIT_AT_CELL | UNIT_IN_AREA)
+        && r.trigger.word(0) == LIU_BEI
+        && r.code
+            .iter()
+            .any(|c| c.mnemonic == "data" && c.operands.get("kind") == Some(DATA_ROUTINE))
+}
+
+/// Whether a record of the battle's last stage becomes an event that can end the battle by its
+/// script (`leave_parallel` or the end of the battle), when the stage also has a victory script
+/// ([`ended_flag`]): the records of a group that is not watched in parallel end it by running.
+/// The objective of Liu Bei of a single-stage battle is the battle's victory condition instead,
+/// and treasures are no events.
+pub fn events_end_battle(records: &[Record]) -> bool {
+    let phases = phases(records);
+    let Some(last) = phases.iter().rposition(|p| !p.runs_only) else {
+        return false;
+    };
+    let single = phases.iter().filter(|p| !p.runs_only).count() == 1;
+    let phase = &phases[last];
+    let has_victory_script = phase
+        .records
+        .iter()
+        .any(|&r| records[r].trigger.kind == BATTLE_WON);
+    has_victory_script
+        && phase.records.iter().map(|&r| &records[r]).any(|r| {
+            !matches!(r.trigger.kind, BATTLE_WON | BATTLE_LOST)
+                && !(r.trigger.kind == UNIT_AT_CELL
+                    && r.trigger.word(0) == ANY_UNIT
+                    && !is_routine(r))
+                && !(single && is_routine(r))
+                && (!phase.parallel
+                    || r.code.iter().any(|c| {
+                        matches!(c.mnemonic, "leave_parallel" | "battle_end" | "goto_block")
+                    }))
+        })
+}
+
+/// The campaign flag an event of a chapter's battle sets when it ends the battle (the original
+/// leaves the phase by that record's script, and the phase's victory script does not run): the
+/// battle's outro plays the victory script only while it is clear.
+pub fn ended_flag(battle: &str) -> String {
+    format!("orig_{battle}_ended")
 }
 
 /// The text section of a scene (`SNRnM`), decoded.
@@ -1017,6 +1197,26 @@ struct EventWriter<'a, 'b> {
     skipped: BTreeSet<&'static str>,
     /// Officers moved in or out of the army ([`Converted::army`]).
     army: Vec<(String, bool)>,
+    /// A chapter's battle whose last stage has a victory script: the flag an event sets when it
+    /// ends the battle itself, for the outro to leave that script out ([`ended_flag`]).
+    ended: Option<String>,
+}
+
+/// The reference that names the unit of `person` on the map (`persons` runs alongside `units`):
+/// its officer, else its tag, which it is given when it has none (`person_<number>`).
+fn person_tag(units: &mut [UnitSpawn], persons: &[u16], person: u16) -> Option<String> {
+    let i = persons.iter().position(|&q| q == person)?;
+    let unit = &mut units[i];
+    Some(
+        unit.officer
+            .clone()
+            .or_else(|| unit.tag.clone())
+            .unwrap_or_else(|| {
+                let tag = format!("person_{person}");
+                unit.tag = Some(tag.clone());
+                tag
+            }),
+    )
 }
 
 impl EventWriter<'_, '_> {
@@ -1041,22 +1241,9 @@ impl EventWriter<'_, '_> {
                 return Ok(Some(id));
             }
         }
-        let i = self
-            .persons
-            .iter()
-            .position(|&q| q == person)
-            .ok_or_else(|| format!("{} is not on the map", self.names.person_label(person)))?;
-        let unit = &mut self.units[i];
-        let reference = unit
-            .officer
-            .clone()
-            .or_else(|| unit.tag.clone())
-            .unwrap_or_else(|| {
-                let tag = format!("person_{person}");
-                unit.tag = Some(tag.clone());
-                tag
-            });
-        Ok(Some(reference))
+        person_tag(self.units, self.persons, person)
+            .map(Some)
+            .ok_or_else(|| format!("{} is not on the map", self.names.person_label(person)))
     }
 
     /// `trigger` with each unit reference replaced by one that names its unit alone (`#<index>`
@@ -1638,9 +1825,18 @@ impl EventWriter<'_, '_> {
         }
         flush(&mut scene, actions, self);
         if end == ScriptEnd::EndsBattle {
+            actions.extend(self.ended_flag_action());
             actions.push(EventAction::Victory);
         }
         end
+    }
+
+    /// The action that tells the outro an event ended the battle ([`EventWriter::ended`]).
+    fn ended_flag_action(&self) -> Option<EventAction> {
+        self.ended.as_ref().map(|flag| EventAction::SetFlag {
+            flag: flag.clone(),
+            value: 1,
+        })
     }
 }
 
@@ -1745,6 +1941,35 @@ pub fn convert(
         } else {
             None
         };
+        // A civilian stands on the tile as an allied unit, holding it until the opening orders
+        // it about (the people of Changban).
+        if let Some((class, level)) = names.civilians.get(&u.person) {
+            units.push(UnitSpawn {
+                side: Side::Ally,
+                officer: None,
+                name: Some(
+                    names
+                        .person_names
+                        .get(&u.person)
+                        .cloned()
+                        .unwrap_or_else(|| "백성".to_string()),
+                ),
+                class: Some(class.clone()),
+                level: Some(*level),
+                stats: None,
+                pos,
+                ai: AiMode::Hold,
+                ai_target: None,
+                ai_pos: None,
+                commander: false,
+                tag: None,
+                group,
+                equip: None,
+                drop: None,
+            });
+            persons.push(u.person);
+            continue;
+        }
         let guest = officer.as_ref().and_then(|id| {
             base.units
                 .iter()
@@ -1883,7 +2108,7 @@ pub fn convert(
                 );
             }
             if let Some(t) = target {
-                match officer_ref(t) {
+                match officer_ref(t).or_else(|| person_tag(&mut units, &persons, t)) {
                     Some(id) => spawn.ai_target = Some(id),
                     None => {
                         spawn.ai = without_target(spawn.ai);
@@ -1946,7 +2171,8 @@ pub fn convert(
                 _ => get("target"),
             };
             let (ai, target, ai_pos) = ai_mode(mode, param);
-            let ai_target = target.and_then(officer_ref);
+            let ai_target =
+                target.and_then(|t| officer_ref(t).or_else(|| person_tag(&mut units, &persons, t)));
             for (u, _) in units
                 .iter_mut()
                 .zip(&persons)
@@ -1995,14 +2221,7 @@ pub fn convert(
 
     // Conditions. A `reach` of Liu Bei (or of any player unit) takes the original objective
     // area of the first phase; objectives of later phases become events of their stage.
-    let routine = |r: &Record| {
-        !r.trigger.inverted
-            && matches!(r.trigger.kind, UNIT_AT_CELL | UNIT_IN_AREA)
-            && r.trigger.word(0) == LIU_BEI
-            && r.code
-                .iter()
-                .any(|c| c.mnemonic == "data" && c.operands.get("kind") == Some(DATA_ROUTINE))
-    };
+    let routine = is_routine;
     let area = |r: &Record| {
         let a = r.trigger.args;
         let tile = |row: usize| Pos::new(i32::from(a[row + 1]), i32::from(a[row]));
@@ -2163,6 +2382,8 @@ pub fn convert(
         notes: Vec::new(),
         skipped: BTreeSet::new(),
         army: Vec::new(),
+        ended: (pairing.battle.is_empty() && events_end_battle(&orig.records))
+            .then(|| ended_flag(&base.id)),
     };
     // Where a script that ended with `end` in phase `i` moves the battle on: the actions to
     // add (victory, or the next stage and the scripts on the way), if it leaves the phase.
@@ -2176,7 +2397,11 @@ pub fn convert(
             return Vec::new();
         }
         match next_after(&phases, &stages, i) {
-            Next::Victory => vec![EventAction::Victory],
+            Next::Victory => writer
+                .ended_flag_action()
+                .into_iter()
+                .chain([EventAction::Victory])
+                .collect(),
             Next::Stage(next, on_the_way) => {
                 let mut actions = vec![EventAction::SetStage { stage: next }];
                 for w in on_the_way {
@@ -3628,6 +3853,413 @@ item = "wine"
             !converted.drama.contains("관우는 레벨이 올라갔다"),
             "{}",
             converted.drama
+        );
+    }
+
+    /// A battle that goes on with another battle map (Changban): the first battle's setup is in
+    /// the block before; the phase of the first map ends when the civilian (person 344) stands
+    /// on tile (5, 4) or the battle is won; then a record sets the second battle up (its own
+    /// setup and roster, the jump to map 3), and that battle starts, opens, has a phase and
+    /// an epilogue.
+    fn two_map_scene() -> Scene {
+        let prep = Block {
+            offset: 0,
+            records: vec![record(
+                0,
+                0,
+                false,
+                [0; 6],
+                vec![setup(
+                    Some(54),
+                    70,
+                    vec![unit(0, 1, 1), unit(ANY_OFFICER, 2, 2), unit(344, 3, 3)],
+                )],
+            )],
+        };
+        let battle = Block {
+            offset: 0,
+            records: vec![
+                // 0: the map and the enemies: 300 goes for the civilian.
+                record(
+                    0,
+                    0,
+                    false,
+                    [0; 6],
+                    vec![
+                        roster(vec![
+                            unit(54, 9, 4),
+                            RosterUnit {
+                                ai_mode: Some(3),
+                                ai_param: Some(344),
+                                ..unit(300, 8, 4)
+                            },
+                        ]),
+                        fields("load_map", &[("map", 0x3002)]),
+                    ],
+                ),
+                record(0, 1, false, [0; 6], vec![op("begin_battle")]),
+                // 2: the opening sends the civilian to (5, 4).
+                record(
+                    0,
+                    2,
+                    false,
+                    [0; 6],
+                    vec![fields(
+                        "set_ai",
+                        &[("person", 344), ("mode", 6), ("p1", 5), ("p2", 4)],
+                    )],
+                ),
+                // 3: the civilian reaches it (row 4, column 5): the phase is over. 4: so is it
+                // when the battle is won.
+                record(
+                    UNIT_AT_CELL,
+                    3,
+                    true,
+                    [88, 1, 4, 5, 0, 0],
+                    vec![fields("dialogue", &[("text", 0x10)]), op("leave_parallel")],
+                ),
+                record(BATTLE_WON, 3, false, [0; 6], vec![op("leave_parallel")]),
+                // 5: the second battle's setup, roster and map.
+                record(
+                    0,
+                    4,
+                    false,
+                    [0; 6],
+                    vec![
+                        setup(Some(54), 99, vec![unit(0, 1, 1), unit(344, 0, 1)]),
+                        roster(vec![unit(54, 7, 1)]),
+                        fields("battle_end", &[("next_map", 0x3003)]),
+                    ],
+                ),
+                record(0, 5, false, [0; 6], vec![op("begin_battle")]),
+                // 7: its opening sends the civilian to (0, 5).
+                record(
+                    0,
+                    6,
+                    false,
+                    [0; 6],
+                    vec![fields(
+                        "set_ai",
+                        &[("person", 344), ("mode", 6), ("p1", 0), ("p2", 5)],
+                    )],
+                ),
+                // 8: reaching it (row 5, column 0) ends the phase, and so does winning.
+                record(
+                    UNIT_AT_CELL,
+                    7,
+                    true,
+                    [88, 1, 5, 0, 0, 0],
+                    vec![op("leave_parallel")],
+                ),
+                record(BATTLE_WON, 7, false, [0; 6], vec![op("leave_parallel")]),
+                // 10: after the battle.
+                record(
+                    0,
+                    8,
+                    false,
+                    [0; 6],
+                    vec![
+                        fields("data", &[("kind", 2), ("value", 700)]),
+                        fields("battle_end", &[("next_map", 0x1000)]),
+                    ],
+                ),
+            ],
+        };
+        Scene {
+            blocks: vec![prep, battle],
+        }
+    }
+
+    fn convert_leg(scene: &Scene, map: u8, leg: u8, id: &str) -> Converted {
+        let orig = find_battle_leg(scene, map, &[], Some(1), leg).unwrap();
+        let mut names = names();
+        names.civilians.insert(344, ("civilian".into(), 1));
+        names.person_names.insert(344, "민중".into());
+        let text = text();
+        let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        convert(
+            &crate::chapters::chapter_base(id, "시험", "목표", 70, true, Some("liu_bei")),
+            &orig,
+            &names,
+            &pair("", 1, 0, map),
+            &format!("hexz_{map:02}"),
+            &mut EventSources {
+                text: &text,
+                cell_change: &mut none,
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_battle_on_two_maps_is_found_as_two_legs() {
+        let scene = two_map_scene();
+        assert_eq!(
+            battle_map_leg(&scene, 1),
+            Some(MapLeg {
+                record: 5,
+                next_map: 3
+            })
+        );
+        assert_eq!(battle_map_leg(&scene, 0), None);
+        // The first leg: the setup before it (not the later one), only its own records.
+        let first = find_battle_leg(&scene, 2, &[], Some(1), 0).unwrap();
+        assert_eq!((first.header.turn_limit, first.records.len()), (70, 5));
+        assert_eq!((first.later_rosters, first.rosters.len()), (0, 1));
+        // The second: its own setup and roster, its groups counted from them.
+        let second = find_battle_leg(&scene, 3, &[], Some(1), 1).unwrap();
+        assert_eq!(second.header.turn_limit, 99);
+        assert_eq!((second.later_rosters, second.rosters.len()), (0, 1));
+        assert_eq!(second.rosters[0].1[0].x, 7);
+        let groups: Vec<u8> = second.records.iter().map(|r| r.trigger.group).collect();
+        assert_eq!(groups, [0, 1, 2, 3, 3, 4]);
+        // Only the map the battle goes on with is a second leg.
+        assert!(find_battle_leg(&scene, 9, &[], Some(1), 1).is_err());
+        assert!(find_battle_leg(&scene, 3, &[], None, 1).is_err());
+        // (The battle's own map is the one its `load_map` names.)
+        assert!(find_battle_leg(&scene, 3, &[], Some(1), 0).is_err());
+    }
+
+    /// A civilian in the setup is a fixed allied unit that the opening marches to a tile, whom
+    /// enemies may hunt, and whose arrival ends the first leg (a script that leaves its phase).
+    #[test]
+    fn the_civilians_of_a_setup_are_escorted_allies() {
+        let scene = two_map_scene();
+        let c = convert_leg(&scene, 2, 0, "c");
+        let b = &c.battle;
+        assert_eq!(b.turn_limit, 70);
+        let civilian = b.units.iter().find(|u| u.side == Side::Ally).unwrap();
+        assert_eq!(
+            (
+                civilian.class.as_deref(),
+                civilian.level,
+                civilian.name.as_deref()
+            ),
+            (Some("civilian"), Some(1), Some("민중"))
+        );
+        assert_eq!(civilian.pos, Pos::new(3, 3));
+        assert_eq!(
+            (civilian.ai, civilian.ai_pos),
+            (AiMode::March, Some(Pos::new(5, 4)))
+        );
+        assert_eq!(civilian.tag.as_deref(), Some("person_344"));
+        // The enemy that hunts it names it.
+        let hunter = b
+            .units
+            .iter()
+            .find(|u| u.name.as_deref() == Some("보병대"))
+            .unwrap();
+        assert_eq!(
+            (hunter.ai, hunter.ai_target.as_deref()),
+            (AiMode::Target, Some("person_344"))
+        );
+        // Its tile is no deploy tile.
+        assert_eq!(b.deploy.slots, [Pos::new(1, 1), Pos::new(2, 2)]);
+        // Reaching (5, 4) plays the record's lines, tells the outro an event ended the battle
+        // and wins.
+        assert_eq!(b.events.len(), 1, "{:#?}", b.events);
+        assert_eq!(
+            b.events[0].trigger,
+            Trigger::Reach {
+                who: Some("person_344".into()),
+                pos: Pos::new(5, 4),
+                radius: 0,
+                to: None
+            }
+        );
+        assert_eq!(
+            b.events[0].actions,
+            [
+                EventAction::Drama {
+                    scene: "orig_c_3".into()
+                },
+                EventAction::SetFlag {
+                    flag: ended_flag("c"),
+                    value: 1
+                },
+                EventAction::Victory
+            ]
+        );
+        assert!(
+            !c.notes.iter().any(|n| n.contains("later")),
+            "{:?}",
+            c.notes
+        );
+        // The second leg: the civilian is there again, marching to (0, 5).
+        let c = convert_leg(&scene, 3, 1, "c_2");
+        let civilian = c
+            .battle
+            .units
+            .iter()
+            .find(|u| u.side == Side::Ally)
+            .unwrap();
+        assert_eq!(civilian.pos, Pos::new(0, 1));
+        assert_eq!(civilian.ai_pos, Some(Pos::new(0, 5)));
+        assert_eq!(c.battle.turn_limit, 99);
+        assert!(c.battle.events.iter().any(|e| e.trigger
+            == Trigger::Reach {
+                who: Some("person_344".into()),
+                pos: Pos::new(0, 5),
+                radius: 0,
+                to: None
+            }
+            && e.actions.last() == Some(&EventAction::Victory)));
+    }
+
+    #[test]
+    fn the_ended_flag_is_named_after_the_battle() {
+        assert_eq!(ended_flag("c2_s3_b7"), "orig_c2_s3_b7_ended");
+    }
+
+    /// The stage's records for `events_end_battle`: a phase of `group` (parallel or not).
+    fn stage(parallel: bool, records: Vec<(u8, [u8; 6], Vec<Instr>)>) -> Vec<Record> {
+        records
+            .into_iter()
+            .enumerate()
+            .map(|(i, (kind, args, code))| record(kind, 3, parallel && i == 0, args, code))
+            .collect()
+    }
+
+    #[test]
+    fn events_end_battle_needs_a_victory_script_and_a_record_that_ends_the_stage() {
+        let leave = || vec![op("leave_parallel")];
+        let won = || (BATTLE_WON, [0; 6], leave());
+        // A civilian on a tile that leaves the phase, next to the victory script.
+        let civilian = || (UNIT_AT_CELL, [88, 1, 4, 5, 0, 0], leave());
+        assert!(events_end_battle(&stage(true, vec![civilian(), won()])));
+        // Without the victory script there is nothing to leave out.
+        assert!(!events_end_battle(&stage(true, vec![civilian()])));
+        // A record that runs on and does not leave a parallel phase ends nothing...
+        let chatter = (
+            9,
+            [3, 0, 0, 0, 0, 0],
+            vec![fields("play_music", &[("song", 3)])],
+        );
+        assert!(!events_end_battle(&stage(
+            true,
+            vec![chatter.clone(), won()]
+        )));
+        // ...but any record of a phase that is not watched in parallel ends it by running.
+        assert!(events_end_battle(&stage(false, vec![chatter, won()])));
+        // A treasure (any unit on a tile) is no event, and Liu Bei's objective of a battle with
+        // one stage is its victory condition.
+        let treasure = (
+            UNIT_AT_CELL,
+            [0, 4, 5, 6, 0, 0],
+            vec![
+                fields("data", &[("kind", 2), ("value", 100)]),
+                op("leave_parallel"),
+            ],
+        );
+        assert!(!events_end_battle(&stage(true, vec![treasure, won()])));
+        let objective = (
+            UNIT_AT_CELL,
+            [0, 0, 3, 1, 0, 0],
+            vec![
+                fields("data", &[("kind", 4), ("value", 50)]),
+                op("leave_parallel"),
+            ],
+        );
+        assert!(!events_end_battle(&stage(
+            true,
+            vec![objective.clone(), won()]
+        )));
+        // ...while in a later stage of a battle with several it is an event.
+        let mut two = stage(true, vec![civilian(), won()]);
+        two.push(record(UNIT_AT_CELL, 4, true, objective.1, objective.2));
+        two.push(record(BATTLE_WON, 4, false, [0; 6], leave()));
+        assert!(events_end_battle(&two));
+        assert!(!events_end_battle(&[]));
+    }
+
+    /// Civilians are the `BAKDATA` persons of the civilian class that no officer of the pack plays.
+    #[test]
+    fn civilians_are_the_persons_of_the_civilian_class_without_an_officer() {
+        let person = |index: usize, class: u8| Officer {
+            index,
+            name: "민중".into(),
+            reading: String::new(),
+            portrait: 225,
+            sprite: 0,
+            leadership: 0,
+            war: 0,
+            intelligence: 0,
+            flags: 1,
+            army: 14,
+            role: 3,
+            morale: 100,
+            troops: 1000,
+            class,
+            level: 1,
+            exp: 0,
+            items: Vec::new(),
+            other: [0; 2],
+        };
+        let civilian = crate::pack::CLASS_SPRITES
+            .iter()
+            .position(|s| *s == "civilian")
+            .unwrap() as u8;
+        let people = [person(344, civilian), person(345, civilian), person(9, 0)];
+        let classes = [("civilian".to_string(), "civilian".to_string())];
+        let names = Names::new(
+            &people,
+            &[],
+            |o| (o.index == 345).then(|| "someone".to_string()),
+            &crate::pack::CLASS_SPRITES,
+            &classes,
+            &[],
+        );
+        // 344 is one; 345 has an officer of the pack; 9 is not of the class.
+        assert_eq!(
+            names.civilians,
+            BTreeMap::from([(344, ("civilian".to_string(), 1))])
+        );
+        // A pack without the class has none.
+        let none = Names::new(
+            &people,
+            &[],
+            |_| None,
+            &crate::pack::CLASS_SPRITES,
+            &[],
+            &[],
+        );
+        assert!(none.civilians.is_empty());
+    }
+
+    /// An AI target that is no officer resolves to the tag of its unit when that is already on the
+    /// map (the roster lists it first), and stays unresolved when it is not.
+    #[test]
+    fn ai_targets_name_earlier_units_of_persons_without_an_officer() {
+        let hunter = |target| RosterUnit {
+            ai_mode: Some(3),
+            ai_param: Some(target),
+            ..unit(300, 8, 4)
+        };
+        let converted = |units: Vec<RosterUnit>| {
+            let mut scene = two_map_scene();
+            scene.blocks[1].records[0].code[0] = roster(units);
+            convert_leg(&scene, 2, 0, "c")
+        };
+        let find = |c: &Converted, name: &str| {
+            c.battle
+                .units
+                .iter()
+                .find(|u| u.name.as_deref() == Some(name))
+                .cloned()
+                .unwrap()
+        };
+        // 301 stands in the roster before 300, which hunts it.
+        let c = converted(vec![unit(54, 9, 4), unit(301, 7, 4), hunter(301)]);
+        assert_eq!(find(&c, "보병대").ai_target.as_deref(), Some("person_301"));
+        assert_eq!(find(&c, "병사").tag.as_deref(), Some("person_301"));
+        // 302 comes after its hunter: not on the map yet, so the hunter attacks instead.
+        let c = converted(vec![unit(54, 9, 4), hunter(302), unit(302, 6, 4)]);
+        let h = find(&c, "보병대");
+        assert_eq!((h.ai, h.ai_target.as_deref()), (AiMode::Aggressive, None));
+        assert!(
+            c.notes.iter().any(|n| n.contains("AI target")),
+            "{:?}",
+            c.notes
         );
     }
 }

@@ -44,7 +44,9 @@ pub fn ending_node(n: u8) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Part {
     /// A block that loads battle map `map` and fights on it (its roster or the battle's start).
-    Battle { block: usize, map: u8 },
+    /// A battle that goes on with another battle map ([`battles::MapLeg`]) is two parts of the
+    /// same block: `leg` 0 on the first map, then `leg` 1 on the next.
+    Battle { block: usize, map: u8, leg: u8 },
     /// A block of story (towns, the campaign map) with something to say.
     Story { block: usize },
 }
@@ -65,10 +67,20 @@ pub fn parts(scene: &Scene) -> Vec<Part> {
         // The setup may come in the block before (with the camp's story).
         let sets_up = code().any(story::sets_up_battle);
         match battle_map {
-            Some(m) if sets_up => out.push(Part::Battle {
-                block: i,
-                map: (m & 0xff) as u8,
-            }),
+            Some(m) if sets_up => {
+                out.push(Part::Battle {
+                    block: i,
+                    map: (m & 0xff) as u8,
+                    leg: 0,
+                });
+                if let Some(next) = battles::battle_map_leg(scene, i) {
+                    out.push(Part::Battle {
+                        block: i,
+                        map: next.next_map,
+                        leg: 1,
+                    });
+                }
+            }
             _ if code().any(|c| matches!(c.mnemonic, "dialogue" | "narration" | "title")) => {
                 out.push(Part::Story { block: i })
             }
@@ -917,14 +929,23 @@ const DATA_GOLD: u16 = 2;
 /// away or are asked to). A `goto_block` there is where the story goes on. The gold they give is
 /// the battle's reward ([`StoryScene::gold`]), shown with the battle's result.
 pub fn victory_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
-    victory_scene_after(block, ctx, None)
+    victory_scene_after(block, ctx, None, None)
 }
 
 /// [`victory_scene`] of a battle that goes on in another block: the outro is that block's, so it
 /// plays only when the battle got there (`continued`: the flag it set then,
 /// [`battles::continuation_flag`]); a battle won before gives its own gold, so the outro's is a
-/// `@gold` of its own instead of the battle's reward.
-pub fn victory_scene_after(block: &Block, ctx: &StoryContext, continued: Option<u8>) -> StoryScene {
+/// `@gold` of its own instead of the battle's reward. `ended` is the flag an event of the battle
+/// sets when it ends the battle by itself ([`battles::ended_flag`]): the victory script is the
+/// one of the record that fires when the battle is won, so it is left out then, when other
+/// records of its group could have moved the battle on, and so is the gold it gives (a `@gold`
+/// in the test, not the battle's reward).
+pub fn victory_scene_after(
+    block: &Block,
+    ctx: &StoryContext,
+    continued: Option<u8>,
+    ended: Option<&str>,
+) -> StoryScene {
     let mut w = Writer::new(ctx, continued.is_none());
     let gate = continued.map(|f| {
         let k = w.label();
@@ -943,10 +964,26 @@ pub fn victory_scene_after(block: &Block, ctx: &StoryContext, continued: Option<
             .iter()
             .find(|r| r.trigger.kind == BATTLE_WON && r.trigger.group == won.trigger.group)
             .unwrap_or(won);
+        let skip = ended
+            .filter(|_| battles::events_end_battle(&block.records))
+            .map(|flag| {
+                let k = w.label();
+                let _ = writeln!(w.out.text, "@if {flag} != 0 -> won_{k}");
+                k
+            });
+        // Its gold is given only where the script runs: a `@gold` inside the test, not the
+        // battle's reward (the epilogue's gold, which always follows, is the reward).
+        let reward = w.gold_as_reward;
+        w.gold_as_reward &= skip.is_none();
         match w.lines(&first.code) {
             Flow::Goto(b) if b != ctx.block => w.out.next = Next::Block(b),
             f @ (Flow::GameOver | Flow::Ending(_)) => w.stop(f),
             _ => {}
+        }
+        w.gold_as_reward = reward;
+        if let Some(k) = skip {
+            w.close_picture();
+            let _ = writeln!(w.out.text, "@label won_{k}");
         }
     }
     if w.out.next == Next::Default && !w.out.game_over && w.out.endings.is_empty() {
@@ -959,6 +996,28 @@ pub fn victory_scene_after(block: &Block, ctx: &StoryContext, continued: Option<
         let _ = writeln!(w.out.text, "@label outro_{k}");
     }
     w.finish()
+}
+
+/// The outro `text` of [`victory_scene_after`] without its test of `flag` (the battle's events do
+/// not set it: the victory script always plays).
+pub fn without_ended_gate(text: &str, flag: &str) -> String {
+    let test = format!("@if {flag} != 0 -> ");
+    let Some(label) = text
+        .lines()
+        .find_map(|l| l.strip_prefix(test.as_str()))
+        .map(str::trim)
+    else {
+        return text.to_string();
+    };
+    let label = format!("@label {label}");
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        if !line.starts_with(&test) && line.trim() != label {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 /// What the original changes in the army as it sets a battle of `block` up (the setup's
@@ -1109,11 +1168,15 @@ fn successors(node: &Node) -> Vec<&str> {
     }
 }
 
+/// Where a part of a chapter is in the scenario: `(file, scene, block, leg)`, the leg being that
+/// of a battle that goes on with another map ([`Part::Battle`]; 0 for anything else).
+pub type Place = (usize, usize, usize, u8);
+
 /// One part of a converted chapter, in scenario order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
-    /// Where it is in the scenario: `(file, scene, block)`.
-    pub at: (usize, usize, usize),
+    /// Where it is in the scenario.
+    pub at: Place,
     pub kind: StepKind,
     /// Where the campaign goes after it.
     pub next: Next,
@@ -1180,11 +1243,11 @@ impl Step {
     }
 }
 
-/// The step the story goes on to from step `i` of the steps at `at` (`(file, scene, block)`, in
-/// order) by `next` (a route's [`Next::Block`] or not a route): for a block, the first step of
-/// the same scene at or after it (else the first of a later scene); `None` for the chapter's end.
-fn step_after(at: &[(usize, usize, usize)], i: usize, next: &Next) -> Option<usize> {
-    let (file, scene, _) = at[i];
+/// The step the story goes on to from step `i` of the steps at `at` (in order) by `next` (a
+/// route's [`Next::Block`] or not a route): for a block, the first step of the same scene at or
+/// after it (else the first of a later scene); `None` for the chapter's end.
+fn step_after(at: &[Place], i: usize, next: &Next) -> Option<usize> {
+    let (file, scene, _, _) = at[i];
     match next {
         Next::Block(b) => at
             .iter()
@@ -1202,7 +1265,7 @@ fn step_after(at: &[(usize, usize, usize)], i: usize, next: &Next) -> Option<usi
 }
 
 /// Where a lost battle at `at` goes on by `next`: [`Next::Default`] is the block after it.
-pub fn after_defeat(at: (usize, usize, usize), next: &Next) -> Next {
+pub fn after_defeat(at: Place, next: &Next) -> Next {
     match next {
         Next::Default => Next::Block(at.2 + 1),
         other => other.clone(),
@@ -1212,7 +1275,7 @@ pub fn after_defeat(at: (usize, usize, usize), next: &Next) -> Next {
 /// Which of the steps at `at` (in order, each going on as its `nexts` say: a story's or battle's
 /// next, a lost battle's) the story reaches from the first; the others are the alternatives of a
 /// choice the conversion does not offer.
-pub fn reachable(at: &[(usize, usize, usize)], nexts: &[Vec<Next>]) -> Vec<bool> {
+pub fn reachable(at: &[Place], nexts: &[Vec<Next>]) -> Vec<bool> {
     let mut seen = vec![false; at.len()];
     let mut todo: Vec<usize> = if at.is_empty() { Vec::new() } else { vec![0] };
     while let Some(i) = todo.pop() {
@@ -1539,6 +1602,7 @@ mod tests {
             classes: BTreeMap::new(),
             items: BTreeMap::from([(3, "bean".into())]),
             player_officers: BTreeSet::new(),
+            civilians: BTreeMap::new(),
         }
     }
 
@@ -1576,7 +1640,11 @@ mod tests {
             parts(&scene),
             [
                 Part::Story { block: 0 },
-                Part::Battle { block: 1, map: 16 },
+                Part::Battle {
+                    block: 1,
+                    map: 16,
+                    leg: 0
+                },
                 Part::Story { block: 3 },
             ]
         );
@@ -1939,7 +2007,7 @@ mod tests {
         let steps = [
             // A game over, else a route to block 3 (s3), else on (b2).
             story(
-                (2, 0, 0),
+                (2, 0, 0, 0),
                 "s1",
                 true,
                 Next::Routes {
@@ -1949,7 +2017,7 @@ mod tests {
                 },
             ),
             Step {
-                at: (2, 0, 1),
+                at: (2, 0, 1, 0),
                 kind: StepKind::Battle {
                     battle: "b2".into(),
                     title: "연주 — 출진 준비".into(),
@@ -1962,9 +2030,9 @@ mod tests {
             },
             // On with block 4: the first part at or after it (s4 of the next scene: none in
             // this one).
-            story((2, 0, 2), "s2", false, Next::Block(4)),
-            story((2, 0, 3), "s3", false, Next::Default),
-            story((2, 1, 0), "s4", false, Next::Default),
+            story((2, 0, 2, 0), "s2", false, Next::Block(4)),
+            story((2, 0, 3, 0), "s3", false, Next::Default),
+            story((2, 1, 0, 0), "s4", false, Next::Default),
         ];
         let c = continue_campaign(&base, "b1", &steps, ("end2", "2장")).unwrap();
         let ids: Vec<&str> = c.nodes.iter().map(Node::id).collect();
@@ -2031,7 +2099,7 @@ mod tests {
         let steps = [
             // Lost, the story goes on with the block after the battle (s1, an ending).
             Step {
-                at: (3, 4, 6),
+                at: (3, 4, 6, 0),
                 kind: StepKind::Battle {
                     battle: "yiling".into(),
                     title: "이릉".into(),
@@ -2047,7 +2115,7 @@ mod tests {
                 ends: Ends::default(),
             },
             Step {
-                at: (3, 4, 7),
+                at: (3, 4, 7, 0),
                 kind: StepKind::Story { scene: "s1".into() },
                 next: Next::Default,
                 ends: Ends {
@@ -2056,7 +2124,7 @@ mod tests {
                 },
             },
             Step {
-                at: (3, 4, 8),
+                at: (3, 4, 8, 0),
                 kind: StepKind::Story { scene: "s2".into() },
                 next: Next::Default,
                 ends: Ends {
@@ -2275,7 +2343,14 @@ mod tests {
         };
         assert_eq!(
             parts(&scene),
-            [Part::Battle { block: 0, map: 16 }, Part::Story { block: 2 }]
+            [
+                Part::Battle {
+                    block: 0,
+                    map: 16,
+                    leg: 0
+                },
+                Part::Story { block: 2 }
+            ]
         );
         let fought = battles::battle_block(&scene, 0);
         let groups: Vec<u8> = fought.records.iter().map(|r| r.trigger.group).collect();
@@ -2289,6 +2364,193 @@ mod tests {
         );
         assert_eq!(fought.records[2].code[1].mnemonic, "leave_parallel");
         assert_eq!(fought.records[3].code[0].mnemonic, "goto_block");
+    }
+
+    /// A battle block that goes on with another battle map (Changban): the first map's phase,
+    /// then a `run` record that sets the next battle up and ends this one, then the next
+    /// battle's start, opening, phase and epilogue.
+    fn two_map_scene() -> Scene {
+        Scene {
+            blocks: vec![
+                block(vec![
+                    record(
+                        RUN,
+                        0,
+                        vec![
+                            instr("battle_roster", &[]),
+                            instr("load_map", &[("map", 0x3010)]),
+                        ],
+                    ),
+                    record(RUN, 1, vec![instr("begin_battle", &[])]),
+                    // A unit reaching a tile ends the phase, and so does winning.
+                    record(
+                        6,
+                        3,
+                        vec![
+                            instr("dialogue", &[("text", 2)]),
+                            instr("leave_parallel", &[]),
+                        ],
+                    ),
+                    record(
+                        BATTLE_WON,
+                        3,
+                        vec![
+                            instr("dialogue", &[("text", 4)]),
+                            instr("leave_parallel", &[]),
+                        ],
+                    ),
+                    record(
+                        RUN,
+                        4,
+                        vec![
+                            instr("battle_setup", &[]),
+                            instr("battle_roster", &[]),
+                            instr("battle_end", &[("next_map", 0x3011)]),
+                        ],
+                    ),
+                    record(RUN, 5, vec![instr("begin_battle", &[])]),
+                    record(RUN, 6, vec![instr("play_music", &[("song", 3)])]),
+                    record(
+                        BATTLE_WON,
+                        7,
+                        vec![
+                            instr("dialogue", &[("text", 3)]),
+                            instr("leave_parallel", &[]),
+                        ],
+                    ),
+                    record(RUN, 8, vec![instr("battle_end", &[("next_map", 0x1000)])]),
+                ]),
+                block(vec![record(
+                    RUN,
+                    0,
+                    vec![instr("dialogue", &[("text", 2)])],
+                )]),
+            ],
+        }
+    }
+
+    #[test]
+    fn a_battle_that_goes_on_with_another_map_is_two_battles() {
+        let scene = two_map_scene();
+        assert_eq!(
+            parts(&scene),
+            [
+                Part::Battle {
+                    block: 0,
+                    map: 16,
+                    leg: 0
+                },
+                Part::Battle {
+                    block: 0,
+                    map: 17,
+                    leg: 1
+                },
+                Part::Story { block: 1 },
+            ]
+        );
+        let split = battles::battle_map_leg(&scene, 0).unwrap();
+        assert_eq!((split.record, split.next_map), (4, 17));
+        // The first leg is the battle up to the record that sets the next one up.
+        let groups =
+            |block: &Block| -> Vec<u8> { block.records.iter().map(|r| r.trigger.group).collect() };
+        assert_eq!(groups(&battles::battle_leg(&scene, 0, 0)), [0, 1, 3, 3]);
+        // The second is a battle block of its own from that record on, without the jump.
+        let second = battles::battle_leg(&scene, 0, 1);
+        assert_eq!(groups(&second), [0, 1, 2, 3, 4]);
+        assert!(second
+            .records
+            .iter()
+            .flat_map(|r| &r.code)
+            .all(|c| c.mnemonic != "battle_end" || c.operands.get("next_map") == Some(0x1000)));
+        assert_eq!(second.records[0].code[0].mnemonic, "battle_setup");
+        // A battle without a second map has one leg.
+        let single = Scene {
+            blocks: vec![two_map_scene().blocks.remove(1)],
+        };
+        assert!(battles::battle_map_leg(&single, 0).is_none());
+        assert_eq!(*battles::battle_leg(&single, 0, 0), single.blocks[0]);
+    }
+
+    #[test]
+    fn the_victory_script_is_left_out_when_an_event_ended_the_battle() {
+        let scene = two_map_scene();
+        let names = names();
+        let song_key = |_: u16| None;
+        let flag = battles::ended_flag("c_b0");
+        // First leg: an event (a unit reaching a tile) can end it, and so can winning: the
+        // script of winning plays only if no event did.
+        let first = battles::battle_leg(&scene, 0, 0);
+        assert!(battles::events_end_battle(&first.records));
+        let s = victory_scene_after(&first, &ctx(&names, &song_key), None, Some(&flag));
+        assert_eq!(
+            s.text,
+            format!("@if {flag} != 0 -> won_1\nyuan_shao: 실례했소.\n@label won_1\n"),
+            "{}",
+            s.text
+        );
+        parses(&s.text);
+        // Second leg: nothing but winning ends it: no test.
+        let second = battles::battle_leg(&scene, 0, 1);
+        assert!(!battles::events_end_battle(&second.records));
+        let s = victory_scene_after(&second, &ctx(&names, &song_key), None, Some(&flag));
+        assert!(!s.text.contains("@if"), "{}", s.text);
+        // Where no event sets the flag the test goes.
+        assert_eq!(
+            without_ended_gate(
+                &format!("@if {flag} != 0 -> won_1\nA\n@label won_1\nB\n"),
+                &flag
+            ),
+            "A\nB\n"
+        );
+        assert_eq!(without_ended_gate("A\n", &flag), "A\n");
+    }
+
+    /// The gold of the victory script that an event's ending skips is skipped with it: it is
+    /// given inside the test as a `@gold`, and the battle's reward is what always follows.
+    #[test]
+    fn the_gold_of_a_skipped_victory_script_is_skipped_too() {
+        let mut scene = two_map_scene();
+        // The first leg's victory script gives 700; the second leg's epilogue gives 500.
+        scene.blocks[0].records[3]
+            .code
+            .insert(0, instr("data", &[("kind", 2), ("value", 700)]));
+        scene.blocks[0].records[8]
+            .code
+            .insert(0, instr("data", &[("kind", 2), ("value", 500)]));
+        let names = names();
+        let song_key = |_: u16| None;
+        let flag = battles::ended_flag("c_b0");
+        let first = battles::battle_leg(&scene, 0, 0);
+        let s = victory_scene_after(&first, &ctx(&names, &song_key), None, Some(&flag));
+        assert_eq!(s.gold, 0, "{}", s.text);
+        assert!(
+            s.text
+                .starts_with(&format!("@if {flag} != 0 -> won_1\n@gold 700\n")),
+            "{}",
+            s.text
+        );
+        // The epilogue after the last stage is played either way: its gold is the reward.
+        let second = battles::battle_leg(&scene, 0, 1);
+        let s = victory_scene_after(&second, &ctx(&names, &song_key), None, Some(&flag));
+        assert_eq!(s.gold, 500, "{}", s.text);
+        assert!(!s.text.contains("@gold"), "{}", s.text);
+    }
+
+    /// Two steps that share a block (the legs of a battle on two maps) follow each other, and a
+    /// jump to their block goes to the first.
+    #[test]
+    fn the_legs_of_a_block_follow_each_other() {
+        let at = [(2, 3, 6, 0), (2, 3, 7, 0), (2, 3, 7, 1), (2, 3, 8, 0)];
+        assert_eq!(step_after(&at, 1, &Next::Default), Some(2));
+        assert_eq!(step_after(&at, 2, &Next::Default), Some(3));
+        assert_eq!(step_after(&at, 0, &Next::Block(7)), Some(1));
+        assert_eq!(step_after(&at, 3, &Next::Block(7)), Some(1));
+        assert_eq!(step_after(&at, 3, &Next::Default), None);
+        // Lost on the second leg, the story goes on with the block after theirs.
+        assert_eq!(after_defeat(at[2], &Next::Default), Next::Block(8));
+        // Everything is reached that the steps lead to in order.
+        let nexts: Vec<Vec<Next>> = at.iter().map(|_| vec![Next::Default]).collect();
+        assert_eq!(reachable(&at, &nexts), [true; 4]);
     }
 
     #[test]
