@@ -1567,6 +1567,7 @@ mod tests {
         Names {
             officers: BTreeMap::from([(0, "liu_bei".into()), (9, "yuan_shao".into())]),
             person_names: BTreeMap::from([(63, "손건".into())]),
+            stats: BTreeMap::new(),
             classes: BTreeMap::new(),
             items: BTreeMap::from([(3, "bean".into())]),
             player_officers: BTreeSet::new(),
