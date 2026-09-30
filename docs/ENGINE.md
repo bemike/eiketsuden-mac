@@ -9,7 +9,9 @@
 > explains the three layers (engine, base pack, original mode), how the rules and the original formats were
 > established, how a converted battle reaches the screen, and the development practice (data validation,
 > deterministic AI-vs-AI simulation, synthetic fixtures plus gated golden tests on a real copy, recorded
-> decisions, reviewed pull requests).
+> decisions, reviewed pull requests). The goal is to run the player's own copy of the original on modern systems,
+> so the original mode is the heart of the project; the base pack gets no new content and will shrink to what the
+> engine needs once the original mode no longer depends on its story and officer data (decision D21).
 
 이 문서는 영걸전 Reloaded가 **무엇을, 어떤 방식으로** 만들고 있는지 설명합니다. 코드 구조의 세부는
 [ARCHITECTURE.md](ARCHITECTURE.md), 설계 결정의 기록은 [DECISIONS.md](DECISIONS.md), 원작 파일 형식은
@@ -28,7 +30,7 @@
 |---|---|---|
 | 목표 | 원작과 같은 게임을 현대 환경에서 | 같음(PC판 규칙, Windows·macOS·Linux·웹) |
 | 출발점 | 원작 실행 파일을 **디컴파일**해 함수 단위로 C/C++로 옮기며 원작 바이너리를 점점 대체(OpenTTD도 원작을 역어셈블한 재구현에서 출발) | 원작 코드를 옮기지 않고, 공개된 규칙 공식과 플레이 사실로 **엔진을 처음부터 새로 작성**(Rust) |
-| 원작 파일 | 설치본이 **필수**(그래픽·사운드·시나리오를 읽음) | **선택**. 원작 없이도 끝까지 플레이할 수 있는 라이선스 청정 기본 팩을 함께 배포 |
+| 원작 파일 | 설치본이 **필수**(그래픽·사운드·시나리오를 읽음) | 원작으로 플레이하려면 설치본이 필요(원작 모드가 본체, D21). 원작 없이 엔진을 돌려 볼 수 있는 라이선스 청정 기본 팩(서장·1장)을 함께 배포하지만 콘텐츠는 더 늘리지 않음 |
 | 원작 데이터 사용 | 실행할 때 원작 형식을 직접 읽음 | 실행할 때마다 원작 파일을 **엔진의 팩 형식으로 변환**해 메모리에 얹음(원작 모드, 네이티브 빌드 전용. 웹에서는 로컬 폴더를 읽을 수 없음) |
 | 원작 실행 파일 | 코드의 원천 | 데이터 표(팔레트·맵 표·칸 변경 표)를 찾는 대상일 뿐. **읽기 전용 정적 분석**, 실행하지 않음 |
 
@@ -54,7 +56,9 @@
 1. **엔진** — 규칙과 동작만 가집니다. 전투는 결정적(시드 난수)이고 그래픽·파일 입출력과 분리되어 있어, 같은 코드가
    게임·명령줄 도구·테스트에서 그대로 돕니다.
 2. **기본 팩** — 원작의 PC판 규칙 수치와 『삼국지연의』(퍼블릭 도메인)를 바탕으로 새로 쓴 서장·제1장 캠페인, 라이선스가
-   분명한 그림·음악. 원작이 없는 사람도 이것으로 플레이합니다.
+   분명한 그림·음악·폰트·효과음. 원작이 없는 사람은 이것으로 엔진을 돌려 볼 수 있고(웹 데모), 원작 모드는 아직 변환하지
+   못한 것(서장·1장 이야기, 무장 명단과 능력치, 폰트·효과음 등)을 여기서 가져옵니다. 프로젝트의 목표는 원작 재현이라
+   기본 팩은 콘텐츠를 더 늘리지 않고, 원작 모드가 그 콘텐츠 없이 서게 되면 엔진에 필요한 최소 틀로 줄입니다(D21).
 3. **원작 모드** — 정품을 가진 사용자가 타이틀의 "원작 데이터"에서 설치 폴더를 고르면, 게임이 **실행할 때마다**
    원작 파일을 읽어 기본 팩을 확장하는 팩(`extends`)을 메모리에서 만들고 그 위에서 플레이합니다(D8·D10). 변환된 것은
    원작 것으로, 아직 변환하지 못한 것은 기본 팩 것으로 보입니다. 그래서 원작 모드는 변환기가 늘어날수록 한 종류씩
