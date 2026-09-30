@@ -822,16 +822,60 @@ mod tests {
         }
 
         // Every battle of the base pack's prologue and chapter 1 is re-staged on its original map
-        // (verified values: FORMATS §13.4).
-        // (Then chapters 2 to 4's forty-three, made from the original battles: the two that are
-        // fought on two maps, Changban and Wagu Pass, count for two.)
+        // (verified values: FORMATS §13.4): the campaign does not play them (D21), but they stay
+        // in the chain.
+        // (Then the original's chapters, made from the original battles: chapters 2 to 4 have
+        // forty-three, the two that are fought on two maps, Changban and Wagu Pass, counting for
+        // two.)
+        // A battle of the original's chapters: `c<file>_s<scene>_b<block>[_<leg>]`.
+        let is_chapter = |id: &str| {
+            let mut parts = id.split('_');
+            let (file, scene) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            file.len() == 2
+                && file.starts_with('c')
+                && scene.starts_with('s')
+                && scene[1..].parse::<u32>().is_ok()
+        };
         let battles = json["battles"].as_array().unwrap();
-        let (later, restaged): (Vec<_>, Vec<_>) = battles.iter().partition(|b| {
-            let id = b["id"].as_str().unwrap();
-            ["c2_s", "c3_s", "c4_s"].iter().any(|c| id.starts_with(c))
-        });
+        let (chapters, restaged): (Vec<_>, Vec<_>) = battles
+            .iter()
+            .partition(|b| is_chapter(b["id"].as_str().unwrap()));
         assert_eq!(restaged.len(), 21, "{battles:#?}");
-        assert_eq!(later.len(), 11 + 21 + 11, "{battles:#?}");
+        let later = chapters
+            .iter()
+            .filter(|b| {
+                let id = b["id"].as_str().unwrap();
+                ["c2_s", "c3_s", "c4_s"].iter().any(|c| id.starts_with(c))
+            })
+            .count();
+        assert_eq!(later, 11 + 21 + 11, "{battles:#?}");
+        // The prologue and chapter 1 are the original's too: each original battle the base pack
+        // follows (the pairing table: the same file, scene and map; 19 battles, Jieqiao and Xiapi
+        // counting once) is a battle of its chapter on its map that the campaign plays.
+        let fought: std::collections::BTreeSet<(usize, usize, u8)> =
+            hero_import::battles::ORIGINAL_BATTLES
+                .iter()
+                .map(|p| (p.file, p.scene, p.map))
+                .collect();
+        assert_eq!(fought.len(), 19);
+        for (file, scene, map) in fought {
+            let prefix = format!("c{file}_s{scene}_b");
+            let map_id = format!("hexz_{map:02}");
+            let found: Vec<&str> = pack
+                .battles
+                .values()
+                .filter(|b| b.id.starts_with(&prefix))
+                .filter(|b| b.map.use_map.as_deref() == Some(map_id.as_str()))
+                .map(|b| b.id.as_str())
+                .collect();
+            assert!(!found.is_empty(), "no battle {prefix}* on {map_id}");
+            for id in found {
+                assert!(
+                    pack.campaign.node(&format!("{id}_camp")).is_some(),
+                    "{id} is not in the campaign"
+                );
+            }
+        }
         let expect = [
             ("p1_sishui", "hexz_00", 30),
             ("p2_hulao", "hexz_01", 30),
@@ -1103,19 +1147,37 @@ mod tests {
                 if then == "c2_s3_b7_camp" && otherwise == "c2_s3_b6_camp"),
             "{route:?}"
         );
-        let after = pack
-            .campaign
-            .node("c1_battle_xuzhou2")
-            .expect("the base campaign's last battle");
-        // The base chapter's close still plays, then chapter 2 begins.
+        // The campaign is the original's from the prologue (D21): it starts with the prologue's
+        // story, the base campaign's nodes are gone, and chapter 1 goes on to chapter 2.
+        use hero_core::campaign::Node;
         assert!(
-            matches!(after, hero_core::campaign::Node::Battle { next, .. } if next == "c1_finale"),
-            "{after:?}"
+            pack.campaign.start.starts_with("c0_s0_"),
+            "{}",
+            pack.campaign.start
         );
-        assert!(matches!(
-            pack.campaign.node("c1_finale"),
-            Some(hero_core::campaign::Node::Drama { next, .. }) if next == "c2_s0_story0"
-        ));
+        assert_eq!(
+            pack.campaign.starting_officers,
+            ["liu_bei", "guan_yu", "zhang_fei"]
+        );
+        assert!(pack.campaign.node("c1_battle_xuzhou2").is_none());
+        assert!(pack
+            .campaign
+            .nodes
+            .iter()
+            .all(|n| is_chapter(n.id()) || n.id().starts_with("orig_")));
+        let leads_to = |target: &str| {
+            pack.campaign.nodes.iter().any(|n| match n {
+                Node::Drama { next, .. } | Node::Camp { next, .. } => next == target,
+                Node::Battle {
+                    next, on_defeat, ..
+                } => next == target || on_defeat.as_deref() == Some(target),
+                Node::Branch {
+                    then, otherwise, ..
+                } => then == target || otherwise == target,
+                Node::Ending { .. } => false,
+            })
+        };
+        assert!(leads_to("c2_s0_story0"));
         // Officers the original brings in during a battle are not deployed from the army too,
         // and the gold of the victory is the battle's reward.
         let bowang = &pack.battles["c2_s3_b2"];
@@ -1192,6 +1254,26 @@ mod tests {
             story.contains("@set orig_game_over = 1") && story.contains("yuan_shao: "),
             "{story}"
         );
+        // Chapter 1's story joins its officers: Jian Yong and the others the base pack has, and
+        // the original's own people (한영, 곽적, 번궁), whom the pack adds (officers.toml); the
+        // brothers are scattered at its end.
+        for id in ["jian_yong", "guan_chun", "geng_wu", "sun_qian", "mi_zhu"] {
+            assert!(story.contains(&format!("@join {id}\n")), "{id}");
+        }
+        for name in ["한영", "곽적", "번궁"] {
+            let officer = pack
+                .officers
+                .values()
+                .find(|o| o.name == name)
+                .unwrap_or_else(|| panic!("{name}"));
+            assert!(officer.id.starts_with("orig_p"), "{name}: {}", officer.id);
+            assert!(story.contains(&format!("@join {}\n", officer.id)), "{name}");
+            assert!(out
+                .join(format!("gfx/portraits/{}.png", officer.id))
+                .is_file());
+        }
+        assert!(story.contains("@away guan_yu\n"), "{story}");
+        assert_eq!(json["assets"]["officers"]["status"], "extracted");
         // Zhuge Liang is asked again until the right answer.
         assert!(story.contains("@goto ask_"), "{story}");
         // After Runan's battle Liu Pi asks to come along: the epilogue's choice.

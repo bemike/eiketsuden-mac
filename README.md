@@ -28,9 +28,9 @@
 
 * **원작 모드** — OpenRCT2처럼, 정품을 가진 사용자는 타이틀의 "원작 데이터"에서 자기 PC의 원작 설치 폴더를
   고르면 원작의 얼굴·유닛·지형·전투 맵과 화면 틀(전투·캠프·상태 창), 음악, 병종·지형·책략·회복 아이템·혼란 규칙 표로
-  플레이할 수 있습니다. 서장부터 원작의 엔딩까지 전투 60개와 그 대사·일기토, 제2~4장의 마을 이야기(대사 장면과
-  선택지)가 사용자의 원작 파일에서 변환됩니다(네이티브 빌드, 명령줄 불필요, 원작 파일은 읽기만 함). 아직 서장·1장
-  이야기와 무장 능력치는 기본 팩의 것을 쓰며, 이를 원작 변환으로 바꾸는 것이 다음 작업입니다.
+  플레이할 수 있습니다. 서장부터 원작의 엔딩까지 전투 60개와 그 대사·일기토, 마을 이야기(대사 장면과 선택지),
+  무장의 능력치와 합류가 사용자의 원작 파일에서 변환됩니다(네이티브 빌드, 명령줄 불필요, 원작 파일은 읽기만 함).
+  서장·1장의 원작 변환은 새로 들어가 실물 원작으로 아직 확인하지 않았고, 무장의 병종·레벨·장비는 아직 기본 팩의 것입니다.
   [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md)
 * **원작 규칙 재현** — PC판(국내 DOS판)의 규칙을 팬 커뮤니티가 역분석한 공식 그대로 옮겼습니다.
   공격력·방어력 `(Lv+10)×(사기/10 + 400/(140−능력치) + 병종 보정)`, 확정 데미지 `(공격 − 방어/2)×지형`,
@@ -118,25 +118,25 @@ cargo run --release -p hero-tools -- validate data/base
 
 진행률은 **원작 모드**만 기준으로 잽니다(D21). 원작의 전투 60개(시나리오 5개 파일의 전투 블록, 루트마다 다른 전투
 포함)를 모두 원작 모드로 플레이할 수 있고, 캠페인이 원작의 엔딩까지 이어집니다. 다만 마을은 걸어 다니는 대신 대사
-장면과 선택지로 옮겼고, 서장·1장은 아직 기본 팩의 이야기와 전투 뼈대 위에 원작 전투를 얹은 것이며, 아래 "남은 일"처럼
-간략하게 옮긴 부분이 있습니다. 기준과 세부는 아래 표에 있고, 기능이 머지될 때마다 갱신합니다.
+장면과 선택지로 옮겼고, 서장·1장의 변환은 실물 원작으로 아직 확인하지 않았으며, 아래 "남은 일"처럼 간략하게 옮긴
+부분이 있습니다. 기준과 세부는 아래 표에 있고, 기능이 머지될 때마다 갱신합니다.
 
 | 영역 | 기준 | 진행 |
 |---|---|---|
-| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(기본 팩 21개 전투), 2장 10개, 3장 20개, 4장 11개 (두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
-| 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장·1장은 기본 팩 이야기, 2–4장은 원작 이야기를 변환(엔딩 4개) |
-| 기본 팩 콘텐츠에서 독립 | 원작 모드가 기본 팩의 이야기·전투 뼈대·무장 데이터 없이 원작 파일만으로 서는 것 | 진행 중 — 무장의 통솔·무력·지력은 원작 값이고 2–4장에서 합류하는 원작 무장은 원작에서 더해짐. 남은 의존: 서장·1장 이야기와 전투 21개의 뼈대(이름·목표 문구·전후 대사·보상), 무장의 병종·레벨·장비 |
+| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(실물 확인 전), 2장 10개, 3장 20개, 4장 11개 (두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
+| 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장부터 원작 이야기를 변환한 원작 캠페인(엔딩 4개, 서장·1장은 실물 확인 전) |
+| 기본 팩 콘텐츠에서 독립 | 원작 모드가 기본 팩의 이야기·전투 뼈대·무장 데이터 없이 원작 파일만으로 서는 것 | 거의 — 이야기·전투·캠페인과 무장의 통솔·무력·지력, 합류하는 원작 무장이 원작에서 옴. 남은 의존: 무장의 병종·레벨·장비, 시작 무장 목록(체인 캠페인) |
 | 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환(서장~4장)·규칙 표(병종·지형·책략·아이템·사기)·원작 UI(전투 틀·캠프·상태 창)·음악(곡 배정은 들어 보기 전 추론) |
 | 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
 
-원작 모드의 남은 일: 서장·1장 이야기와 전투의 원작 변환, 무장 명단과 능력치의 원작 변환, 루트마다 다른 원작 출진 설정,
+원작 모드의 남은 일: 서장·1장 변환의 실물 확인, 무장의 원작 병종·레벨·장비, 루트마다 다른 원작 출진 설정(1장 계교 포함),
 전투 중 도착하는 아군 부대(4장 허창), 장 전투의 개막 대사와 전투 중 삽화, 음악 곡 배정 확인과 루프 시작점, 직접 플레이로
 난이도 확인([BACKLOG](BACKLOG.md)). 기본 팩의 제2장 이후 캠페인은 만들지 않습니다(D21).
 
 ## 로드맵
 
-1. **원작 모드를 기본 팩 콘텐츠에서 독립시키기**: 서장·1장 이야기와 전투를 2–4장처럼 원작 시나리오에서 직접 변환하고,
-   무장 명단과 능력치를 `BAKDATA`에서 가져옵니다. 그러면 원작 모드가 서장부터 엔딩까지 원작 파일만으로 이어집니다(D21 3단계)
+1. **원작 모드를 기본 팩 콘텐츠에서 독립시키기**: 서장·1장 이야기와 전투를 원작 시나리오에서 변환하고(들어감, 실물 확인
+   필요) 무장을 `BAKDATA`에서 가져옵니다(능력치와 합류 무장은 들어감, 병종·레벨·장비가 남음)(D21 3단계)
 2. **기본 팩 줄이기**: 1이 끝나면 기본 팩을 엔진에 필요한 최소 틀(규칙 기본값·폰트·UI·효과음·테스트용 전투)로 줄이고,
    웹 데모를 체험용으로 남길지 내릴지 정합니다(D21 4단계)
 * 원작 모드 다듬기: 위 "원작 모드의 남은 일"([BACKLOG](BACKLOG.md))
@@ -181,9 +181,9 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
 * **Original mode**: pick your installation folder under "원작 데이터" on the title screen (native builds) and the
   game converts your copy at every launch and plays it with the original's portraits, units, terrain, battle maps,
   screen frames, music and rule tables. All 60 of the original's battles, their dialogue and duels, and the story
-  of chapters 2–4 (towns become dialogue scenes with choices) are converted from your files, from the prologue to
-  the original's endings. The prologue and chapter 1 story and the officers' stats still come from the base pack;
-  converting them from the original is the next step. Supported: the Korean DOS/V release (verified) and the
+  (towns become dialogue scenes with choices) are converted from your files, from the prologue to the original's
+  endings, and so are the officers' stats and the persons who join. The conversion of the prologue and chapter 1 is new
+  and not yet checked on a real copy; the officers' classes, levels and equipment still come from the base pack. Supported: the Korean DOS/V release (verified) and the
   Traditional Chinese DOS release (not yet verified on a real copy) — see [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md).
 * Faithful PC-version rules (reverse-engineered formulas for attack/defense, deterministic damage, class
   affinity, counters, morale and confusion, strategies, weather) — see [docs/RULES.md](docs/RULES.md).
@@ -206,8 +206,8 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
 * Progress is measured on the original mode only: all 60 of the original's battles are playable, from the
   prologue to the original's endings (Changban's escort of the people and the battles fought on two maps are
-  included). What remains is making the prologue and chapter 1 and the officer data come from the original
-  instead of the base pack, and the polish listed in the Korean "진행 상황" section above.
+  included). What remains is checking the prologue and chapter 1 on a real copy, the officers' classes, levels and
+  equipment, and the polish listed in the Korean "진행 상황" section above.
 
 **Play:** <https://jeiel85.github.io/eiketsuden-reloaded/> · **Download:**
 [Releases](https://github.com/jeiel85/eiketsuden-reloaded/releases) · **Build:** `cargo run --release -p hero-game`

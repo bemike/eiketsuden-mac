@@ -1,6 +1,6 @@
-//! The original's chapters past the base pack's campaign (docs/ORIGINAL_DATA.md, DECISIONS D18):
-//! the battles and the story of a scenario file the base pack has no campaign for, as new
-//! battles, drama scenes and campaign nodes that continue the base campaign where it ends.
+//! The original's chapters, from the prologue to the endings (docs/ORIGINAL_DATA.md, DECISIONS
+//! D18 and D21): the battles and the story of the scenario files as new battles, drama scenes and
+//! the campaign of the original mode.
 //!
 //! A scenario scene is a row of blocks. A block that loads a battle map and sets a battle up is
 //! a battle ([`Part::Battle`]); the others are the story in between ([`Part::Story`]): towns and
@@ -12,7 +12,7 @@
 //! ending; one that goes to another block sets the scene's route flag, which campaign branches
 //! send there, [`Next`]), and the story's side effects as drama commands (officers joining, and
 //! going away for a while as the original moves them to another army, items, music). The
-//! campaign joins the parts as their [`Next`] says ([`continue_campaign`]). The battles are
+//! campaign joins the parts as their [`Next`] says ([`original_campaign`]). The battles are
 //! re-staged like the paired ones ([`crate::battles::convert`]) from a base made from the
 //! original's header ([`chapter_base`]).
 
@@ -1303,27 +1303,26 @@ pub fn reachable(at: &[Place], nexts: &[Vec<Next>]) -> Vec<bool> {
     seen
 }
 
-/// `base` with the steps played after its battle node that fights `after_battle`, instead of
-/// the node it went on to, and ending with `ending` (a node id and a title) when the story runs
-/// out; the steps are joined as their [`Next`] says (routes become branches on their flags), a
-/// game over goes to [`GAME_OVER_NODE`] and the original's endings to their [`ending_node`]s, and
-/// a battle the original goes on after losing plays its defeat scene. `None` when the base
-/// campaign has no such battle node.
-pub fn continue_campaign(
-    base: &CampaignDef,
-    after_battle: &str,
-    steps: &[Step],
-    ending: (&str, &str),
-) -> Option<CampaignDef> {
-    let at = base
-        .nodes
-        .iter()
-        .position(|n| matches!(n, Node::Battle { battle, .. } if battle == after_battle))?;
-    let Node::Battle { next: old_next, .. } = &base.nodes[at] else {
-        unreachable!("found above");
-    };
-    let old_next = old_next.clone();
-    let mut campaign = base.clone();
+/// The campaign of the original mode: `base`'s title, starting army, gold and items, and the
+/// nodes of `steps` from the first ([`chapter_nodes`]), ending with `ending` (a node id and a
+/// title) when the story runs out.
+///
+/// * Why a campaign of its own (D21): the original's story from the prologue on replaces the
+///   base pack's; only who starts in the army (the three brothers) is taken from the chain.
+pub fn original_campaign(base: &CampaignDef, steps: &[Step], ending: (&str, &str)) -> CampaignDef {
+    let (nodes, first) = chapter_nodes(steps, ending);
+    CampaignDef {
+        start: first,
+        nodes,
+        ..base.clone()
+    }
+}
+
+/// The campaign nodes of `steps`, joined as their [`Next`] says (routes become branches on their
+/// flags), and the first node: a game over goes to [`GAME_OVER_NODE`] and the original's endings
+/// to their [`ending_node`]s, a battle the original goes on after losing plays its defeat scene,
+/// and the story running out goes to `ending` (a node id and a title).
+pub fn chapter_nodes(steps: &[Step], ending: (&str, &str)) -> (Vec<Node>, String) {
     let ending_id = ending.0.to_string();
     let places: Vec<_> = steps.iter().map(|s| s.at).collect();
     // The node the story goes on to from step `i` by `next` (not a route).
@@ -1443,7 +1442,7 @@ pub fn continue_campaign(
             }
         }
     }
-    // The chapter's end, when the story runs out rather than ending in one of the original's.
+    // The story's end, when it runs out rather than ending in one of the original's.
     let first = steps
         .first()
         .map_or_else(|| ending_id.clone(), Step::first_node);
@@ -1472,38 +1471,7 @@ pub fn continue_campaign(
             title: "게임 오버".to_string(),
         });
     }
-    if let Node::Battle { next, .. } = &mut campaign.nodes[at] {
-        *next = first.clone();
-    }
-    // The node the base campaign went on to is replaced when nothing else leads to it; an
-    // ending's scene (the base chapter's close) still plays, before the chapters.
-    let still_used = campaign
-        .nodes
-        .iter()
-        .any(|n| successors(n).contains(&old_next.as_str()));
-    if !still_used {
-        let scene = campaign.nodes.iter().find_map(|n| match n {
-            Node::Ending {
-                id,
-                scene: Some(scene),
-                ..
-            } if *id == old_next => Some(scene.clone()),
-            _ => None,
-        });
-        campaign.nodes.retain(|n| n.id() != old_next);
-        if let Some(scene) = scene {
-            if let Node::Battle { next, .. } = &mut campaign.nodes[at] {
-                *next = old_next.clone();
-            }
-            campaign.nodes.push(Node::Drama {
-                id: old_next,
-                scene,
-                next: first,
-            });
-        }
-    }
-    campaign.nodes.extend(nodes);
-    Some(campaign)
+    (nodes, first)
 }
 
 #[cfg(test)]
@@ -1985,9 +1953,10 @@ mod tests {
     }
 
     #[test]
-    fn the_chapters_continue_the_campaign_after_its_last_battle() {
+    fn the_campaign_is_the_originals_story_from_its_first_part() {
         let base: CampaignDef = toml::from_str(
             "title = \"t\"\nstart = \"camp\"\nstarting_officers = [\"liu_bei\"]\n\
+             starting_gold = 50\n\
              [[node]]\ntype = \"camp\"\nid = \"camp\"\nbattle = \"b1\"\nnext = \"fight\"\n\
              [[node]]\ntype = \"battle\"\nid = \"fight\"\nbattle = \"b1\"\nnext = \"end1\"\n\
              [[node]]\ntype = \"ending\"\nid = \"end1\"\ntitle = \"1장\"\n",
@@ -2007,7 +1976,7 @@ mod tests {
         let steps = [
             // A game over, else a route to block 3 (s3), else on (b2).
             story(
-                (2, 0, 0, 0),
+                (0, 0, 0, 0),
                 "s1",
                 true,
                 Next::Routes {
@@ -2017,10 +1986,10 @@ mod tests {
                 },
             ),
             Step {
-                at: (2, 0, 1, 0),
+                at: (0, 0, 1, 0),
                 kind: StepKind::Battle {
                     battle: "b2".into(),
-                    title: "연주 — 출진 준비".into(),
+                    title: "사수관 — 출진 준비".into(),
                     shop: vec!["bean".into()],
                     defeat: None,
                     before: None,
@@ -2030,18 +1999,20 @@ mod tests {
             },
             // On with block 4: the first part at or after it (s4 of the next scene: none in
             // this one).
-            story((2, 0, 2, 0), "s2", false, Next::Block(4)),
-            story((2, 0, 3, 0), "s3", false, Next::Default),
-            story((2, 1, 0, 0), "s4", false, Next::Default),
+            story((0, 0, 2, 0), "s2", false, Next::Block(4)),
+            story((0, 0, 3, 0), "s3", false, Next::Default),
+            story((1, 0, 0, 0), "s4", false, Next::Default),
         ];
-        let c = continue_campaign(&base, "b1", &steps, ("end2", "2장")).unwrap();
+        let c = original_campaign(&base, &steps, ("end2", "끝"));
+        // The base campaign's army and gold, none of its nodes: the story starts the game.
+        assert_eq!(c.title, "t");
+        assert_eq!(c.starting_officers, ["liu_bei"]);
+        assert_eq!(c.starting_gold, 50);
+        assert_eq!(c.start, "s1");
         let ids: Vec<&str> = c.nodes.iter().map(Node::id).collect();
-        // The old ending goes: nothing leads to it any more.
         assert_eq!(
             ids,
             [
-                "camp",
-                "fight",
                 "s1_route1",
                 "s1_check",
                 "s1",
@@ -2055,7 +2026,6 @@ mod tests {
             ]
         );
         let node = |id: &str| c.nodes.iter().find(|n| n.id() == id).unwrap();
-        assert!(matches!(node("fight"), Node::Battle { next, .. } if next == "s1"));
         assert!(matches!(node("s1"), Node::Drama { next, .. } if next == "s1_check"));
         assert!(
             matches!(node("s1_check"), Node::Branch { then, otherwise, .. }
@@ -2073,18 +2043,13 @@ mod tests {
         // It still reads as a campaign.
         let text = toml::to_string(&c).unwrap();
         assert_eq!(toml::from_str::<CampaignDef>(&text).unwrap(), c);
-        // No such battle: nothing to continue.
-        assert!(continue_campaign(&base, "b9", &steps, ("end2", "2장")).is_none());
-        // An ending with a scene (the base chapter's close) plays it before the chapters.
-        let mut with_scene = base.clone();
-        if let Some(Node::Ending { scene, .. }) = with_scene.nodes.last_mut() {
-            *scene = Some("close".into());
-        }
-        let c = continue_campaign(&with_scene, "b1", &steps, ("end2", "2장")).unwrap();
-        let node = |id: &str| c.nodes.iter().find(|n| n.id() == id).unwrap();
-        assert!(matches!(node("fight"), Node::Battle { next, .. } if next == "end1"));
-        assert!(matches!(node("end1"), Node::Drama { scene, next, .. }
-            if scene == "close" && next == "s1"));
+        // No story: the campaign is its end.
+        let empty = original_campaign(&base, &[], ("end2", "끝"));
+        assert_eq!(empty.start, "end2");
+        assert_eq!(
+            empty.nodes.iter().map(Node::id).collect::<Vec<_>>(),
+            ["end2"]
+        );
     }
 
     #[test]
@@ -2133,7 +2098,7 @@ mod tests {
                 },
             },
         ];
-        let c = continue_campaign(&base, "b1", &steps, ("end2", "끝")).unwrap();
+        let c = original_campaign(&base, &steps, ("end2", "끝"));
         let node = |id: &str| c.nodes.iter().find(|n| n.id() == id);
         assert!(
             matches!(node("yiling_battle"), Some(Node::Battle { next, on_defeat, .. })

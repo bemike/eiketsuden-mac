@@ -108,7 +108,8 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 19: duel backgrounds per terrain (`gfx/duel/terrain_<id>.png`, `@duel … terrain`).
 /// 20: the item rules in `rules` ([`ITEM_RULES`], the original's healing amounts).
 /// 21: `officers` ([`OFFICERS_FILE`]: the original's stats, the persons who join in the
-/// converted chapters) and `officers` in the index.
+/// converted chapters) and `officers` in the index; the campaign is the original's from the
+/// prologue ([`CHAPTER_FILES`] from 0, D21) instead of the base campaign continued.
 pub const PACK_FORMAT_VERSION: u32 = 21;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
@@ -2217,16 +2218,13 @@ type BattlesResult = (KindReport, Vec<BattleRecord>, Vec<&'static str>, bool);
 
 /// Drama file of the original battles' mid-battle events.
 pub const DRAMA_FILE: &str = "dramas/original_battles.drama";
-/// Drama file of the story of the original's chapters past the base campaign.
+/// Drama file of the story of the original's chapters.
 pub const CHAPTER_DRAMA_FILE: &str = "dramas/original_chapters.drama";
-/// Campaign file of the pack when it converts chapters past the base campaign.
+/// Campaign file of the pack: the original's story from the prologue to its endings (D21).
 pub const CAMPAIGN_FILE: &str = "campaign.toml";
-/// `SNRnD.R3` files of the chapters past the base campaign that are converted (2: the chapter
-/// from Guandu to Changban).
-pub const CHAPTER_FILES: [usize; 3] = [2, 3, 4];
-/// The base campaign's last battle that follows the original: the converted chapters are played
-/// after it, instead of the node it went on to.
-pub const BASE_CAMPAIGN_LAST_BATTLE: &str = "c1_xuzhou2";
+/// `SNRnD.R3` files of the chapters the campaign is made of: the prologue (0) to the chapter
+/// after Yiling (4).
+pub const CHAPTER_FILES: [usize; 5] = [0, 1, 2, 3, 4];
 
 /// A battle to convert: its id, pairing, the base battle, the outro of a chapter's battle with
 /// its reward gold, and a chapter battle's block (a map may be fought in several blocks) and
@@ -2239,8 +2237,8 @@ type BattleJob<'a> = (
     Option<(usize, u8)>,
 );
 
-/// A part of a chapter past the base campaign: its file, scene and part, and for a story its
-/// scene id and converted scene.
+/// A part of one of the original's chapters: its file, scene and part, and for a story its scene
+/// id and converted scene.
 type ChapterPart = (
     usize,
     usize,
@@ -2248,7 +2246,7 @@ type ChapterPart = (
     Option<(String, chapters::StoryScene)>,
 );
 
-/// Battle id of the original battle of `file`, `scene` and `block` past the base campaign.
+/// Battle id of the original battle of `file`, `scene` and `block` of the original's chapters.
 pub fn chapter_battle_id(file: usize, scene: usize, block: usize) -> String {
     format!("c{file}_s{scene}_b{block}")
 }
@@ -2315,9 +2313,13 @@ pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
     format!("{map_id}_{x}_{y}_{op}")
 }
 
-/// Re-stage the base battles that follow an original battle ([`battles::ORIGINAL_BATTLES`]) on
-/// the converted maps and write them to [`BATTLES_DIR`], with the dialogue of their mid-battle
-/// events in [`DRAMA_FILE`] (the last value: whether it was written).
+/// Make the original's chapters ([`CHAPTER_FILES`]) the campaign of the pack when the chain has a
+/// campaign: their battles, story scenes ([`CHAPTER_DRAMA_FILE`]) and [`CAMPAIGN_FILE`] (the last
+/// value: whether it was written). The base battles that follow an original battle
+/// ([`battles::ORIGINAL_BATTLES`]) are re-staged on the converted maps too: the original's
+/// campaign does not play them, but they stay in the chain and so must fit the original's maps
+/// and rules. Battles go to [`BATTLES_DIR`], the dialogue of their mid-battle events to
+/// [`DRAMA_FILE`].
 #[allow(clippy::too_many_arguments)]
 fn convert_battles(
     install: &InstallDir,
@@ -2337,10 +2339,11 @@ fn convert_battles(
         .iter()
         .filter(|p| options.battles.iter().any(|b| b.id == p.battle))
         .collect();
-    if wanted.is_empty() {
+    if wanted.is_empty() && options.campaign.is_none() {
         report.status = Status::Unsupported;
-        report.summary =
-            "the pack chain has none of the base pack's battles that follow the original".into();
+        report.summary = "the pack chain has no campaign and none of the base pack's battles that \
+                          follow the original"
+            .into();
         return Ok((report, Vec::new(), Vec::new(), false));
     }
     report.status = Status::Failed;
@@ -2414,15 +2417,9 @@ fn convert_battles(
         )
     };
 
-    // The original's chapters past the base campaign: their parts in order, and the story
-    // scenes (read first: the officers who join in them may be named by the battles' events).
-    let continues = continues_campaign(options);
-    if options.campaign.is_some() && !continues {
-        report.notes.push(format!(
-            "the pack chain's campaign has no battle `{BASE_CAMPAIGN_LAST_BATTLE}` to continue \
-             after: the original's later chapters are not converted"
-        ));
-    }
+    // The original's chapters: their parts in order, and the story scenes (read first: the
+    // officers who join in them may be named by the battles' events).
+    let continues = options.campaign.is_some();
     // The original's flags some script of the chapters sets (the others are always clear).
     let mut settable = BTreeSet::new();
     // Every flag the chapters' scripts set or test, and the battles that go on in another block:
@@ -2600,7 +2597,7 @@ fn convert_battles(
     });
     // When officers first join in the chapters' story, in the order the campaign plays it: part
     // `i`'s setup changes at `3 i`, its battle at `3 i + 1`, its scenes after at `3 i + 2`. An
-    // officer who never joins there is in the army from the base campaign.
+    // officer who never joins there is in the army from the start.
     let mut first_join: BTreeMap<String, usize> = BTreeMap::new();
     let mut battle_time: BTreeMap<chapters::Place, usize> = BTreeMap::new();
     for (i, (file, scene, part, story)) in chapter.iter().enumerate() {
@@ -3002,7 +2999,7 @@ fn convert_battles(
             let body = toml::to_string(&converted.battle)
                 .map_err(|e| format!("{id}: cannot write the battle: {e}"))?;
             let what = if pairing.battle.is_empty() {
-                "a battle of a chapter past the base campaign, made from the original battle"
+                "a battle of the original's chapters, made from the original battle"
             } else {
                 "the base pack's battle re-staged as the original battle"
             };
@@ -3075,27 +3072,13 @@ fn convert_battles(
     // The chapters' story and campaign.
     let mut steps = Vec::new();
     let mut story = String::from(
-        "# The story of the original's chapters past the base campaign, converted from the\n\
-         # scenario of the player's own copy by `hero-tools original pack` (do not edit; run the\n\
-         # importer again). Scene `c<file>_s<scene>_story<block>` is block <block> of the scene\n\
-         # (docs/ORIGINAL_DATA.md).\n",
+        "# The story of the original's chapters, converted from the scenario of the player's own\n\
+         # copy by `hero-tools original pack` (do not edit; run the importer again). Scene\n\
+         # `c<file>_s<scene>_story<block>` is block <block> of the scene (docs/ORIGINAL_DATA.md).\n",
     );
-    // What the camps sell: the original's shop stays until a block sets another, so the
-    // chapters start with the base campaign's last camp's.
-    let mut shop: Vec<String> = options
-        .campaign
-        .as_ref()
-        .and_then(|c| {
-            c.nodes.iter().find_map(|n| match n {
-                hero_core::campaign::Node::Camp {
-                    shop,
-                    battle: Some(battle),
-                    ..
-                } if battle == BASE_CAMPAIGN_LAST_BATTLE => Some(shop.clone()),
-                _ => None,
-            })
-        })
-        .unwrap_or_default();
+    // What the camps sell: the original's shop stays until a block sets another (the prologue
+    // sets the first before its first battle).
+    let mut shop: Vec<String> = Vec::new();
     // The camp title of a chapter's battle (leg `leg`), when it was converted.
     let battle_title = |id: &str, leg: u8| {
         records.iter().find(|r| r.id == id).map(|r| {
@@ -3202,29 +3185,18 @@ fn convert_battles(
         let last = CHAPTER_FILES[CHAPTER_FILES.len() - 1];
         let ending_id = format!("orig_c{last}_end");
         let ending_title = format!("제{last}장 완료");
-        match chapters::continue_campaign(
-            campaign,
-            BASE_CAMPAIGN_LAST_BATTLE,
-            &steps,
-            (&ending_id, &ending_title),
-        ) {
-            Some(c) => {
-                let body = toml::to_string(&c).map_err(|e| {
-                    output_error(&out.root.join(CAMPAIGN_FILE), std::io::Error::other(e))
-                })?;
-                let text = format!(
-                    "# The pack chain's campaign, continued after `{BASE_CAMPAIGN_LAST_BATTLE}` with the\n\
-                     # original's later chapters by `hero-tools original pack` (do not edit).\n\n{body}"
-                );
-                out.write(CAMPAIGN_FILE, text.as_bytes())?;
-                out.write(CHAPTER_DRAMA_FILE, story.as_bytes())?;
-                dramas.push(CHAPTER_DRAMA_FILE);
-                wrote_campaign = true;
-            }
-            None => report.errors.push(format!(
-                "the campaign has no battle node for `{BASE_CAMPAIGN_LAST_BATTLE}`"
-            )),
-        }
+        let c = chapters::original_campaign(campaign, &steps, (&ending_id, &ending_title));
+        let body = toml::to_string(&c)
+            .map_err(|e| output_error(&out.root.join(CAMPAIGN_FILE), std::io::Error::other(e)))?;
+        let text = format!(
+            "# The original's campaign from the prologue to its endings, converted from the player's\n\
+             # own copy by `hero-tools original pack` (do not edit): the story and battles of the\n\
+             # scenario files, with the pack chain's starting army (DECISIONS D21).\n\n{body}"
+        );
+        out.write(CAMPAIGN_FILE, text.as_bytes())?;
+        out.write(CHAPTER_DRAMA_FILE, story.as_bytes())?;
+        dramas.push(CHAPTER_DRAMA_FILE);
+        wrote_campaign = true;
     }
     report.outputs =
         records.len() + pictures.len() + duel_files + dramas.len() + usize::from(wrote_campaign);
@@ -3243,8 +3215,8 @@ fn convert_battles(
     let stories = steps.len() - later;
     report.summary = format!(
         "{} of {} base battles re-staged as the original battles on the original maps, {later} \
-         battles and {stories} story scenes of the chapters past the base campaign, {events} \
-         events ({scenes} drama scenes, {} changed-cell pictures, {duel_files} duel pictures)",
+         battles and {stories} story scenes of the original's chapters, {events} events \
+         ({scenes} drama scenes, {} changed-cell pictures, {duel_files} duel pictures)",
         records.len() - later,
         wanted.len(),
         pictures.len()
@@ -3734,17 +3706,6 @@ fn pack_names(bak: &bakdata::Bakdata, options: &PackOptions, edition: EditionId)
     names
 }
 
-/// Whether the chain's campaign has the battle [`BASE_CAMPAIGN_LAST_BATTLE`], after which the
-/// pack continues it with the original's chapters ([`CHAPTER_FILES`]).
-fn continues_campaign(options: &PackOptions) -> bool {
-    options.campaign.as_ref().is_some_and(|c| {
-        c.nodes.iter().any(|n| {
-            matches!(n, hero_core::campaign::Node::Battle { battle, .. }
-                if battle == BASE_CAMPAIGN_LAST_BATTLE)
-        })
-    })
-}
-
 /// The report, the officers added for `BAKDATA` persons and the officers changed or added.
 type OfficersResult = (KindReport, BTreeMap<u16, String>, Vec<OfficerRecord>);
 
@@ -3779,8 +3740,8 @@ fn convert_officers(
         }
     };
     let names = pack_names(&bak, options, edition);
-    // Only the chapters the pack converts play their joining: the base story has its own.
-    let files: &[usize] = if continues_campaign(options) {
+    // Only the chapters the pack converts play their joining: without a campaign, none.
+    let files: &[usize] = if options.campaign.is_some() {
         &CHAPTER_FILES
     } else {
         &[]
@@ -5461,7 +5422,8 @@ mod tests {
     fn the_officers_file_has_the_originals_stats_and_the_joining_persons() {
         let src = TempDir::new("pack-officers");
         write_pack_install(src.path());
-        // 간옹 (portrait entry 2 of the fixture's three) joins in a scene of every chapter file.
+        // 간옹 (portrait entry 2 of the fixture's three) joins in a scene of every chapter file,
+        // after a narration.
         std::fs::write(
             src.path().join("BAKDATA.R3"),
             bakdata::build(
@@ -5475,8 +5437,9 @@ mod tests {
             ),
         )
         .unwrap();
-        // set_country person 2 → country 0.
-        let scene = crate::scenario::build_scene(&[vec![([0; 8], vec![0x28, 2, 0, 0, 0xff])]]);
+        // narration, then set_country person 2 → country 0.
+        let scene =
+            crate::scenario::build_scene(&[vec![([0; 8], vec![0x08, 0, 0, 0x28, 2, 0, 0, 0xff])]]);
         for file in CHAPTER_FILES {
             std::fs::write(
                 src.path().join(format!("SNR{file}D.R3")),
@@ -5484,11 +5447,11 @@ mod tests {
             )
             .unwrap();
         }
-        let campaign: hero_core::campaign::CampaignDef = toml::from_str(&format!(
+        let campaign: hero_core::campaign::CampaignDef = toml::from_str(
             "title = \"t\"\nstart = \"b\"\nstarting_officers = [\"liu_bei\"]\n\
-             [[node]]\ntype = \"battle\"\nid = \"b\"\nbattle = \"{BASE_CAMPAIGN_LAST_BATTLE}\"\n\
-             next = \"end\"\n[[node]]\ntype = \"ending\"\nid = \"end\"\ntitle = \"끝\"\n"
-        ))
+             [[node]]\ntype = \"battle\"\nid = \"b\"\nbattle = \"b1\"\n\
+             next = \"end\"\n[[node]]\ntype = \"ending\"\nid = \"end\"\ntitle = \"끝\"\n",
+        )
         .unwrap();
         let chained = PackOptions {
             officer_defs: vec![
@@ -5533,6 +5496,32 @@ mod tests {
             .officers
             .iter()
             .any(|r| r.officer == "orig_p2" && r.added && r.bakdata == 2));
+        // The campaign is the original's story from the prologue's first scene, with the
+        // chain's starting army; the person joins in it.
+        let campaign: hero_core::campaign::CampaignDef =
+            toml::from_str(&std::fs::read_to_string(pack.join(CAMPAIGN_FILE)).unwrap()).unwrap();
+        assert_eq!(campaign.start, "c0_s0_story0");
+        assert_eq!(campaign.starting_officers, ["liu_bei"]);
+        let ids: Vec<&str> = campaign.nodes.iter().map(|n| n.id()).collect();
+        assert_eq!(
+            ids,
+            [
+                "c0_s0_story0",
+                "c1_s0_story0",
+                "c2_s0_story0",
+                "c3_s0_story0",
+                "c4_s0_story0",
+                "orig_c4_end"
+            ]
+        );
+        let story = std::fs::read_to_string(pack.join(CHAPTER_DRAMA_FILE)).unwrap();
+        assert!(
+            story.contains(
+                "== c0_s0_story0\n@narr 유비는 관우와 장비를 만나 도원에서 형제의 의를 맺었다.\n\
+                 @join orig_p2\n"
+            ),
+            "{story}"
+        );
         // Without the chapters to convert, nobody is added.
         let alone = PackOptions {
             campaign: None,
