@@ -759,6 +759,10 @@ pub struct Names {
     pub officers: BTreeMap<u16, String>,
     /// `BAKDATA` person → name (for generic units).
     pub person_names: BTreeMap<u16, String>,
+    /// `BAKDATA` person → 무력·지력·통솔 in the order of [`UnitSpawn::stats`] (`[str, int, lead]`,
+    /// clamped to 0–100 as the loader does): a generic unit of the original fights with its
+    /// person's stats, not the class's generic ones (every unit of the original is a person).
+    pub stats: BTreeMap<u16, [i32; 3]>,
     /// Original class number → base-pack class id.
     pub classes: BTreeMap<u8, String>,
     /// Original item number → base-pack item id.
@@ -789,6 +793,16 @@ impl Names {
         let person_names = people
             .iter()
             .map(|o| (o.index as u16, o.name.clone()))
+            .collect();
+        let stat = |v: u8| i32::from(v.min(100));
+        let stats = people
+            .iter()
+            .map(|o| {
+                (
+                    o.index as u16,
+                    [stat(o.war), stat(o.intelligence), stat(o.leadership)],
+                )
+            })
             .collect();
         let classes: BTreeMap<u8, String> = class_sprites
             .iter()
@@ -825,6 +839,7 @@ impl Names {
         Names {
             officers,
             person_names,
+            stats,
             classes,
             items,
             player_officers: BTreeSet::new(),
@@ -1956,7 +1971,7 @@ pub fn convert(
                 ),
                 class: Some(class.clone()),
                 level: Some(*level),
-                stats: None,
+                stats: names.stats.get(&u.person).copied(),
                 pos,
                 ai: AiMode::Hold,
                 ai_target: None,
@@ -2106,6 +2121,7 @@ pub fn convert(
                         .cloned()
                         .unwrap_or_else(|| "병사".to_string()),
                 );
+                spawn.stats = names.stats.get(&u.person).copied();
             }
             if let Some(t) = target {
                 match officer_ref(t).or_else(|| person_tag(&mut units, &persons, t)) {
@@ -3140,6 +3156,7 @@ item = "wine"
         n.officers.insert(1, "guan_yu".into());
         n.officers.insert(54, "boss".into());
         n.person_names.insert(300, "보병대".into());
+        n.stats.insert(300, [40, 10, 35]);
         n.person_names.insert(9, "전령 갑".into());
         n.classes.insert(0, "short_infantry".into());
         n.items.insert(30, "bean".into());
@@ -3257,6 +3274,7 @@ item = "wine"
             (None, Some("보병대"))
         );
         assert_eq!(generic.ai, AiMode::Defensive);
+        assert_eq!(generic.stats, Some([40, 10, 35]), "its person's stats");
         assert_eq!(
             generic.tag.as_deref(),
             Some("person_300"),

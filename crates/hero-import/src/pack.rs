@@ -110,7 +110,9 @@ pub const PACK_FORMAT: &str = "eiketsuden-original-pack";
 /// 21: `officers` ([`OFFICERS_FILE`]: the original's stats, the persons who join in the
 /// converted chapters) and `officers` in the index; the campaign is the original's from the
 /// prologue ([`CHAPTER_FILES`] from 0, D21) instead of the base campaign continued.
-pub const PACK_FORMAT_VERSION: u32 = 21;
+/// 22: the officers' classes, levels and equipment are the original's too, and the original
+/// battles' generic units have their persons' stats.
+pub const PACK_FORMAT_VERSION: u32 = 22;
 /// `id` of the written pack (save games remember it, so they do not mix with the base pack's).
 pub const PACK_ID: &str = "original";
 /// Virtual canvas of the pack: the original's 640×400 screen, the size of its screen frames.
@@ -3467,13 +3469,16 @@ pub struct OriginalOfficers {
 ///   chain's), the chain's item kinds, the persons `joining` Liu Bei's army in the converted
 ///   chapters and the level cap.
 /// * Out: [`OriginalOfficers`].
-/// * Why: a chain officer the release names ([`is_same_officer`], as the portraits match) takes
-///   the original's 통솔·무력·지력, which are verified (FORMATS §14). Class, level and equipment
-///   stay the chain's: the scenario overwrites the initial class and level when an officer joins
-///   (FORMATS §14), and the base pack's story, which the chain may still play, does not replay
-///   those commands. A joining person no chain officer plays is added with every value from
-///   `BAKDATA`, the original's state before its scenario changes it: a chapter's `@join` needs
-///   an officer (without one the joining was left out).
+/// * Why: an officer is the original's state before its scenario changes it, and the campaign is
+///   the original's story from the prologue (D21), which plays those changes (`@level`,
+///   `@class` after `@join`). So a chain officer the release names ([`is_same_officer`], as the
+///   portraits match) takes the original's 통솔·무력·지력 (verified, FORMATS §14), class, level
+///   and equipment ([`original_equip`]); the chain's id, name, portrait, biography and lord stay.
+///   A class the pack lacks keeps the chain's. When several records have the officer's name,
+///   each value must be the same in all of them (stats; class, level and items), else the
+///   chain's stays and the record says why: which record is the officer cannot be told. A joining person no chain officer plays is added
+///   with every value from `BAKDATA`: a chapter's `@join` needs an officer (without one the
+///   joining was left out).
 #[allow(clippy::too_many_arguments)]
 pub fn original_officers(
     people: &[Officer],
@@ -3502,6 +3507,12 @@ pub fn original_officers(
             .iter()
             .map(|p| (p.leadership, p.war, p.intelligence))
             .collect();
+        // Records of the name may agree on the stats but not on class, level or items: those
+        // then stay the chain's (which record is the officer cannot be told).
+        let states: BTreeSet<(u8, u8, &[u8])> = found
+            .iter()
+            .map(|p| (p.class, p.level, p.items.as_slice()))
+            .collect();
         let mut def = def.clone();
         match (found.first(), stats.len()) {
             (None, _) => {}
@@ -3516,6 +3527,46 @@ pub fn original_officers(
                         changes.push(format!("{label} {} → {value}", *field));
                         *field = value;
                     }
+                }
+                match names.classes.get(&p.class).filter(|_| states.len() == 1) {
+                    _ if states.len() > 1 => changes.push(format!(
+                        "several BAKDATA records of that name have different classes, levels or \
+                         items (records {}); the chain's class, level and equipment kept",
+                        found
+                            .iter()
+                            .map(|p| p.index.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                    Some(class) if *class != def.class => {
+                        changes.push(format!("class {} → {class}", def.class));
+                        def.class = class.clone();
+                    }
+                    Some(_) => {}
+                    None => changes.push(format!(
+                        "class {} has no pack class; the chain's {} kept",
+                        p.class, def.class
+                    )),
+                }
+                if states.len() == 1 {
+                    let level = original_level(p.level, level_cap);
+                    if level != def.level {
+                        changes.push(format!("level {} → {level}", def.level));
+                        def.level = level;
+                    }
+                    let (equip, notes) = original_equip(&p.items, names, item_kinds);
+                    changes.extend(notes);
+                    for (slot, old, new) in [
+                        ("weapon", &def.equip.weapon, &equip.weapon),
+                        ("armor", &def.equip.armor, &equip.armor),
+                        ("accessory", &def.equip.accessory, &equip.accessory),
+                    ] {
+                        if old != new {
+                            let show = |i: &Option<String>| i.clone().unwrap_or_else(|| "-".into());
+                            changes.push(format!("{slot} {} → {}", show(old), show(new)));
+                        }
+                    }
+                    def.equip = equip;
                 }
                 if !changes.is_empty() {
                     made.records.push(OfficerRecord {
@@ -3575,29 +3626,8 @@ pub fn original_officers(
             ));
             continue;
         };
-        let mut equip = Equipment::default();
-        let mut changes = Vec::new();
-        for item in &p.items {
-            let Some(item_id) = names.items.get(item) else {
-                changes.push(format!("item {item} has no pack item; left out"));
-                continue;
-            };
-            let slot = match item_kinds.get(item_id) {
-                Some(ItemKind::Weapon) => &mut equip.weapon,
-                Some(ItemKind::Armor) => &mut equip.armor,
-                Some(ItemKind::Accessory) => &mut equip.accessory,
-                _ => {
-                    changes.push(format!("{item_id} is not equipment; left out"));
-                    continue;
-                }
-            };
-            if slot.is_none() {
-                *slot = Some(item_id.clone());
-            } else {
-                changes.push(format!("{item_id}: its slot is taken; left out"));
-            }
-        }
-        let level = u32::from(p.level).clamp(1, level_cap.max(1));
+        let (equip, mut changes) = original_equip(&p.items, names, item_kinds);
+        let level = original_level(p.level, level_cap);
         if level != u32::from(p.level) {
             changes.push(format!("level {} → {level}", p.level));
         }
@@ -3630,6 +3660,44 @@ pub fn original_officers(
         });
     }
     made
+}
+
+/// An officer's `BAKDATA` level as the pack's: 1 to the level cap.
+fn original_level(level: u8, level_cap: u32) -> u32 {
+    u32::from(level).clamp(1, level_cap.max(1))
+}
+
+/// The equipment an officer holds in `BAKDATA` (`items`): each held item the pack has, in the
+/// slot of its kind (weapon, war manual = armor, horse = accessory), the first one per slot; and
+/// what is left out (consumables, items without a pack item, a second item of a slot).
+fn original_equip(
+    items: &[u8],
+    names: &battles::Names,
+    item_kinds: &BTreeMap<String, ItemKind>,
+) -> (Equipment, Vec<String>) {
+    let mut equip = Equipment::default();
+    let mut notes = Vec::new();
+    for item in items {
+        let Some(item_id) = names.items.get(item) else {
+            notes.push(format!("item {item} has no pack item; left out"));
+            continue;
+        };
+        let slot = match item_kinds.get(item_id) {
+            Some(ItemKind::Weapon) => &mut equip.weapon,
+            Some(ItemKind::Armor) => &mut equip.armor,
+            Some(ItemKind::Accessory) => &mut equip.accessory,
+            _ => {
+                notes.push(format!("{item_id} is not equipment; left out"));
+                continue;
+            }
+        };
+        if slot.is_none() {
+            *slot = Some(item_id.clone());
+        } else {
+            notes.push(format!("{item_id}: its slot is taken; left out"));
+        }
+    }
+    (equip, notes)
 }
 
 /// The persons scene `scene` brings into Liu Bei's army: `set_country` to country 0 and
@@ -3813,7 +3881,7 @@ fn convert_officers(
     report.outputs += 1;
     let changed = made.records.iter().filter(|r| !r.added).count();
     report.summary = format!(
-        "{} officers: {changed} with the original's stats changed, {} added",
+        "{} officers: {changed} changed to the original's values, {} added",
         made.defs.len(),
         made.added.len()
     );
@@ -5309,15 +5377,35 @@ mod tests {
             officer(4, "", "", 0),
             // A civilian: the test pack has no such class.
             with(officer(5, "민중", "", 5), [1, 1, 1], 17, 1),
+            // 장비: light cavalry at level 3 with a sword and a bean; 조운 of a class the pack lacks.
+            {
+                let mut z = with(officer(6, "장비", "", 6), [90, 99, 30], 15, 3);
+                z.items = vec![0, 2];
+                z
+            },
+            with(officer(7, "조운", "", 7), [91, 96, 76], 17, 5),
+            // Two 마초 records with the same stats but other classes and levels.
+            with(officer(8, "마초", "", 8), [80, 97, 26], 6, 20),
+            with(officer(9, "마초", "", 9), [80, 97, 26], 7, 30),
         ];
         let defs = [
             officer_def("liu_bei", "유비", [70, 60, 90]),
             officer_def("guan_yu", "관우", [1, 1, 1]),
             officer_def("ours", "없는사람", [5, 5, 5]),
+            OfficerDef {
+                equip: Equipment {
+                    armor: Some("book".into()),
+                    ..Equipment::default()
+                },
+                ..officer_def("zhang_fei", "장비", [1, 1, 1])
+            },
+            officer_def("zhao_yun", "조운", [1, 1, 1]),
+            officer_def("ma_chao", "마초", [1, 1, 1]),
         ];
         let names = battles::Names {
             officers: BTreeMap::from([(0, "liu_bei".into())]),
             person_names: BTreeMap::new(),
+            stats: BTreeMap::new(),
             classes: BTreeMap::from([(0, "short_infantry".into()), (15, "sorcerer".into())]),
             items: BTreeMap::from([
                 (0, "sword".into()),
@@ -5343,7 +5431,7 @@ mod tests {
             &BTreeSet::from([0, 3, 4, 5]),
             50,
         );
-        // The chain's officer takes the original's stats and keeps the rest.
+        // The chain's officer takes the original's stats, class, level and equipment.
         let liu = &made.defs[0];
         assert_eq!((liu.strength, liu.int, liu.lead), (75, 64, 91));
         assert_eq!((liu.class.as_str(), liu.level), ("short_infantry", 1));
@@ -5369,11 +5457,50 @@ mod tests {
         );
         // A character of the chain the release does not have: kept.
         assert_eq!(made.defs[2], defs[2]);
+        let zhang = &made.defs[3];
+        assert_eq!((zhang.class.as_str(), zhang.level), ("sorcerer", 3));
+        assert_eq!(zhang.equip.weapon.as_deref(), Some("sword"));
+        assert_eq!(zhang.equip.armor, None, "the original holds no war manual");
+        let changes = &made
+            .records
+            .iter()
+            .find(|r| r.officer == "zhang_fei")
+            .unwrap()
+            .changes;
+        for change in [
+            "class short_infantry → sorcerer",
+            "level 1 → 3",
+            "bean is not equipment; left out",
+            "weapon - → sword",
+            "armor book → -",
+        ] {
+            assert!(changes.iter().any(|c| c == change), "{change}: {changes:?}");
+        }
+        // A class the pack lacks keeps the chain's.
+        let zhao = &made.defs[4];
+        assert_eq!((zhao.class.as_str(), zhao.level), ("short_infantry", 5));
+        // Records of the name that agree on the stats but not on class and level: the stats are
+        // the original's, the class and level stay the chain's (whichever record comes first).
+        let ma = &made.defs[5];
+        assert_eq!((ma.strength, ma.int, ma.lead), (97, 26, 80));
+        assert_eq!((ma.class.as_str(), ma.level), ("short_infantry", 1));
+        let changes = &made
+            .records
+            .iter()
+            .find(|r| r.officer == "ma_chao")
+            .unwrap()
+            .changes;
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.contains("different classes, levels or items (records 8, 9)")),
+            "{changes:?}"
+        );
         // A joining person without an officer is added with the original's values; Liu Bei
         // (already an officer), a nameless person and one of a class the pack lacks are not.
-        assert_eq!(made.defs.len(), 4);
+        assert_eq!(made.defs.len(), 7);
         assert_eq!(made.added, BTreeMap::from([(3, "orig_p3".to_string())]));
-        let added = &made.defs[3];
+        let added = &made.defs[6];
         assert_eq!(added.id, "orig_p3");
         assert_eq!(added.name, "간옹");
         assert_eq!((added.class.as_str(), added.level), ("sorcerer", 1));
@@ -5472,7 +5599,7 @@ mod tests {
         assert_eq!(report.status, Status::Extracted, "{report:#?}");
         assert_eq!(
             report.summary,
-            "3 officers: 1 with the original's stats changed, 1 added"
+            "3 officers: 1 changed to the original's values, 1 added"
         );
         let manifest = std::fs::read_to_string(pack.join("pack.toml")).unwrap();
         assert!(
@@ -5530,7 +5657,7 @@ mod tests {
         let index = write_pack(src.path(), &out.path().join("q"), &alone).unwrap();
         assert_eq!(
             index.assets["officers"].summary,
-            "2 officers: 1 with the original's stats changed, 0 added"
+            "2 officers: 1 changed to the original's values, 0 added"
         );
         // A chain without officers leaves the file to it.
         let index = write_pack(src.path(), &out.path().join("r"), &options()).unwrap();
