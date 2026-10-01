@@ -2543,7 +2543,8 @@ pub fn convert(
     if pairing.battle.is_empty() {
         let mut actions = Vec::new();
         'opening: for (i, phase) in phases.iter().enumerate() {
-            if stages[i].is_some() {
+            // (A phase that ends the battle is its victory, as `next_after` takes it.)
+            if stages[i].is_some() || phase.ends_battle {
                 break;
             }
             for &r in &phase.records {

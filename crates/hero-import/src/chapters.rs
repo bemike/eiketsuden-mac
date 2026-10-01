@@ -363,12 +363,10 @@ impl Writer<'_, '_> {
 
     /// One instruction that is not a jump.
     fn effect(&mut self, instr: &Instr) {
-        // (A setup's or opening's flags count too: Ye's opening sets flag 218, which picks the
-        // next battle's enemy army.)
         if self.army_only
             && !matches!(
                 instr.mnemonic,
-                "set_allegiance" | "set_country" | "add_levels" | "set_class" | "set_flag"
+                "set_allegiance" | "set_country" | "add_levels" | "set_class"
             )
         {
             return;

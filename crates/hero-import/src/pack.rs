@@ -2248,18 +2248,16 @@ struct BattleJob<'a> {
     flags: Vec<u8>,
 }
 
-/// `choice` with the variants that were not converted left out: their routes fight `id` (or
-/// the first variant that was) instead; `None` when at most one battle remains.
+/// `choice` with the variants that were not converted left out: their routes fight `id` (which
+/// was: a step whose battle was not is not in the campaign); `None` when at most one battle
+/// remains.
 fn converted_choice(
     choice: &chapters::BattleChoice,
     id: &str,
     records: &[BattleRecord],
 ) -> Option<Box<chapters::BattleChoice>> {
     let converted = |b: &str| records.iter().any(|r| r.id == b);
-    let fallback = std::iter::once(id)
-        .chain(choice.battles())
-        .find(|b| converted(b))?
-        .to_string();
+    let fallback = Some(id).filter(|b| converted(b))?.to_string();
     fn keep(
         c: &chapters::BattleChoice,
         converted: &dyn Fn(&str) -> bool,
@@ -2954,8 +2952,9 @@ fn convert_battles(
     let mut army_scenes: BTreeMap<String, String> = BTreeMap::new();
     // The battles whose events set [`battles::ended_flag`].
     let mut ended: BTreeSet<String> = BTreeSet::new();
-    // The event scenes of each battle written (route variants share them).
+    // The event scenes and army moves of each battle written (route variants share them).
     let mut scenes_of: BTreeMap<String, String> = BTreeMap::new();
+    let mut army_moves_of: BTreeMap<String, String> = BTreeMap::new();
     for job in &jobs {
         let BattleJob {
             id,
@@ -3309,7 +3308,7 @@ fn convert_battles(
                 }
             }
             // Officers the battle moves in or out of the army: its outro acts on their flags.
-            if pairing.battle.is_empty() && !converted.army.is_empty() {
+            if pairing.battle.is_empty() {
                 let mut prefix = String::new();
                 for (n, (officer, joins)) in converted.army.iter().enumerate() {
                     let _ = writeln!(
@@ -3319,12 +3318,14 @@ fn convert_battles(
                         if *joins { "join" } else { "away" }
                     );
                 }
-                converted
-                    .battle
-                    .outro
-                    .get_or_insert_with(|| format!("{named}_outro"));
+                if !prefix.is_empty() {
+                    converted
+                        .battle
+                        .outro
+                        .get_or_insert_with(|| format!("{named}_outro"));
+                }
                 // Route variants share the outro: they must move the same officers.
-                match army_scenes.get(named) {
+                match army_moves_of.get(named) {
                     Some(other) if *other != prefix => {
                         return Err(format!(
                             "a route variant of `{named}` moves other officers in or out of the \
@@ -3333,7 +3334,10 @@ fn convert_battles(
                     }
                     Some(_) => {}
                     None => {
-                        army_scenes.insert(named.to_string(), prefix);
+                        army_moves_of.insert(named.to_string(), prefix.clone());
+                        if !prefix.is_empty() {
+                            army_scenes.insert(named.to_string(), prefix);
+                        }
                     }
                 }
             }
@@ -3407,10 +3411,14 @@ fn convert_battles(
                         }
                         scenes_of.insert(named.to_string(), text);
                     }
-                    // A route variant plays the scenes of the battle it varies.
-                    Some(written) if *written != text => report.errors.push(format!(
-                        "{id}: its event scenes differ from those of `{named}`, which it shares"
-                    )),
+                    // A route variant plays the scenes of the battle it varies: one with other
+                    // scenes is left out of the campaign's choice (`converted_choice`).
+                    Some(written) if *written != text => {
+                        report.errors.push(format!(
+                            "{id}: its event scenes differ from those of `{named}`, which it shares"
+                        ));
+                        continue;
+                    }
                     Some(_) => {}
                 }
                 records.push(r);
