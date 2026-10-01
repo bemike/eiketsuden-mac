@@ -1216,7 +1216,44 @@ pub enum StepKind {
         defeat: Option<Defeat>,
         /// The scene of the army's changes the battle's setup makes, played before its camp.
         before: Option<String>,
+        /// When the battle has route variants: which one to fight (`battle` names the step's
+        /// nodes and scenes then).
+        choice: Option<Box<BattleChoice>>,
     },
+}
+
+/// Which battle a step fights when the original's setup or rosters for it depend on scenario
+/// flags (the route it took): one battle, or by a campaign flag one of two choices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BattleChoice {
+    Battle(String),
+    Flag {
+        flag: String,
+        set: Box<BattleChoice>,
+        clear: Box<BattleChoice>,
+    },
+}
+
+impl BattleChoice {
+    /// Its battles, each once, in order.
+    pub fn battles(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        let mut todo = vec![self];
+        while let Some(c) = todo.pop() {
+            match c {
+                BattleChoice::Battle(b) => {
+                    if !out.contains(&b.as_str()) {
+                        out.push(b);
+                    }
+                }
+                BattleChoice::Flag { set, clear, .. } => {
+                    todo.push(clear);
+                    todo.push(set);
+                }
+            }
+        }
+        out
+    }
 }
 
 /// What the original plays when a battle is lost and the story goes on (`battle_lost`).
@@ -1238,6 +1275,11 @@ impl Step {
                 before: Some(scene),
                 ..
             } => scene.clone(),
+            StepKind::Battle {
+                battle,
+                choice: Some(_),
+                ..
+            } => format!("{battle}_which"),
             StepKind::Battle { battle, .. } => format!("{battle}_camp"),
         }
     }
@@ -1429,6 +1471,41 @@ pub fn original_campaign(base: &CampaignDef, steps: &[Step], ending: (&str, &str
     }
 }
 
+/// The branch nodes of `choice` from node `id` (named after `battle`): each flag a branch to the
+/// camp of the battle its value picks.
+fn choice_nodes(
+    nodes: &mut Vec<Node>,
+    id: &str,
+    battle: &str,
+    choice: &BattleChoice,
+    count: &mut usize,
+) -> String {
+    match choice {
+        BattleChoice::Battle(b) => format!("{b}_camp"),
+        BattleChoice::Flag { flag, set, clear } => {
+            let mut next = |c: &BattleChoice, nodes: &mut Vec<Node>| match c {
+                BattleChoice::Battle(b) => format!("{b}_camp"),
+                _ => {
+                    *count += 1;
+                    let sub = format!("{battle}_which{count}");
+                    choice_nodes(nodes, &sub, battle, c, count)
+                }
+            };
+            let then = next(set, nodes);
+            let otherwise = next(clear, nodes);
+            nodes.push(Node::Branch {
+                id: id.to_string(),
+                flag: flag.clone(),
+                cmp: Compare::Ne,
+                value: 0,
+                then,
+                otherwise,
+            });
+            id.to_string()
+        }
+    }
+}
+
 /// The campaign nodes of `steps`, joined as their [`Next`] says (routes become branches on their
 /// flags), and the first node: a game over goes to [`GAME_OVER_NODE`] and the original's endings
 /// to their [`ending_node`]s, a battle the original goes on after losing plays its defeat scene,
@@ -1516,8 +1593,12 @@ pub fn chapter_nodes(steps: &[Step], ending: (&str, &str)) -> (Vec<Node>, String
                 shop,
                 defeat,
                 before,
+                choice,
             } => {
-                let camp = format!("{battle}_camp");
+                let camp = match choice {
+                    Some(_) => format!("{battle}_which"),
+                    None => format!("{battle}_camp"),
+                };
                 if let Some(scene) = before {
                     nodes.push(Node::Drama {
                         id: scene.clone(),
@@ -1536,20 +1617,36 @@ pub fn chapter_nodes(steps: &[Step], ending: (&str, &str)) -> (Vec<Node>, String
                     });
                     d.scene.clone()
                 });
-                let fight = format!("{battle}_battle");
-                nodes.push(Node::Camp {
-                    id: camp,
-                    title: title.clone(),
-                    shop: shop.clone(),
-                    battle: Some(battle.clone()),
-                    next: fight.clone(),
-                });
-                nodes.push(Node::Battle {
-                    id: fight,
-                    battle: battle.clone(),
-                    next,
-                    on_defeat,
-                });
+                // A camp and the battle for each battle it may fight.
+                let one = BattleChoice::Battle(battle.clone());
+                let step_choice_is_some = choice.is_some();
+                let choice = choice.as_deref().unwrap_or(&one);
+                for b in choice.battles() {
+                    let fight = format!("{b}_battle");
+                    nodes.push(Node::Camp {
+                        id: format!("{b}_camp"),
+                        title: title.clone(),
+                        shop: shop.clone(),
+                        battle: Some(b.to_string()),
+                        next: fight.clone(),
+                    });
+                    nodes.push(Node::Battle {
+                        id: fight,
+                        battle: b.to_string(),
+                        next: next.clone(),
+                        on_defeat: on_defeat.clone(),
+                    });
+                }
+                // Then the flags that pick one, from `{battle}_which` (a choice is never a
+                // single battle: that is no choice).
+                debug_assert!(
+                    step_choice_is_some == !matches!(choice, BattleChoice::Battle(_)),
+                    "{battle}: a choice of one battle"
+                );
+                if !matches!(choice, BattleChoice::Battle(_)) {
+                    let mut count = 0;
+                    choice_nodes(&mut nodes, &camp, battle, choice, &mut count);
+                }
             }
         }
     }
@@ -2105,6 +2202,7 @@ mod tests {
                     shop: vec!["bean".into()],
                     defeat: None,
                     before: None,
+                    choice: None,
                 },
                 next: Next::Default,
                 ends: Ends::default(),
@@ -2187,6 +2285,7 @@ mod tests {
                         ends: Ends::default(),
                     }),
                     before: Some("yiling_before".into()),
+                    choice: None,
                 },
                 next: Next::Block(8),
                 ends: Ends::default(),
@@ -2679,6 +2778,71 @@ mod tests {
         // A step the story does not reach is 0.
         let army = army_at_steps(&at, &[vec![], vec![], vec![], vec![], vec![]], true, &lost);
         assert_eq!(army, [ARMY_IN, 0, 0, 0, 0]);
+    }
+
+    /// A battle with route variants: its camp branches on the flag to each variant's camp and
+    /// battle, which go on alike.
+    #[test]
+    fn a_battle_with_route_variants_branches_before_its_camps() {
+        let steps = vec![
+            Step {
+                at: (4, 1, 2, 0),
+                kind: StepKind::Battle {
+                    battle: "chencang".into(),
+                    title: "진창 — 출진 준비".into(),
+                    shop: vec![],
+                    defeat: None,
+                    before: Some("chencang_before".into()),
+                    choice: Some(Box::new(BattleChoice::Flag {
+                        flag: "orig_f38".into(),
+                        set: Box::new(BattleChoice::Battle("chencang_f38".into())),
+                        clear: Box::new(BattleChoice::Battle("chencang".into())),
+                    })),
+                },
+                next: Next::Default,
+                ends: Ends::default(),
+            },
+            Step {
+                at: (4, 1, 3, 0),
+                kind: StepKind::Story {
+                    scene: "after".into(),
+                },
+                next: Next::Default,
+                ends: Ends::default(),
+            },
+        ];
+        let (nodes, first) = chapter_nodes(&steps, ("end", "끝"));
+        assert_eq!(first, "chencang_before");
+        let node = |id: &str| nodes.iter().find(|n| n.id() == id).unwrap().clone();
+        assert!(
+            matches!(node("chencang_before"), Node::Drama { next, .. } if next == "chencang_which")
+        );
+        assert!(matches!(
+            node("chencang_which"),
+            Node::Branch { flag, cmp: Compare::Ne, value: 0, then, otherwise, .. }
+                if flag == "orig_f38" && then == "chencang_f38_camp" && otherwise == "chencang_camp"
+        ));
+        for b in ["chencang", "chencang_f38"] {
+            assert!(matches!(
+                node(&format!("{b}_camp")),
+                Node::Camp { battle: Some(x), next, .. } if x == b && next == format!("{b}_battle")
+            ));
+            assert!(matches!(
+                node(&format!("{b}_battle")),
+                Node::Battle { battle, next, .. } if battle == b && next == "after"
+            ));
+        }
+        // A choice of one flag only names its battles once.
+        let c = BattleChoice::Flag {
+            flag: "f".into(),
+            set: Box::new(BattleChoice::Battle("a".into())),
+            clear: Box::new(BattleChoice::Flag {
+                flag: "g".into(),
+                set: Box::new(BattleChoice::Battle("a".into())),
+                clear: Box::new(BattleChoice::Battle("b".into())),
+            }),
+        };
+        assert_eq!(c.battles(), ["a", "b"]);
     }
 
     #[test]

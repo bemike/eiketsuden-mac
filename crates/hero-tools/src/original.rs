@@ -1009,8 +1009,18 @@ mod tests {
                 && scene[1..].parse::<u32>().is_ok()
         };
         let battles = json["battles"].as_array().unwrap();
+        // (A route variant counts with the battle it varies.)
+        let variant = |b: &serde_json::Value| {
+            b["notes"].as_array().is_some_and(|n| {
+                n.iter().any(|n| {
+                    n.as_str()
+                        .is_some_and(|n| n.starts_with("route variant of"))
+                })
+            })
+        };
         let (chapters, restaged): (Vec<_>, Vec<_>) = battles
             .iter()
+            .filter(|b| !variant(b))
             .partition(|b| is_chapter(b["id"].as_str().unwrap()));
         assert_eq!(restaged.len(), 1, "{battles:#?}");
         let later = chapters
@@ -1372,7 +1382,20 @@ mod tests {
         assert!(bowang.deploy.forbidden.iter().any(|o| o == "guan_yu"));
         assert!(bowang.reward_gold > 0);
         // Chapters 3 and 4 (SNR3, SNR4) follow, to the original's endings.
-        let count = |c: &str| pack.battles.keys().filter(|k| k.starts_with(c)).count();
+        // (Route variants count with the battle they vary.)
+        let is_variant = |id: &str| {
+            pack.battles.contains_key(id)
+                && id
+                    .rsplit('_')
+                    .next()
+                    .is_some_and(|s| s.starts_with('f') && s[1..].parse::<u8>().is_ok())
+        };
+        let count = |c: &str| {
+            pack.battles
+                .keys()
+                .filter(|k| k.starts_with(c) && !is_variant(k))
+                .count()
+        };
         assert_eq!((count("c3_s"), count("c4_s")), (21, 11));
         // Fu is fought in two blocks (two routes): each its own battle.
         assert_ne!(
@@ -1573,6 +1596,100 @@ mod tests {
                 notes(id)
             );
         }
+        // Route variants (ROADMAP M2): a battle whose setup or rosters the original picks by a
+        // flag of the route is one battle per reading, and its camp branches on the flag.
+        let node = |id: &str| pack.campaign.node(id).cloned().unwrap();
+        let branch = |id: &str| match node(id) {
+            hero_core::campaign::Node::Branch {
+                flag,
+                then,
+                otherwise,
+                ..
+            } => (flag, then, otherwise),
+            other => panic!("{id}: {other:?}"),
+        };
+        // Jieqiao: another enemy army on the Julu road (flag 133).
+        assert_eq!(
+            branch("c1_s0_b15_which"),
+            (
+                "orig_f133".to_string(),
+                "c1_s0_b15_f133_camp".to_string(),
+                "c1_s0_b15_camp".to_string()
+            )
+        );
+        let enemies = |id: &str| -> std::collections::BTreeSet<String> {
+            pack.battles[id]
+                .units
+                .iter()
+                .filter(|u| u.side == hero_core::battledef::Side::Enemy)
+                .filter_map(|u| u.officer.clone())
+                .collect()
+        };
+        assert_ne!(enemies("c1_s0_b15"), enemies("c1_s0_b15_f133"));
+        // Chencang and Chang'an: Pang Tong must not fall while he lives, Zhao Yun once he died
+        // at Luofengpo (flag 38).
+        for id in ["c4_s1_b2", "c4_s1_b3"] {
+            let lost_with = |id: &str| -> Vec<String> {
+                pack.battles[id]
+                    .defeat
+                    .iter()
+                    .filter_map(|c| match c {
+                        hero_core::battledef::Condition::UnitRetreated { target } => {
+                            Some(target.clone())
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            };
+            assert_eq!(lost_with(id), ["pang_tong"], "{id}");
+            assert_eq!(lost_with(&format!("{id}_f38")), ["zhao_yun"], "{id}");
+            assert_eq!(branch(&format!("{id}_which")).0, "orig_f38");
+        }
+        // Ye's opening (a phase of `run` records before the first watched one) plays when the
+        // battle begins and sets flag 218, which brings Zhang Liao into the next battle's
+        // enemy army (its variant).
+        let ye = &pack.battles["c4_s1_b7"];
+        assert!(ye.events.iter().any(|e| matches!(
+            e.trigger,
+            hero_core::battledef::Trigger::TurnStart { turn: 1, .. }
+        ) && e.actions.iter().any(|a| matches!(
+            a,
+            hero_core::battledef::EventAction::SetFlag { flag, value: 1 } if flag == "orig_f218"
+        ))));
+        assert_eq!(branch("c4_s2_b2_which").0, "orig_f218");
+        assert!(enemies("c4_s2_b2_f218").contains("zhang_liao"));
+        assert!(!enemies("c4_s2_b2").contains("zhang_liao"));
+        // Sishui: the guests the talks before it bring (flags 0 and 1, which the story always
+        // sets) fight at their tiles beside the army: no variant without them.
+        assert!(!pack.battles.contains_key("c0_s0_b5_f0"));
+        let sishui = &pack.battles["c0_s0_b5"];
+        for o in ["gongsun_zan", "tao_qian"] {
+            assert!(!sishui.deploy.required.iter().any(|r| r == o), "{o}");
+            assert!(
+                sishui.units.iter().any(|u| u.officer.as_deref() == Some(o)
+                    && u.side == hero_core::battledef::Side::Ally),
+                "{o}"
+            );
+        }
+        // Issue #84: an allied officer who never joins the army is an ally at their tile, not a
+        // required officer the camp would leave out.
+        let required: Vec<(&String, &String)> = pack
+            .battles
+            .iter()
+            .flat_map(|(id, b)| b.deploy.required.iter().map(move |o| (id, o)))
+            .filter(|(_, o)| {
+                [
+                    "xun_yu",
+                    "cao_ren",
+                    "guo_jia",
+                    "kong_rong",
+                    "gongsun_zan",
+                    "tao_qian",
+                ]
+                .contains(&o.as_str())
+            })
+            .collect();
+        assert!(required.is_empty(), "{required:?}");
         // No officer of the original's data is in the army on some ways to a battle only.
         assert!(!json["battles"]
             .as_array()
