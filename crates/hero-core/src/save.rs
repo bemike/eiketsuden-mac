@@ -228,6 +228,7 @@ mod tests {
             deployed: Vec::new(),
             battles_won: Vec::new(),
             play_seconds: 1,
+            pending_growth: BTreeMap::new(),
         }
     }
 

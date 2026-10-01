@@ -120,6 +120,18 @@ pub struct OfficerState {
     pub away: bool,
 }
 
+/// What the story gave an officer who was not in the army (`@level`, `@class`), for when they
+/// join ([`CampaignState::pending_growth`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Growth {
+    /// Levels gained so far.
+    #[serde(default)]
+    pub levels: u32,
+    /// The class they were given last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<Id>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CampaignError {
     #[error("unknown officer `{0}`")]
@@ -211,6 +223,10 @@ pub struct CampaignState {
     /// Total play time in seconds (maintained by the frontend).
     #[serde(default)]
     pub play_seconds: u64,
+    /// Levels and classes the story gave officers not in the army, applied when they join (the
+    /// original raises the officers of other armies, who come over later as they are then).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pending_growth: BTreeMap<Id, Growth>,
 }
 
 impl CampaignState {
@@ -228,6 +244,7 @@ impl CampaignState {
             deployed: Vec::new(),
             battles_won: Vec::new(),
             play_seconds: 0,
+            pending_growth: BTreeMap::new(),
         };
         for def in campaign
             .starting_officers
@@ -265,7 +282,8 @@ impl CampaignState {
     }
 
     /// Add an officer to the army: one not in the roster starts from their `officers.toml`
-    /// definition, one who is away comes back as they left (no-op for one already present).
+    /// definition with what the story gave them meanwhile ([`CampaignState::pending_growth`]),
+    /// one who is away comes back as they left (no-op for one already present).
     pub fn join(&mut self, pack: &Pack, officer: &str) -> Result<(), CampaignError> {
         if let Some(o) = self.roster.iter_mut().find(|o| o.id == officer) {
             o.away = false;
@@ -275,6 +293,15 @@ impl CampaignState {
             .officer(officer)
             .ok_or_else(|| CampaignError::UnknownOfficer(officer.to_string()))?;
         self.roster.push(OfficerState::from_def(def));
+        if let Some(growth) = self.pending_growth.remove(officer) {
+            if let Some(class) = growth.class.filter(|c| pack.class(c).is_some()) {
+                self.change_class(pack, officer, class);
+            }
+            if growth.levels > 0 {
+                // (The officer was just added.)
+                let _ = self.add_levels(pack, officer, growth.levels);
+            }
+        }
         Ok(())
     }
 
@@ -533,26 +560,34 @@ impl CampaignState {
     }
 
     /// `@class`: `officer` of the army becomes `class` (the story's change; no item, no
-    /// promotion level), as [`CampaignState::use_item`] changes it.
+    /// promotion level), as [`CampaignState::use_item`] changes it. One of the pack who is not
+    /// in the army has it kept for when they join ([`CampaignState::pending_growth`]).
     pub fn set_class(
         &mut self,
         pack: &Pack,
         officer: &str,
         class: &str,
     ) -> Result<(), CampaignError> {
-        if self.officer(officer).is_none() {
-            return Err(CampaignError::NotInArmy(officer.to_string()));
-        }
         if pack.class(class).is_none() {
             return Err(CampaignError::UnknownClass(class.to_string()));
         }
-        self.change_class(pack, officer, class.to_string());
+        if self.officer(officer).is_some() {
+            self.change_class(pack, officer, class.to_string());
+        } else if pack.officer(officer).is_some() {
+            self.pending_growth
+                .entry(officer.to_string())
+                .or_default()
+                .class = Some(class.to_string());
+        } else {
+            return Err(CampaignError::NotInArmy(officer.to_string()));
+        }
         Ok(())
     }
 
     /// `@level`: `officer` of the army gains `levels`, up to the level cap (one already above
-    /// it keeps their level). Only the level
-    /// changes: HP, MP and the strategies known follow from it in battle.
+    /// it keeps their level). Only the level changes: HP, MP and the strategies known follow
+    /// from it in battle. One of the pack who is not in the army has the levels kept for when
+    /// they join ([`CampaignState::pending_growth`]).
     pub fn add_levels(
         &mut self,
         pack: &Pack,
@@ -560,10 +595,14 @@ impl CampaignState {
         levels: u32,
     ) -> Result<(), CampaignError> {
         let cap = pack.rules.level_cap;
-        let state = self
-            .officer_mut(officer)
-            .ok_or_else(|| CampaignError::NotInArmy(officer.to_string()))?;
-        state.level = state.level.saturating_add(levels).min(cap).max(state.level);
+        if let Some(state) = self.officer_mut(officer) {
+            state.level = state.level.saturating_add(levels).min(cap).max(state.level);
+        } else if pack.officer(officer).is_some() {
+            let growth = self.pending_growth.entry(officer.to_string()).or_default();
+            growth.levels = growth.levels.saturating_add(levels);
+        } else {
+            return Err(CampaignError::NotInArmy(officer.to_string()));
+        }
         Ok(())
     }
 
