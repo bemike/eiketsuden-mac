@@ -222,13 +222,15 @@ fn officer_unit(
 }
 
 /// The army's state of the officer a `side = "player"` spawn names, when that officer is in
-/// the army. Such a spawn places the army's officer (one unit, with their progress) instead of
-/// a second copy built from `officers.toml`.
+/// the army and not away. Such a spawn places the army's officer (one unit, with their
+/// progress) instead of a second copy built from `officers.toml`; an away officer is built
+/// from `officers.toml` like a guest (the battle cannot field them, as the deploy screen
+/// cannot).
 fn army_officer<'a>(campaign: &'a CampaignState, sp: &UnitSpawn) -> Option<&'a OfficerState> {
     if sp.side != Side::Player {
         return None;
     }
-    campaign.officer(sp.officer.as_deref()?)
+    campaign.officer(sp.officer.as_deref()?).filter(|o| !o.away)
 }
 
 fn spawn_unit(

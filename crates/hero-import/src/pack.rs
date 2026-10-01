@@ -2315,25 +2315,6 @@ pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
     format!("{map_id}_{x}_{y}_{op}")
 }
 
-/// Whether an officer is in the army at the battle of story time `now` (`None`: not a battle of
-/// the story), given the times the story moves them (`true` = joins, `false` = goes away, in
-/// order) and whether the campaign starts with them. An officer the story never moves is in it
-/// from the start, and so is one it only takes away; one it brings in is in it before the first
-/// move only if they start in it (the three brothers, who leave and come back). The moves are in
-/// story order.
-fn in_army(moves: &[(usize, bool)], starts: bool, now: Option<usize>) -> bool {
-    let Some(now) = now else { return true };
-    debug_assert!(moves.windows(2).all(|w| w[0].0 <= w[1].0), "{moves:?}");
-    // (An officer the story first moves away and back in the same scene, as it does to one it
-    // changes before they join, is out of the army before that.)
-    let start = starts || !moves.iter().any(|&(_, joins)| joins);
-    moves
-        .iter()
-        .take_while(|&&(t, _)| t < now)
-        .last()
-        .map_or(start, |&(_, joins)| joins)
-}
-
 /// Make the original's chapters ([`CHAPTER_FILES`]) the campaign of the pack when the chain has a
 /// campaign: their battles, story scenes ([`CHAPTER_DRAMA_FILE`]) and [`CAMPAIGN_FILE`] (the last
 /// value: whether it was written). The base battles that follow an original battle
@@ -2588,21 +2569,27 @@ fn convert_battles(
     }
     // Only the parts the story reaches: an alternative the conversion offers no choice for
     // (the original lets one pick it by whom one talks to) is left out.
-    let at: Vec<chapters::Place> = chapter
-        .iter()
-        .map(|(file, scene, part, _)| part_place(*file, *scene, part))
-        .collect();
-    let next: Vec<Vec<chapters::Next>> = chapter
-        .iter()
-        .zip(&at)
-        .map(|((_, _, _, s), place)| {
-            let mut next = vec![s.as_ref().map(|(_, s)| s.next.clone()).unwrap_or_default()];
-            if let Some((_, d)) = defeats.get(place) {
-                next.push(chapters::after_defeat(*place, &d.next));
-            }
-            next
-        })
-        .collect();
+    // The chapter's steps and how each goes on: after its story or won battle, and after its
+    // lost battle when it has a scene for that.
+    let steps = |chapter: &[ChapterPart]| -> (Vec<chapters::Place>, Vec<Vec<chapters::Next>>) {
+        let at: Vec<chapters::Place> = chapter
+            .iter()
+            .map(|(file, scene, part, _)| part_place(*file, *scene, part))
+            .collect();
+        let next = chapter
+            .iter()
+            .zip(&at)
+            .map(|((_, _, _, s), place)| {
+                let mut next = vec![s.as_ref().map(|(_, s)| s.next.clone()).unwrap_or_default()];
+                if let Some((_, d)) = defeats.get(place) {
+                    next.push(chapters::after_defeat(*place, &d.next));
+                }
+                next
+            })
+            .collect();
+        (at, next)
+    };
+    let (at, next) = steps(&chapter);
     let reached = chapters::reachable(&at, &next);
     let mut reached = reached.into_iter();
     chapter.retain(|(file, scene, part, _)| {
@@ -2616,22 +2603,23 @@ fn convert_battles(
         }
         kept
     });
-    // When officers join and leave in the chapters' story, in the order the campaign plays it:
-    // part `i`'s setup changes at `3 i`, its battle at `3 i + 1`, its scenes after at `3 i + 2`
-    // (`true` = `@join`, `false` = `@away`, in scene order).
-    let mut moves: BTreeMap<String, Vec<(usize, bool)>> = BTreeMap::new();
-    let mut battle_time: BTreeMap<chapters::Place, usize> = BTreeMap::new();
-    for (i, (file, scene, part, story)) in chapter.iter().enumerate() {
-        let at = part_place(*file, *scene, part);
+    // Who is in the army at each chapter battle, over the ways the story reaches it
+    // ([`chapters::army_at_steps`]): how each kept part goes on, and how its scenes move officers
+    // (the last `@join`/`@away` of the scene before its battle, of its story or outro, of its
+    // lost battle's scene).
+    let (at, next) = steps(&chapter);
+    let mut step_moves: BTreeMap<String, Vec<chapters::StepMoves>> = BTreeMap::new();
+    let mut part_of: BTreeMap<chapters::Place, usize> = BTreeMap::new();
+    for (i, ((_, _, part, story), place)) in chapter.iter().zip(&at).enumerate() {
         if matches!(part, chapters::Part::Battle { .. }) {
-            battle_time.insert(at, 3 * i + 1);
+            part_of.insert(*place, i);
         }
-        let timed = [
-            (3 * i, befores.get(&at).map(|(_, s)| s)),
-            (3 * i + 2, story.as_ref().map(|(_, s)| s)),
-            (3 * i + 2, defeats.get(&at).map(|(_, s)| s)),
+        let scenes = [
+            befores.get(place).map(|(_, s)| s),
+            story.as_ref().map(|(_, s)| s),
+            defeats.get(place).map(|(_, s)| s),
         ];
-        for (time, s) in timed {
+        for (k, s) in scenes.into_iter().enumerate() {
             for line in s.iter().flat_map(|s| s.text.lines()) {
                 let joins = if let Some(id) = line.strip_prefix("@join ") {
                     Some((id, true))
@@ -2639,7 +2627,15 @@ fn convert_battles(
                     line.strip_prefix("@away ").map(|id| (id, false))
                 };
                 if let Some((id, joins)) = joins {
-                    moves.entry(id.to_string()).or_default().push((time, joins));
+                    let m = step_moves
+                        .entry(id.to_string())
+                        .or_insert_with(|| vec![chapters::StepMoves::default(); chapter.len()]);
+                    let scene = match k {
+                        0 => &mut m[i].before,
+                        1 => &mut m[i].after,
+                        _ => &mut m[i].after_defeat,
+                    };
+                    *scene = Some(joins);
                 }
             }
         }
@@ -2650,12 +2646,21 @@ fn convert_battles(
         .flat_map(|c| &c.starting_officers)
         .map(|s| s.as_str())
         .collect();
-    let in_army_at = |id: &str, now: Option<usize>| {
-        in_army(
-            moves.get(id).map_or(&[][..], Vec::as_slice),
-            starting.contains(id),
-            now,
-        )
+    let army: BTreeMap<&str, Vec<u8>> = step_moves
+        .iter()
+        .map(|(id, m)| {
+            let start = chapters::starts_in_army(starting.contains(id.as_str()), m);
+            (id.as_str(), chapters::army_at_steps(&at, &next, start, m))
+        })
+        .collect();
+    // An officer the story never moves is in the army. (Every kept part is reached: dropping
+    // the others changes no way between the rest.)
+    let army_at = |id: &str, part: Option<usize>| match (army.get(id), part) {
+        (Some(a), Some(i)) => {
+            debug_assert!(a[i] != 0, "{id} at an unreached part {i}");
+            a[i]
+        }
+        _ => chapters::ARMY_IN,
     };
     let joining_scenes = chapter
         .iter()
@@ -2766,6 +2771,8 @@ fn convert_battles(
                 pictures.insert(key.clone(), png);
                 Ok(Some((terrain.to_string(), Some(key))))
             };
+            // Officers placed by route ([`chapters::army_at_steps`]), for the notes.
+            let mut by_route: Vec<String> = Vec::new();
             // A battle of a later chapter gets a base made from the original.
             let made;
             let base = match base {
@@ -2812,11 +2819,13 @@ fn convert_battles(
                     // Bei when he has none (Guan Yu's troop at Maicheng), and the battle is lost
                     // when the officer it names retreats.
                     // An officer the story has not brought into the army yet fights at their
-                    // slot as an ally.
+                    // slot as an ally. One who is in it on some ways to the battle and not on
+                    // others is placed at their slot on the player's side: the army's officer
+                    // when they are in it and not away, else the officer as `officers.toml`
+                    // has them.
                     let lord = names.officers.get(&battles::LIU_BEI);
-                    let now =
-                        block.and_then(|(b, leg)| battle_time.get(&(file, scene_index, b, leg)));
-                    let in_army = |id: &String| in_army_at(id, now.copied());
+                    let part = block.and_then(|(b, leg)| part_of.get(&(file, scene_index, b, leg)));
+                    let army = |id: &String| army_at(id, part.copied());
                     for u in original
                         .player
                         .iter()
@@ -2828,27 +2837,34 @@ fn convert_battles(
                         let Some(id) = names.officers.get(&u.person) else {
                             continue;
                         };
-                        if in_army(id) {
-                            b.deploy.required.push(id.clone());
-                        } else {
-                            b.units.push(hero_core::battledef::UnitSpawn {
-                                side: hero_core::battledef::Side::Ally,
-                                officer: Some(id.clone()),
-                                name: None,
-                                class: None,
-                                level: None,
-                                stats: None,
-                                pos: hero_core::geom::Pos::new(i32::from(u.x), i32::from(u.y)),
-                                ai: hero_core::battledef::AiMode::Aggressive,
-                                ai_target: None,
-                                ai_pos: None,
-                                commander: false,
-                                tag: None,
-                                group: None,
-                                equip: None,
-                                drop: None,
-                            });
-                        }
+                        let side = match army(id) {
+                            chapters::ARMY_IN => {
+                                b.deploy.required.push(id.clone());
+                                continue;
+                            }
+                            chapters::ARMY_OUT => hero_core::battledef::Side::Ally,
+                            _ => {
+                                by_route.push(id.clone());
+                                hero_core::battledef::Side::Player
+                            }
+                        };
+                        b.units.push(hero_core::battledef::UnitSpawn {
+                            side,
+                            officer: Some(id.clone()),
+                            name: None,
+                            class: None,
+                            level: None,
+                            stats: None,
+                            pos: hero_core::geom::Pos::new(i32::from(u.x), i32::from(u.y)),
+                            ai: hero_core::battledef::AiMode::Aggressive,
+                            ai_target: None,
+                            ai_pos: None,
+                            commander: false,
+                            tag: None,
+                            group: None,
+                            equip: None,
+                            drop: None,
+                        });
                     }
                     if !original.player.iter().any(|u| u.person == battles::LIU_BEI) {
                         b.deploy.forbidden.extend(lord.cloned());
@@ -2864,7 +2880,9 @@ fn convert_battles(
                                 target: officer.clone(),
                             });
                         // It needs them on the map.
-                        if in_army(officer) && !b.deploy.required.contains(officer) {
+                        if army(officer) == chapters::ARMY_IN
+                            && !b.deploy.required.contains(officer)
+                        {
                             b.deploy.required.push(officer.clone());
                         }
                     }
@@ -2883,6 +2901,13 @@ fn convert_battles(
                     cell_change: &mut cell_change,
                 },
             )?;
+            if !by_route.is_empty() {
+                converted.notes.push(format!(
+                    "in the army on some ways to this battle only, placed at their slot on the \
+                     player's side: {}",
+                    by_route.join(", ")
+                ));
+            }
             // Deploy slots on terrain foot units cannot enter (the original has some on rivers
             // and hills) take no officer: they are left out.
             if let (Some(grid), Ok(rules)) = (
@@ -5390,29 +5415,6 @@ mod tests {
              str = {strength}\nint = {int}\nlead = {lead}\n"
         ))
         .unwrap()
-    }
-
-    #[test]
-    fn army_membership_follows_the_start_and_the_storys_moves() {
-        // Guan Yu: in the army from the start, away at 5, back at 8.
-        let brother = [(5, false), (8, true)];
-        assert!(in_army(&brother, true, Some(1)));
-        assert!(!in_army(&brother, true, Some(7)));
-        assert!(in_army(&brother, true, Some(10)));
-        // Even when his first move is a return (the away is not in the story).
-        assert!(in_army(&[(8, true)], true, Some(1)));
-        // One who joins at 5: out before, in after (a move at the battle's own time is after it).
-        assert!(!in_army(&[(5, true)], false, Some(4)));
-        assert!(!in_army(&[(5, true)], false, Some(5)));
-        assert!(in_army(&[(5, true)], false, Some(6)));
-        // One the story only takes away was in the army before.
-        assert!(in_army(&[(5, false)], false, Some(4)));
-        // One it moves away and back before they join (to change them first) was not.
-        assert!(!in_army(&[(5, false), (5, true)], false, Some(4)));
-        assert!(in_army(&[(5, false), (5, true)], false, Some(6)));
-        // Never moved, or not a battle of the story: in the army.
-        assert!(in_army(&[], false, Some(4)));
-        assert!(!in_army(&brother, true, Some(7)) && in_army(&brother, true, None));
     }
 
     #[test]

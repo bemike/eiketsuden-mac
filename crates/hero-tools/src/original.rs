@@ -1349,6 +1349,31 @@ mod tests {
                 );
             }
         }
+        // Membership follows the ways to a battle (issue #81): on the Xindu road the town's
+        // garrison (Han Ying, Guo Ji) has not joined yet, which happens only on the Guangchuan
+        // road. They hold their tiles as allies, and Liu Bei takes the first slot, his own.
+        let xindu = &pack.battles["c1_s0_b6"];
+        assert!(xindu.deploy.required.is_empty(), "{:?}", xindu.deploy);
+        for (o, x, y) in [("orig_p245", 3, 0), ("orig_p244", 0, 0)] {
+            assert!(
+                xindu.units.iter().any(|u| u.officer.as_deref() == Some(o)
+                    && u.side == hero_core::battledef::Side::Ally
+                    && u.pos == hero_core::geom::Pos::new(x, y)),
+                "{o}"
+            );
+        }
+        assert_eq!(
+            xindu.deploy.slots.first(),
+            Some(&hero_core::geom::Pos::new(21, 7))
+        );
+        // No officer of the original's data is in the army on some ways to a battle only.
+        assert!(!json["battles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["notes"].as_array().is_some_and(|n| n
+                .iter()
+                .any(|n| n.as_str().is_some_and(|n| n.contains("some ways"))))));
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()
