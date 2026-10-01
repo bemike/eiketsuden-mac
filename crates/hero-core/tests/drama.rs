@@ -286,6 +286,28 @@ fn growth_of_an_officer_not_in_the_army_waits_for_their_join() {
 }
 
 #[test]
+fn queued_growth_is_capped_at_the_join_and_used_once() {
+    let pack = pack_with_scene("\n== none\n@gold +1\n");
+    let def = pack.officer("jian_yong").unwrap().clone();
+    let mut state = CampaignState::new_game(&pack);
+    state.add_levels(&pack, "jian_yong", 1000).unwrap();
+    state.join(&pack, "jian_yong").unwrap();
+    assert_eq!(
+        state.officer("jian_yong").unwrap().level,
+        pack.rules.level_cap
+    );
+    // Leaving and joining again starts from the officer's definition: the growth was used.
+    state.leave("jian_yong").unwrap();
+    state.join(&pack, "jian_yong").unwrap();
+    assert_eq!(state.officer("jian_yong").unwrap().level, def.level);
+    // Growth is kept in the order it came, whatever the officer's level is by the join.
+    state.leave("jian_yong").unwrap();
+    state.add_levels(&pack, "jian_yong", 1).unwrap();
+    state.add_levels(&pack, "jian_yong", 1).unwrap();
+    assert_eq!(state.pending_growth["jian_yong"].levels, 2);
+}
+
+#[test]
 fn side_effects_follow_the_campaign_rules() {
     let pack = pack_with_scene("\n== effects\n@leave jian_yong\n@leave zhang_fei\n@gold +100\n@gold -700\n@wait 250\n@sfx confirm\n@bgm stop\n@bg none\n@hide left\n@fade in\n");
     let mut campaign = CampaignState::new_game(&pack);

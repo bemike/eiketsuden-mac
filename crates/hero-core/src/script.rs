@@ -204,13 +204,15 @@ pub enum Cmd {
     /// them back).
     Away(String),
     /// An officer of the army gains levels (outside battle: the level only; HP and MP follow
-    /// from it in the next battle).
+    /// from it in the next battle). One of the pack who is not in the army yet has them kept
+    /// for when they join ([`crate::campaign::CampaignState::pending_growth`]).
     Level {
         officer: String,
         levels: u32,
     },
     /// An officer of the army changes class (equipment the new class may not use goes back to
-    /// the inventory).
+    /// the inventory). One of the pack who is not in the army yet has it kept for when they
+    /// join.
     Class {
         officer: String,
         class: String,

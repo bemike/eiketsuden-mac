@@ -1026,6 +1026,7 @@ pub fn events_end_battle(records: &[Record]) -> bool {
     let Some(last) = phases.iter().rposition(|p| !p.runs_only) else {
         return false;
     };
+    let first = phases.iter().position(|p| !p.runs_only);
     let single = phases.iter().filter(|p| !p.runs_only).count() == 1;
     let phase = &phases[last];
     let has_victory_script = phase
@@ -1051,10 +1052,13 @@ pub fn events_end_battle(records: &[Record]) -> bool {
                     }))
         }) || phases[..last]
             .iter()
-            .filter(|p| !p.runs_only)
-            .flat_map(|p| &p.records)
-            .map(|&r| &records[r])
-            .any(|r| event(r) && ends_itself(r)))
+            .enumerate()
+            .filter(|(_, p)| !p.runs_only)
+            .flat_map(|(i, p)| p.records.iter().map(move |&r| (i, &records[r])))
+            .any(|(i, r)| {
+                // (Liu Bei's objective of the first stage is the battle's victory condition.)
+                event(r) && ends_itself(r) && !(Some(i) == first && is_routine(r))
+            }))
 }
 
 /// The campaign flag an event of a chapter's battle sets when it ends the battle (the original
@@ -1318,6 +1322,10 @@ struct Branch {
     unless: Vec<FlagCond>,
     actions: Vec<EventAction>,
     end: ScriptEnd,
+    /// Where the script reached the part: the number of the record's own actions before it.
+    /// `None` for a part that is not at the top level of the script (the rest past a guarded
+    /// part, a test inside a guarded part).
+    at: Option<usize>,
 }
 
 /// The converter of one battle's records into events and drama scenes.
@@ -1580,6 +1588,7 @@ impl EventWriter<'_, '_> {
             unless: tested,
             actions,
             end,
+            at: None,
         });
     }
 
@@ -1684,6 +1693,7 @@ impl EventWriter<'_, '_> {
                                 unless: Vec::new(),
                                 actions: guarded,
                                 end: branch_end,
+                                at: when.is_empty().then_some(actions.len()),
                             });
                             skip = *n;
                             if branch_end != ScriptEnd::Done {
@@ -2625,28 +2635,14 @@ pub fn convert(
                 }
             }
         }
-        let whole = Branch {
-            when: Vec::new(),
-            unless: Vec::new(),
+        events.extend(events_in_order(
+            &Trigger::TurnStart {
+                turn: 1,
+                side: Side::Player,
+            },
             actions,
-            end: ScriptEnd::Done,
-        };
-        for part in std::iter::once(whole).chain(guarded) {
-            if part.actions.is_empty() {
-                continue;
-            }
-            events.push(EventDef {
-                trigger: Trigger::TurnStart {
-                    turn: 1,
-                    side: Side::Player,
-                },
-                once: true,
-                stage: None,
-                when: part.when,
-                unless: part.unless,
-                actions: part.actions,
-            });
-        }
+            guarded,
+        ));
     }
     for (i, phase) in phases.iter().enumerate() {
         let Some(stage) = stages[i] else {
@@ -2748,6 +2744,7 @@ pub fn convert(
                 unless: Vec::new(),
                 actions,
                 end,
+                at: None,
             })
             .chain(branches);
             for part in parts {
@@ -2854,6 +2851,42 @@ pub fn convert(
         notes,
         army,
     })
+}
+
+/// The events of a script that fire on `trigger` (once, in no stage): what the script does
+/// whatever the flags say (`actions`) and its parts guarded by flags (`branches`), in the order
+/// the script reaches them. A guarded part sits where the script met it, so the unconditional
+/// actions around it become events of their own: events fire in the order they are defined, and
+/// a line that follows the guarded one must not be told before it. (Jincang's opening: the
+/// defender, then Pang Tong or Zhao Yun by the route, then Jiang Wei.)
+fn events_in_order(
+    trigger: &Trigger,
+    actions: Vec<EventAction>,
+    branches: Vec<Branch>,
+) -> Vec<EventDef> {
+    let event = |when: Vec<FlagCond>, unless: Vec<FlagCond>, actions: Vec<EventAction>| EventDef {
+        trigger: trigger.clone(),
+        once: true,
+        stage: None,
+        when,
+        unless,
+        actions,
+    };
+    let mut out = Vec::new();
+    let mut start = 0;
+    for part in branches {
+        if let Some(at) = part.at.filter(|&at| at > start && at <= actions.len()) {
+            out.push(event(Vec::new(), Vec::new(), actions[start..at].to_vec()));
+            start = at;
+        }
+        if !part.actions.is_empty() {
+            out.push(event(part.when, part.unless, part.actions));
+        }
+    }
+    if start < actions.len() {
+        out.push(event(Vec::new(), Vec::new(), actions[start..].to_vec()));
+    }
+    out
 }
 
 /// Reinforcement group of the units a trigger record brings in.
@@ -4535,9 +4568,10 @@ item = "wine"
                         fields("join_battle", &[("person", 302)]),
                         fields("set_flag", &[("flag", 5), ("clear", 0)]),
                         fields("dialogue", &[("text", 0x40)]),
-                        // A line only the route of flag 38 hears.
+                        // A line only the route of flag 38 hears, and one everybody hears after it.
                         guard(1, vec![38], vec![]),
                         fields("dialogue", &[("text", 0x10)]),
+                        fields("dialogue", &[("text", 0x40)]),
                     ],
                 ),
             ],
@@ -4546,10 +4580,35 @@ item = "wine"
             blocks: vec![prep, battle],
         };
         let c = convert_leg(&scene, 2, 0, "o");
-        assert_eq!(c.battle.events.len(), 2, "{:#?}", c.battle.events);
-        // The route's line is an event of its own at the same moment, under its flag.
-        let route = &c.battle.events[1];
-        assert_eq!(route.trigger, c.battle.events[0].trigger);
+        let turn_one = Trigger::TurnStart {
+            turn: 1,
+            side: Side::Player,
+        };
+        let drama = |scene: &str| EventAction::Drama {
+            scene: scene.into(),
+        };
+        // Three events at the first turn, in the order the script tells them: what is said
+        // before the route's line, the route's line under its flag, what is said after it.
+        assert_eq!(c.battle.events.len(), 3, "{:#?}", c.battle.events);
+        assert!(c.battle.events.iter().all(|e| e.trigger == turn_one));
+        let [before, route, after] = &c.battle.events[..] else {
+            unreachable!()
+        };
+        assert_eq!(
+            before.actions,
+            [
+                drama("orig_o_2"),
+                EventAction::Retreat {
+                    target: "person_300".into()
+                },
+                EventAction::SetFlag {
+                    flag: crate::chapters::flag(5),
+                    value: 1
+                },
+                drama("orig_o_2_2"),
+            ]
+        );
+        assert!(before.when.is_empty());
         assert_eq!(
             route.when,
             [FlagCond {
@@ -4558,38 +4617,9 @@ item = "wine"
                 value: 0
             }]
         );
-        assert_eq!(
-            route.actions,
-            [EventAction::Drama {
-                scene: "orig_o_2_3".into()
-            }]
-        );
-        let event = &c.battle.events[0];
-        assert_eq!(
-            event.trigger,
-            Trigger::TurnStart {
-                turn: 1,
-                side: Side::Player
-            }
-        );
-        assert_eq!(
-            event.actions,
-            [
-                EventAction::Drama {
-                    scene: "orig_o_2".into()
-                },
-                EventAction::Retreat {
-                    target: "person_300".into()
-                },
-                EventAction::SetFlag {
-                    flag: crate::chapters::flag(5),
-                    value: 1
-                },
-                EventAction::Drama {
-                    scene: "orig_o_2_2".into()
-                },
-            ]
-        );
+        assert_eq!(route.actions, [drama("orig_o_2_3")]);
+        assert!(after.when.is_empty() && after.unless.is_empty());
+        assert_eq!(after.actions, [drama("orig_o_2_4")]);
         assert!(c.drama.contains("guan_yu: 결투다!"), "{}", c.drama);
         assert!(
             !c.notes
@@ -4678,6 +4708,34 @@ item = "wine"
         assert!(events_end_battle(&takes("goto_block")));
         assert!(events_end_battle(&takes("battle_end")));
         assert!(!events_end_battle(&takes("leave_parallel")));
+        // Not Liu Bei's objective of the first stage, which is the victory condition, nor a
+        // treasure; but the objective of a later stage is an event.
+        let routine = |ends: &'static str| {
+            (
+                UNIT_AT_CELL,
+                [0, 0, 3, 1, 0, 0],
+                vec![fields("data", &[("kind", 4), ("value", 50)]), op(ends)],
+            )
+        };
+        let mut objective_first = stage(true, vec![routine("goto_block")]);
+        objective_first.push(record(BATTLE_WON, 4, true, [0; 6], leave()));
+        assert!(!events_end_battle(&objective_first));
+        let treasure = (
+            UNIT_AT_CELL,
+            [0, 4, 5, 6, 0, 0],
+            vec![
+                fields("data", &[("kind", 2), ("value", 100)]),
+                op("goto_block"),
+            ],
+        );
+        let mut treasure_first = stage(true, vec![treasure]);
+        treasure_first.push(record(BATTLE_WON, 4, true, [0; 6], leave()));
+        assert!(!events_end_battle(&treasure_first));
+        let mut objective_later = stage(true, vec![civilian()]);
+        let (kind, args, code) = routine("goto_block");
+        objective_later.push(record(kind, 4, true, args, code));
+        objective_later.push(record(BATTLE_WON, 5, true, [0; 6], leave()));
+        assert!(events_end_battle(&objective_later));
     }
 
     /// Civilians are the `BAKDATA` persons of the civilian class that no officer of the pack plays.

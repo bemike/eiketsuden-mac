@@ -3378,8 +3378,8 @@ fn convert_battles(
                 && !ends_by_event
             {
                 converted.notes.push(
-                    "a record of the last stage that ends it is not converted: the outro's \
-                     victory script always plays"
+                    "a record that ends the battle (in its last stage, or by itself in an \
+                     earlier one) is not converted: the outro's victory script always plays"
                         .into(),
                 );
             }
