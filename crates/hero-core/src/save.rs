@@ -10,15 +10,23 @@ use std::collections::BTreeMap;
 
 /// Newest save layout this game reads. Bump when the save layout changes incompatibly; add a
 /// migration in [`SaveGame::from_json`].
-pub const SAVE_VERSION: u32 = 2;
+pub const SAVE_VERSION: u32 = GROWTH_SAVE_VERSION;
 
-/// Layout of a save without a half-played scene. Such a save is still written with this
-/// version (see [`SaveGame::stamp_version`]), so a game older than [`SAVE_VERSION`] keeps
-/// loading it.
+/// Layout of a save without a half-played scene or queued growth. Such a save is still written
+/// with this version (see [`SaveGame::stamp_version`]), so a game older than [`SAVE_VERSION`]
+/// keeps loading it.
 pub const PLAIN_SAVE_VERSION: u32 = 1;
 
-// A save with a scene record must carry a version that a game older than this one refuses.
-const _: () = assert!(SAVE_VERSION > PLAIN_SAVE_VERSION);
+/// Layout of a save with a half-played scene ([`SceneResume`]) or battle scenes still queued.
+pub const SCENE_SAVE_VERSION: u32 = 2;
+
+/// Layout of a save whose campaign holds growth of officers not in the army yet
+/// ([`CampaignState::pending_growth`]).
+pub const GROWTH_SAVE_VERSION: u32 = 3;
+
+// A save that needs a newer layout must carry a version that a game older than this one refuses.
+const _: () = assert!(SCENE_SAVE_VERSION > PLAIN_SAVE_VERSION);
+const _: () = assert!(GROWTH_SAVE_VERSION > SCENE_SAVE_VERSION);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SaveGame {
@@ -136,11 +144,15 @@ pub enum SaveError {
 impl SaveGame {
     /// Set `version` to the oldest layout that can hold this save: a game that predates
     /// [`SceneResume`] would restart a half-played scene with its side effects already applied
-    /// (gold and items twice), so such a save must be refused by it (`TooNew`) rather than
-    /// loaded. Every other save stays loadable by older games.
+    /// (gold and items twice), and one that predates [`CampaignState::pending_growth`] would
+    /// ignore the queued levels and drop them when it saves again, so such a save must be
+    /// refused by it (`TooNew`) rather than loaded. Every other save stays loadable by older
+    /// games.
     pub fn stamp_version(&mut self) {
-        self.version = if self.scene.is_some() || !self.pending_scenes.is_empty() {
-            SAVE_VERSION
+        self.version = if !self.campaign.pending_growth.is_empty() {
+            GROWTH_SAVE_VERSION
+        } else if self.scene.is_some() || !self.pending_scenes.is_empty() {
+            SCENE_SAVE_VERSION
         } else {
             PLAIN_SAVE_VERSION
         };
@@ -282,7 +294,7 @@ mod tests {
         s.stamp_version();
         let back = SaveGame::from_json(&s.to_json(), "base").unwrap();
         assert_eq!(back, s);
-        assert_eq!(back.version, SAVE_VERSION);
+        assert_eq!(back.version, SCENE_SAVE_VERSION);
     }
 
     /// Saves written before quick saves have no `scene` / `pending_scenes` and must still load.
@@ -309,12 +321,41 @@ mod tests {
         let mut mid_scene = save();
         mid_scene.scene = Some(resume());
         mid_scene.stamp_version();
-        assert_eq!(mid_scene.version, SAVE_VERSION);
+        assert_eq!(mid_scene.version, SCENE_SAVE_VERSION);
 
         let mut queued = save();
         queued.pending_scenes = vec!["s".into()];
         queued.stamp_version();
-        assert_eq!(queued.version, SAVE_VERSION);
+        assert_eq!(queued.version, SCENE_SAVE_VERSION);
+    }
+
+    /// Growth queued for officers not in the army is dropped by a game that predates it, so a
+    /// save that holds some is refused by such a game, whatever else it holds; one without any
+    /// is still a plain save.
+    #[test]
+    fn a_save_with_queued_growth_needs_the_newest_version() {
+        let mut with_growth = save();
+        with_growth.campaign.pending_growth.insert(
+            "gan_ning".into(),
+            crate::campaign::Growth {
+                levels: 11,
+                class: None,
+            },
+        );
+        with_growth.stamp_version();
+        assert_eq!(with_growth.version, GROWTH_SAVE_VERSION);
+        // A game with the scene layout (2) cannot read it.
+        assert!(with_growth.version > SCENE_SAVE_VERSION);
+        let back = SaveGame::from_json(&with_growth.to_json(), "base").unwrap();
+        assert_eq!(back, with_growth);
+        with_growth.scene = Some(resume());
+        with_growth.stamp_version();
+        assert_eq!(with_growth.version, GROWTH_SAVE_VERSION);
+
+        let mut empty = save();
+        empty.version = 99;
+        empty.stamp_version();
+        assert_eq!(empty.version, PLAIN_SAVE_VERSION);
     }
 
     #[test]

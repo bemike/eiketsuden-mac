@@ -9,7 +9,7 @@ use hero_core::campaign::CampaignState;
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::Pack;
 use hero_core::save::{
-    ResumeError, SaveGame, SceneKind, SceneResume, PLAIN_SAVE_VERSION, SAVE_VERSION,
+    ResumeError, SaveGame, SceneKind, SceneResume, PLAIN_SAVE_VERSION, SCENE_SAVE_VERSION,
 };
 use std::collections::BTreeMap;
 
@@ -65,7 +65,7 @@ fn through_a_save(campaign: &CampaignState, resume: SceneResume) -> (CampaignSta
         pending_scenes: Vec::new(),
     };
     save.stamp_version();
-    assert_eq!(save.version, SAVE_VERSION);
+    assert_eq!(save.version, SCENE_SAVE_VERSION);
     let back = SaveGame::from_json(&save.to_json(), "mini").expect("the save loads");
     (back.campaign, back.scene.expect("the scene record"))
 }

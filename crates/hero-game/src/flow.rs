@@ -114,7 +114,7 @@ impl Session {
 
     /// Snapshot for a save slot.
     pub fn to_save(&self, pack: &Pack) -> SaveGame {
-        SaveGame {
+        let mut save = SaveGame {
             version: PLAIN_SAVE_VERSION,
             pack_id: pack.manifest.id.clone(),
             pack_version: pack.manifest.version.clone(),
@@ -124,7 +124,10 @@ impl Session {
             battle: self.battle.clone(),
             scene: None,
             pending_scenes: Vec::new(),
-        }
+        };
+        // (A campaign with growth queued for officers not in the army needs a newer layout.)
+        save.stamp_version();
+        save
     }
 }
 
@@ -425,6 +428,25 @@ mod tests {
             play_seconds: 10,
             pending_growth: BTreeMap::new(),
         }
+    }
+
+    /// A slot save is as old a layout as its content allows: growth queued for an officer who is
+    /// not in the army yet needs the newest one, so a game that predates it refuses the save.
+    #[test]
+    fn a_slot_save_with_queued_growth_needs_the_newest_layout() {
+        use hero_core::campaign::Growth;
+        use hero_core::save::{GROWTH_SAVE_VERSION, PLAIN_SAVE_VERSION};
+        let pack = crate::screens::camp::test_pack();
+        let mut session = Session::new(CampaignState::new_game(&pack));
+        assert_eq!(session.to_save(&pack).version, PLAIN_SAVE_VERSION);
+        session.campaign.pending_growth.insert(
+            "gan_ning".into(),
+            Growth {
+                levels: 11,
+                class: None,
+            },
+        );
+        assert_eq!(session.to_save(&pack).version, GROWTH_SAVE_VERSION);
     }
 
     /// The base pack with a scene node whose branch leads, on flag `t_flag`, to an ending
