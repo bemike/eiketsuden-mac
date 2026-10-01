@@ -3236,6 +3236,28 @@ fn convert_battles(
                 let deploy = &mut converted.battle.deploy;
                 deploy.max = deploy.max.min(deploy.slots.len() as u32);
             }
+            // An officer of the army the original brings onto the field during the battle (its
+            // setup keeps their slot back until `join_battle`: Xuchang's Huang Zhong and Yan Yan)
+            // arrives as the army's officer, on the player's side, with their progress; one not
+            // in the army arrives as an ally.
+            if pairing.battle.is_empty() {
+                let part = block
+                    .and_then(|(b, leg)| part_of.get(&(file, scene_index, b, leg)))
+                    .copied();
+                for u in converted
+                    .battle
+                    .units
+                    .iter_mut()
+                    .filter(|u| u.group.is_some() && u.side == hero_core::battledef::Side::Ally)
+                {
+                    if u.officer
+                        .as_deref()
+                        .is_some_and(|o| army_at(o, part) == chapters::ARMY_IN)
+                    {
+                        u.side = hero_core::battledef::Side::Player;
+                    }
+                }
+            }
             // The officers the original brings onto the field during a chapter's battle (allies,
             // reinforcements) are not deployed from the army as well (the base pack forbids
             // them the same way).
