@@ -1509,6 +1509,91 @@ mod tests {
         assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
         // Chapter 4's detachment comes back as Xuchang's setup says.
         assert!(scene("c4_s1_b6_before").contains("@join zhao_yun\n"));
+        // What a setup says before the sortie (ROADMAP M4-1): Maicheng's pictures and narration
+        // and Xuchang 2's council, not the prompt to deploy the troops.
+        let maicheng_before = scene("c3_s4_b0_before");
+        for picture in ["@picture orig_23\n", "@picture orig_24\n", "@narr "] {
+            assert!(maicheng_before.contains(picture), "{picture}");
+        }
+        let council = scene("c4_s1_b7_before");
+        assert!(
+            council.contains("huang_zhong: 주공, 꼭 저를 데려가"),
+            "{council}"
+        );
+        assert!(!council.contains("부대를 편성"), "{council}");
+        // The words as a battle begins (ROADMAP M4-1) play in its first turn, in order with the
+        // duels and retreats the opening has: Sishui's challenge, a duel's loser leaving.
+        let battle_story = std::fs::read_to_string(out.join(pack::DRAMA_FILE)).unwrap();
+        let opening = |id: &str| {
+            let head = format!("== {id}\n");
+            let start = battle_story.find(&head).unwrap_or_else(|| panic!("{id}")) + head.len();
+            battle_story[start..]
+                .split("\n== ")
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        let first_turn = |id: &str, flag: Option<&str>| -> Vec<hero_core::battledef::EventAction> {
+            pack.battles[id]
+                .events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.trigger,
+                        hero_core::battledef::Trigger::TurnStart {
+                            turn: 1,
+                            side: hero_core::battledef::Side::Player
+                        }
+                    ) && e.when.first().map(|c| c.flag.as_str()) == flag
+                })
+                .flat_map(|e| e.actions.clone())
+                .collect()
+        };
+        use hero_core::battledef::EventAction::{Drama, Retreat};
+        assert_eq!(
+            first_turn("c0_s0_b5", None),
+            [Drama {
+                scene: "orig_c0_s0_b5_2".into()
+            }]
+        );
+        assert!(opening("orig_c0_s0_b5_2").starts_with("hua_xiong: "));
+        assert_eq!(
+            first_turn("c1_s0_b11", None),
+            [
+                Drama {
+                    scene: "orig_c1_s0_b11_2".into()
+                },
+                Retreat {
+                    target: "yan_gang".into()
+                },
+                Drama {
+                    scene: "orig_c1_s0_b11_2_2".into()
+                }
+            ]
+        );
+        assert!(opening("orig_c1_s0_b11_2").contains("@duel qu_yi yan_gang terrain\n"));
+        // Jincang's opening has lines of its own for each side of flag 38 (Pang Tong's death).
+        assert!(!first_turn("c4_s1_b2", None).is_empty());
+        assert!(!first_turn("c4_s1_b2", Some("orig_f38")).is_empty());
+        // Levels the story gives officers who are not in the army yet wait for their join (D24):
+        // after the Wu generals' eleven levels (and the council that follows) Gan Ning
+        // is in no army, and joining later gives him the levels.
+        let mut state = hero_core::campaign::CampaignState::new_game(&pack);
+        for story in ["c4_s0_story4"] {
+            let mut runner = hero_core::drama::DramaRunner::new(&pack, story).unwrap();
+            loop {
+                match runner.next(&pack, &mut state).unwrap() {
+                    hero_core::drama::Step::End => break,
+                    hero_core::drama::Step::Choice(_) => runner.choose(&pack, 0).unwrap(),
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(state.pending_growth["gan_ning"].levels, 11);
+        let level = pack.officer("gan_ning").unwrap().level;
+        state.join(&pack, "gan_ning").unwrap();
+        assert_eq!(state.officer("gan_ning").unwrap().level, level + 11);
+        assert!(!state.pending_growth.contains_key("gan_ning"));
         // The original's event pictures, shown over the story (chapter 2 opens with one).
         for n in 3..=33 {
             assert!(
