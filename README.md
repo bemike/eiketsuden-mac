@@ -197,7 +197,8 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   and converted at launch (native builds) — is described in [docs/ENGINE.md](docs/ENGINE.md) (Korean,
   English summary).
 * Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
-  (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
+  (read-only static analysis of an owned copy up to v0.2.1; since then a copy is also run for observation
+  only in the official DOSBox-X, copy protection never bypassed, decision D22) and the open work are documented in
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
 * Progress is measured on the original mode only: all 60 of the original's battles are playable, from the
   prologue to the original's endings (Changban's escort of the people and the battles fought on two maps are

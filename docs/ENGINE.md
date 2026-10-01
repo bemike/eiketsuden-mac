@@ -3,7 +3,7 @@
 > **English summary** — How Eiketsuden Reloaded is built. It follows the OpenRCT2/OpenTTD model (an
 > open-source engine; the content is data) but not their route of reverse-engineering the original program's code
 > into a re-implementation: the engine is written from scratch from the published rules, content ships as
-> license-clean data packs, and the original game is only read — from the player's own copy, never run — and
+> license-clean data packs, and the original game is only read — from the player's own copy, never run by the engine — and
 > converted into the same pack format at every launch (native builds; the development tools can also write the
 > result to a local folder the player chooses). The page
 > explains the three layers (engine, base pack, original mode), how the rules and the original formats were
