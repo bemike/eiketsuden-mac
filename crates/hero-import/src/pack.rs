@@ -3244,15 +3244,17 @@ fn convert_battles(
                 let part = block
                     .and_then(|(b, leg)| part_of.get(&(file, scene_index, b, leg)))
                     .copied();
-                for u in converted
-                    .battle
-                    .units
-                    .iter_mut()
-                    .filter(|u| u.group.is_some() && u.side == hero_core::battledef::Side::Ally)
-                {
+                // (A setup's arrival names only its officer; a friendly roster's ally carries its
+                // own class and stays an ally. One who may be in the army, by the route, arrives
+                // on the player's side too: the battle places the army's officer when they are.)
+                for u in converted.battle.units.iter_mut().filter(|u| {
+                    u.group.is_some()
+                        && u.side == hero_core::battledef::Side::Ally
+                        && u.class.is_none()
+                }) {
                     if u.officer
                         .as_deref()
-                        .is_some_and(|o| army_at(o, part) == chapters::ARMY_IN)
+                        .is_some_and(|o| army_at(o, part) != chapters::ARMY_OUT)
                     {
                         u.side = hero_core::battledef::Side::Player;
                     }

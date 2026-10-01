@@ -998,13 +998,13 @@ fn is_routine(r: &Record) -> bool {
             .any(|c| c.mnemonic == "data" && c.operands.get("kind") == Some(DATA_ROUTINE))
 }
 
-/// Whether `r` is a treasure: any unit on a tile, a script that gives gold or an item (and no
-/// objective routine). Any other script on a tile is an event (Xuchang's walls: whoever stands
-/// there brings Huang Zhong and Yan Yan in; a gate a unit opens).
+/// Whether `r` is a treasure: any unit on a tile (the trigger the treasure list reads), a script
+/// that gives gold or an item. Any other script on a tile is an event (Xuchang 2's wall: whoever
+/// stands there brings Huang Zhong and Yan Yan in; camps to capture; a bridge let down).
 fn is_treasure(r: &Record) -> bool {
     r.trigger.kind == UNIT_AT_CELL
         && r.trigger.word(0) == ANY_UNIT
-        && !is_routine(r)
+        && !r.trigger.inverted
         && r.code.iter().any(|c| {
             c.mnemonic == "add_item"
                 || (c.mnemonic == "data" && c.operands.get("kind") == Some(DATA_GOLD))
@@ -1918,8 +1918,9 @@ impl EventWriter<'_, '_> {
                 // In a chapter's battle an officer joins (country 0, persuaded) or leaves the
                 // army: a campaign flag the story after the battle acts on. The persuaded unit
                 // leaves the field.
-                // (`set_allegiance` to army 0 is the same: an officer beaten in a duel or talked
-                // round becomes the army's, Zhang Liao at Xuchang.)
+                // (`set_allegiance` is the same: to army 0 an officer talked round becomes the
+                // army's, Zhang Liao at Xuchang 2; to another army they leave it after the battle,
+                // Shamoke at Yiling.)
                 "set_country" | "set_allegiance" if self.chapter => {
                     let person = get("person");
                     let side = if instr.mnemonic == "set_country" {

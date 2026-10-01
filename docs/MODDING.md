@@ -1194,8 +1194,8 @@ impassable for the unit's move type, or shared with another starting unit or a d
 duplicate tags, `ai = "target"` without `ai_target`, `ai_target` naming nothing, `ai_pos` outside the map,
 bad equipment, unknown `drop` items. W: `stats` on named officers, generic units without `name`,
 reinforcements on impassable tiles (they are shifted), tags equal to an officer id, equipment not meant
-for the unit's family, a `side = "player"` unit naming a starting officer (the army's officer is placed
-there, see [Units](#units)).
+for the unit's family, a `side = "player"` unit naming a starting officer that also sets `class`, `level`
+or `equip` (the army's officer is placed there and those are ignored, see [Units](#units)).
 *Conditions, triggers, actions* — E: unit references that match nothing, positions outside the map,
 negative radius, `defeat_all` without enemies on the map at the start, `defeat_commander` without an enemy
 commander, `survive_turns`/`turn_start` with turn 0, `hp_below` outside 1..=100, unknown scenes, unknown

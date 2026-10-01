@@ -1648,8 +1648,8 @@ mod tests {
         // Xuchang 2's opening (a phase of `run` records before the first watched one) plays when the
         // battle begins and sets flag 218, which brings Zhang Liao into the next battle's
         // enemy army (its variant).
-        let ye = &pack.battles["c4_s1_b7"];
-        assert!(ye.events.iter().any(|e| matches!(
+        let xuchang_2 = &pack.battles["c4_s1_b7"];
+        assert!(xuchang_2.events.iter().any(|e| matches!(
             e.trigger,
             hero_core::battledef::Trigger::TurnStart { turn: 1, .. }
         ) && e.actions.iter().any(|a| matches!(
