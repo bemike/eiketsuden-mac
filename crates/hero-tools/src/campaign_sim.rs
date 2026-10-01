@@ -259,7 +259,7 @@ impl Sim<'_> {
             .map_err(|e| End::Error(format!("battle `{battle}`: {e}")))?;
         let level = average_level(&state);
         if let Some(def) = pack.battles.get(battle) {
-            aim_at_victory(&mut state, def);
+            aim_at_victory(pack, &mut state, def);
         }
         let mut events = state.begin(pack);
         let mut phases = 0;
@@ -390,15 +390,24 @@ fn camp_deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Ve
 /// any one wins). Other conditions keep the army's default AI, and a unit the battle gives
 /// another AI (a player spawn that holds or marches) keeps it. Before the battle begins, so
 /// its opening events can still set AI.
-fn aim_at_victory(state: &mut BattleState, def: &BattleDef) {
+fn aim_at_victory(pack: &Pack, state: &mut BattleState, def: &BattleDef) {
     let mut sent: BTreeSet<usize> = BTreeSet::new();
     for condition in &def.victory {
-        if let Condition::Reach { who, pos, .. } = condition {
-            for (i, u) in state.units.iter_mut().enumerate() {
+        if let Condition::Reach {
+            who,
+            pos,
+            radius,
+            to,
+        } = condition
+        {
+            for i in 0..state.units.len() {
+                let u = &state.units[i];
                 let named = who.as_deref().is_none_or(|w| u.matches(w));
                 if u.side == Side::Player && u.ai == AiMode::Aggressive && named && sent.insert(i) {
+                    let goal = goal_tile(pack, state, i, *pos, *radius, *to);
+                    let u = &mut state.units[i];
                     u.ai = AiMode::Advance;
-                    u.ai_pos = Some(*pos);
+                    u.ai_pos = Some(goal);
                 }
             }
         }
@@ -414,6 +423,32 @@ fn aim_at_victory(state: &mut BattleState, def: &BattleDef) {
             }
         }
     }
+}
+
+/// Where unit `i` heads for a `reach` area: the tile of the area (`pos` with `radius`, or the
+/// rectangle to `to`) nearest to it that its class can enter, else `pos`.
+fn goal_tile(
+    pack: &Pack,
+    state: &BattleState,
+    i: usize,
+    pos: hero_core::geom::Pos,
+    radius: i32,
+    to: Option<hero_core::geom::Pos>,
+) -> hero_core::geom::Pos {
+    let u = &state.units[i];
+    let move_type = pack.classes.get(&u.class).map(|c| c.move_type.as_str());
+    let enterable = |p: hero_core::geom::Pos| {
+        let cost = state
+            .terrain_at(pack, p)
+            .zip(move_type)
+            .and_then(|(t, m)| t.move_cost(m));
+        cost.is_some_and(|c| c < u8::MAX)
+    };
+    (0..state.map.height)
+        .flat_map(|y| (0..state.map.width).map(move |x| hero_core::geom::Pos::new(x, y)))
+        .filter(|&p| hero_core::battledef::in_reach(pos, radius, to, p) && enterable(p))
+        .min_by_key(|p| (p.manhattan(u.pos), p.y, p.x))
+        .unwrap_or(pos)
 }
 
 /// One phase of a traced battle (`--trace`): every unit on the map, its side, tile, HP and AI.
@@ -660,7 +695,7 @@ mod tests {
         let mut campaign = CampaignState::new_game(&pack);
         campaign.deployed = camp_deployment(&pack, &pack.battles["b01"], &campaign);
         let mut state = BattleState::new(&pack, "b01", &campaign, 1).unwrap();
-        aim_at_victory(&mut state, &pack.battles["b01"]);
+        aim_at_victory(&pack, &mut state, &pack.battles["b01"]);
         let unit = |id: &str| &state.units[state.find_unit(id).unwrap()];
         // Liu Bei marches for his tile; the others go after the unit to beat.
         assert_eq!(
@@ -673,6 +708,28 @@ mod tests {
         );
         // The enemy is left as the battle has it.
         assert_ne!(unit("deng_mao").ai, AiMode::Target);
+
+        // A rectangle: the tile of it nearest to Liu Bei, not its `pos` corner.
+        let from = unit("liu_bei").pos;
+        let (far, near) = (
+            hero_core::geom::Pos::new(from.x + 6, from.y),
+            hero_core::geom::Pos::new(from.x + 3, from.y),
+        );
+        pack.battles.get_mut("b01").unwrap().victory = vec![Condition::Reach {
+            who: Some("liu_bei".into()),
+            pos: far,
+            radius: 0,
+            to: Some(near),
+        }];
+        let mut state = BattleState::new(&pack, "b01", &campaign, 1).unwrap();
+        aim_at_victory(&pack, &mut state, &pack.battles["b01"]);
+        let liu = &state.units[state.find_unit("liu_bei").unwrap()];
+        let goal = liu.ai_pos.unwrap();
+        assert!(
+            hero_core::battledef::in_reach(far, 0, Some(near), goal),
+            "{goal:?}"
+        );
+        assert!(goal.manhattan(from) <= 3 + 1, "{goal:?} from {from:?}");
     }
 
     #[test]
