@@ -364,7 +364,10 @@ impl Media {
     /// Cache key of texture `key` and, for the public variant of a portrait, the paths to read
     /// it from: `None` means the usual lookup ([`Media::candidates`]).
     fn texture_slot<'a>(&self, key: &'a str) -> (Cow<'a, str>, Option<Vec<String>>) {
-        if self.public_portraits.get() && key.starts_with("portraits/") {
+        if self.public_portraits.get()
+            && key.starts_with("portraits/")
+            && self.root.has_original_layer()
+        {
             if let Some(paths) = self.root.public_media_paths(&format!("gfx/{key}.png")) {
                 return (Cow::Owned(format!("{key}{PUBLIC_SUFFIX}")), Some(paths));
             }

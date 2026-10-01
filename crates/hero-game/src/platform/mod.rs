@@ -342,6 +342,12 @@ impl DataRoot {
         Some(paths)
     }
 
+    /// Whether the chain holds the original mode's pack below the top (what
+    /// [`DataRoot::public_media_paths`] can reorder around).
+    pub fn has_original_layer(&self) -> bool {
+        self.original_layer.is_some_and(|l| l < self.parents.len())
+    }
+
     /// Prefix of the active original-data overlay, if any.
     pub fn media_overlay(&self) -> Option<&str> {
         self.media_overlay.as_deref()

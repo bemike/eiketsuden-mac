@@ -182,32 +182,46 @@ pub fn reach_tiles(state: &BattleState, pack: &Pack, unit: UnitId, range: &MoveR
 /// Tiles some active enemy could attack in its next phase: its attack range from every tile of
 /// its move range, as [`Mode::Inspect`] shows for one enemy (the "위험 범위" view option,
 /// `docs/DECISIONS.md` D25 X4). Meant for the player's phase, when the enemies' move ranges are
-/// those of their coming phase.
+/// those of their coming phase. A confused enemy may recover when its phase starts, so it counts
+/// with its full move as if it had (the view errs on the side of danger).
 pub fn danger_tiles(state: &BattleState, pack: &Pack) -> Vec<Pos> {
     let mut out = BTreeSet::new();
+    let mut recovered: Option<BattleState> = None;
     for (id, u) in state.units.iter().enumerate() {
         if u.side != Side::Enemy || !u.is_active() {
             continue;
         }
-        let range = state.movement_range(pack, id);
+        let st = if u.has_status(StatusKind::Confused) {
+            let s = recovered.get_or_insert_with(|| state.clone());
+            s.units[id]
+                .statuses
+                .retain(|a| a.status != StatusKind::Confused);
+            &*s
+        } else {
+            state
+        };
+        let range = st.movement_range(pack, id);
         let mut from: Vec<Pos> = range.tiles.keys().copied().collect();
         if from.is_empty() {
             from.push(u.pos);
         }
         for p in from {
-            out.extend(state.attack_tiles(pack, id, p));
+            out.extend(st.attack_tiles(pack, id, p));
         }
     }
     out.into_iter().collect()
 }
 
 /// What [`danger_tiles`] depends on that changes during a battle: unit positions, presence and
-/// confusion (move points), the turn and terrain changes. The screen recomputes the tiles when
-/// it differs.
+/// confusion (move points), the turn and terrain changes (a hash of the map's tiles: an event
+/// may change terrain without a picture). The screen recomputes the tiles when it differs.
 pub fn danger_key(state: &BattleState) -> Vec<i64> {
+    use std::hash::{Hash, Hasher};
+    let mut terrain = std::collections::hash_map::DefaultHasher::new();
+    state.map.tiles.hash(&mut terrain);
     let mut key = vec![
         i64::from(state.turn),
-        state.map_images.len() as i64,
+        terrain.finish() as i64,
         state.phase as i64,
     ];
     for u in &state.units {
@@ -825,6 +839,20 @@ mod tests {
         gone.units[hx].state = hero_core::battle::UnitState::Retreated;
         assert_ne!(danger_key(&gone), key);
         assert_eq!(danger_key(&state.clone()), key);
+        // A terrain change without a picture changes it too.
+        let mut ground = state.clone();
+        ground.map.tiles[0] = ground.map.tiles[0].wrapping_add(1);
+        assert_ne!(danger_key(&ground), key);
+
+        // A confused enemy counts with its full move (it may recover when its phase starts).
+        let mut confused = state.clone();
+        confused.units[hx]
+            .statuses
+            .push(hero_core::battle::ActiveStatus {
+                status: StatusKind::Confused,
+                turns: 2,
+            });
+        assert_eq!(danger_tiles(&confused, &pack), danger);
     }
 
     #[test]
