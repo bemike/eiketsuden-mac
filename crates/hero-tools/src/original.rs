@@ -1645,11 +1645,11 @@ mod tests {
             assert_eq!(lost_with(&format!("{id}_f38")), ["zhao_yun"], "{id}");
             assert_eq!(branch(&format!("{id}_which")).0, "orig_f38");
         }
-        // Ye's opening (a phase of `run` records before the first watched one) plays when the
+        // Xuchang 2's opening (a phase of `run` records before the first watched one) plays when the
         // battle begins and sets flag 218, which brings Zhang Liao into the next battle's
         // enemy army (its variant).
-        let ye = &pack.battles["c4_s1_b7"];
-        assert!(ye.events.iter().any(|e| matches!(
+        let xuchang_2 = &pack.battles["c4_s1_b7"];
+        assert!(xuchang_2.events.iter().any(|e| matches!(
             e.trigger,
             hero_core::battledef::Trigger::TurnStart { turn: 1, .. }
         ) && e.actions.iter().any(|a| matches!(
@@ -1659,6 +1659,67 @@ mod tests {
         assert_eq!(branch("c4_s2_b2_which").0, "orig_f218");
         assert!(enemies("c4_s2_b2_f218").contains("zhang_liao"));
         assert!(!enemies("c4_s2_b2").contains("zhang_liao"));
+        // Allies arriving during a battle (ROADMAP M3): the original keeps their setup slot back
+        // until `join_battle` (MAIN.EXE places them on it). Bowang's ambushes are the army's
+        // officers: player units that arrive; Xuchang 2's Huang Zhong and Yan Yan, whom its
+        // setup takes out of the army, arrive as allies on their tiles when a unit stands on the
+        // wall's cell (issue #86: that cell's script was taken for a treasure).
+        let unit = |b: &str, o: &str| {
+            pack.battles[b]
+                .units
+                .iter()
+                .find(|u| u.officer.as_deref() == Some(o))
+                .cloned()
+                .unwrap_or_else(|| panic!("{b}: {o}"))
+        };
+        for o in ["zhang_fei", "guan_yu"] {
+            let u = unit("c2_s3_b2", o);
+            assert_eq!(u.side, hero_core::battledef::Side::Player, "{o}");
+            assert!(u.group.is_some(), "{o}");
+        }
+        for (o, x, y) in [("huang_zhong", 8, 0), ("yan_yan", 8, 1)] {
+            let u = unit("c4_s1_b7", o);
+            assert_eq!(
+                (u.side, u.pos, u.group.as_deref()),
+                (
+                    hero_core::battledef::Side::Ally,
+                    hero_core::geom::Pos::new(x, y),
+                    Some("original_6")
+                ),
+                "{o}"
+            );
+        }
+        let xuchang2 = &pack.battles["c4_s1_b7"];
+        assert!(xuchang2.events.iter().any(|e| matches!(
+            e.trigger,
+            hero_core::battledef::Trigger::Reach { who: None, .. }
+        ) && e.actions.contains(
+            &hero_core::battledef::EventAction::Spawn {
+                group: "original_6".into()
+            }
+        )));
+        // Zhang Liao's `set_allegiance` after his talk with Guan Yu: he joins the army after it.
+        assert!(scene("c4_s1_b7_outro").contains("@join zhang_liao"));
+        // Issue #86: capturing the four camps (flags 34-37) wins c3_s1_b5; Xinye's granary.
+        let sets =
+            |b: &str, f: &str| {
+                pack.battles[b].events.iter().any(|e| {
+                    matches!(e.trigger, hero_core::battledef::Trigger::Reach { who: None, .. })
+                    && e.actions.iter().any(|a| matches!(
+                        a,
+                        hero_core::battledef::EventAction::SetFlag { flag, value: 1 } if flag == f
+                    ))
+                })
+            };
+        for f in ["orig_f34", "orig_f35", "orig_f36", "orig_f37"] {
+            assert!(sets("c3_s1_b5", f), "{f}");
+        }
+        assert!(pack.battles["c4_s0_b7"].events.iter().any(|e| matches!(
+            e.trigger,
+            hero_core::battledef::Trigger::Reach { who: None, .. }
+        ) && e
+            .actions
+            .contains(&hero_core::battledef::EventAction::Victory)));
         // Sishui: the guests the talks before it bring (flags 0 and 1, which the story always
         // sets) fight at their tiles beside the army: no variant without them.
         assert!(!pack.battles.contains_key("c0_s0_b5_f0"));

@@ -998,6 +998,19 @@ fn is_routine(r: &Record) -> bool {
             .any(|c| c.mnemonic == "data" && c.operands.get("kind") == Some(DATA_ROUTINE))
 }
 
+/// Whether `r` is a treasure: any unit on a tile (the trigger the treasure list reads), a script
+/// that gives gold or an item. Any other script on a tile is an event (Xuchang 2's wall: whoever
+/// stands there brings Huang Zhong and Yan Yan in; camps to capture; a bridge let down).
+fn is_treasure(r: &Record) -> bool {
+    r.trigger.kind == UNIT_AT_CELL
+        && r.trigger.word(0) == ANY_UNIT
+        && !r.trigger.inverted
+        && r.code.iter().any(|c| {
+            c.mnemonic == "add_item"
+                || (c.mnemonic == "data" && c.operands.get("kind") == Some(DATA_GOLD))
+        })
+}
+
 /// Whether a record of the battle's last stage becomes an event that can end the battle by its
 /// script (`leave_parallel` or the end of the battle), when the stage also has a victory script
 /// ([`ended_flag`]): the records of a group that is not watched in parallel end it by running.
@@ -1017,9 +1030,7 @@ pub fn events_end_battle(records: &[Record]) -> bool {
     has_victory_script
         && phase.records.iter().map(|&r| &records[r]).any(|r| {
             !matches!(r.trigger.kind, BATTLE_WON | BATTLE_LOST)
-                && !(r.trigger.kind == UNIT_AT_CELL
-                    && r.trigger.word(0) == ANY_UNIT
-                    && !is_routine(r))
+                && !is_treasure(r)
                 && !(single && is_routine(r))
                 && (!phase.parallel
                     || r.code.iter().any(|c| {
@@ -1907,11 +1918,19 @@ impl EventWriter<'_, '_> {
                 // In a chapter's battle an officer joins (country 0, persuaded) or leaves the
                 // army: a campaign flag the story after the battle acts on. The persuaded unit
                 // leaves the field.
-                "set_country" if self.chapter => {
+                // (`set_allegiance` is the same: to army 0 an officer talked round becomes the
+                // army's, Zhang Liao at Xuchang 2; to another army they leave it after the battle,
+                // Shamoke at Yiling.)
+                "set_country" | "set_allegiance" if self.chapter => {
                     let person = get("person");
+                    let side = if instr.mnemonic == "set_country" {
+                        get("country")
+                    } else {
+                        get("army")
+                    };
                     match self.names.officers.get(&person).cloned() {
                         Some(id) => {
-                            let joins = get("country") == 0;
+                            let joins = side == 0;
                             flush(&mut scene, actions, self);
                             actions.push(EventAction::SetFlag {
                                 flag: army_flag(&id, joins),
@@ -1931,7 +1950,8 @@ impl EventWriter<'_, '_> {
                             }
                         }
                         None => self.notes.push(format!(
-                            "record {record}: `set_country` of {} (no pack officer) is not converted",
+                            "record {record}: `{}` of {} (no pack officer) is not converted",
+                            instr.mnemonic,
                             self.names.person_label(person)
                         )),
                     }
@@ -2538,7 +2558,7 @@ pub fn convert(
     let mut events = Vec::new();
     // A chapter battle's phases of `run` records before the first watched one play when it
     // begins: nothing moves the battle into them otherwise. They hold its opening lines and
-    // what those set (Ye's opening sets flag 218, which brings Zhang Liao into the next
+    // what those set (Xuchang 2's opening sets flag 218, which brings Zhang Liao into the next
     // battle's enemy army).
     if pairing.battle.is_empty() {
         let mut actions = Vec::new();
@@ -2584,7 +2604,7 @@ pub fn convert(
                         .insert("the original's victory and defeat scripts");
                     continue;
                 }
-                UNIT_AT_CELL if t.word(0) == ANY_UNIT && !routine(rec) => continue, // treasures
+                _ if is_treasure(rec) => continue,
                 _ => {}
             }
             if Some(i) == first_watched && routine(rec) {
@@ -4012,6 +4032,31 @@ item = "wine"
         Scene {
             blocks: vec![town, battle],
         }
+    }
+
+    /// A tile any unit steps on is a treasure only when its script gives gold or an item;
+    /// anything else (Xuchang's wall bringing Huang Zhong in) is an event (issue #86).
+    #[test]
+    fn only_gold_or_an_item_on_a_tile_is_a_treasure() {
+        let cell = |code| record(UNIT_AT_CELL, 3, false, [0, 4, 5, 6, 0, 0], code);
+        assert!(is_treasure(&cell(vec![fields("add_item", &[("item", 3)])])));
+        assert!(is_treasure(&cell(vec![fields(
+            "data",
+            &[("kind", DATA_GOLD), ("value", 100)]
+        )])));
+        assert!(!is_treasure(&cell(vec![
+            fields("dialogue", &[("text", 1)]),
+            fields("join_battle", &[("person", 169)])
+        ])));
+        // Liu Bei's tile is no treasure either.
+        let liu_bei = record(
+            UNIT_AT_CELL,
+            3,
+            false,
+            [0, 0, 5, 6, 0, 0],
+            vec![fields("add_item", &[("item", 3)])],
+        );
+        assert!(!is_treasure(&liu_bei));
     }
 
     /// The setup and rosters are the ones the flags' `if_flags` let run; slots that need a flag

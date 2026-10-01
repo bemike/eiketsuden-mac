@@ -1017,7 +1017,11 @@ impl<'a> Validator<'a> {
                             &uctx,
                             format!("officer `{o}` is also a required player officer"),
                         );
-                    } else if u.side == Side::Player && pack.campaign.starting_officers.contains(o)
+                    } else if u.side == Side::Player
+                        && pack.campaign.starting_officers.contains(o)
+                        // (Only when it sets what is ignored: a spawn that just places the
+                        // army's officer, such as one arriving later, is what it means.)
+                        && (u.class.is_some() || u.level.is_some() || u.equip.is_some())
                     {
                         self.warn(
                             &uctx,

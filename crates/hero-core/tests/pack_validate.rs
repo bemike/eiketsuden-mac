@@ -536,6 +536,27 @@ fn unit_checks() {
     ]);
 }
 
+/// A player spawn that only places an army officer (one arriving later, as the original mode's
+/// ambushes do) ignores nothing: no warning.
+#[test]
+fn a_player_spawn_that_only_places_an_army_officer_is_fine() {
+    let mut files = fixture_files();
+    edit(
+        &mut files,
+        B01,
+        "side = \"ally\"\nname = \"의용병\"\nclass = \"short_infantry\"\nlevel = 3",
+        "side = \"player\"\nofficer = \"guan_yu\"",
+    );
+    let issues = load(&files).validate();
+    assert!(
+        !issues
+            .iter()
+            .any(|i| i.msg.contains("is in the starting army")),
+        "{}",
+        format_issues(&issues)
+    );
+}
+
 #[test]
 fn a_battle_may_be_fought_without_the_lord() {
     // Another troop's battle (the original's Maicheng): the lord is forbidden, and does not
