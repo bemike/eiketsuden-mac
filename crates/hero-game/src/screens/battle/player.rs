@@ -225,7 +225,10 @@ pub fn danger_key(state: &BattleState) -> Vec<i64> {
         state.phase as i64,
     ];
     for u in &state.units {
-        let flags = i64::from(u.is_active()) | i64::from(u.has_status(StatusKind::Confused)) << 1;
+        // The side too: a unit that changes sides mid-battle changes who threatens whom.
+        let flags = i64::from(u.is_active())
+            | i64::from(u.has_status(StatusKind::Confused)) << 1
+            | (u.side as i64) << 2;
         key.extend([i64::from(u.pos.x), i64::from(u.pos.y), flags]);
     }
     key
