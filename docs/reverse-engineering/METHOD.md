@@ -5,12 +5,13 @@
 > palettes → graphics → maps → text → scenario bytecode → master tables. Use structural invariants
 > (directory chains, exact decoded lengths, full input consumption, "every byte covered") as oracles; find
 > tables inside the executable by byte-pattern search and confirm them by statically disassembling the x86-16
-> code that reads them (never by running anything); follow loader code to resolve mappings the data alone
+> code that reads them; follow loader code to resolve mappings the data alone
 > cannot decide; render contact sheets and look at them; settle channel/plane order by experiment; check
 > known answers from public walkthroughs. The page lists where the earlier research notes were wrong
 > (absolute vs relative offsets, the little-endian `Ls11` spelling, the "10-bit map index" myth, the EUC-KR
 > header assumption, a damaged file mistaken for a decoder bug), the synthetic-fixture + gated-golden-test
-> pattern, and a checklist for applying all of this to another KOEI title of the same era.
+> pattern, emulator observation of a copy of the install in the official DOSBox-X (section 2.8, D22; static
+> analysis only up to v0.2.1), and a checklist for applying all of this to another KOEI title of the same era.
 
 이 문서는 영걸전 한국어 DOS/V판을 분석하면서 효과가 있었던 방법을, 같은 시기 KOEI 게임(공명전·조조전 등)에도 쓸 수
 있게 순서와 기법으로 정리한 것입니다. 형식 자체는 [FORMATS.md](FORMATS.md), 원칙은 [README.md](README.md)에 있습니다.
@@ -132,17 +133,21 @@
 
 **자동화**
 
-- 창 캡처는 `PrintWindow`(`PW_RENDERFULLCONTENT`)로 합니다. 클라이언트 영역은 640×480입니다(2026-10-01 확인).
-- 키 입력은 `PostMessage`(`WM_KEYDOWN`/`UP`, lParam에 스캔 코드)로 넣습니다. 안 되면 DOSBox-X의 `AUTOTYPE`를 씁니다.
-- 둘 다 스크래치 스크립트로 두고, 저장소에는 넣지 않습니다.
+- 창 캡처는 `PrintWindow`(`PW_RENDERFULLCONTENT`)로 합니다. 클라이언트 영역은 640×480이고, 창이 앞에 없어도 찍힙니다.
+- **키 입력**
+  - 창 메시지(`PostMessage`로 보내는 `WM_KEYDOWN`/`UP`)는 게임에 닿지 않습니다. SDL1 빌드에서 `SDL_VIDEODRIVER=windib`를 줘도 마찬가지입니다.
+  - DOSBox-X의 **`AUTOTYPE`**(`autotype -w <대기 초> -p <간격 초> <키...>`)는 닿습니다. 이 명령은 `HERO` 앞에서 실행해 두면
+    게임이 도는 동안 정해진 시각에 키를 넣습니다. 그래서 정해진 순서의 입력(예: 상태를 불러온 뒤 메뉴 이동)에 씁니다.
+  - 대화형 입력이 필요하면 화면이 켜져 있을 때 데스크톱 자동화(computer-use)로 창을 직접 조작합니다.
+- 보조 스크립트는 스크래치에 두고, 저장소에는 넣지 않습니다.
 
 **확인 결과** (2026-10-01, 진행 중)
 
 | 항목 | 결과 |
 |---|---|
-| 원작 기동 | 됨. `HERO.COM` → 복제 방지 코드 입력 화면("INPUT CODE" + 한자 세 글자 조합) |
-| 창 캡처 | 됨(화면이 켜져 있을 때). 잠긴 화면에서는 확인 필요 |
-| 키 입력 자동화 | 확인 필요(코드 입력 뒤) |
+| 원작 기동 | 됨. `HERO.COM` → 복제 방지 코드 입력 화면("INPUT CODE" + 한자 세 글자 조합, 실행할 때마다 바뀜) |
+| 창 캡처 | 됨(`PrintWindow`). 잠긴 화면에서는 확인 필요 |
+| 키 입력 자동화 | `AUTOTYPE` 됨, 창 메시지 안 됨(위 "자동화") |
 | 상태 저장·불러오기 | 확인 필요. 코드 입력 직후 상태를 저장해 두면 이후 관찰에서 다시 입력하지 않음 |
 | 디버거(메모리 감시·덤프) | 확인 필요 |
 | OPL 출력 기록 | 확인 필요 |
