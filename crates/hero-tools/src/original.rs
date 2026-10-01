@@ -818,9 +818,13 @@ mod tests {
         // The last run's pack is kept next to it (`.prev`, at the same depth so its `extends`
         // still finds the base pack) and compared with this run's (`.diff.txt`).
         let prev = root.join("target/golden-original-pack.prev");
+        let diff_file = root.join("target/golden-original-pack.diff.txt");
+        let _ = std::fs::remove_file(&diff_file);
         if work.join("original").join(pack::PACK_INDEX).exists() {
             let _ = std::fs::remove_dir_all(&prev);
-            std::fs::rename(&work, &prev).unwrap();
+            std::fs::rename(&work, &prev).unwrap_or_else(|e| {
+                panic!("cannot move {} to {}: {e}", work.display(), prev.display())
+            });
         }
         let _ = std::fs::remove_dir_all(&work);
         let out = work.join("original");
@@ -830,9 +834,8 @@ mod tests {
             serde_json::from_slice(&std::fs::read(out.join(pack::PACK_INDEX)).unwrap()).unwrap();
         if prev.join("original").join(pack::PACK_INDEX).exists() {
             let summary = pack_diff(&prev.join("original"), &out);
-            let file = root.join("target/golden-original-pack.diff.txt");
-            std::fs::write(&file, &summary).unwrap();
-            eprintln!("{summary}(also in {})", file.display());
+            std::fs::write(&diff_file, &summary).unwrap();
+            eprintln!("{summary}(also in {})", diff_file.display());
         }
         // Every class, every terrain tile key and most officers of the base pack.
         let files: Vec<&str> = json["files"]
@@ -1536,8 +1539,9 @@ mod tests {
             xindu.deploy.slots.first(),
             Some(&hero_core::geom::Pos::new(21, 7))
         );
-        // The notes say who became an ally that way (issue #79): the garrison at Xindu, not
-        // the brothers in the prologue.
+        // The notes say who became an ally that way (issue #79): the garrison at Xindu. (The
+        // prologue's two battles take their setup from the base pack's, so they never get the
+        // note; the check guards against that changing with the brothers listed.)
         let notes = |id: &str| -> Vec<String> {
             json["battles"]
                 .as_array()

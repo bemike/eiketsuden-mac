@@ -23,12 +23,13 @@ USAGE:
                              [--level-bonus N] [--trace ID]
         Play the whole campaign from a new game N times (default 4), AI against AI, carrying
         levels, recruits, items and flags from battle to battle: dramas run with their side
-        effects, camps buy battle items (up to 8 in hand) and keep the camp screen's first
+        effects, camps buy battle items (until 8 are in hand) and keep the camp screen's first
         selection, the player's units go for the battle's goal (an officer who must reach a
         tile marches for it), a lost battle follows its on_defeat or ends the run.
         --level-bonus N gives every army officer N levels once, before their first battle
         (a check of how far a stronger army gets, not of the balance). --trace ID writes every
-        phase of battle ID to stderr: each unit's side, tile, HP and AI. --choose takes option N (1 = first) at the
+        phase of battle ID to stderr (per seed: each unit's side, tile, HP and AI).
+        --choose takes option N (1 = first) at the
         choices of scene SCENE, one N per choice it asks in order (past them, and by default:
         the first option not taken yet at that question while the scene plays). Reports each run's end and, per battle, how often it was
         won, its average turns and the army's average level at its start; exits with 1 when a
@@ -321,8 +322,11 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
     if !choose.is_empty() {
         return Err("`--choose` needs `--campaign`".into());
     }
-    if level_bonus.is_some() || trace.is_some() {
-        return Err("`--level-bonus` and `--trace` need `--campaign`".into());
+    if level_bonus.is_some() {
+        return Err("`--level-bonus` needs `--campaign`".into());
+    }
+    if trace.is_some() {
+        return Err("`--trace` needs `--campaign`".into());
     }
     Ok(Command::Simulate {
         pack,
@@ -424,9 +428,12 @@ mod tests {
         for (args, msg) in [
             (
                 &["simulate", "p", "--level-bonus", "2"][..],
-                "need `--campaign`",
+                "`--level-bonus` needs `--campaign`",
             ),
-            (&["simulate", "p", "--trace", "b"][..], "need `--campaign`"),
+            (
+                &["simulate", "p", "--trace", "b"][..],
+                "`--trace` needs `--campaign`",
+            ),
             (
                 &["simulate", "p", "--campaign", "--trace"][..],
                 "needs a battle id",

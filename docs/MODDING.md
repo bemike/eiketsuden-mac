@@ -1276,15 +1276,15 @@ hero-tools --help | --version
 * **simulate --campaign** — plays the whole campaign from a new game once per seed, the way the game does:
   drama nodes, the scenes battles play and an ending's scene run with their effects (flags, gold, items,
   officers joining), camps buy the shop's battle items (the cheapest first and one of each in turn, until 8
-  are in hand or the gold runs out), equip nothing and deploy what the camp screen selects when the player
+  battle items are in hand or the gold runs out), equip nothing and deploy what the camp screen selects when the player
   changes nothing (the first camp the whole army fitted to `deploy.max`, later camps that same selection
   fitted to their battle: an officer who joins later is not added), battles are fought AI against AI with
   the army earlier battles left (levels, classes, recruits, items), the player's units pointed at the
   battle's goal (an officer a `reach` victory names advances to its tile; a `defeat_unit` victory sends
-  the others after that unit), and a defeat follows the battle's `on_defeat` or ends the run (game
+  the others after that unit; a unit the battle gives another AI than the army's keeps it), and a defeat follows the battle's `on_defeat` or ends the run (game
   over). `--level-bonus N` gives every army officer N levels once, before their first battle: a check
   of how far a stronger army gets, not of the balance. `--trace ID` writes every phase of battle `ID`
-  (each unit's side, tile, HP and AI) and its outcome to stderr; a battle the pack does not have is a
+  (each unit's side, tile, HP and AI) and its outcome to stderr, each line with its seed; a battle the pack does not have is a
   command line error (exit 2). A choice takes option N (1 = the first) where `--choose
   SCENE=N,N,...` names its scene, one N per choice the scene asks in order (a scene played again asks
   again); past them, and by default, the first option not taken yet at that question while the scene

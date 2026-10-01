@@ -248,8 +248,9 @@ impl Sim<'_> {
                 .filter(|id| !self.boosted.contains(id))
                 .collect();
             for id in new {
-                // (A roster officer is in the army: this cannot fail.)
-                let _ = campaign.add_levels(pack, &id, bonus);
+                campaign
+                    .add_levels(pack, &id, bonus)
+                    .expect("a roster officer is in the army");
                 self.boosted.insert(id);
             }
         }
@@ -271,8 +272,9 @@ impl Sim<'_> {
                 }
             }
             if state.outcome.is_some() {
-                if self.traces(battle) {
-                    eprintln!("{battle}: {:?} at turn {}", state.outcome, state.turn);
+                if let (true, Some(outcome)) = (self.traces(battle), &state.outcome) {
+                    let seed = self.seed;
+                    eprintln!("seed {seed} {battle}: {outcome:?} at turn {}", state.turn);
                 }
                 return Ok((state, level));
             }
@@ -280,7 +282,7 @@ impl Sim<'_> {
                 return Err(End::Stuck(battle.to_string()));
             }
             if self.traces(battle) {
-                eprintln!("{}", trace_line(&state, phases));
+                eprintln!("seed {} {}", self.seed, trace_line(&state, phases));
             }
             events = state.run_ai_phase(pack);
             phases += 1;
@@ -338,16 +340,24 @@ impl Sim<'_> {
 pub const STOCK: u32 = 8;
 
 /// What a careful player buys at a camp: the shop's battle items (healing and the like), the
-/// cheapest first and one of each in turn, until [`STOCK`] of them are in hand or the gold
-/// runs out. The battle AI uses them on units in need.
+/// cheapest first and one of each in turn, until [`STOCK`] battle items (bought anywhere) are
+/// in hand or the gold runs out. The battle AI uses them on units in need.
 fn stock_up(pack: &Pack, campaign: &mut CampaignState, shop: &[Id]) {
     let mut wares: Vec<&ItemDef> = shop
         .iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .filter_map(|i| pack.item(i))
         .filter(|d| d.is_battle_item() && d.price > 0)
         .collect();
     wares.sort_by_key(|d| d.price);
-    let held = |c: &CampaignState| wares.iter().map(|d| c.item_count(&d.id)).sum::<u32>();
+    let held = |c: &CampaignState| {
+        c.inventory
+            .iter()
+            .filter(|(id, _)| pack.item(id).is_some_and(ItemDef::is_battle_item))
+            .map(|(_, &n)| n)
+            .sum::<u32>()
+    };
     loop {
         let mut bought = false;
         for d in &wares {
@@ -376,14 +386,17 @@ fn camp_deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Ve
 
 /// Point the player's units at the battle's victory conditions, as a player would: an officer
 /// who must reach a tile marches for it (the rest of the army fights on), a battle won by
-/// beating one unit sends everyone after it. Other conditions keep the army's default AI.
+/// beating one unit sends everyone after it (the last such condition, when there are more:
+/// any one wins). Other conditions keep the army's default AI, and a unit the battle gives
+/// another AI (a player spawn that holds or marches) keeps it. Before the battle begins, so
+/// its opening events can still set AI.
 fn aim_at_victory(state: &mut BattleState, def: &BattleDef) {
     let mut sent: BTreeSet<usize> = BTreeSet::new();
     for condition in &def.victory {
         if let Condition::Reach { who, pos, .. } = condition {
             for (i, u) in state.units.iter_mut().enumerate() {
                 let named = who.as_deref().is_none_or(|w| u.matches(w));
-                if u.side == Side::Player && named && sent.insert(i) {
+                if u.side == Side::Player && u.ai == AiMode::Aggressive && named && sent.insert(i) {
                     u.ai = AiMode::Advance;
                     u.ai_pos = Some(*pos);
                 }
@@ -393,7 +406,8 @@ fn aim_at_victory(state: &mut BattleState, def: &BattleDef) {
     for condition in &def.victory {
         if let Condition::DefeatUnit { target } = condition {
             for (i, u) in state.units.iter_mut().enumerate() {
-                if u.side == Side::Player && !sent.contains(&i) {
+                let army_default = u.ai == AiMode::Aggressive || u.ai == AiMode::Target;
+                if u.side == Side::Player && army_default && !sent.contains(&i) {
                     u.ai = AiMode::Target;
                     u.ai_target = Some(target.clone());
                 }

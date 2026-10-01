@@ -71,10 +71,11 @@
 - [ ] **캠페인 시뮬레이션이 1장 거록을 넘지 못함 (`advance` AI)**
   - 무엇을: 거록(`c1_s0_b13`)에서 목표 칸 (0,10)으로 `advance`하던 유비가, 3턴에 출발점 뒤에 나타나는 복병에게 포위되어 진다.
     레벨 보정 +6에서도 다른 무장이 쓰러진 뒤 유비 혼자 (0,0)–(4,0)을 오간다. 길이 막혔을 때 `advance`가 앞으로 나아가지
-    못하는 것으로 보인다. `hero-tools simulate --campaign --trace c1_s0_b13`로 재현한다.
+    못하는 것으로 보인다. 군주는 이동 칸을 먼저 "안전한" 칸으로 줄이므로(`battle/ai.rs`의 `lord_tiles`) 앞으로 가는 칸이 남지
+    않는 것도 원인 후보다(추적에서 유비가 (0,0)에 몇 페이즈 머문다). `hero-tools simulate --campaign --trace c1_s0_b13`로 재현한다.
   - 왜: 시뮬레이션으로 1장 거록 이후 전투의 회귀를 잡을 수 없다(ROADMAP M1 결과). 플레이어 쪽 AI만의 문제인지, 적의
     `advance`(진창 등)에도 같은 문제가 있는지 함께 본다.
-  - 영향 범위: hero-core `battle/ai.rs`(`advance`), hero-tools `campaign_sim.rs`(`aim_at_victory`)
+  - 영향 범위: hero-core `battle/ai.rs`(`advance`, `lord_tiles`), hero-tools `campaign_sim.rs`(`aim_at_victory`)
 
 - [ ] **원작 모드 2장 난이도 확인**
   - 무엇을: 1장을 끝낸 군(레벨·병력)으로 2장 전투를 시뮬레이션·플레이해 승패와 턴을 확인한다.
