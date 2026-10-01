@@ -2315,6 +2315,24 @@ pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
     format!("{map_id}_{x}_{y}_{op}")
 }
 
+/// Whether an officer is in the army at the battle of story time `now` (`None`: not a battle of
+/// the story), given the times the story moves them (`true` = joins, `false` = goes away, in
+/// order) and whether the campaign starts with them. An officer the story never moves is in it
+/// from the start; one it moves is in it before the first move if they start in it (the three
+/// brothers, who leave and come back) or the first move takes them away.
+fn in_army(moves: &[(usize, bool)], starts: bool, now: Option<usize>) -> bool {
+    let Some(now) = now else { return true };
+    if moves.is_empty() {
+        return true;
+    }
+    let start = starts || moves.first().is_some_and(|&(_, joins)| !joins);
+    moves
+        .iter()
+        .take_while(|&&(t, _)| t < now)
+        .last()
+        .map_or(start, |&(_, joins)| joins)
+}
+
 /// Make the original's chapters ([`CHAPTER_FILES`]) the campaign of the pack when the chain has a
 /// campaign: their battles, story scenes ([`CHAPTER_DRAMA_FILE`]) and [`CAMPAIGN_FILE`] (the last
 /// value: whether it was written). The base battles that follow an original battle
@@ -2597,10 +2615,10 @@ fn convert_battles(
         }
         kept
     });
-    // When officers first join in the chapters' story, in the order the campaign plays it: part
-    // `i`'s setup changes at `3 i`, its battle at `3 i + 1`, its scenes after at `3 i + 2`. An
-    // officer who never joins there is in the army from the start.
-    let mut first_join: BTreeMap<String, usize> = BTreeMap::new();
+    // When officers join and leave in the chapters' story, in the order the campaign plays it:
+    // part `i`'s setup changes at `3 i`, its battle at `3 i + 1`, its scenes after at `3 i + 2`
+    // (`true` = `@join`, `false` = `@away`, in scene order).
+    let mut moves: BTreeMap<String, Vec<(usize, bool)>> = BTreeMap::new();
     let mut battle_time: BTreeMap<chapters::Place, usize> = BTreeMap::new();
     for (i, (file, scene, part, story)) in chapter.iter().enumerate() {
         let at = part_place(*file, *scene, part);
@@ -2614,12 +2632,30 @@ fn convert_battles(
         ];
         for (time, s) in timed {
             for line in s.iter().flat_map(|s| s.text.lines()) {
-                if let Some(id) = line.strip_prefix("@join ") {
-                    first_join.entry(id.to_string()).or_insert(time);
+                let joins = if let Some(id) = line.strip_prefix("@join ") {
+                    Some((id, true))
+                } else {
+                    line.strip_prefix("@away ").map(|id| (id, false))
+                };
+                if let Some((id, joins)) = joins {
+                    moves.entry(id.to_string()).or_default().push((time, joins));
                 }
             }
         }
     }
+    let starting: BTreeSet<&str> = options
+        .campaign
+        .iter()
+        .flat_map(|c| &c.starting_officers)
+        .map(|s| s.as_str())
+        .collect();
+    let in_army_at = |id: &str, now: Option<usize>| {
+        in_army(
+            moves.get(id).map_or(&[][..], Vec::as_slice),
+            starting.contains(id),
+            now,
+        )
+    };
     let joining_scenes = chapter
         .iter()
         .filter_map(|(_, _, _, story)| story.as_ref().map(|(_, s)| s))
@@ -2779,11 +2815,7 @@ fn convert_battles(
                     let lord = names.officers.get(&battles::LIU_BEI);
                     let now =
                         block.and_then(|(b, leg)| battle_time.get(&(file, scene_index, b, leg)));
-                    let in_army = |id: &String| {
-                        first_join
-                            .get(id)
-                            .is_none_or(|&t| now.is_none_or(|&n| t < n))
-                    };
+                    let in_army = |id: &String| in_army_at(id, now.copied());
                     for u in original
                         .player
                         .iter()
@@ -5357,6 +5389,26 @@ mod tests {
              str = {strength}\nint = {int}\nlead = {lead}\n"
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn army_membership_follows_the_start_and_the_storys_moves() {
+        // Guan Yu: in the army from the start, away at 5, back at 8.
+        let brother = [(5, false), (8, true)];
+        assert!(in_army(&brother, true, Some(1)));
+        assert!(!in_army(&brother, true, Some(7)));
+        assert!(in_army(&brother, true, Some(10)));
+        // Even when his first move is a return (the away is not in the story).
+        assert!(in_army(&[(8, true)], true, Some(1)));
+        // One who joins at 5: out before, in after (a move at the battle's own time is after it).
+        assert!(!in_army(&[(5, true)], false, Some(4)));
+        assert!(!in_army(&[(5, true)], false, Some(5)));
+        assert!(in_army(&[(5, true)], false, Some(6)));
+        // One whose first move takes them away was in the army before it.
+        assert!(in_army(&[(5, false)], false, Some(4)));
+        // Never moved, or not a battle of the story: in the army.
+        assert!(in_army(&[], false, Some(4)));
+        assert!(!in_army(&brother, true, Some(7)) && in_army(&brother, true, None));
     }
 
     #[test]

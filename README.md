@@ -121,9 +121,9 @@ cargo run --release -p hero-tools -- validate data/base
 
 | 영역 | 기준 | 진행 |
 |---|---|---|
-| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(실물 확인 전), 2장 10개, 3장 20개, 4장 11개 (두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
-| 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장부터 원작 이야기를 변환한 원작 캠페인(엔딩 4개, 서장·1장은 실물 확인 전) |
-| 기본 팩 콘텐츠에서 독립 | 원작 모드가 기본 팩의 이야기·전투 뼈대·무장 데이터 없이 원작 파일만으로 서는 것 | `███████████████` 완료(실물 확인 전) — 이야기·전투·캠페인, 무장(능력치·병종·레벨·장비, 합류하는 원작 무장), 일반 유닛의 능력치가 원작에서 옴. 기본 팩은 최소 틀(규칙 기본값·무장 명단·그림·음악·폰트·시험 전투)로 줄임(D21 4단계). 기본 팩에서 오는 것: 시작 무장 목록, 규칙 파일의 틀, 원작에서 변환하지 않는 그림·소리 |
+| 원작 모드 전투 | 원작 전투 60개 중 원작 데이터로 다시 짜거나 만든 것 | `███████████████` 60/60 (100%) — 서장·1장 19개(실물 변환 확인, 플레이 확인 전), 2장 10개, 3장 20개, 4장 11개 (두 맵에 걸친 장판파·와구관은 전투 둘로 나뉘고, 장판파는 백성 호위 포함) |
+| 원작 모드 캠페인 | 시나리오 파일 5개(서장·1·2·3·4장) | `███████████████` 5/5 (100%) — 서장부터 원작 이야기를 변환한 원작 캠페인(엔딩 4개, 서장·1장은 실물 변환 확인, 플레이 확인 전) |
+| 기본 팩 콘텐츠에서 독립 | 원작 모드가 기본 팩의 이야기·전투 뼈대·무장 데이터 없이 원작 파일만으로 서는 것 | `███████████████` 완료(실물 변환 확인, 플레이 확인 전) — 이야기·전투·캠페인, 무장(능력치·병종·레벨·장비, 합류하는 원작 무장), 일반 유닛의 능력치가 원작에서 옴. 기본 팩은 최소 틀(규칙 기본값·무장 명단·그림·음악·폰트·시험 전투)로 줄임(D21 4단계). 기본 팩에서 오는 것: 시작 무장 목록, 규칙 파일의 틀, 원작에서 변환하지 않는 그림·소리 |
 | 원작 모드 변환 단계 | [STATUS 4절](docs/reverse-engineering/STATUS.md)의 필수 5단계 | 모두 **부분**: 원작 모드 팩·시나리오 변환(서장~4장)·규칙 표(병종·지형·책략·아이템·사기)·원작 UI(전투 틀·캠프·상태 창)·음악(곡 배정은 들어 보기 전 추론) |
 | 파일 형식 해독 | [STATUS 1절](docs/reverse-engineering/STATUS.md)의 추출 영역 | 주요 형식 모두 추출. 남음: 명령 일부의 의미, 오프닝·엔딩 코덱, 세이브 |
 
@@ -177,8 +177,8 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   game converts your copy at every launch and plays it with the original's portraits, units, terrain, battle maps,
   screen frames, music and rule tables. All 60 of the original's battles, their dialogue and duels, and the story
   (towns become dialogue scenes with choices) are converted from your files, from the prologue to the original's
-  endings, and so are the officers' stats and the persons who join. The conversion of the prologue and chapter 1 is new
-  and not yet checked on a real copy. Supported: the Korean DOS/V release (verified) and the
+  endings, and so are the officers' stats and the persons who join. The conversion of the prologue and chapter 1 is new:
+  it is checked on a real copy but not yet play-tested. Supported: the Korean DOS/V release (verified) and the
   Traditional Chinese DOS release (not yet verified on a real copy) — see [docs/ORIGINAL_DATA.md](docs/ORIGINAL_DATA.md).
 * Faithful PC-version rules (reverse-engineered formulas for attack/defense, deterministic damage, class
   affinity, counters, morale and confusion, strategies, weather) — see [docs/RULES.md](docs/RULES.md).
@@ -201,7 +201,7 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
 * Progress is measured on the original mode only: all 60 of the original's battles are playable, from the
   prologue to the original's endings (Changban's escort of the people and the battles fought on two maps are
-  included). What remains is checking the prologue and chapter 1 on a real copy and the polish listed in the Korean
+  included). What remains is play-testing the prologue and chapter 1 and the polish listed in the Korean
   "진행 상황" section above.
 
 **Download:**
