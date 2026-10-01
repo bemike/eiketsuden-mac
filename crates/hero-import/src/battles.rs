@@ -211,6 +211,14 @@ pub struct OriginalBattle {
     pub rosters: Vec<(bool, Vec<RosterUnit>)>,
     /// Rosters loaded with the map for another route (skipped by `if_flags`).
     pub other_route_rosters: usize,
+    /// The scenario flags the battle's setup, rosters and flagged slots depend on: the flags
+    /// of the `if_flags` guards around them and the flags slots and units need
+    /// (`requires_flag`). Another value of one of them may give another battle.
+    pub route_flags: BTreeSet<u8>,
+    /// Player slots left out because the flag they need is not set.
+    pub flagged_slots_left_out: usize,
+    /// Roster units left out because the flag they need is not set.
+    pub flagged_units_left_out: Vec<u16>,
     /// Rosters loaded later in the battle (reinforcements; not converted).
     pub later_rosters: usize,
     pub cells: Vec<CellRecord>,
@@ -225,6 +233,21 @@ fn starts_battle(block: &Block) -> bool {
         .records
         .iter()
         .any(|r| r.code.iter().any(|c| c.mnemonic == "begin_battle"))
+}
+
+/// The scenario flags `scene`'s battle blocks set (`set_flag` in a block that starts a battle or
+/// loads a battle map): a battle's events may set them, whatever way the story took.
+pub fn battle_set_flags(scene: &Scene) -> BTreeSet<u8> {
+    scene
+        .blocks
+        .iter()
+        .filter(|b| starts_battle(b) || loads_battle_map(b))
+        .flat_map(|b| &b.records)
+        .flat_map(|r| &r.code)
+        .filter(|c| c.mnemonic == "set_flag")
+        .filter_map(|c| c.operands.get("flag"))
+        .map(|f| f as u8)
+        .collect()
 }
 
 /// Whether `block` loads a battle map.
@@ -489,6 +512,38 @@ pub fn battle_leg(scene: &Scene, index: usize, leg: u8) -> Cow<'_, Block> {
     Cow::Owned(block)
 }
 
+/// Each instruction of `code` with whether it runs when the scenario flags `flags` are set
+/// (every `if_flags` guard before it that still covers it holds) and the flags those guards
+/// test.
+fn guarded<'a>(code: &'a [Instr], flags: &[u8]) -> Vec<(&'a Instr, bool, BTreeSet<u8>)> {
+    // (instructions still guarded, the condition holds, the flags it tests)
+    let mut guards: Vec<(u8, bool, Vec<u8>)> = Vec::new();
+    let mut out = Vec::new();
+    for instr in code {
+        let runs = guards.iter().all(|g| g.1);
+        let tested = guards.iter().flat_map(|g| g.2.iter().copied()).collect();
+        for g in guards.iter_mut() {
+            g.0 -= 1;
+        }
+        guards.retain(|g| g.0 > 0);
+        if let Operands::Condition {
+            skip,
+            all_set,
+            all_clear,
+        } = &instr.operands
+        {
+            if *skip > 0 {
+                let holds = all_set.iter().all(|f| flags.contains(f))
+                    && all_clear.iter().all(|f| !flags.contains(f));
+                let tests = all_set.iter().chain(all_clear).copied().collect();
+                guards.push((*skip, holds, tests));
+            }
+        }
+        out.push((instr, runs, tested));
+    }
+    out
+}
+
 /// Find the battle of `scene` fought on battle map `map` with the scenario flags `flags` set (see
 /// the module docs for which `battle_setup` and rosters belong to it): the first block that
 /// loads the map, or block `only` (a map fought in several blocks, one per route).
@@ -538,26 +593,12 @@ pub fn find_battle_leg(
     let split = battle_map_leg(scene, block_index).is_some();
 
     let (mut rosters, mut later_rosters, mut other_route_rosters) = (Vec::new(), 0, 0);
+    let mut route_flags: BTreeSet<u8> = BTreeSet::new();
     for (r, rec) in block.records.iter().enumerate() {
-        // `if_flags` guards: (instructions still guarded, the condition holds).
-        let mut guards: Vec<(u8, bool)> = Vec::new();
-        for instr in &rec.code {
-            let runs = guards.iter().all(|&(_, holds)| holds);
-            for g in guards.iter_mut() {
-                g.0 -= 1;
-            }
-            guards.retain(|&(left, _)| left > 0);
+        for (instr, runs, tested) in guarded(&rec.code, flags) {
             match &instr.operands {
-                Operands::Condition {
-                    skip,
-                    all_set,
-                    all_clear,
-                } if *skip > 0 => {
-                    let holds = all_set.iter().all(|f| flags.contains(f))
-                        && all_clear.iter().all(|f| !flags.contains(f));
-                    guards.push((*skip, holds));
-                }
                 Operands::Roster { friendly, units } if r == record_index => {
+                    route_flags.extend(tested);
                     if runs {
                         rosters.push((*friendly, units.clone()));
                     } else {
@@ -580,29 +621,64 @@ pub fn find_battle_leg(
         .flat_map(|(_, units)| units.iter().map(|u| u.person))
         .collect();
 
-    // The setups before the battle: those of the earlier blocks and its own. (A battle with
-    // more than one map has the setup of its later leg in its own block, past the record that
-    // ends the first: the leg's block holds only its own records.)
+    // The setups before the battle: those of the earlier blocks and its own up to the record
+    // that loads its map (a later record's setup is for the battle after it, as Xuchang's
+    // after its victory). (A battle with more than one map has the setup of its later leg in
+    // its own block, past the record that ends the first: the leg's block holds only its own
+    // records.)
     let own: &[Record] = if split {
         &block.records
     } else {
-        &scene.blocks[block_index].records
+        &scene.blocks[block_index].records[..=record_index]
     };
-    let setups: Vec<(&BattleHeader, &Vec<RosterUnit>)> = scene.blocks[..block_index]
+    // A setup an `if_flags` guard skips for `flags` is another route's.
+    let mut setups: Vec<(&BattleHeader, &Vec<RosterUnit>)> = Vec::new();
+    // Whether some route's setup names one of the battle's enemies to beat.
+    let mut fits_a_route = false;
+    // The last block before the battle (or its own) with a setup that fits it on some route
+    // (names one of its enemies to beat), and whether such a setup runs on this route.
+    let mut last_fitting: Option<(usize, bool)> = None;
+    for (b, rec) in scene.blocks[..block_index]
         .iter()
-        .flat_map(|b| b.records.iter())
-        .chain(own)
-        .flat_map(|r| r.code.iter())
-        .filter_map(|i| match &i.operands {
-            Operands::BattleSetup { header, units } => Some((header, units)),
-            _ => None,
-        })
-        .collect();
+        .enumerate()
+        .flat_map(|(b, block)| block.records.iter().map(move |r| (b, r)))
+        .chain(own.iter().map(|r| (block_index, r)))
+    {
+        for (instr, runs, tested) in guarded(&rec.code, flags) {
+            if let Operands::BattleSetup { header, units } = &instr.operands {
+                route_flags.extend(tested);
+                let fits = header.defeat_to_win.is_some_and(|p| enemies.contains(&p));
+                if fits {
+                    last_fitting = match last_fitting {
+                        Some((at, ran)) if at == b => Some((b, ran || runs)),
+                        _ => Some((b, runs)),
+                    };
+                }
+                fits_a_route |= fits;
+                if runs {
+                    setups.push((header, units));
+                }
+            }
+        }
+    }
+    // A route that skips the battle's setups of the last block that has one does not fight it
+    // (the story fights another there: Xuchang's town sets up another battle on flag 89).
+    if let Some((b, false)) = last_fitting {
+        return Err(format!(
+            "block {block_index}: the route skips the battle's setups in block {b}"
+        ));
+    }
+    // The latest that names an enemy to beat, else (when no route's does: a battle won some
+    // other way) the latest without one. A route whose setups do not fit is not this battle's.
     let (header, player) = setups
         .iter()
         .rev()
         .find(|(h, _)| h.defeat_to_win.is_some_and(|p| enemies.contains(&p)))
-        .or_else(|| setups.iter().rev().find(|(h, _)| h.defeat_to_win.is_none()))
+        .or_else(|| {
+            (!fits_a_route)
+                .then(|| setups.iter().rev().find(|(h, _)| h.defeat_to_win.is_none()))
+                .flatten()
+        })
         .ok_or_else(|| {
             format!("no battle_setup before block {block_index} fits battle map {map}")
         })?;
@@ -658,13 +734,44 @@ pub fn find_battle_leg(
         })
         .collect();
 
+    // Slots and units that need a flag (officers who join for this battle only, when talked
+    // to): there when it is set.
+    let mut player: Vec<RosterUnit> = (*player).clone();
+    let mut flagged_slots_left_out = 0;
+    player.retain_mut(|u| match u.requires_flag.take() {
+        None => true,
+        Some(f) => {
+            route_flags.insert(f);
+            let kept = flags.contains(&f);
+            flagged_slots_left_out += usize::from(!kept);
+            kept
+        }
+    });
+    let mut flagged_units_left_out = Vec::new();
+    for (_, units) in &mut rosters {
+        units.retain_mut(|u| match u.requires_flag.take() {
+            None => true,
+            Some(f) => {
+                route_flags.insert(f);
+                let kept = flags.contains(&f);
+                if !kept {
+                    flagged_units_left_out.push(u.person);
+                }
+                kept
+            }
+        });
+    }
+
     Ok(OriginalBattle {
         block: block_index,
         map,
         header: (*header).clone(),
-        player: (*player).clone(),
+        player,
         rosters,
         other_route_rosters,
+        route_flags,
+        flagged_slots_left_out,
+        flagged_units_left_out,
         later_rosters,
         cells,
         joins,
@@ -1934,12 +2041,8 @@ pub fn convert(
     // the setup keeps back until an event brings them in, become units; every other slot is a
     // deploy tile.
     let mut slots = Vec::new();
-    let mut conditional = 0;
+    let conditional = orig.flagged_slots_left_out;
     for u in &orig.player {
-        if u.requires_flag.is_some() {
-            conditional += 1;
-            continue;
-        }
         let pos = Pos::new(i32::from(u.x), i32::from(u.y));
         let officer = (u.person != LIU_BEI && u.person != ANY_OFFICER)
             .then(|| officer_ref(u.person))
@@ -2064,13 +2167,6 @@ pub fn convert(
     for (friendly, roster) in &orig.rosters {
         let side = if *friendly { Side::Ally } else { Side::Enemy };
         for u in roster {
-            if u.requires_flag.is_some() {
-                notes.push(format!(
-                    "{} needs a campaign flag in the original and is left out",
-                    names.person_label(u.person)
-                ));
-                continue;
-            }
             let group = if u.other.get(1) == Some(&1) {
                 match arrival.get(&u.person) {
                     Some(g) => g.clone(),
@@ -2158,6 +2254,12 @@ pub fn convert(
         notes.push(format!(
             "{never_arrive} unit(s) the original keeps off the map and brings in only from other \
              events are left out"
+        ));
+    }
+    for &person in &orig.flagged_units_left_out {
+        notes.push(format!(
+            "{} needs a campaign flag in the original and is left out",
+            names.person_label(person)
         ));
     }
     if orig.other_route_rosters > 0 {
@@ -2646,7 +2748,7 @@ fn arrival_group(record: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::scenario::{Arg, ArgKind, Block, Instr, Record, Trigger as RecTrigger};
 
@@ -3823,6 +3925,133 @@ item = "wine"
                 all_clear,
             },
         )
+    }
+
+    /// A town whose setup depends on flag 38 (who must not fall: person 132 while it is clear,
+    /// 53 once set; a guest slot that needs flag 1), then the battle on map 2 whose enemy army
+    /// depends on flag 133, and after it a record that sets up the next battle (213).
+    pub(crate) fn route_scene() -> Scene {
+        let flagged = |person, x, flag| RosterUnit {
+            requires_flag: Some(flag),
+            ..unit(person, x, 0)
+        };
+        let town = Block {
+            offset: 0,
+            records: vec![record(
+                0,
+                0,
+                false,
+                [0; 6],
+                vec![
+                    guard(1, vec![], vec![38]),
+                    setup(
+                        Some(54),
+                        30,
+                        vec![unit(0, 1, 1), unit(132, 2, 1), flagged(12, 3, 1)],
+                    ),
+                    guard(1, vec![38], vec![]),
+                    setup(Some(54), 40, vec![unit(0, 1, 1), unit(53, 2, 1)]),
+                ],
+            )],
+        };
+        let battle = Block {
+            offset: 0,
+            records: vec![
+                record(
+                    0,
+                    0,
+                    false,
+                    [0; 6],
+                    vec![
+                        guard(1, vec![], vec![133]),
+                        roster(vec![unit(54, 9, 4), unit(300, 8, 4)]),
+                        guard(1, vec![133], vec![]),
+                        roster(vec![unit(54, 9, 4), unit(301, 8, 5)]),
+                        fields("load_map", &[("map", 0x3002)]),
+                    ],
+                ),
+                record(0, 1, false, [0; 6], vec![op("begin_battle")]),
+                record(0, 4, false, [0; 6], vec![setup(Some(213), 30, vec![])]),
+            ],
+        };
+        Scene {
+            blocks: vec![town, battle],
+        }
+    }
+
+    /// The setup and rosters are the ones the flags' `if_flags` let run; slots that need a flag
+    /// are there when it is set; the flags they depend on are the battle's route flags.
+    #[test]
+    fn route_flags_pick_the_setup_and_the_rosters() {
+        let scene = route_scene();
+        let clear = find_battle(&scene, 2, &[], None).unwrap();
+        assert_eq!(clear.route_flags, BTreeSet::from([1, 38, 133]));
+        assert_eq!(clear.header.turn_limit, 30);
+        let persons = |b: &OriginalBattle| -> Vec<u16> {
+            b.rosters
+                .iter()
+                .flat_map(|(_, u)| u.iter().map(|u| u.person))
+                .collect()
+        };
+        assert_eq!(persons(&clear), [54, 300]);
+        assert_eq!(
+            clear.player.iter().map(|u| u.person).collect::<Vec<_>>(),
+            [0, 132]
+        );
+        assert_eq!(clear.flagged_slots_left_out, 1);
+        assert_eq!(clear.other_route_rosters, 1);
+
+        let set = find_battle(&scene, 2, &[1, 38, 133], None).unwrap();
+        assert_eq!(set.header.turn_limit, 40);
+        assert_eq!(persons(&set), [54, 301]);
+        assert_eq!(
+            set.player.iter().map(|u| u.person).collect::<Vec<_>>(),
+            [0, 53]
+        );
+        let guest = find_battle(&scene, 2, &[1], None).unwrap();
+        assert_eq!(
+            guest
+                .player
+                .iter()
+                .map(|u| (u.person, u.requires_flag))
+                .collect::<Vec<_>>(),
+            [(0, None), (132, None), (12, None)]
+        );
+        assert_eq!(guest.flagged_slots_left_out, 0);
+    }
+
+    /// A route that skips the battle's setups in the last block that has one fights another
+    /// battle there (Xuchang's town on flag 89), even when an earlier block has a setup that
+    /// would fit; a setup after the record that loads the map is the next battle's.
+    #[test]
+    fn a_route_that_skips_the_battles_setups_does_not_fight_it() {
+        let mut scene = route_scene();
+        let earlier = Block {
+            offset: 0,
+            records: vec![record(
+                0,
+                0,
+                false,
+                [0; 6],
+                vec![setup(Some(54), 60, vec![unit(0, 1, 1)])],
+            )],
+        };
+        scene.blocks.insert(0, earlier);
+        scene.blocks[1].records[0].code = vec![
+            guard(1, vec![], vec![89]),
+            setup(Some(54), 30, vec![unit(0, 1, 1)]),
+            guard(1, vec![89], vec![]),
+            setup(Some(213), 30, vec![unit(0, 1, 1)]),
+        ];
+        assert_eq!(
+            find_battle(&scene, 2, &[], None).unwrap().header.turn_limit,
+            30
+        );
+        let err = find_battle(&scene, 2, &[89], None).unwrap_err();
+        assert!(
+            err.contains("skips the battle's setups in block 1"),
+            "{err}"
+        );
     }
 
     /// A guard on a clear flag negates to "unless it is clear"; a guarded part that ends only

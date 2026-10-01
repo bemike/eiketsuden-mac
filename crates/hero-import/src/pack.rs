@@ -2231,13 +2231,148 @@ pub const CHAPTER_FILES: [usize; 5] = [0, 1, 2, 3, 4];
 /// A battle to convert: its id, pairing, the base battle, the outro of a chapter's battle with
 /// its reward gold, and a chapter battle's block (a map may be fought in several blocks) and
 /// leg (a battle may go on with another map).
-type BattleJob<'a> = (
-    String,
-    battles::Pairing,
-    Option<&'a hero_core::battledef::BattleDef>,
-    Option<(String, i64)>,
-    Option<(usize, u8)>,
-);
+struct BattleJob<'a> {
+    /// The battle's id (a route variant's own).
+    id: String,
+    /// The id its event scenes, flags, outro and camp are named after: `id`, or for a route
+    /// variant the battle's ([`route_variants`]).
+    named: String,
+    pairing: battles::Pairing,
+    /// The base battle.
+    base: Option<&'a hero_core::battledef::BattleDef>,
+    /// A chapter battle's outro and its reward gold.
+    outro: Option<(String, i64)>,
+    /// A chapter battle's block and leg.
+    block: Option<(usize, u8)>,
+    /// The scenario flags its setup and rosters are read with.
+    flags: Vec<u8>,
+}
+
+/// Most scenario flags a chapter battle's route variants are made for (2^n readings).
+const MAX_ROUTE_FLAGS: usize = 3;
+
+/// The route variants of chapter battle `id` (block `block`, leg `leg` of `scene`, on battle map
+/// `map`): each variant's id and the scenario flags its setup and rosters are read with, and
+/// when there is more than one, how the campaign picks one.
+///
+/// * Why: the original picks a battle's setup and rosters by flags of the route the story took
+///   (`if_flags`, slots that need a flag): Chencang and Chang'an have Pang Tong or Zhao Yun as
+///   the officer who must not fall, by whether Pang Tong died (flag 38), Jieqiao has another
+///   enemy army on the Julu road (flag 133). Each reading that gives another battle is a
+///   battle of its own (`<id>_f<flag>...`, the first the story can reach keeping `id`), all
+///   named after `id` (their scenes and flags are the same); the camp branches on the flags.
+/// * Only flags some script of the chapters sets count (`settable`); the others stay clear. A
+///   flag whose value at the battle the story fixes (`known`: the talks before Sishui set the
+///   guests' flags 0 and 1) is read with that value.
+fn route_variants(
+    scene: &crate::scenario::Scene,
+    id: &str,
+    map: u8,
+    (block, leg): (usize, u8),
+    settable: &BTreeSet<u8>,
+    known: &dyn Fn(u8) -> Option<bool>,
+    notes: &mut Vec<String>,
+) -> (Vec<(String, Vec<u8>)>, Option<chapters::BattleChoice>) {
+    let Ok(read) = battles::find_battle_leg(scene, map, &[], Some(block), leg) else {
+        return (vec![(id.to_string(), Vec::new())], None);
+    };
+    // Flags the story fixes before the battle are read with their value; the others vary.
+    let fixed: Vec<u8> = read
+        .route_flags
+        .iter()
+        .copied()
+        .filter(|&f| settable.contains(&f) && known(f) == Some(true))
+        .collect();
+    let one = || (vec![(id.to_string(), fixed.clone())], None);
+    let flags: Vec<u8> = read
+        .route_flags
+        .iter()
+        .copied()
+        .filter(|&f| settable.contains(&f) && known(f).is_none())
+        .collect();
+    if flags.is_empty() {
+        return one();
+    }
+    if flags.len() > MAX_ROUTE_FLAGS {
+        notes.push(format!(
+            "{id}: its setup depends on {} scenario flags, more than {MAX_ROUTE_FLAGS}: read with \
+             all of them clear",
+            flags.len()
+        ));
+        return one();
+    }
+    type Key = (
+        crate::scenario::BattleHeader,
+        Vec<crate::scenario::RosterUnit>,
+        Vec<(bool, Vec<crate::scenario::RosterUnit>)>,
+    );
+    let mut variants: Vec<(String, Vec<u8>, Key)> = Vec::new();
+    // Per reading (bit i: flags[i] set), the variant it gives.
+    let mut pick: Vec<Option<usize>> = Vec::new();
+    for mask in 0..1usize << flags.len() {
+        let set: Vec<u8> = flags
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| mask >> i & 1 == 1)
+            .map(|(_, &f)| f)
+            .collect();
+        let read_with: Vec<u8> = fixed.iter().chain(&set).copied().collect();
+        let Ok(b) = battles::find_battle_leg(scene, map, &read_with, Some(block), leg) else {
+            pick.push(None);
+            continue;
+        };
+        let key: Key = (b.header, b.player, b.rosters);
+        let at = variants.iter().position(|v| v.2 == key).unwrap_or_else(|| {
+            let vid = if variants.is_empty() {
+                id.to_string()
+            } else {
+                let suffix: Vec<String> = set.iter().map(|f| format!("f{f}")).collect();
+                format!("{id}_{}", suffix.join("_"))
+            };
+            variants.push((vid, read_with.clone(), key));
+            variants.len() - 1
+        });
+        pick.push(Some(at));
+    }
+    if variants.len() < 2 {
+        return (
+            variants.into_iter().map(|(v, set, _)| (v, set)).collect(),
+            None,
+        );
+    }
+    if pick.contains(&None) {
+        notes.push(format!(
+            "{id}: some routes give no setup for it; they fight `{id}`"
+        ));
+    }
+    fn choice(
+        flags: &[u8],
+        i: usize,
+        mask: usize,
+        pick: &[Option<usize>],
+        ids: &[String],
+    ) -> chapters::BattleChoice {
+        if i == flags.len() {
+            return chapters::BattleChoice::Battle(ids[pick[mask].unwrap_or(0)].clone());
+        }
+        let set = choice(flags, i + 1, mask | 1 << i, pick, ids);
+        let clear = choice(flags, i + 1, mask, pick, ids);
+        if set == clear {
+            return set;
+        }
+        chapters::BattleChoice::Flag {
+            flag: chapters::flag(flags[i]),
+            set: Box::new(set),
+            clear: Box::new(clear),
+        }
+    }
+    let ids: Vec<String> = variants.iter().map(|v| v.0.clone()).collect();
+    let tree = choice(&flags, 0, 0, &pick, &ids);
+    (
+        variants.into_iter().map(|(v, set, _)| (v, set)).collect(),
+        Some(tree),
+    )
+}
 
 /// A part of one of the original's chapters: its file, scene and part, and for a story its scene
 /// id and converted scene.
@@ -2640,14 +2775,18 @@ fn convert_battles(
             (id.as_str(), chapters::army_at_steps(&at, &next, start, m))
         })
         .collect();
-    // An officer the story never moves is in the army. (Every kept part is reached: dropping
+    // An officer the story never moves is in the army when they start in it or join it some
+    // other way (a battle's `set_country`); one who never joins is not (Sishui's guests,
+    // Gongsun Zan and Tao Qian, fight beside the army). (Every kept part is reached: dropping
     // the others changes no way between the rest.)
+    let joiners = names.player_officers.clone();
     let army_at = |id: &str, part: Option<usize>| match (army.get(id), part) {
         (Some(a), Some(i)) => {
             debug_assert!(a[i] != 0, "{id} at an unreached part {i}");
             a[i]
         }
-        _ => chapters::ARMY_IN,
+        _ if starting.contains(id) || joiners.contains(id) => chapters::ARMY_IN,
+        _ => chapters::ARMY_OUT,
     };
     let joining_scenes = chapter
         .iter()
@@ -2664,42 +2803,138 @@ fn convert_battles(
     // (battle id, pairing, the base battle, the outro of a chapter's battle and its reward gold)
     let mut jobs: Vec<BattleJob<'_>> = wanted
         .iter()
-        .map(|p| {
-            let base = options.battles.iter().find(|b| b.id == p.battle);
-            (p.battle.to_string(), **p, base, None, None)
+        .map(|p| BattleJob {
+            id: p.battle.to_string(),
+            named: p.battle.to_string(),
+            pairing: **p,
+            base: options.battles.iter().find(|b| b.id == p.battle),
+            outro: None,
+            block: None,
+            flags: p.flags.to_vec(),
         })
         .collect();
+    // A flag's value at the battle of chapter part `part`, when the story fixes it: a flag no
+    // battle sets that the story's scenes set only outright (no `@if`, `@choice`, `@goto`,
+    // `@label` or `@end` before the `@set` in its scene) has the value every way to the battle
+    // gives it ([`chapters::army_at_steps`], clear at the start).
+    let mut battle_set: BTreeSet<u8> = BTreeSet::new();
+    for &file in CHAPTER_FILES.iter().filter(|_| continues) {
+        let count = scenarios[&file]
+            .as_deref()
+            .and_then(|bytes| ls11::Archive::parse(bytes).ok())
+            .map_or(0, |a| a.len());
+        for scene_index in 0..count {
+            if let Ok((scene, _)) = load(file, scene_index) {
+                battle_set.extend(battles::battle_set_flags(&scene));
+            }
+        }
+    }
+    let known_flag = |f: u8, part: usize| -> Option<bool> {
+        if battle_set.contains(&f) {
+            return None;
+        }
+        let set = format!("@set {} = ", chapters::flag(f));
+        let mut moves = vec![chapters::StepMoves::default(); step_scenes.len()];
+        for (i, scenes) in step_scenes.iter().enumerate() {
+            for (k, s) in scenes.iter().enumerate() {
+                let mut branched = false;
+                for line in s.iter().flat_map(|s| s.text.lines()) {
+                    let control = ["@if ", "@choice", "@goto ", "@label ", "@end"];
+                    branched |= control.iter().any(|c| line.starts_with(c));
+                    let Some(value) = line.strip_prefix(&set) else {
+                        continue;
+                    };
+                    if branched {
+                        return None;
+                    }
+                    let at = match k {
+                        0 => &mut moves[i].before,
+                        1 => &mut moves[i].after,
+                        _ => &mut moves[i].after_defeat,
+                    };
+                    *at = Some(value.trim() != "0");
+                }
+            }
+        }
+        match chapters::army_at_steps(&at, &next, false, &moves)[part] {
+            chapters::ARMY_IN => Some(true),
+            chapters::ARMY_OUT => Some(false),
+            _ => None,
+        }
+    };
+    // The route variants of the chapters' battles: how the campaign picks one, per battle.
+    let mut choices: BTreeMap<String, chapters::BattleChoice> = BTreeMap::new();
     for (file, scene, part, outro) in &chapter {
         if let chapters::Part::Battle { block, map, leg } = *part {
-            jobs.push((
-                chapter_leg_id(*file, *scene, block, leg),
-                battles::Pairing {
-                    battle: "",
-                    file: *file,
-                    scene: *scene,
+            let id = chapter_leg_id(*file, *scene, block, leg);
+            let part = part_of.get(&(*file, *scene, block, leg)).copied();
+            let known = |f: u8| part.and_then(|p| known_flag(f, p));
+            let (variants, choice) = match load(*file, *scene) {
+                Ok((s, _)) => route_variants(
+                    &s,
+                    &id,
                     map,
-                    flags: &[],
-                    roles: &[],
-                },
-                None,
-                outro.as_ref().map(|(id, s)| (id.clone(), s.gold)),
-                Some((block, leg)),
-            ));
+                    (block, leg),
+                    &settable,
+                    &known,
+                    &mut report.notes,
+                ),
+                // (The battle's own conversion reports it.)
+                Err(_) => (vec![(id.clone(), Vec::new())], None),
+            };
+            for (variant, flags) in variants {
+                jobs.push(BattleJob {
+                    id: variant,
+                    named: id.clone(),
+                    pairing: battles::Pairing {
+                        battle: "",
+                        file: *file,
+                        scene: *scene,
+                        map,
+                        flags: &[],
+                        roles: &[],
+                    },
+                    base: None,
+                    outro: outro.as_ref().map(|(id, s)| (id.clone(), s.gold)),
+                    block: Some((block, leg)),
+                    flags,
+                });
+            }
+            if let Some(choice) = choice {
+                choices.insert(id, choice);
+            }
         }
     }
     // Per chapter battle, the lines its outro starts with (officers joining or leaving).
     let mut army_scenes: BTreeMap<String, String> = BTreeMap::new();
     // The battles whose events set [`battles::ended_flag`].
     let mut ended: BTreeSet<String> = BTreeSet::new();
-    for (id, pairing, base, outro, block) in &jobs {
-        let (id, file, scene_index, map) = (id.as_str(), pairing.file, pairing.scene, pairing.map);
+    // The battles whose event scenes are written (route variants share them).
+    let mut scenes_of: BTreeSet<String> = BTreeSet::new();
+    for job in &jobs {
+        let BattleJob {
+            id,
+            named,
+            pairing,
+            base,
+            outro,
+            block,
+            flags,
+        } = job;
+        let (id, named, file, scene_index, map) = (
+            id.as_str(),
+            named.as_str(),
+            pairing.file,
+            pairing.scene,
+            pairing.map,
+        );
         let name = format!("SNR{file}D.R3");
         let result = (|| -> Result<(BattleRecord, String, bool), String> {
             let (scene, text) = load(file, scene_index)?;
             let original = battles::find_battle_leg(
                 &scene,
                 map,
-                pairing.flags,
+                flags,
                 block.map(|(b, _)| b),
                 block.map_or(0, |(_, leg)| leg),
             )
@@ -2790,7 +3025,7 @@ fn convert_battles(
                         .unwrap_or_else(|| "적을 물리쳐라".to_string());
                     let leg = block.map_or(0, |(_, leg)| leg);
                     let mut b = chapters::chapter_base(
-                        id,
+                        named,
                         &match leg {
                             0 => format!("{map_name} 전투"),
                             n => format!("{map_name} 전투 {}", n + 1),
@@ -2818,7 +3053,7 @@ fn convert_battles(
                     for u in original
                         .player
                         .iter()
-                        .filter(|u| u.requires_flag.is_none() && u.other.get(2) != Some(&1))
+                        .filter(|u| u.other.get(2) != Some(&1))
                         .filter(|u| {
                             u.person != battles::LIU_BEI && u.person != battles::ANY_OFFICER
                         })
@@ -2893,6 +3128,16 @@ fn convert_battles(
                     cell_change: &mut cell_change,
                 },
             )?;
+            // A route variant: its own id, the scenes and flags of the battle it varies.
+            converted.battle.id = id.to_string();
+            if id != named {
+                let set: Vec<String> = flags.iter().map(|f| f.to_string()).collect();
+                converted.notes.push(format!(
+                    "route variant of `{named}`: the original's setup and rosters with scenario \
+                     flag(s) {} set",
+                    set.join(", ")
+                ));
+            }
             if !as_allies.is_empty() {
                 converted.notes.push(format!(
                     "named by the setup but not in the army at this battle, so allies at their \
@@ -3032,11 +3277,11 @@ fn convert_battles(
                 converted
                     .battle
                     .outro
-                    .get_or_insert_with(|| format!("{id}_outro"));
-                army_scenes.insert(id.to_string(), prefix);
+                    .get_or_insert_with(|| format!("{named}_outro"));
+                army_scenes.insert(named.to_string(), prefix);
             }
             // An event of the battle ends it: the outro's victory script may be left out then.
-            let flag = battles::ended_flag(id);
+            let flag = battles::ended_flag(named);
             let ends_by_event = converted
                 .battle
                 .events
@@ -3095,9 +3340,9 @@ fn convert_battles(
         match result {
             Ok((r, text, ends_by_event)) => {
                 if ends_by_event {
-                    ended.insert(r.id.clone());
+                    ended.insert(named.to_string());
                 }
-                if !text.is_empty() {
+                if !text.is_empty() && scenes_of.insert(named.to_string()) {
                     let _ = write!(drama, "\n# ----- {} ({})\n{text}", r.id, r.source);
                     scenes += text.matches("\n== ").count();
                 }
@@ -3185,6 +3430,7 @@ fn convert_battles(
                 steps.push(chapters::Step {
                     at: (*file, *scene, *block, *leg),
                     kind: chapters::StepKind::Battle {
+                        choice: choices.get(&id).cloned().map(Box::new),
                         battle: id,
                         title,
                         shop: shop.clone(),
@@ -5414,6 +5660,54 @@ mod tests {
              str = {strength}\nint = {int}\nlead = {lead}\n"
         ))
         .unwrap()
+    }
+
+    /// A battle per reading of the flags its setup and rosters depend on, only for flags the
+    /// chapters set, with the value the story fixes for a flag it does; the campaign picks
+    /// one by the flags.
+    #[test]
+    fn route_variants_are_made_per_reading_that_gives_another_battle() {
+        let scene = crate::battles::tests::route_scene();
+        let mut notes = Vec::new();
+        let none = |_: u8| None;
+        let all = BTreeSet::from([1, 38, 133]);
+        let (variants, choice) = route_variants(&scene, "b", 2, (1, 0), &all, &none, &mut notes);
+        let ids: Vec<&str> = variants.iter().map(|(v, _)| v.as_str()).collect();
+        // Flags 1, 38, 133: the guest's flag 1 matters only while 38 is clear (the other setup
+        // has no slot for the guest), so 6 of the 8 readings differ.
+        assert_eq!(
+            ids,
+            ["b", "b_f1", "b_f38", "b_f133", "b_f1_f133", "b_f38_f133"]
+        );
+        let choice = choice.unwrap();
+        assert_eq!(choice.battles().len(), 6);
+
+        // The story sets the guest's flag (1) before the battle: read with it, no variants for
+        // it; flag 133 is never set by the chapters: clear.
+        let known = |f: u8| (f == 1).then_some(true);
+        let settable = BTreeSet::from([1, 38]);
+        let (variants, choice) =
+            route_variants(&scene, "b", 2, (1, 0), &settable, &known, &mut notes);
+        assert_eq!(
+            variants,
+            [
+                ("b".to_string(), vec![1]),
+                ("b_f38".to_string(), vec![1, 38])
+            ]
+        );
+        assert_eq!(
+            choice,
+            Some(chapters::BattleChoice::Flag {
+                flag: "orig_f38".into(),
+                set: Box::new(chapters::BattleChoice::Battle("b_f38".into())),
+                clear: Box::new(chapters::BattleChoice::Battle("b".into())),
+            })
+        );
+        // Nothing to vary: one battle.
+        let (variants, choice) =
+            route_variants(&scene, "b", 2, (1, 0), &BTreeSet::new(), &none, &mut notes);
+        assert_eq!((variants, choice), (vec![("b".to_string(), vec![])], None));
+        assert!(notes.is_empty(), "{notes:?}");
     }
 
     #[test]
