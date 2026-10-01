@@ -1576,9 +1576,10 @@ mod tests {
         assert!(!first_turn("c4_s1_b2", None).is_empty());
         assert!(!first_turn("c4_s1_b2", Some("orig_f38")).is_empty());
         // Levels the story gives officers who are not in the army yet wait for their join (D24):
-        // after the Wu generals' eleven levels (and the council that follows) Gan Ning
-        // is in no army, and joining later gives him the levels.
+        // the council with Wu (flag 136 set) raises its generals by eleven levels, Gan Ning is in
+        // no army, and joining later gives him the levels.
         let mut state = hero_core::campaign::CampaignState::new_game(&pack);
+        state.flags.insert("orig_f136".into(), 1);
         for story in ["c4_s0_story4"] {
             let mut runner = hero_core::drama::DramaRunner::new(&pack, story).unwrap();
             loop {
