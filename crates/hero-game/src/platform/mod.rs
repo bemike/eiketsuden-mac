@@ -37,6 +37,9 @@ pub const DATA_ENV: &str = "EIKETSUDEN_DATA";
 pub const ORIGINAL_ENV: &str = "EIKETSUDEN_ORIGINAL";
 /// File every overlay folder written by `hero-tools original extract` contains.
 pub const OVERLAY_INDEX: &str = "index.json";
+/// Manifest id of the original mode's pack (`hero_import::pack::PACK_ID`, which the web build
+/// does not link): the layer [`DataRoot::with_original_layer`] marks.
+pub const ORIGINAL_PACK_ID: &str = "original";
 
 /// Options chosen when the game was launched.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -130,6 +133,9 @@ pub struct DataRoot {
     parents: Vec<String>,
     /// Prefix of the original-data overlay (ends with a separator), native only.
     media_overlay: Option<String>,
+    /// Position in the chain (0: the top pack, then [`DataRoot::parents`] in order) of the
+    /// original mode's pack, when the chain has one (see [`DataRoot::with_original_layer`]).
+    original_layer: Option<usize>,
 }
 
 /// Turn a directory into a path prefix that pack-relative paths can be appended to.
@@ -195,6 +201,7 @@ impl DataRoot {
             prefix,
             parents: Vec::new(),
             media_overlay: None,
+            original_layer: None,
         }
     }
 
@@ -207,6 +214,7 @@ impl DataRoot {
             candidates: candidates.iter().map(|p| p.display().to_string()).collect(),
             parents: Vec::new(),
             media_overlay: None,
+            original_layer: None,
         }
     }
 
@@ -230,6 +238,7 @@ impl DataRoot {
             candidates: vec![display.to_string()],
             parents: Vec::new(),
             media_overlay: self.media_overlay.clone(),
+            original_layer: None,
         };
         Some((root, format!("../{base}")))
     }
@@ -260,7 +269,18 @@ impl DataRoot {
     /// The same root without the packs the top pack extends (the loader reads the chain again
     /// before it records them with [`DataRoot::with_parent_packs`]).
     pub fn top_pack(&self) -> DataRoot {
-        self.clone().with_parent_packs(Vec::<String>::new())
+        self.clone()
+            .with_parent_packs(Vec::<String>::new())
+            .with_original_layer(None)
+    }
+
+    /// The same root knowing which pack of the chain is the original mode's (its position:
+    /// 0 for the top pack, `n` for the `n`-th of [`DataRoot::parent_packs`]), so a view can
+    /// prefer the packs below it ([`DataRoot::public_media_paths`]). An index past the chain
+    /// counts as none.
+    pub fn with_original_layer(mut self, layer: Option<usize>) -> DataRoot {
+        self.original_layer = layer.filter(|&l| l <= self.parents.len());
+        self
     }
 
     /// Directories of the packs the top pack extends (see [`DataRoot::with_parent_packs`]).
@@ -297,6 +317,35 @@ impl DataRoot {
         paths.push(self.in_pack("", rel));
         paths.extend(self.parents.iter().map(|dir| self.in_pack(dir, rel)));
         paths
+    }
+
+    /// Candidate paths of a media file for a view that prefers the packs **below** the original
+    /// mode's pack (`docs/DECISIONS.md` D25 X2: the base pack's public-domain portraits instead
+    /// of the original's faces): those packs first, nearest first, then everything above them in
+    /// the usual order ([`DataRoot::media_paths`]), so a file only the original has still shows.
+    /// `None` when that order is the usual one: no original pack in the chain, or nothing below
+    /// it.
+    pub fn public_media_paths(&self, rel: &str) -> Option<Vec<String>> {
+        let layer = self.original_layer?;
+        if layer >= self.parents.len() {
+            return None;
+        }
+        let rel = rel.trim_start_matches('/');
+        let mut paths: Vec<String> = self.parents[layer..]
+            .iter()
+            .map(|dir| self.in_pack(dir, rel))
+            .collect();
+        let mut above = self.media_paths(rel);
+        // The overlay (if any), the top pack and the parents up to the original's pack.
+        above.truncate(above.len() - paths.len());
+        paths.extend(above);
+        Some(paths)
+    }
+
+    /// Whether the chain holds the original mode's pack below the top (what
+    /// [`DataRoot::public_media_paths`] can reorder around).
+    pub fn has_original_layer(&self) -> bool {
+        self.original_layer.is_some_and(|l| l < self.parents.len())
     }
 
     /// Prefix of the active original-data overlay, if any.
@@ -552,6 +601,55 @@ mod tests {
         assert_eq!(root.media_overlay(), Some("/home/me/overlay/"));
         // Pack text files are never overlaid.
         assert_eq!(root.path("pack.toml"), "/games/hero/data/base/pack.toml");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_original_pack_id_is_the_converters() {
+        assert_eq!(ORIGINAL_PACK_ID, hero_import::pack::PACK_ID);
+    }
+
+    #[test]
+    fn public_media_paths_prefer_the_packs_below_the_original() {
+        // The original mode: the converted pack on top of the base pack.
+        let root = DataRoot::from_dir(Path::new("/d/original"), &[]).with_parent_packs(["../base"]);
+        assert_eq!(root.public_media_paths("gfx/portraits/a.png"), None);
+        let root = root.with_original_layer(Some(0));
+        assert_eq!(
+            root.public_media_paths("gfx/portraits/a.png").unwrap(),
+            vec![
+                "/d/original/../base/gfx/portraits/a.png",
+                "/d/original/gfx/portraits/a.png"
+            ]
+        );
+        // The usual order is untouched.
+        assert_eq!(
+            root.media_paths("gfx/portraits/a.png")[0],
+            "/d/original/gfx/portraits/a.png"
+        );
+        // A mod on top of the original: the mod's own file still comes before the original's.
+        let modded = DataRoot::from_dir(Path::new("/m"), &[])
+            .with_parent_packs(["../d/original", "../d/base"])
+            .with_original_layer(Some(1))
+            .with_media_overlay(Path::new("/o"));
+        assert_eq!(
+            modded.public_media_paths("x.png").unwrap(),
+            vec![
+                "/m/../d/base/x.png",
+                "/o/x.png",
+                "/m/x.png",
+                "/m/../d/original/x.png"
+            ]
+        );
+        // The original at the bottom, or a layer past the chain: nothing to prefer.
+        let bottom = DataRoot::from_dir(Path::new("/m"), &[])
+            .with_parent_packs(["../d/original"])
+            .with_original_layer(Some(1));
+        assert_eq!(bottom.public_media_paths("x.png"), None);
+        let past = DataRoot::from_dir(Path::new("/m"), &[]).with_original_layer(Some(3));
+        assert_eq!(past.public_media_paths("x.png"), None);
+        // The top pack alone forgets the chain position with the chain.
+        assert_eq!(root.top_pack().public_media_paths("x.png"), None);
     }
 
     #[test]

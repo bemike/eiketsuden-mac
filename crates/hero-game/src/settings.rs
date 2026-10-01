@@ -83,6 +83,53 @@ impl BattleSpeed {
     }
 }
 
+/// Whose faces portraits show (`docs/DECISIONS.md` D25 X2, a view-only choice beyond the
+/// original). Only the original mode has a choice: its converted pack shadows the base pack's
+/// public-domain portraits with the original's faces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PortraitStyle {
+    /// Whatever the pack chain shows first: the original's faces in the original mode.
+    #[default]
+    Original,
+    /// The public-domain portraits of the packs below the original mode's pack, where they have
+    /// one for the officer (see `crate::assets::Media`).
+    Public,
+}
+
+impl PortraitStyle {
+    pub const ALL: [PortraitStyle; 2] = [PortraitStyle::Original, PortraitStyle::Public];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PortraitStyle::Original => "원작",
+            PortraitStyle::Public => "공개 초상화",
+        }
+    }
+}
+
+/// How hits are presented in battle (`docs/DECISIONS.md` D25 X5, a view-only choice beyond the
+/// original).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BattleFx {
+    #[default]
+    Original,
+    /// Red `-123` damage numbers and a short shake of the map on heavy or defeating hits.
+    Enhanced,
+}
+
+impl BattleFx {
+    pub const ALL: [BattleFx; 2] = [BattleFx::Original, BattleFx::Enhanced];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            BattleFx::Original => "원작",
+            BattleFx::Enhanced => "강화",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -99,6 +146,15 @@ pub struct Settings {
     /// Play the original mode: convert [`Settings::original_dir`] at launch and play it on top
     /// of the base pack (native only; see `crate::original`).
     pub original_mode: bool,
+    // View-only choices beyond the original (`docs/DECISIONS.md` D25): every one is off by
+    // default, so the game looks like the original until the player picks them, and they can be
+    // changed at any moment (they never touch a save).
+    /// X2: original faces or public-domain portraits in the original mode.
+    pub portraits: PortraitStyle,
+    /// X4: tint every tile an enemy could attack next phase while the player browses the map.
+    pub danger_range: bool,
+    /// X5: enhanced hit presentation in battle.
+    pub battle_fx: BattleFx,
 }
 
 impl Default for Settings {
@@ -112,6 +168,9 @@ impl Default for Settings {
             fullscreen: false,
             original_dir: None,
             original_mode: false,
+            portraits: PortraitStyle::Original,
+            danger_range: false,
+            battle_fx: BattleFx::Original,
         }
     }
 }
@@ -248,6 +307,41 @@ mod tests {
             .unwrap();
         let (s, _) = Settings::load(&store);
         assert_eq!((s.original_dir, s.original_mode), (None, false));
+    }
+
+    #[test]
+    fn view_options_default_off_and_load_from_older_files() {
+        let mut store = MemoryStore::default();
+        // A file written before the D25 view options existed.
+        store
+            .set(
+                SETTINGS_KEY,
+                r#"{"master_volume": 60, "battle_speed": "fast", "fullscreen": false}"#,
+            )
+            .unwrap();
+        let (s, warn) = Settings::load(&store);
+        assert!(warn.is_none());
+        assert_eq!(s.master_volume, 60);
+        assert_eq!(
+            (s.portraits, s.danger_range, s.battle_fx),
+            (PortraitStyle::Original, false, BattleFx::Original)
+        );
+
+        let s = Settings {
+            portraits: PortraitStyle::Public,
+            danger_range: true,
+            battle_fx: BattleFx::Enhanced,
+            ..Settings::default()
+        };
+        s.save(&mut store).unwrap();
+        let json = store.get(SETTINGS_KEY).unwrap().unwrap();
+        assert!(json.contains(r#""portraits": "public""#), "{json}");
+        assert!(json.contains(r#""battle_fx": "enhanced""#), "{json}");
+        assert_eq!(Settings::load(&store).0, s);
+        assert_eq!(
+            cycle(&PortraitStyle::ALL, PortraitStyle::Public, 1),
+            PortraitStyle::Original
+        );
     }
 
     #[test]

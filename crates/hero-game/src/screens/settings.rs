@@ -1,4 +1,6 @@
-//! Settings overlay: volumes, text speed, battle animation speed, fullscreen (native).
+//! Settings overlay: volumes, text speed, battle animation speed, fullscreen (native), and the
+//! view-only choices beyond the original (`docs/DECISIONS.md` D25: portraits, danger range,
+//! battle presentation), which all start at the original's look.
 //!
 //! Values change with left/right, the ◀ ▶ arrows or confirm (steps forward) and apply
 //! immediately (the effect volume plays a sample); leaving the screen persists them through
@@ -7,7 +9,7 @@
 use crate::app::{Ctx, Screen, Transition};
 use crate::audio::sfx;
 use crate::gfx::{fill_rect, Align, TextStyle};
-use crate::settings::{cycle, BattleSpeed, Settings, TextSpeed};
+use crate::settings::{cycle, BattleFx, BattleSpeed, PortraitStyle, Settings, TextSpeed};
 use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
@@ -22,6 +24,9 @@ enum Row {
     TextSpeed,
     BattleSpeed,
     Fullscreen,
+    Portraits,
+    DangerRange,
+    BattleFx,
     Defaults,
     Back,
 }
@@ -46,6 +51,7 @@ impl SettingsScreen {
         if crate::platform::can_toggle_fullscreen() {
             rows.push(Row::Fullscreen);
         }
+        rows.extend([Row::Portraits, Row::DangerRange, Row::BattleFx]);
         rows.push(Row::Defaults);
         rows.push(Row::Back);
         SettingsScreen {
@@ -77,6 +83,15 @@ impl SettingsScreen {
                 Row::Fullscreen => MenuItem::new("전체 화면")
                     .detail(if s.fullscreen { "켬" } else { "끔" })
                     .adjustable(),
+                Row::Portraits => MenuItem::new("얼굴")
+                    .detail(s.portraits.label())
+                    .adjustable(),
+                Row::DangerRange => MenuItem::new("위험 범위")
+                    .detail(if s.danger_range { "켬" } else { "끔" })
+                    .adjustable(),
+                Row::BattleFx => MenuItem::new("전투 연출")
+                    .detail(s.battle_fx.label())
+                    .adjustable(),
                 Row::Defaults => MenuItem::new("기본값으로"),
                 Row::Back => MenuItem::new("돌아가기"),
             })
@@ -102,6 +117,9 @@ impl SettingsScreen {
                 // Fullscreen switches right away; the rest is persisted on leaving.
                 ctx.commit_settings();
             }
+            Row::Portraits => s.portraits = cycle(&PortraitStyle::ALL, s.portraits, delta),
+            Row::DangerRange => s.danger_range = !s.danger_range,
+            Row::BattleFx => s.battle_fx = cycle(&BattleFx::ALL, s.battle_fx, delta),
             Row::Defaults | Row::Back => return,
         }
         ctx.audio.apply_settings(&ctx.settings);

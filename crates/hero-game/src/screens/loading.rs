@@ -245,7 +245,16 @@ impl LoadingScreen {
             );
         }
         let parents = parent_dirs(Some(&chain));
-        let root = ctx.data_root.top_pack().with_parent_packs(parents.clone());
+        // Where the original mode's pack sits, for views that look past it (D25 X2).
+        let original = chain
+            .layers()
+            .iter()
+            .position(|l| l.manifest.id == crate::platform::ORIGINAL_PACK_ID);
+        let root = ctx
+            .data_root
+            .top_pack()
+            .with_parent_packs(parents.clone())
+            .with_original_layer(original);
         if root != ctx.data_root {
             // Nothing has been requested from the media store yet: start it over on the chain.
             ctx.media = Media::new(root.clone());

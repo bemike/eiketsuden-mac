@@ -24,6 +24,12 @@
 //!   (`gfx/tiles/terrain.toml` `tile_size`, 16 pixels without one), from the map's picture layer
 //!   (`gfx/maps/<image>.png`) when it has one, and every window is laid out relative to the
 //!   canvas size (`[presentation] canvas` of `pack.toml`).
+//! * **View options beyond the original** (`docs/DECISIONS.md` D25, off by default, read from
+//!   the settings every frame): "위험 범위" tints every tile an enemy could attack next phase
+//!   while the player browses the map ([`player::danger_tiles`], recomputed only when
+//!   [`player::danger_key`] changes); "전투 연출 · 강화" shows HP damage as red `-123` numbers and
+//!   shakes the map and its units, not the frame, on heavy or defeating hits
+//!   ([`anim::Scene::shake_offset`] through [`camera::Camera::shake`]).
 //!
 //! Controls: arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc/right click cancel,
 //! Tab/E and Q cycle through units that can still act, mouse at the screen edge / right-drag /
@@ -312,6 +318,9 @@ pub struct BattleScreen {
     shown_tiles: Vec<MapImage>,
     /// The map was drawn from the tileset before a terrain change; rebuild it.
     map_stale: bool,
+    /// Tiles the enemies could attack next phase (the "위험 범위" view option, D25 X4) with the
+    /// [`player::danger_key`] they were computed for; refreshed only when that changes.
+    danger: Option<(Vec<i64>, Vec<Pos>)>,
 }
 
 impl BattleScreen {
@@ -446,6 +455,7 @@ impl BattleScreen {
             start_levels: state.units.iter().map(|u| u.level).collect(),
             shown_tiles: state.map_images.clone(),
             map_stale: false,
+            danger: None,
             state,
         }
     }
@@ -698,6 +708,34 @@ impl BattleScreen {
         ctx.settings.battle_speed.multiplier() * if held { FAST_FORWARD } else { 1.0 }
     }
 
+    /// Keep the danger tiles of the "위험 범위" option up to date while the player's phase waits
+    /// for input (D25 X4); dropped while the option is off.
+    fn refresh_danger(&mut self, ctx: &Ctx) {
+        if !ctx.settings.danger_range {
+            self.danger = None;
+            return;
+        }
+        if self.state.phase != Side::Player || !self.events.is_idle() {
+            return;
+        }
+        let key = player::danger_key(&self.state);
+        if self.danger.as_ref().is_none_or(|(k, _)| *k != key) {
+            let tiles = player::danger_tiles(&self.state, &self.pack);
+            self.danger = Some((key, tiles));
+        }
+    }
+
+    /// Whether the danger tiles show: the option is on and the player browses the map with
+    /// nothing selected and no window open.
+    fn shows_danger(&self, ctx: &Ctx) -> bool {
+        ctx.settings.danger_range
+            && matches!(self.ui.mode, Mode::Browse)
+            && matches!(self.panel, Panel::None)
+            && self.dialog.is_none()
+            && self.waiting.is_none()
+            && self.mode_menu.is_none()
+    }
+
     fn store_session(&self, ctx: &mut Ctx) {
         if let Some(s) = ctx.session.as_mut() {
             s.battle = Some(self.state.clone());
@@ -773,6 +811,9 @@ impl BattleScreen {
 
     /// Show the drama scene `scene` over the battle.
     fn open_drama(&mut self, ctx: &mut Ctx, scene: &str) -> Transition {
+        // The map stays drawn under the overlay without updates: never leave it shaken.
+        self.scene.shake = 0.0;
+        self.camera.shake = Vec2::ZERO;
         if self.pack.scene(scene).is_none() {
             macroquad::logging::warn!("battle drama scene `{}` not found", scene);
             self.events.resume();
@@ -1697,6 +1738,7 @@ impl Screen for BattleScreen {
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         self.poll_meta(ctx);
+        self.refresh_danger(ctx);
         let dt = ctx.dt;
         self.pointer_rest = if ctx.input.pointer_moved() {
             0.0
@@ -1705,7 +1747,9 @@ impl Screen for BattleScreen {
         };
         let speed = self.speed(ctx);
         self.camera.update(dt);
+        self.scene.enhanced = ctx.settings.battle_fx == crate::settings::BattleFx::Enhanced;
         self.scene.tick(dt * speed);
+        self.camera.shake = self.scene.shake_offset();
 
         match &mut self.stage {
             Stage::Title { age } => {
@@ -1790,6 +1834,9 @@ impl Screen for BattleScreen {
             && self.state.phase == Side::Player
             && self.state.outcome.is_none();
         if player_turn {
+            if self.shows_danger(ctx) {
+                self.draw_danger();
+            }
             self.draw_highlights(ctx);
         }
         self.draw_units(ctx);

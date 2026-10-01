@@ -277,6 +277,10 @@ impl App {
         ctx.gfx.canvas.update();
         ctx.input.update(dt, &ctx.gfx.canvas);
         ctx.media.pump();
+        // A view-only setting (D25 X2): follows the settings screen at once, and the media store
+        // the loading screen rebuilds.
+        ctx.media
+            .set_public_portraits(ctx.settings.portraits == crate::settings::PortraitStyle::Public);
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(music) = ctx.music.as_mut() {
             if music.poll(&ctx.media, &mut ctx.audio) {
