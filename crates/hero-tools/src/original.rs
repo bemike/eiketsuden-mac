@@ -1645,6 +1645,20 @@ mod tests {
             assert_eq!(lost_with(&format!("{id}_f38")), ["zhao_yun"], "{id}");
             assert_eq!(branch(&format!("{id}_which")).0, "orig_f38");
         }
+        // Ye's opening (a phase of `run` records before the first watched one) plays when the
+        // battle begins and sets flag 218, which brings Zhang Liao into the next battle's
+        // enemy army (its variant).
+        let ye = &pack.battles["c4_s1_b7"];
+        assert!(ye.events.iter().any(|e| matches!(
+            e.trigger,
+            hero_core::battledef::Trigger::TurnStart { turn: 1, .. }
+        ) && e.actions.iter().any(|a| matches!(
+            a,
+            hero_core::battledef::EventAction::SetFlag { flag, value: 1 } if flag == "orig_f218"
+        ))));
+        assert_eq!(branch("c4_s2_b2_which").0, "orig_f218");
+        assert!(enemies("c4_s2_b2_f218").contains("zhang_liao"));
+        assert!(!enemies("c4_s2_b2").contains("zhang_liao"));
         // Sishui: the guests the talks before it bring (flags 0 and 1, which the story always
         // sets) fight at their tiles beside the army: no variant without them.
         assert!(!pack.battles.contains_key("c0_s0_b5_f0"));

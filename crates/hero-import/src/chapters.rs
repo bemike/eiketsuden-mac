@@ -363,10 +363,12 @@ impl Writer<'_, '_> {
 
     /// One instruction that is not a jump.
     fn effect(&mut self, instr: &Instr) {
+        // (A setup's or opening's flags count too: Ye's opening sets flag 218, which picks the
+        // next battle's enemy army.)
         if self.army_only
             && !matches!(
                 instr.mnemonic,
-                "set_allegiance" | "set_country" | "add_levels" | "set_class"
+                "set_allegiance" | "set_country" | "add_levels" | "set_class" | "set_flag"
             )
         {
             return;
@@ -1471,10 +1473,6 @@ pub fn original_campaign(base: &CampaignDef, steps: &[Step], ending: (&str, &str
     }
 }
 
-/// The campaign nodes of `steps`, joined as their [`Next`] says (routes become branches on their
-/// flags), and the first node: a game over goes to [`GAME_OVER_NODE`] and the original's endings
-/// to their [`ending_node`]s, a battle the original goes on after losing plays its defeat scene,
-/// and the story running out goes to `ending` (a node id and a title).
 /// The branch nodes of `choice` from node `id` (named after `battle`): each flag a branch to the
 /// camp of the battle its value picks.
 fn choice_nodes(
@@ -1510,6 +1508,10 @@ fn choice_nodes(
     }
 }
 
+/// The campaign nodes of `steps`, joined as their [`Next`] says (routes become branches on their
+/// flags), and the first node: a game over goes to [`GAME_OVER_NODE`] and the original's endings
+/// to their [`ending_node`]s, a battle the original goes on after losing plays its defeat scene,
+/// and the story running out goes to `ending` (a node id and a title).
 pub fn chapter_nodes(steps: &[Step], ending: (&str, &str)) -> (Vec<Node>, String) {
     let ending_id = ending.0.to_string();
     let places: Vec<_> = steps.iter().map(|s| s.at).collect();
@@ -1619,6 +1621,7 @@ pub fn chapter_nodes(steps: &[Step], ending: (&str, &str)) -> (Vec<Node>, String
                 });
                 // A camp and the battle for each battle it may fight.
                 let one = BattleChoice::Battle(battle.clone());
+                let step_choice_is_some = choice.is_some();
                 let choice = choice.as_deref().unwrap_or(&one);
                 for b in choice.battles() {
                     let fight = format!("{b}_battle");
@@ -1636,7 +1639,12 @@ pub fn chapter_nodes(steps: &[Step], ending: (&str, &str)) -> (Vec<Node>, String
                         on_defeat: on_defeat.clone(),
                     });
                 }
-                // Then the flags that pick one, from `{battle}_which`.
+                // Then the flags that pick one, from `{battle}_which` (a choice is never a
+                // single battle: that is no choice).
+                debug_assert!(
+                    step_choice_is_some == !matches!(choice, BattleChoice::Battle(_)),
+                    "{battle}: a choice of one battle"
+                );
                 if !matches!(choice, BattleChoice::Battle(_)) {
                     let mut count = 0;
                     choice_nodes(&mut nodes, &camp, battle, choice, &mut count);

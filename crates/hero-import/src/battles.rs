@@ -599,6 +599,7 @@ pub fn find_battle_leg(
             match &instr.operands {
                 Operands::Roster { friendly, units } if r == record_index => {
                     route_flags.extend(tested);
+                    route_flags.extend(units.iter().filter_map(|u| u.requires_flag));
                     if runs {
                         rosters.push((*friendly, units.clone()));
                     } else {
@@ -647,6 +648,7 @@ pub fn find_battle_leg(
         for (instr, runs, tested) in guarded(&rec.code, flags) {
             if let Operands::BattleSetup { header, units } = &instr.operands {
                 route_flags.extend(tested);
+                route_flags.extend(units.iter().filter_map(|u| u.requires_flag));
                 let fits = header.defeat_to_win.is_some_and(|p| enemies.contains(&p));
                 if fits {
                     last_fitting = match last_fitting {
@@ -2534,6 +2536,38 @@ pub fn convert(
         }
     };
     let mut events = Vec::new();
+    // A chapter battle's phases of `run` records before the first watched one play when it
+    // begins: nothing moves the battle into them otherwise. They hold its opening lines and
+    // what those set (Ye's opening sets flag 218, which brings Zhang Liao into the next
+    // battle's enemy army).
+    if pairing.battle.is_empty() {
+        let mut actions = Vec::new();
+        'opening: for (i, phase) in phases.iter().enumerate() {
+            if stages[i].is_some() {
+                break;
+            }
+            for &r in &phase.records {
+                if writer.on_the_way(r, &orig.records[r].code, &mut actions)
+                    == ScriptEnd::EndsBattle
+                {
+                    break 'opening;
+                }
+            }
+        }
+        if !actions.is_empty() {
+            events.push(EventDef {
+                trigger: Trigger::TurnStart {
+                    turn: 1,
+                    side: Side::Player,
+                },
+                once: true,
+                stage: None,
+                when: Vec::new(),
+                unless: Vec::new(),
+                actions,
+            });
+        }
+    }
     for (i, phase) in phases.iter().enumerate() {
         let Some(stage) = stages[i] else {
             continue; // run records: played on the way from one phase to the next
