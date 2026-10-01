@@ -5,12 +5,13 @@
 > palettes → graphics → maps → text → scenario bytecode → master tables. Use structural invariants
 > (directory chains, exact decoded lengths, full input consumption, "every byte covered") as oracles; find
 > tables inside the executable by byte-pattern search and confirm them by statically disassembling the x86-16
-> code that reads them (never by running anything); follow loader code to resolve mappings the data alone
+> code that reads them; follow loader code to resolve mappings the data alone
 > cannot decide; render contact sheets and look at them; settle channel/plane order by experiment; check
 > known answers from public walkthroughs. The page lists where the earlier research notes were wrong
 > (absolute vs relative offsets, the little-endian `Ls11` spelling, the "10-bit map index" myth, the EUC-KR
 > header assumption, a damaged file mistaken for a decoder bug), the synthetic-fixture + gated-golden-test
-> pattern, and a checklist for applying all of this to another KOEI title of the same era.
+> pattern, emulator observation of a copy of the install in the official DOSBox-X (section 2.8, D22; static
+> analysis only up to v0.2.1), and a checklist for applying all of this to another KOEI title of the same era.
 
 이 문서는 영걸전 한국어 DOS/V판을 분석하면서 효과가 있었던 방법을, 같은 시기 KOEI 게임(공명전·조조전 등)에도 쓸 수
 있게 순서와 기법으로 정리한 것입니다. 형식 자체는 [FORMATS.md](FORMATS.md), 원칙은 [README.md](README.md)에 있습니다.
@@ -114,6 +115,48 @@
 
 이 값들은 `tests/golden.rs`의 `golden_korean_scenario_facts` 등에서 실물로 확인합니다.
 
+### 2.8 에뮬레이터 관찰 (DOSBox-X, D22)
+
+정적 분석으로 세운 가설을 원작의 실제 동작으로 확인하는 층입니다. 규칙은 [DECISIONS D22](../DECISIONS.md)를 따릅니다:
+공식 빌드만 쓰고, 설치 폴더의 복사본에서 실행하며, 복제 방지는 우회하지 않고, 결과물은 로컬에만 둡니다.
+
+**구성** (`res/`는 `.gitignore` 대상)
+
+| 경로 | 내용 |
+|---|---|
+| `res/dosbox/app/bin/x64/Release/dosbox-x.exe` | DOSBox-X 2026.08.31 공식 포터블판(`dosbox-x-vsbuild-win64-…-portable.zip`, SHA-256은 `res/dosbox/zip.sha256`). 디버거 포함 빌드 |
+| `res/dosbox/GAME` | 설치 폴더 복사본. 원작이 세이브를 여기에 씀 |
+| `res/dosbox/dosbox-x.conf` | 원작 패키지 `dosbox.conf`와 같은 기계·소리 설정: `svga_s3`, 16 MB, `cycles=fixed 8000`, SB16 220/7/1/5, OPL auto. `[autoexec]`는 `mount c …GAME` → `HERO` |
+| `res/dosbox/capture` | 에뮬레이터 캡처(스크린샷·OPL·WAV) |
+
+실행: `dosbox-x.exe -conf res\dosbox\dosbox-x.conf -fastlaunch`.
+
+**자동화**
+
+- 창 캡처는 `PrintWindow`(`PW_RENDERFULLCONTENT`)로 합니다. 클라이언트 영역은 640×480이고, 창이 앞에 없어도 찍힙니다.
+- **키 입력**
+  - 창 메시지(`PostMessage`로 보내는 `WM_KEYDOWN`/`UP`)는 게임에 닿지 않습니다. SDL1 빌드에서 `SDL_VIDEODRIVER=windib`를 줘도 마찬가지입니다.
+  - DOSBox-X의 **`AUTOTYPE`**(`autotype -w <대기 초> -p <간격 초> <키...>`)는 닿습니다. 이 명령은 `HERO` 앞에서 실행해 두면
+    게임이 도는 동안 정해진 시각에 키를 넣습니다. 그래서 정해진 순서의 입력(예: 상태를 불러온 뒤 메뉴 이동)에 씁니다.
+  - 대화형 입력이 필요하면 화면이 켜져 있을 때 데스크톱 자동화(computer-use)로 창을 직접 조작합니다.
+- 보조 스크립트는 스크래치에 두고, 저장소에는 넣지 않습니다.
+
+**확인 결과** (2026-10-01, 진행 중)
+
+| 항목 | 결과 |
+|---|---|
+| 원작 기동 | 됨. `HERO.COM` → 복제 방지 코드 입력 화면("INPUT CODE" + 한자 세 글자 조합, 실행할 때마다 바뀜) |
+| 창 캡처 | 됨(`PrintWindow`). 잠긴 화면에서는 확인 필요 |
+| 키 입력 자동화 | `AUTOTYPE` 됨, 창 메시지 안 됨(위 "자동화") |
+| 상태 저장·불러오기 | 확인 못 함(아래 BLOCKED) |
+| 디버거(메모리 감시·덤프) | 확인 못 함(아래 BLOCKED) |
+| OPL 출력 기록 | 확인 못 함(아래 BLOCKED) |
+| 기존 세이브 `MSAVE1–4` | 확인 못 함(아래 BLOCKED) |
+
+**BLOCKED (2026-10-01)**: 소유자의 사본에는 설명서·코드표가 없어, 복제 방지 코드에 답할 수 없습니다. D22에 따라 판정 코드를
+해독하거나 우회하지 않으므로, 게임 본편의 관찰은 여기서 멈춥니다. 환경(`res/dosbox`)은 그대로 두며, 소유자가 정품 설명서를
+갖게 되면 위 표의 남은 항목부터 이어 갑니다. 그때까지 관찰이 필요했던 일(ROADMAP M3·M5)은 정적 분석으로 진행합니다.
+
 ## 3. 함정과 조사 노트가 틀린 곳
 
 앞선 조사 노트(다른 프로젝트의 공개 문서에서 모은 사실)는 출발점으로 유용했지만 여러 곳이 틀렸습니다. **노트의 주장은
@@ -175,7 +218,7 @@
 **준비**
 
 - [ ] 자기 정품인지, 설치 폴더를 읽기 전용으로 둘 곳(`.gitignore`된 로컬 경로)을 정했는지 확인
-- [ ] 아무것도 실행하지 않는다는 원칙을 정함(에뮬레이터 비교가 필요하면 별도 결정)
+- [ ] 실행 원칙을 정함: 정적 분석만 할지, 공식 에뮬레이터로 관찰할지(이 프로젝트는 D22 이후 관찰을 함께 씀, 2.8절)
 - [ ] 판본(언어·플랫폼·빌드)을 구분할 헤더·파일군 목록 작성
 
 **컨테이너**

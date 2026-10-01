@@ -134,15 +134,15 @@ cargo run --release -p hero-tools -- validate data/base
 ## 로드맵
 
 * 서장·1장 원작 변환과 원작 무장 값의 플레이 확인(실물 변환 확인은 끝남, D21 3단계는 들어감, 기본 팩은 최소 틀로 줄였고 웹 데모는 내림)
-* 원작 모드 다듬기: 위 "원작 모드의 남은 일"([BACKLOG](BACKLOG.md))
+* 원작 모드 다듬기: 위 "원작 모드의 남은 일"([BACKLOG](BACKLOG.md), 순서와 구현 계획은 [ROADMAP](docs/ROADMAP.md))
 * 원작 데이터 임포터: Steam판·PC-98판 지원 ([남은 과제](docs/reverse-engineering/STATUS.md); 정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
 * 캠페인 경로를 따라가는 밸런스 시뮬레이션
 
 ## 원작 데이터 분석 자료
 
 원작 데이터 임포터를 만들며 알아낸 파일 형식과 분석 방법을 [docs/reverse-engineering/](docs/reverse-engineering/README.md)에
-정리했습니다. 보유한 한국어 DOS/V판 하나를 **읽기 전용·정적 분석**으로만 조사했고(원작 파일은 실행하지 않음),
-저장소에는 원작 바이트나 데이터 표 없이 형식 사실만 적었습니다.
+정리했습니다. 보유한 한국어 DOS/V판 하나를 v0.2.1까지는 **읽기 전용·정적 분석**으로만 조사했고, 그 뒤로는 사본을 공식
+DOSBox-X에서 관찰용으로만 실행해 확인합니다(복제 방지는 우회하지 않음, D22). 저장소에는 원작 바이트나 데이터 표 없이 형식 사실만 적었습니다.
 
 | 문서 | 내용 |
 |---|---|
@@ -197,7 +197,8 @@ one, so the "original mode" is the heart of the project (decision D21 in [docs/D
   and converted at launch (native builds) — is described in [docs/ENGINE.md](docs/ENGINE.md) (Korean,
   English summary).
 * Reverse-engineering notes: the verified file formats of the original DOS/V release, the method used
-  (read-only static analysis of an owned copy, nothing executed) and the open work are documented in
+  (read-only static analysis of an owned copy up to v0.2.1; since then a copy is also run for observation
+  only in the official DOSBox-X, copy protection never bypassed, decision D22) and the open work are documented in
   [docs/reverse-engineering/](docs/reverse-engineering/README.md).
 * Progress is measured on the original mode only: all 60 of the original's battles are playable, from the
   prologue to the original's endings (Changban's escort of the people and the battles fought on two maps are

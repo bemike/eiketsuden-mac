@@ -9,7 +9,8 @@
 > leaving, battle blocks) chapter by chapter, with a block-level outline in [SCENARIO_FLOW.md](SCENARIO_FLOW.md) (no
 > original text); [STATUS.md](STATUS.md) lists what is decoded, partly decoded and open, and the remaining steps to a
 > playable original mode. The work followed strict rules: the owner's own copy only, read-only, nothing from
-> the install ever executed, static analysis for interoperability only, no KOEI bytes or data tables in the
+> the install executed up to v0.2.1 and, since then, only a copy run for observation in the official DOSBox-X
+> (D22, copy protection never bypassed), analysis for interoperability only, no KOEI bytes or data tables in the
 > repository or CI, and real-data tests gated behind `EIKETSU_ORIGINAL_DIR`. The user guide for the importer
 > remains [../ORIGINAL_DATA.md](../ORIGINAL_DATA.md).
 
@@ -38,10 +39,13 @@
 1. **자기 정품만**: 분석 대상은 저장소 소유자가 직접 보유한 사본이며, 저장소의 `.gitignore`에 등록된 로컬 폴더에만 둡니다.
    원작 파일·디스크 이미지를 배포하거나 구하는 방법을 안내하지 않습니다.
 2. **읽기 전용**: 설치 폴더에 아무것도 쓰지 않습니다. 임포터도 출력 폴더가 설치 폴더 안이면 거부합니다.
-3. **실행하지 않음**: 원작의 실행 파일(`MAIN.EXE`, `TFDED.COM`, `OPEN.EXE` 등)은 **한 번도 실행하지 않았습니다**.
-   DOSBox 등 에뮬레이터로 돌려 본 적도 없습니다. 모든 결론은 파일을 읽고 정적으로 분석해서 얻었습니다.
-4. **상호운용 목적의 정적 분석만**: 역어셈블은 사용자가 가진 파일을 읽는 호환 구현을 만들기 위한 것이며, 복제 방지를
-   우회하지 않습니다. 컨테이너가 암호화되어 있으면 감지·보고에서 멈추고 법률 검토를 먼저 합니다.
+3. **관찰용 실행만**: v0.2.1(2026-10-01)까지 원작의 실행 파일(`MAIN.EXE`, `TFDED.COM`, `OPEN.EXE` 등)은 **한 번도
+   실행하지 않았고**, 그때까지의 결론은 모두 파일을 읽고 정적으로 분석해서 얻었습니다. 그 뒤로는 소유자의 사본을 공식
+   DOSBox-X에서 **관찰용으로만** 실행합니다([DECISIONS D22](../DECISIONS.md)). 설치 폴더의 복사본을 쓰고, 복제 방지 질문은 소유자가
+   설명서를 보고 답하며 우회하지 않습니다. 패키지에 딸린 바이너리(`DOSBox.exe`, `CRACK.COM`)는 실행하지 않습니다. 관찰로 얻은
+   사실은 **[관찰]** 로 표시합니다.
+4. **상호운용 목적의 분석만**: 역어셈블(정적 분석)과 D22의 에뮬레이터 관찰은 사용자가 가진 파일을 읽는 호환 구현을
+   만들기 위한 것이며, 복제 방지를 우회하지 않습니다. 컨테이너가 암호화되어 있으면 감지·보고에서 멈추고 법률 검토를 먼저 합니다.
 5. **클린룸**: 형식 **사실**(구조·크기·수치)만 직접 확인해 구현했습니다. 다른 프로젝트의 코드(라이선스가 없거나
    GPL인 것 포함)는 복사하지 않았고, 공개 조사 노트는 검증할 가설로만 썼습니다.
 6. **저장소와 CI에 KOEI 바이트 없음**: 원작 파일의 바이트, 그림·텍스트, 팔레트 색·능력치·이름 목록 같은 데이터 표를
