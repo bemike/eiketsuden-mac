@@ -439,3 +439,54 @@ fn confused_unit_routed_by_morale_loss_gives_no_kill_exp() {
     );
     assert!(st.units[d].hp > 0);
 }
+
+/// Extended rules' joint attack (D25): +10 % per other unit of the attacker's side next to the
+/// defender, players and allies together; enemies, diagonal neighbours and the attacker itself
+/// do not count; at most +30 %. Forecast and blow agree; off by default.
+#[test]
+fn joint_attack_bonus_of_extended_rules() {
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let a = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 2));
+    let d = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(2, 2));
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 2));
+    add(&mut st, &pack, Side::Ally, "infantry", 1, p(2, 1));
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(2, 3));
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    assert_eq!(
+        st.forecast_attack(&pack, a, d).damage,
+        134,
+        "off: 268 - 268 / 2"
+    );
+
+    st.extended_rules = true;
+    assert_eq!(st.joint_attack_pct(a, d), 20);
+    let f = st.forecast_attack(&pack, a, d);
+    assert_eq!(f.damage, 134 * 120 / 100);
+    // The defender's side gets nothing from the attacker's neighbours.
+    assert_eq!(st.joint_attack_pct(d, a), 0);
+    // A third joining unit, then the cap.
+    st.units[foe].side = Side::Player;
+    assert_eq!(st.joint_attack_pct(a, d), 30);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 3));
+    assert_eq!(
+        st.joint_attack_pct(a, d),
+        30,
+        "only orthogonal neighbours of the defender"
+    );
+    st.units[foe].side = Side::Enemy;
+
+    let ev = st
+        .apply(&pack, Action::Attack { unit: a, target: d })
+        .unwrap();
+    match &ev[0] {
+        BattleEvent::Strike { damage, .. } => assert_eq!(*damage, f.damage),
+        other => panic!("expected a strike: {other:?}"),
+    }
+
+    // A mid-battle save from before extended rules plays without them.
+    let mut v = serde_json::to_value(&st).unwrap();
+    v.as_object_mut().unwrap().remove("extended_rules");
+    let old: crate::battle::BattleState = serde_json::from_value(v).unwrap();
+    assert!(!old.extended_rules);
+}

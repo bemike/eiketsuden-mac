@@ -108,6 +108,7 @@ fn probe(pack: &Pack, officer: &OfficerState, hp: i32, mp: i32) -> BattleState {
         objective: None,
         start_flags: BTreeMap::new(),
         map_images: Vec::new(),
+        extended_rules: false,
     }
 }
 

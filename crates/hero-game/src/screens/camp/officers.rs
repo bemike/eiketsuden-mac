@@ -6,6 +6,10 @@
 //! A pack with a status window (`[presentation.status_frame]`, the original's) shows the army on
 //! it instead of the table: a page of officers in its slots (unit icon, level, troops) and the
 //! chosen one on the side; the detail page opens from there.
+//!
+//! A campaign started with 능력치 자유 조정 (DECISIONS D25) edits 무력/지력/통솔 on the detail page:
+//! confirm (or a tap on the abilities) starts editing, up and down pick one, left and right (or
+//! tapping its left or right half) change it by 1, confirm or cancel ends.
 
 use super::stats::officer_stats;
 use super::widgets::{back_button, back_tapped, content_rect, draw_back_button, help_y};
@@ -26,9 +30,9 @@ use crate::ui::format;
 use crate::ui::menu::{Menu, MenuEvent, MenuItem};
 use crate::ui::theme;
 use crate::ui::window::{
-    draw_divider, draw_highlight, draw_icon, draw_window_ex, inset, WindowStyle,
+    draw_divider, draw_highlight, draw_icon, draw_side_arrow, draw_window_ex, inset, WindowStyle,
 };
-use hero_core::campaign::OfficerState;
+use hero_core::campaign::{Ability, OfficerState};
 use hero_core::data::ItemKind;
 use hero_core::pack::{Pack, StatusFrame};
 use macroquad::prelude::*;
@@ -55,6 +59,15 @@ pub fn strategy_list(pack: &Pack, officer: &OfficerState) -> Vec<(String, i32)> 
             None => (id.clone(), 0),
         })
         .collect()
+}
+
+/// Row `i` (무력, 지력, 통솔) of the abilities on the detail page.
+fn ability_rect(canvas: Vec2, i: usize) -> Rect {
+    let panel = content_rect(canvas);
+    let cx = panel.x + 8.0 + 108.0;
+    let by = panel.y + 8.0 + 120.0;
+    // Wide enough for the ▶ drawn just right of the value.
+    Rect::new(cx - 2.0, by - 2.0 + i as f32 * 14.0, 162.0, 14.0)
 }
 
 /// Where the detail page draws the officer's portrait.
@@ -168,6 +181,8 @@ pub struct OfficersScreen {
     detail: Option<usize>,
     /// The prompt of the hidden command, while it is open.
     prompt: Option<ConfirmDialog>,
+    /// 능력치 자유 조정: the ability row being edited on the detail page.
+    edit: Option<usize>,
 }
 
 impl Default for OfficersScreen {
@@ -182,6 +197,7 @@ impl OfficersScreen {
             menu: Menu::new(Vec::new()),
             detail: None,
             prompt: None,
+            edit: None,
         }
     }
 
@@ -333,7 +349,10 @@ impl OfficersScreen {
         if let Some(stats) = officer_stats(pack, o) {
             draw_stats_block(gfx, &stats, None, cx, y + 40.0, cw);
         }
-        // 무력 / 지력 / 통솔.
+        // 무력 / 지력 / 통솔 (the row being edited lit up behind it).
+        if let Some(row) = self.edit {
+            draw_highlight(ability_rect(gfx.size(), row), true, ctx.time);
+        }
         let by = y + 120.0;
         for (i, (label, v)) in [("무력", o.strength), ("지력", o.int), ("통솔", o.lead)]
             .into_iter()
@@ -355,6 +374,10 @@ impl OfficersScreen {
                 100.0,
                 GaugeKind::Custom(theme::TEXT_ACCENT),
             );
+            if self.edit == Some(i) {
+                draw_side_arrow(cx + 26.0, ry + 6.0, false, theme::TEXT_ACCENT);
+                draw_side_arrow(cx + cw + 4.0, ry + 6.0, true, theme::TEXT_ACCENT);
+            }
         }
 
         // Equipment and strategies.
@@ -734,6 +757,95 @@ impl OfficersScreen {
     }
 }
 
+impl OfficersScreen {
+    /// 능력치 자유 조정 on the detail page of officer `i`. Returns `true` when it took the input.
+    fn update_edit(&mut self, ctx: &mut Ctx, i: usize, back: bool) -> bool {
+        let canvas = ctx.gfx.size();
+        let tapped_row = ctx.input.tap().and_then(|p| {
+            (0..3)
+                .find(|&k| ability_rect(canvas, k).contains(p))
+                .map(|k| (k, p))
+        });
+        let Some(row) = self.edit else {
+            // Not editing: confirm or a tap on the abilities starts.
+            if back {
+                return false;
+            }
+            if let Some((k, _)) = tapped_row {
+                ctx.input.consume();
+                ctx.sfx(sfx::CONFIRM);
+                self.edit = Some(k);
+                return true;
+            }
+            if ctx.input.confirm_key() {
+                ctx.input.consume();
+                ctx.sfx(sfx::CONFIRM);
+                self.edit = Some(0);
+                return true;
+            }
+            return false;
+        };
+        let mut delta = 0;
+        if back || ctx.input.cancel() || ctx.input.confirm_key() {
+            ctx.input.consume();
+            if !back {
+                ctx.sfx(sfx::CANCEL);
+            }
+            self.edit = None;
+            return true;
+        }
+        if let Some((k, p)) = tapped_row {
+            ctx.input.consume();
+            self.edit = Some(k);
+            delta = if p.x < ability_rect(canvas, k).center().x {
+                -1
+            } else {
+                1
+            };
+        } else if ctx.input.tap().is_some() {
+            // A tap anywhere else ends editing.
+            ctx.input.consume();
+            ctx.sfx(sfx::CANCEL);
+            self.edit = None;
+            return true;
+        } else {
+            match ctx.input.nav() {
+                Some(Dir::Up) => self.edit = Some((row + 2) % 3),
+                Some(Dir::Down) => self.edit = Some((row + 1) % 3),
+                Some(Dir::Left) => delta = -1,
+                Some(Dir::Right) => delta = 1,
+                None => return true,
+            }
+            if delta == 0 {
+                ctx.sfx(sfx::CURSOR);
+            }
+        }
+        if delta != 0 {
+            let row = self.edit.unwrap_or(row);
+            let ability = Ability::ALL[row];
+            if let Some(session) = ctx.session.as_mut() {
+                let campaign = &mut session.campaign;
+                let Some(o) = campaign.roster.get(i) else {
+                    return true;
+                };
+                let id = o.id.clone();
+                let now = match ability {
+                    Ability::Strength => o.strength,
+                    Ability::Int => o.int,
+                    Ability::Lead => o.lead,
+                };
+                let set = campaign.set_ability(&id, ability, now + delta);
+                if set == Some(now) {
+                    ctx.sfx(sfx::ERROR);
+                } else {
+                    ctx.sfx(sfx::CURSOR);
+                }
+            }
+        }
+        true
+    }
+}
+
 impl Screen for OfficersScreen {
     fn in_camp_frame(&self) -> bool {
         true
@@ -759,6 +871,10 @@ impl Screen for OfficersScreen {
         // The back button is not drawn on the status window: it takes no taps there.
         let back = (self.detail.is_some() || status.is_none()) && back_tapped(ctx);
         if let Some(i) = self.detail {
+            let free_edit = ctx.session.as_ref().is_some_and(|s| s.campaign.free_edit);
+            if free_edit && self.update_edit(ctx, i, back) {
+                return Transition::None;
+            }
             // Keys page through the army; a tap on the left or right half does the same.
             let mut step = match ctx.input.nav() {
                 Some(Dir::Left | Dir::Up) => -1,
@@ -813,7 +929,16 @@ impl Screen for OfficersScreen {
                     campaign.gold,
                 );
                 self.draw_detail(ctx, pack, o);
-                draw_help(ctx, "←→ 다른 무장 · X 목록으로");
+                draw_help(
+                    ctx,
+                    if self.edit.is_some() {
+                        "↑↓ 능력치 · ←→ 1씩 조정 · Z/X 조정 끝"
+                    } else if campaign.free_edit {
+                        "←→ 다른 무장 · Z 능력치 조정 · X 목록으로"
+                    } else {
+                        "←→ 다른 무장 · X 목록으로"
+                    },
+                );
                 ctx.gfx.text_aligned(
                     &format!("{} / {}", i + 1, campaign.roster.len()),
                     0.0,

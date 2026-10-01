@@ -40,7 +40,7 @@ use crate::screens::loading::{LoadingScreen, Target};
 use crate::screens::title::TitleScreen;
 use crate::secret::ForbiddenSecret;
 use hero_core::battle::{BattleState, Outcome};
-use hero_core::campaign::{CampaignError, CampaignState, Node};
+use hero_core::campaign::{CampaignError, CampaignState, GameOptions, Node};
 use hero_core::pack::Pack;
 use hero_core::save::{SaveGame, SceneResume, PLAIN_SAVE_VERSION};
 use std::rc::Rc;
@@ -49,8 +49,8 @@ use std::rc::Rc;
 pub enum Flow {
     /// The title screen (ends the current session).
     Title,
-    /// Start a new campaign at the pack's start node.
-    NewGame,
+    /// Start a new campaign at the pack's start node with the chosen options (D25).
+    NewGame(GameOptions),
     /// Resume a save: its battle if it was saved mid-battle, otherwise its campaign node.
     Continue(Box<SaveGame>),
     /// Show the screen of the session's current campaign node.
@@ -125,14 +125,26 @@ impl Session {
             scene: None,
             pending_scenes: Vec::new(),
         };
-        // (A campaign with growth queued for officers not in the army needs a newer layout.)
+        // (Growth queued for officers not in the army, or choices of the new game, need a
+        // newer layout.)
         save.stamp_version();
         save
     }
 }
 
 /// Human readable summary of where the campaign is, for the save slot list.
+/// A campaign with choices of the new game on says so first: `[어려움·확장] 광종 전투 준비`.
 pub fn save_label(pack: &Pack, campaign: &CampaignState, battle: Option<&BattleState>) -> String {
+    let place = place_label(pack, campaign, battle);
+    let tags = campaign.option_tags();
+    if tags.is_empty() {
+        place
+    } else {
+        format!("[{}] {place}", tags.join("·"))
+    }
+}
+
+fn place_label(pack: &Pack, campaign: &CampaignState, battle: Option<&BattleState>) -> String {
     let battle_name = |id: &str| {
         pack.battles
             .get(id)
@@ -178,11 +190,13 @@ pub fn enter(flow: Flow, ctx: &mut Ctx) -> Box<dyn Screen> {
             ctx.session = None;
             Box::new(TitleScreen::new())
         }
-        Flow::NewGame => {
+        Flow::NewGame(options) => {
             let Some(pack) = ctx.pack.clone() else {
                 return no_pack();
             };
-            ctx.session = Some(Session::new(CampaignState::new_game(&pack)));
+            let mut campaign = CampaignState::new_game(&pack);
+            campaign.apply_options(options);
+            ctx.session = Some(Session::new(campaign));
             show_current_node(ctx, &pack)
         }
         Flow::Continue(save) => {
@@ -427,6 +441,9 @@ mod tests {
             battles_won: Vec::new(),
             play_seconds: 10,
             pending_growth: BTreeMap::new(),
+            difficulty: Default::default(),
+            free_edit: false,
+            extended_rules: false,
         }
     }
 
@@ -447,6 +464,28 @@ mod tests {
             },
         );
         assert_eq!(session.to_save(&pack).version, GROWTH_SAVE_VERSION);
+    }
+
+    /// A save with choices of the new game on is marked in the slot list and stamped so that a
+    /// game without them refuses it; a plain one is neither (D25).
+    #[test]
+    fn a_save_shows_and_stamps_its_options() {
+        use hero_core::save::{OPTIONS_SAVE_VERSION, PLAIN_SAVE_VERSION};
+        let pack = crate::screens::camp::test_pack();
+        let mut camp = campaign();
+        camp.node = pack.campaign.start.clone();
+        let normal = Session::new(camp.clone()).to_save(&pack);
+        assert!(!normal.label.starts_with('['), "{}", normal.label);
+        assert_eq!(normal.version, PLAIN_SAVE_VERSION);
+
+        camp.difficulty = hero_core::campaign::Difficulty::Hard;
+        let hard = Session::new(camp.clone()).to_save(&pack);
+        assert_eq!(hard.label, format!("[어려움] {}", normal.label));
+        assert_eq!(hard.version, OPTIONS_SAVE_VERSION);
+        camp.extended_rules = true;
+        camp.free_edit = true;
+        let all = Session::new(camp).to_save(&pack);
+        assert_eq!(all.label, format!("[어려움·조정·확장] {}", normal.label));
     }
 
     /// The base pack with a scene node whose branch leads, on flag `t_flag`, to an ending

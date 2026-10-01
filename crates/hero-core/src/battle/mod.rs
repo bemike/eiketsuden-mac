@@ -465,6 +465,10 @@ pub struct BattleState {
     /// one per tile). `map` already holds the new terrain.
     #[serde(default)]
     pub map_images: Vec<MapImage>,
+    /// The campaign's extended rules are on (DECISIONS D25): the joint attack bonus of
+    /// [`BattleState::joint_attack_pct`].
+    #[serde(default)]
+    pub extended_rules: bool,
 }
 
 impl BattleState {

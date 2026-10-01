@@ -137,6 +137,7 @@ cargo run --release -p hero-tools -- validate data/base
 * 원작 모드 다듬기: 위 "원작 모드의 남은 일"([BACKLOG](BACKLOG.md), 순서와 구현 계획은 [ROADMAP](docs/ROADMAP.md))
 * 원작 데이터 임포터: Steam판·PC-98판 지원 ([남은 과제](docs/reverse-engineering/STATUS.md); 정품 보유자의 [프로브 매니페스트](docs/ORIGINAL_DATA.md) 제공이 큰 도움이 됩니다)
 * 캠페인 경로를 따라가는 밸런스 시뮬레이션
+* 원작에 없는 선택 기능([D25](docs/DECISIONS.md)): 새 게임의 난이도(쉬움·기본·어려움)·능력치 자유 조정·확장 규칙(협공)은 들어갔고, 공개 초상화 토글·위험 범위 표시·전투 연출은 진행 중입니다. 기본값은 언제나 원작 그대로입니다
 
 ## 원작 데이터 분석 자료
 

@@ -384,6 +384,18 @@ impl BattleScreen {
                         }),
                     );
                 }
+                // Extended rules: the joint attack bonus already in the damage (D25).
+                let joint = self.state.joint_attack_pct(unit, t);
+                if joint > 0 {
+                    gfx.text_aligned(
+                        &format!("협공 +{joint}%"),
+                        r.x,
+                        r.y + 22.0,
+                        r.w - 8.0,
+                        Align::Right,
+                        small.color(theme::TEXT_GOOD),
+                    );
+                }
                 gfx.text(
                     &lines.result,
                     r.x + 10.0,
