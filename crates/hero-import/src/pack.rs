@@ -2318,14 +2318,15 @@ pub fn cell_picture(map_id: &str, x: usize, y: usize, op: u8) -> String {
 /// Whether an officer is in the army at the battle of story time `now` (`None`: not a battle of
 /// the story), given the times the story moves them (`true` = joins, `false` = goes away, in
 /// order) and whether the campaign starts with them. An officer the story never moves is in it
-/// from the start; one it moves is in it before the first move if they start in it (the three
-/// brothers, who leave and come back) or the first move takes them away.
+/// from the start, and so is one it only takes away; one it brings in is in it before the first
+/// move only if they start in it (the three brothers, who leave and come back). The moves are in
+/// story order.
 fn in_army(moves: &[(usize, bool)], starts: bool, now: Option<usize>) -> bool {
     let Some(now) = now else { return true };
-    if moves.is_empty() {
-        return true;
-    }
-    let start = starts || moves.first().is_some_and(|&(_, joins)| !joins);
+    debug_assert!(moves.windows(2).all(|w| w[0].0 <= w[1].0), "{moves:?}");
+    // (An officer the story first moves away and back in the same scene, as it does to one it
+    // changes before they join, is out of the army before that.)
+    let start = starts || !moves.iter().any(|&(_, joins)| joins);
     moves
         .iter()
         .take_while(|&&(t, _)| t < now)
@@ -5404,8 +5405,11 @@ mod tests {
         assert!(!in_army(&[(5, true)], false, Some(4)));
         assert!(!in_army(&[(5, true)], false, Some(5)));
         assert!(in_army(&[(5, true)], false, Some(6)));
-        // One whose first move takes them away was in the army before it.
+        // One the story only takes away was in the army before.
         assert!(in_army(&[(5, false)], false, Some(4)));
+        // One it moves away and back before they join (to change them first) was not.
+        assert!(!in_army(&[(5, false), (5, true)], false, Some(4)));
+        assert!(in_army(&[(5, false), (5, true)], false, Some(6)));
         // Never moved, or not a battle of the story: in the army.
         assert!(in_army(&[], false, Some(4)));
         assert!(!in_army(&brother, true, Some(7)) && in_army(&brother, true, None));
