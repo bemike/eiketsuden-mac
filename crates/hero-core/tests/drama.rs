@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use hero_core::campaign::{CampaignError, CampaignState};
+use hero_core::campaign::{CampaignError, CampaignState, Growth};
 use hero_core::drama::{DramaError, DramaRunner, Step};
 use hero_core::pack::Pack;
 use hero_core::script::Slot;
@@ -233,6 +233,78 @@ fn a_story_raises_levels_and_changes_classes() {
     campaign.officer_mut("guan_yu").unwrap().level = cap + 5;
     campaign.add_levels(&pack, "guan_yu", 1).unwrap();
     assert_eq!(campaign.officer("guan_yu").unwrap().level, cap + 5);
+}
+
+#[test]
+fn growth_of_an_officer_not_in_the_army_waits_for_their_join() {
+    let pack = pack_with_scene(
+        "\n== growth\n@level jian_yong 2\n@level jian_yong 3\n@class jian_yong archer\n",
+    );
+    let def = pack.officer("jian_yong").unwrap().clone();
+    let mut campaign = CampaignState::new_game(&pack);
+    let mut runner = DramaRunner::new(&pack, "growth").unwrap();
+    assert_eq!(
+        run_until_pause(&mut runner, &pack, &mut campaign),
+        [Step::End]
+    );
+    assert!(campaign.officer("jian_yong").is_none());
+    assert_eq!(
+        campaign.pending_growth["jian_yong"],
+        Growth {
+            levels: 5,
+            class: Some("archer".into())
+        }
+    );
+    // The save keeps it and reads back the same.
+    let saved = serde_json::to_string(&campaign).unwrap();
+    assert_eq!(
+        serde_json::from_str::<CampaignState>(&saved).unwrap(),
+        campaign
+    );
+    // They join with it, once.
+    campaign.join(&pack, "jian_yong").unwrap();
+    let joined = campaign.officer("jian_yong").unwrap();
+    assert_eq!(
+        (joined.level, joined.class.as_str()),
+        (def.level + 5, "archer")
+    );
+    assert!(campaign.pending_growth.is_empty());
+    // An officer the pack does not have is still no one to grow.
+    assert_eq!(
+        campaign.add_levels(&pack, "nobody", 1),
+        Err(CampaignError::NotInArmy("nobody".into()))
+    );
+    assert_eq!(
+        campaign.set_class(&pack, "nobody", "archer"),
+        Err(CampaignError::NotInArmy("nobody".into()))
+    );
+    // A save without any writes no field, and an older one reads without it.
+    let plain = serde_json::to_string(&CampaignState::new_game(&pack)).unwrap();
+    assert!(!plain.contains("pending_growth"), "{plain}");
+    let back: CampaignState = serde_json::from_str(&plain).unwrap();
+    assert!(back.pending_growth.is_empty());
+}
+
+#[test]
+fn queued_growth_is_capped_at_the_join_and_used_once() {
+    let pack = pack_with_scene("\n== none\n@gold +1\n");
+    let def = pack.officer("jian_yong").unwrap().clone();
+    let mut state = CampaignState::new_game(&pack);
+    state.add_levels(&pack, "jian_yong", 1000).unwrap();
+    state.join(&pack, "jian_yong").unwrap();
+    assert_eq!(
+        state.officer("jian_yong").unwrap().level,
+        pack.rules.level_cap
+    );
+    // Leaving and joining again starts from the officer's definition: the growth was used.
+    state.leave("jian_yong").unwrap();
+    state.join(&pack, "jian_yong").unwrap();
+    assert_eq!(state.officer("jian_yong").unwrap().level, def.level);
+    // Growth is kept in the order it came, whatever the officer's level is by the join.
+    state.leave("jian_yong").unwrap();
+    state.add_levels(&pack, "jian_yong", 1).unwrap();
+    state.add_levels(&pack, "jian_yong", 1).unwrap();
+    assert_eq!(state.pending_growth["jian_yong"].levels, 2);
 }
 
 #[test]

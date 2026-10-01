@@ -26,6 +26,9 @@
 //!   (`unit_in_area`) of the record for Liu Bei whose script runs the battle routine (`data`
 //!   kind 4) in the battle's first phase — the original's "Liu Bei reaches the gate" objectives;
 //! * the AI the opening script gives (`set_ai` in group 2);
+//! * the opening's lines of a chapter's battle (group 2, [`OPENING_GROUP`]): its dialogue, duels,
+//!   retreats and flags play when the battle begins, before the phases' own opening scripts (the
+//!   setup's own changes — AI, arrivals, objective — are already in the battle's units);
 //! * the mid-battle events: every trigger record of the battle's phases ([`FIRST_PHASE_GROUP`]
 //!   on) becomes an event ([`convert`]): its trigger ([`trigger_of`]), its dialogue as a drama
 //!   scene written from the player's copy (duels included, as dialogue with sound), and its
@@ -1011,32 +1014,51 @@ fn is_treasure(r: &Record) -> bool {
         })
 }
 
-/// Whether a record of the battle's last stage becomes an event that can end the battle by its
-/// script (`leave_parallel` or the end of the battle), when the stage also has a victory script
-/// ([`ended_flag`]): the records of a group that is not watched in parallel end it by running.
-/// The objective of Liu Bei of a single-stage battle is the battle's victory condition instead,
-/// and treasures are no events.
+/// Whether a record of the battle becomes an event that can end the battle by its script, when
+/// the battle's last stage has a victory script ([`ended_flag`]). In the last stage that is a
+/// record that leaves the phase (`leave_parallel` or the end of the battle: the records of a
+/// group that is not watched in parallel end it by running); in an earlier stage one that ends
+/// the battle itself (`battle_end`, `goto_block`: Tucai's four forts taken), which the later
+/// stage's victory script never follows. The objective of Liu Bei of a single-stage battle is the
+/// battle's victory condition instead, and treasures are no events.
 pub fn events_end_battle(records: &[Record]) -> bool {
     let phases = phases(records);
     let Some(last) = phases.iter().rposition(|p| !p.runs_only) else {
         return false;
     };
+    let first = phases.iter().position(|p| !p.runs_only);
     let single = phases.iter().filter(|p| !p.runs_only).count() == 1;
     let phase = &phases[last];
     let has_victory_script = phase
         .records
         .iter()
         .any(|&r| records[r].trigger.kind == BATTLE_WON);
+    let event = |r: &Record| {
+        !matches!(r.trigger.kind, BATTLE_WON | BATTLE_LOST)
+            && !is_treasure(r)
+            && !(single && is_routine(r))
+    };
+    let ends_itself = |r: &Record| {
+        r.code
+            .iter()
+            .any(|c| matches!(c.mnemonic, "battle_end" | "goto_block"))
+    };
     has_victory_script
-        && phase.records.iter().map(|&r| &records[r]).any(|r| {
-            !matches!(r.trigger.kind, BATTLE_WON | BATTLE_LOST)
-                && !is_treasure(r)
-                && !(single && is_routine(r))
+        && (phase.records.iter().map(|&r| &records[r]).any(|r| {
+            event(r)
                 && (!phase.parallel
                     || r.code.iter().any(|c| {
                         matches!(c.mnemonic, "leave_parallel" | "battle_end" | "goto_block")
                     }))
-        })
+        }) || phases[..last]
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.runs_only)
+            .flat_map(|(i, p)| p.records.iter().map(move |&r| (i, &records[r])))
+            .any(|(i, r)| {
+                // (Liu Bei's objective of the first stage is the battle's victory condition.)
+                event(r) && ends_itself(r) && !(Some(i) == first && is_routine(r))
+            }))
 }
 
 /// The campaign flag an event of a chapter's battle sets when it ends the battle (the original
@@ -1069,6 +1091,9 @@ pub struct EventSources<'a> {
 /// First trigger group of a battle block that plays during the battle: group 0 loads the map,
 /// 1 starts the battle, 2 is the opening.
 pub const FIRST_PHASE_GROUP: u8 = 3;
+/// The trigger group of a battle block that opens the battle: the first lines, the AI it starts
+/// with, those who are on the field from the start.
+pub const OPENING_GROUP: u8 = 2;
 /// Trigger kinds: runs when its group's turn comes / the battle is won / lost / unit in an area.
 const RUN: u8 = 0;
 const BATTLE_WON: u8 = 7;
@@ -1297,6 +1322,10 @@ struct Branch {
     unless: Vec<FlagCond>,
     actions: Vec<EventAction>,
     end: ScriptEnd,
+    /// Where the script reached the part: the number of the record's own actions before it.
+    /// `None` for a part that is not at the top level of the script (the rest past a guarded
+    /// part, a test inside a guarded part).
+    at: Option<usize>,
 }
 
 /// The converter of one battle's records into events and drama scenes.
@@ -1335,6 +1364,9 @@ struct EventWriter<'a, 'b> {
     /// A chapter's battle whose last stage has a victory script: the flag an event sets when it
     /// ends the battle itself, for the outro to leave that script out ([`ended_flag`]).
     ended: Option<String>,
+    /// Writing the opening ([`OPENING_GROUP`]): what the battle's units already have from its
+    /// setup (AI, arrivals, the objective) is not done again.
+    opening: bool,
 }
 
 /// The reference that names the unit of `person` on the map (`persons` runs alongside `units`):
@@ -1556,6 +1588,7 @@ impl EventWriter<'_, '_> {
             unless: tested,
             actions,
             end,
+            at: None,
         });
     }
 
@@ -1660,6 +1693,7 @@ impl EventWriter<'_, '_> {
                                 unless: Vec::new(),
                                 actions: guarded,
                                 end: branch_end,
+                                at: when.is_empty().then_some(actions.len()),
                             });
                             skip = *n;
                             if branch_end != ScriptEnd::Done {
@@ -1781,6 +1815,9 @@ impl EventWriter<'_, '_> {
                         Err(e) => self.notes.push(format!("record {record}: retreat: {e}")),
                     }
                 }
+                // The opening of the battle: its units already start with this AI, are on the
+                // field (or kept for a later arrival) and have this objective.
+                "set_ai" | "join_battle" | "set_objective" if self.opening => {}
                 "set_ai" => {
                     flush(&mut scene, actions, self);
                     let mode = get("mode") as u8;
@@ -2524,6 +2561,7 @@ pub fn convert(
         army: Vec::new(),
         ended: (pairing.battle.is_empty() && events_end_battle(&orig.records))
             .then(|| ended_flag(&base.id)),
+        opening: false,
     };
     // Where a script that ended with `end` in phase `i` moves the battle on: the actions to
     // add (victory, or the next stage and the scripts on the way), if it leaves the phase.
@@ -2556,38 +2594,55 @@ pub fn convert(
         }
     };
     let mut events = Vec::new();
-    // A chapter battle's phases of `run` records before the first watched one play when it
-    // begins: nothing moves the battle into them otherwise. They hold its opening lines and
-    // what those set (Xuchang 2's opening sets flag 218, which brings Zhang Liao into the next
-    // battle's enemy army).
+    // A chapter battle's opening plays when it begins: the opening group's lines (the challenge
+    // before a duel, the words as the sides meet), then the phases of `run` records before the
+    // first watched one, which nothing moves the battle into otherwise. They hold its opening
+    // lines and what those set (Xuchang 2's opening sets flag 218, which brings Zhang Liao into
+    // the next battle's enemy army).
     if pairing.battle.is_empty() {
         let mut actions = Vec::new();
-        'opening: for (i, phase) in phases.iter().enumerate() {
-            // (A phase that ends the battle is its victory, as `next_after` takes it.)
-            if stages[i].is_some() || phase.ends_battle {
+        // The parts of the opening that run only while campaign flags hold (the route's lines:
+        // Pang Tong's death at Jincang): events of their own, as a record's guarded parts are.
+        let mut guarded = Vec::new();
+        writer.opening = true;
+        let mut ends = false;
+        for (r, rec) in orig
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(_, rec)| rec.trigger.group == OPENING_GROUP && rec.trigger.kind == RUN)
+        {
+            let end = writer.script(r, &rec.code, &mut actions, true);
+            guarded.append(&mut writer.branches);
+            if end == ScriptEnd::EndsBattle {
+                ends = true;
                 break;
             }
-            for &r in &phase.records {
-                if writer.on_the_way(r, &orig.records[r].code, &mut actions)
-                    == ScriptEnd::EndsBattle
-                {
-                    break 'opening;
+        }
+        writer.opening = false;
+        if !ends {
+            'opening: for (i, phase) in phases.iter().enumerate() {
+                // (A phase that ends the battle is its victory, as `next_after` takes it.)
+                if stages[i].is_some() || phase.ends_battle {
+                    break;
+                }
+                for &r in &phase.records {
+                    if writer.on_the_way(r, &orig.records[r].code, &mut actions)
+                        == ScriptEnd::EndsBattle
+                    {
+                        break 'opening;
+                    }
                 }
             }
         }
-        if !actions.is_empty() {
-            events.push(EventDef {
-                trigger: Trigger::TurnStart {
-                    turn: 1,
-                    side: Side::Player,
-                },
-                once: true,
-                stage: None,
-                when: Vec::new(),
-                unless: Vec::new(),
-                actions,
-            });
-        }
+        events.extend(events_in_order(
+            &Trigger::TurnStart {
+                turn: 1,
+                side: Side::Player,
+            },
+            actions,
+            guarded,
+        ));
     }
     for (i, phase) in phases.iter().enumerate() {
         let Some(stage) = stages[i] else {
@@ -2689,6 +2744,7 @@ pub fn convert(
                 unless: Vec::new(),
                 actions,
                 end,
+                at: None,
             })
             .chain(branches);
             for part in parts {
@@ -2795,6 +2851,42 @@ pub fn convert(
         notes,
         army,
     })
+}
+
+/// The events of a script that fire on `trigger` (once, in no stage): what the script does
+/// whatever the flags say (`actions`) and its parts guarded by flags (`branches`), in the order
+/// the script reaches them. A guarded part sits where the script met it, so the unconditional
+/// actions around it become events of their own: events fire in the order they are defined, and
+/// a line that follows the guarded one must not be told before it. (Jincang's opening: the
+/// defender, then Pang Tong or Zhao Yun by the route, then Jiang Wei.)
+fn events_in_order(
+    trigger: &Trigger,
+    actions: Vec<EventAction>,
+    branches: Vec<Branch>,
+) -> Vec<EventDef> {
+    let event = |when: Vec<FlagCond>, unless: Vec<FlagCond>, actions: Vec<EventAction>| EventDef {
+        trigger: trigger.clone(),
+        once: true,
+        stage: None,
+        when,
+        unless,
+        actions,
+    };
+    let mut out = Vec::new();
+    let mut start = 0;
+    for part in branches {
+        if let Some(at) = part.at.filter(|&at| at > start && at <= actions.len()) {
+            out.push(event(Vec::new(), Vec::new(), actions[start..at].to_vec()));
+            start = at;
+        }
+        if !part.actions.is_empty() {
+            out.push(event(part.when, part.unless, part.actions));
+        }
+    }
+    if start < actions.len() {
+        out.push(event(Vec::new(), Vec::new(), actions[start..].to_vec()));
+    }
+    out
 }
 
 /// Reinforcement group of the units a trigger record brings in.
@@ -4433,6 +4525,111 @@ item = "wine"
             && e.actions.last() == Some(&EventAction::Victory)));
     }
 
+    /// A chapter battle's opening (group 2) plays when the battle begins: its lines, a duel
+    /// loser's retreat and the flags it sets, in order; not what the setup's units already have
+    /// (the AI, who is on the field, the objective).
+    #[test]
+    fn the_opening_of_a_chapter_battle_plays_when_it_begins() {
+        let prep = Block {
+            offset: 0,
+            records: vec![record(
+                0,
+                0,
+                false,
+                [0; 6],
+                vec![setup(Some(54), 25, vec![unit(0, 1, 1)])],
+            )],
+        };
+        let battle = Block {
+            offset: 0,
+            records: vec![
+                record(
+                    0,
+                    0,
+                    false,
+                    [0; 6],
+                    vec![
+                        roster(vec![unit(54, 9, 4), unit(300, 8, 4), unit(304, 7, 7)]),
+                        fields("load_map", &[("map", 0x3002)]),
+                    ],
+                ),
+                record(0, 1, false, [0; 6], vec![op("begin_battle")]),
+                // 2: the opening (the objective's text is not even in the scene's text).
+                record(
+                    0,
+                    2,
+                    false,
+                    [0; 6],
+                    vec![
+                        fields("set_ai", &[("person", 304), ("mode", 2), ("unused", 0)]),
+                        fields("set_objective", &[("text", 0x60)]),
+                        fields("dialogue", &[("text", 0x10)]),
+                        fields("remove_person", &[("person", 300)]),
+                        fields("join_battle", &[("person", 302)]),
+                        fields("set_flag", &[("flag", 5), ("clear", 0)]),
+                        fields("dialogue", &[("text", 0x40)]),
+                        // A line only the route of flag 38 hears, and one everybody hears after it.
+                        guard(1, vec![38], vec![]),
+                        fields("dialogue", &[("text", 0x10)]),
+                        fields("dialogue", &[("text", 0x40)]),
+                    ],
+                ),
+            ],
+        };
+        let scene = Scene {
+            blocks: vec![prep, battle],
+        };
+        let c = convert_leg(&scene, 2, 0, "o");
+        let turn_one = Trigger::TurnStart {
+            turn: 1,
+            side: Side::Player,
+        };
+        let drama = |scene: &str| EventAction::Drama {
+            scene: scene.into(),
+        };
+        // Three events at the first turn, in the order the script tells them: what is said
+        // before the route's line, the route's line under its flag, what is said after it.
+        assert_eq!(c.battle.events.len(), 3, "{:#?}", c.battle.events);
+        assert!(c.battle.events.iter().all(|e| e.trigger == turn_one));
+        let [before, route, after] = &c.battle.events[..] else {
+            unreachable!()
+        };
+        assert_eq!(
+            before.actions,
+            [
+                drama("orig_o_2"),
+                EventAction::Retreat {
+                    target: "person_300".into()
+                },
+                EventAction::SetFlag {
+                    flag: crate::chapters::flag(5),
+                    value: 1
+                },
+                drama("orig_o_2_2"),
+            ]
+        );
+        assert!(before.when.is_empty());
+        assert_eq!(
+            route.when,
+            [FlagCond {
+                flag: crate::chapters::flag(38),
+                cmp: Compare::Ne,
+                value: 0
+            }]
+        );
+        assert_eq!(route.actions, [drama("orig_o_2_3")]);
+        assert!(after.when.is_empty() && after.unless.is_empty());
+        assert_eq!(after.actions, [drama("orig_o_2_4")]);
+        assert!(c.drama.contains("guan_yu: 결투다!"), "{}", c.drama);
+        assert!(
+            !c.notes
+                .iter()
+                .any(|n| n.contains("no string") || n.contains("joins but")),
+            "{:?}",
+            c.notes
+        );
+    }
+
     #[test]
     fn the_ended_flag_is_named_after_the_battle() {
         assert_eq!(ended_flag("c2_s3_b7"), "orig_c2_s3_b7_ended");
@@ -4497,6 +4694,48 @@ item = "wine"
         two.push(record(BATTLE_WON, 4, false, [0; 6], leave()));
         assert!(events_end_battle(&two));
         assert!(!events_end_battle(&[]));
+        // A record of an earlier stage that ends the battle itself (its forts taken) counts,
+        // although the last stage holds only the victory script; one that merely moves on to
+        // the next stage does not.
+        let takes = |ends: &'static str| {
+            let mut stages = stage(
+                true,
+                vec![(UNIT_IN_AREA, [0, 0, 1, 1, 2, 2], vec![op(ends)])],
+            );
+            stages.push(record(BATTLE_WON, 4, true, [0; 6], leave()));
+            stages
+        };
+        assert!(events_end_battle(&takes("goto_block")));
+        assert!(events_end_battle(&takes("battle_end")));
+        assert!(!events_end_battle(&takes("leave_parallel")));
+        // Not Liu Bei's objective of the first stage, which is the victory condition, nor a
+        // treasure; but the objective of a later stage is an event.
+        let routine = |ends: &'static str| {
+            (
+                UNIT_AT_CELL,
+                [0, 0, 3, 1, 0, 0],
+                vec![fields("data", &[("kind", 4), ("value", 50)]), op(ends)],
+            )
+        };
+        let mut objective_first = stage(true, vec![routine("goto_block")]);
+        objective_first.push(record(BATTLE_WON, 4, true, [0; 6], leave()));
+        assert!(!events_end_battle(&objective_first));
+        let treasure = (
+            UNIT_AT_CELL,
+            [0, 4, 5, 6, 0, 0],
+            vec![
+                fields("data", &[("kind", 2), ("value", 100)]),
+                op("goto_block"),
+            ],
+        );
+        let mut treasure_first = stage(true, vec![treasure]);
+        treasure_first.push(record(BATTLE_WON, 4, true, [0; 6], leave()));
+        assert!(!events_end_battle(&treasure_first));
+        let mut objective_later = stage(true, vec![civilian()]);
+        let (kind, args, code) = routine("goto_block");
+        objective_later.push(record(kind, 4, true, args, code));
+        objective_later.push(record(BATTLE_WON, 5, true, [0; 6], leave()));
+        assert!(events_end_battle(&objective_later));
     }
 
     /// Civilians are the `BAKDATA` persons of the civilian class that no officer of the pack plays.

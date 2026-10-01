@@ -174,6 +174,9 @@ struct Writer<'c, 'a> {
     rec_end: RecordEnd,
     /// Write only the army's changes (a battle's setup, [`before_scene`]).
     army_only: bool,
+    /// With `army_only`: also what the setup says before the sortie (pictures, narration, titles
+    /// and dialogue, but not its prompt to deploy: [`is_setup_prompt`]).
+    speech: bool,
     /// A picture is shown (`@picture`): the next instruction but a narration clears it.
     picture: bool,
 }
@@ -354,6 +357,8 @@ impl Writer<'_, '_> {
                         continue;
                     }
                 }
+                // The sortie's prompt is the screen's own.
+                "dialogue" if self.speech && is_setup_prompt(code, i) => {}
                 _ => self.effect(instr),
             }
             i += 1;
@@ -368,6 +373,11 @@ impl Writer<'_, '_> {
                 instr.mnemonic,
                 "set_allegiance" | "set_country" | "add_levels" | "set_class"
             )
+            && !(self.speech
+                && matches!(
+                    instr.mnemonic,
+                    "dialogue" | "narration" | "title" | "show_picture"
+                ))
         {
             return;
         }
@@ -644,6 +654,7 @@ impl<'c, 'a> Writer<'c, 'a> {
             gold_as_reward,
             rec_end: RecordEnd::Outside,
             army_only: false,
+            speech: false,
             picture: false,
         }
     }
@@ -1023,8 +1034,11 @@ pub fn without_ended_gate(text: &str, flag: &str) -> String {
 /// What the original changes in the army as it sets a battle of `block` up (the setup's
 /// `set_allegiance`, behind its flag checks, and the level and class changes of the army's
 /// officers): officers joining for it (Guan Yu's troop at Maicheng) or coming back (chapter 4's
-/// detachment). Played before the battle's camp; empty when the setup changes nothing of the
-/// army's. The setup's level and class changes of the enemies are left out and noted.
+/// detachment). With it what the setup says before the sortie (Maicheng's pictures and
+/// narration, Xuchang 2's council), not the prompt to deploy. Played before the battle's camp;
+/// empty when the setup changes and says nothing. The setup's level and class changes of the
+/// enemies are left out and noted. (What the battle says as it begins, its opening, is the
+/// battle's own: [`battles::OPENING_GROUP`].)
 pub fn before_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
     let mut w = Writer::new(ctx, false);
     w.army_only = true;
@@ -1033,18 +1047,41 @@ pub fn before_scene(block: &Block, ctx: &StoryContext) -> StoryScene {
         .iter()
         .filter(|r| r.trigger.group < battles::FIRST_PHASE_GROUP)
     {
+        w.speech = rec.trigger.group < battles::OPENING_GROUP;
         // The setup goes on to the battle: its jumps are not the story's.
         let _ = w.lines(&rec.code);
     }
     // Only flag checks around nothing: no scene.
-    if !w.out.text.lines().any(|l| {
-        ["@join ", "@away ", "@level ", "@class "]
-            .iter()
-            .any(|p| l.starts_with(p))
-    }) {
+    let structure = ["@if ", "@label ", "@goto ", "@set ", "@end"];
+    if !w
+        .out
+        .text
+        .lines()
+        .any(|l| !structure.iter().any(|p| l.starts_with(p)))
+    {
         w.out.text.clear();
     }
     w.finish()
+}
+
+/// Whether the dialogue at `code[i]` of a battle's setup is its prompt and not story: the
+/// question just before an `if_answer`, or the last thing said before `battle_setup` ("organise
+/// the troops"; the deploy screen asks that itself).
+fn is_setup_prompt(code: &[Instr], i: usize) -> bool {
+    const SHOWS: [&str; 6] = [
+        "dialogue",
+        "narration",
+        "caption",
+        "title",
+        "chapter_title",
+        "show_picture",
+    ];
+    let rest = &code[i + 1..];
+    rest.first().is_some_and(|c| c.mnemonic == "if_answer")
+        || rest
+            .iter()
+            .position(|c| c.mnemonic == "battle_setup")
+            .is_some_and(|at| !rest[..at].iter().any(|c| SHOWS.contains(&c.mnemonic)))
 }
 
 /// Record kind of the script the original runs when the battle is lost.
@@ -2383,12 +2420,14 @@ mod tests {
     #[test]
     fn a_battles_setup_changes_the_army_before_its_camp() {
         let b = block(vec![
+            // (The dialogue is the prompt to deploy, the screen's own.)
             record(
                 RUN,
                 0,
                 vec![
                     instr("set_allegiance", &[("person", 9), ("army", 0)]),
                     instr("dialogue", &[("text", 1)]),
+                    instr("battle_setup", &[]),
                 ],
             ),
             record(RUN, 1, vec![instr("begin_battle", &[])]),
@@ -2405,11 +2444,14 @@ mod tests {
             before_scene(&b, &ctx(&names, &song_key)).text,
             "@join yuan_shao\n"
         );
-        // A setup that changes nothing has no scene.
+        // A setup that changes and tells nothing has no scene.
         let b = block(vec![record(
             RUN,
             0,
-            vec![instr("dialogue", &[("text", 1)])],
+            vec![
+                instr("dialogue", &[("text", 1)]),
+                instr("battle_setup", &[]),
+            ],
         )]);
         assert!(before_scene(&b, &ctx(&names, &song_key)).text.is_empty());
         // One that only makes an officer of the army stronger has one; an enemy's change is
@@ -2433,6 +2475,61 @@ mod tests {
             "{:?}",
             s.notes
         );
+    }
+
+    #[test]
+    fn a_battles_setup_tells_its_story_before_the_camp() {
+        let b = block(vec![
+            record(
+                RUN,
+                0,
+                vec![
+                    instr("show_picture", &[("picture", 12), ("variant", 0)]),
+                    instr("narration", &[("text", 11)]),
+                    // The story, then the prompt to deploy (the screen's own).
+                    instr("dialogue", &[("text", 2)]),
+                    instr("dialogue", &[("text", 1)]),
+                    instr("set_allegiance", &[("person", 9), ("army", 0)]),
+                    instr("battle_setup", &[]),
+                ],
+            ),
+            // A question asks nothing here: it is not story either.
+            record(
+                RUN,
+                1,
+                vec![
+                    instr("dialogue", &[("text", 4)]),
+                    instr("if_answer", &[("answer", 0), ("skip", 0)]),
+                ],
+            ),
+            // The opening is the battle's own.
+            record(RUN, 2, vec![instr("dialogue", &[("text", 3)])]),
+        ]);
+        let song_key = |_: u16| None;
+        let names = names();
+        let s = before_scene(&b, &ctx(&names, &song_key));
+        assert_eq!(
+            s.text,
+            "@picture orig_12\n@narr 유비가 죽었다.\n@picture none\n\
+             yuan_shao: 흥.\nliu_bei: 무슨 일입니까?\n@join yuan_shao\n"
+        );
+        parses(&s.text);
+        // The same without the story (the prompt alone) says nothing.
+        assert!(is_setup_prompt(
+            &[
+                instr("dialogue", &[("text", 1)]),
+                instr("battle_setup", &[])
+            ],
+            0
+        ));
+        assert!(!is_setup_prompt(
+            &[
+                instr("dialogue", &[("text", 1)]),
+                instr("dialogue", &[("text", 2)]),
+                instr("battle_setup", &[])
+            ],
+            0
+        ));
     }
 
     #[test]

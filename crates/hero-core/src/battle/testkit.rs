@@ -490,6 +490,7 @@ pub fn campaign(roster: Vec<OfficerState>, deployed: &[&str]) -> CampaignState {
         deployed: deployed.iter().map(|s| s.to_string()).collect(),
         battles_won: Vec::new(),
         play_seconds: 0,
+        pending_growth: BTreeMap::new(),
     }
 }
 

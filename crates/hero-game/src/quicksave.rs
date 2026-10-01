@@ -149,7 +149,7 @@ mod tests {
     use super::*;
     use hero_core::campaign::CampaignState;
     use hero_core::drama::DramaRunner;
-    use hero_core::save::{SceneKind, PLAIN_SAVE_VERSION, SAVE_VERSION};
+    use hero_core::save::{SceneKind, PLAIN_SAVE_VERSION, SCENE_SAVE_VERSION};
     use std::collections::BTreeMap;
 
     fn scene() -> SceneResume {
@@ -192,7 +192,7 @@ mod tests {
         let (pack, session) = fixtures();
         let save = snapshot(&pack, &session, vec![ResumePoint::Scene(Box::new(scene()))]).unwrap();
         assert_eq!(save.scene, Some(scene()));
-        assert_eq!(save.version, SAVE_VERSION);
+        assert_eq!(save.version, SCENE_SAVE_VERSION);
     }
 
     #[test]
@@ -241,7 +241,7 @@ mod tests {
         .unwrap();
         assert_eq!(save.battle, Some(state));
         assert_eq!(save.pending_scenes, vec!["p1_after".to_string()]);
-        assert_eq!(save.version, SAVE_VERSION);
+        assert_eq!(save.version, SCENE_SAVE_VERSION);
         // The label names the battle and the turn, as a manual save made in it would.
         assert!(save.label.contains(" · "), "{}", save.label);
     }

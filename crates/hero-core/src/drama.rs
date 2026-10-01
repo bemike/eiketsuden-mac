@@ -231,7 +231,8 @@ impl DramaRunner {
                     }
                     continue;
                 }
-                // (An officer not in the army is left as they are, as `@away` does.)
+                // (An officer of the pack who is not in the army has the change kept for when
+                // they join; `@away` leaves one who is not in the army as they are.)
                 Cmd::Level { officer, levels } => {
                     match campaign.add_levels(pack, officer, *levels) {
                         Ok(()) | Err(CampaignError::NotInArmy(_)) => {}

@@ -1509,6 +1509,142 @@ mod tests {
         assert!(scene("c3_s4_b0_defeat").contains("@away guan_yu\n"));
         // Chapter 4's detachment comes back as Xuchang's setup says.
         assert!(scene("c4_s1_b6_before").contains("@join zhao_yun\n"));
+        // What a setup says before the sortie (ROADMAP M4-1): Maicheng's pictures and narration
+        // and Xuchang 2's council, not the prompt to deploy the troops.
+        let maicheng_before = scene("c3_s4_b0_before");
+        for picture in ["@picture orig_23\n", "@picture orig_24\n", "@narr "] {
+            assert!(maicheng_before.contains(picture), "{picture}");
+        }
+        let council = scene("c4_s1_b7_before");
+        assert!(
+            council.contains("huang_zhong: 주공, 꼭 저를 데려가"),
+            "{council}"
+        );
+        assert!(!council.contains("부대를 편성"), "{council}");
+        // The words as a battle begins (ROADMAP M4-1) play in its first turn, in order with the
+        // duels and retreats the opening has: Sishui's challenge, a duel's loser leaving.
+        let battle_story = std::fs::read_to_string(out.join(pack::DRAMA_FILE)).unwrap();
+        let opening_text = |id: &str| {
+            let head = format!("== {id}\n");
+            let start = battle_story.find(&head).unwrap_or_else(|| panic!("{id}")) + head.len();
+            battle_story[start..]
+                .split("\n== ")
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        let first_turn = |id: &str, flag: Option<&str>| -> Vec<hero_core::battledef::EventAction> {
+            pack.battles[id]
+                .events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.trigger,
+                        hero_core::battledef::Trigger::TurnStart {
+                            turn: 1,
+                            side: hero_core::battledef::Side::Player
+                        }
+                    ) && e.when.first().map(|c| c.flag.as_str()) == flag
+                })
+                .flat_map(|e| e.actions.clone())
+                .collect()
+        };
+        use hero_core::battledef::EventAction::{Drama, Retreat};
+        assert_eq!(
+            first_turn("c0_s0_b5", None),
+            [Drama {
+                scene: "orig_c0_s0_b5_2".into()
+            }]
+        );
+        assert!(opening_text("orig_c0_s0_b5_2").starts_with("hua_xiong: "));
+        assert_eq!(
+            first_turn("c1_s0_b11", None),
+            [
+                Drama {
+                    scene: "orig_c1_s0_b11_2".into()
+                },
+                Retreat {
+                    target: "yan_gang".into()
+                },
+                Drama {
+                    scene: "orig_c1_s0_b11_2_2".into()
+                }
+            ]
+        );
+        assert!(opening_text("orig_c1_s0_b11_2").contains("@duel qu_yi yan_gang terrain\n"));
+        // Jincang's and Chang'an's openings have lines of their own for each side of flag 38
+        // (Pang Tong's death), told where the original tells them: the defender's words, then
+        // Pang Tong's or Zhao Yun's by the route, then the one who closes it (Jiang Wei, Xu Shu).
+        for id in ["c4_s1_b2", "c4_s1_b3"] {
+            let opening: Vec<(Option<String>, Vec<String>)> = pack.battles[id]
+                .events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.trigger,
+                        hero_core::battledef::Trigger::TurnStart {
+                            turn: 1,
+                            side: hero_core::battledef::Side::Player
+                        }
+                    )
+                })
+                .map(|e| {
+                    (
+                        e.when.first().map(|c| format!("{} {:?}", c.flag, c.cmp)),
+                        e.actions
+                            .iter()
+                            .filter_map(|a| match a {
+                                Drama { scene } => Some(scene.clone()),
+                                _ => None,
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            let flags: Vec<Option<&str>> = opening.iter().map(|(w, _)| w.as_deref()).collect();
+            assert_eq!(flags.len(), 4, "{id}: {opening:?}");
+            assert!(
+                flags[0].is_none()
+                    && flags[1].is_some_and(|f| f.starts_with("orig_f38"))
+                    && flags[2].is_some_and(|f| f.starts_with("orig_f38"))
+                    && flags[3].is_none(),
+                "{id}: {opening:?}"
+            );
+            let text = |scene: &str| opening_text(scene);
+            // (Jiang Wei closes Jincang's, Xu Shu Chang'an's.)
+            let last = if id == "c4_s1_b2" {
+                "jiang_wei: "
+            } else {
+                "xu_shu: "
+            };
+            assert!(text(&opening[3].1[0]).starts_with(last), "{id}");
+            assert!(
+                [&opening[1], &opening[2]]
+                    .iter()
+                    .any(|(_, scenes)| text(&scenes[0]).starts_with("pang_tong: ")),
+                "{id}"
+            );
+        }
+        // Levels the story gives officers who are not in the army yet wait for their join (D24):
+        // the council with Wu (flag 136 set) raises its generals by eleven levels, Gan Ning is in
+        // no army, and joining later gives him the levels.
+        let mut state = hero_core::campaign::CampaignState::new_game(&pack);
+        state.flags.insert("orig_f136".into(), 1);
+        for story in ["c4_s0_story4"] {
+            let mut runner = hero_core::drama::DramaRunner::new(&pack, story).unwrap();
+            loop {
+                match runner.next(&pack, &mut state).unwrap() {
+                    hero_core::drama::Step::End => break,
+                    hero_core::drama::Step::Choice(_) => runner.choose(&pack, 0).unwrap(),
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(state.pending_growth["gan_ning"].levels, 11);
+        let level = pack.officer("gan_ning").unwrap().level;
+        state.join(&pack, "gan_ning").unwrap();
+        assert_eq!(state.officer("gan_ning").unwrap().level, level + 11);
+        assert!(!state.pending_growth.contains_key("gan_ning"));
         // The original's event pictures, shown over the story (chapter 2 opens with one).
         for n in 3..=33 {
             assert!(
