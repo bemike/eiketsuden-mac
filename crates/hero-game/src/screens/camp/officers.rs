@@ -66,7 +66,8 @@ fn ability_rect(canvas: Vec2, i: usize) -> Rect {
     let panel = content_rect(canvas);
     let cx = panel.x + 8.0 + 108.0;
     let by = panel.y + 8.0 + 120.0;
-    Rect::new(cx - 2.0, by - 2.0 + i as f32 * 14.0, 154.0, 14.0)
+    // Wide enough for the ▶ drawn just right of the value.
+    Rect::new(cx - 2.0, by - 2.0 + i as f32 * 14.0, 162.0, 14.0)
 }
 
 /// Where the detail page draws the officer's portrait.
@@ -275,9 +276,6 @@ impl OfficersScreen {
 
     fn draw_detail(&self, ctx: &Ctx, pack: &Pack, o: &OfficerState) {
         let gfx = &ctx.gfx;
-        if let Some(row) = self.edit {
-            draw_highlight(ability_rect(gfx.size(), row), true, ctx.time);
-        }
         let Some(def) = pack.officer(&o.id) else {
             return;
         };
@@ -351,7 +349,10 @@ impl OfficersScreen {
         if let Some(stats) = officer_stats(pack, o) {
             draw_stats_block(gfx, &stats, None, cx, y + 40.0, cw);
         }
-        // 무력 / 지력 / 통솔.
+        // 무력 / 지력 / 통솔 (the row being edited lit up behind it).
+        if let Some(row) = self.edit {
+            draw_highlight(ability_rect(gfx.size(), row), true, ctx.time);
+        }
         let by = y + 120.0;
         for (i, (label, v)) in [("무력", o.strength), ("지력", o.int), ("통솔", o.lead)]
             .into_iter()

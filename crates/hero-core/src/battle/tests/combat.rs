@@ -483,4 +483,10 @@ fn joint_attack_bonus_of_extended_rules() {
         BattleEvent::Strike { damage, .. } => assert_eq!(*damage, f.damage),
         other => panic!("expected a strike: {other:?}"),
     }
+
+    // A mid-battle save from before extended rules plays without them.
+    let mut v = serde_json::to_value(&st).unwrap();
+    v.as_object_mut().unwrap().remove("extended_rules");
+    let old: crate::battle::BattleState = serde_json::from_value(v).unwrap();
+    assert!(!old.extended_rules);
 }

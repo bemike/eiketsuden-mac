@@ -388,10 +388,27 @@ mod tests {
         let back = SaveGame::from_json(&hard.to_json(), "base").unwrap();
         assert_eq!(back.campaign.difficulty, Difficulty::Hard);
 
+        // Options outrank queued growth and a scene record.
+        let mut both = save();
+        both.campaign.extended_rules = true;
+        both.campaign.pending_growth.insert(
+            "x".into(),
+            crate::campaign::Growth {
+                levels: 1,
+                class: None,
+            },
+        );
+        both.scene = Some(resume());
+        both.stamp_version();
+        assert_eq!(both.version, OPTIONS_SAVE_VERSION);
+
         let mut v = serde_json::to_value(save()).unwrap();
-        v["campaign"].as_object_mut().unwrap().remove("difficulty");
+        for field in ["difficulty", "free_edit", "extended_rules"] {
+            v["campaign"].as_object_mut().unwrap().remove(field);
+        }
         let old = SaveGame::from_json(&v.to_string(), "base").unwrap();
         assert_eq!(old.campaign.difficulty, Difficulty::Normal);
+        assert!(!old.campaign.free_edit && !old.campaign.extended_rules);
         let mut normal = old;
         normal.stamp_version();
         assert_eq!(normal.version, PLAIN_SAVE_VERSION);

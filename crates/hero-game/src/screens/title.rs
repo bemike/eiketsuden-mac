@@ -1,7 +1,7 @@
 //! Title screen: artwork (`gfx/ui/title.png`, else the procedural backdrop), the logo and the
 //! main menu — 새 게임 / 이어하기 / 불러오기 / 원작 데이터 (native, unless `--data` chose the pack) /
-//! 설정 / 제작진 / 종료 (native only). 새 게임 first asks for its options: difficulty, free editing and extended rules
-//! (DECISIONS D25).
+//! 설정 / 제작진 / 종료 (native only). 새 게임 first asks for its options: difficulty, free
+//! editing and extended rules (DECISIONS D25).
 
 use super::backdrop::draw_backdrop;
 use super::credits::CreditsScreen;
@@ -362,7 +362,7 @@ impl NewGameMenu {
         let o = self.options;
         let on_off = |on: bool| if on { "켬" } else { "끔" };
         let difficulty = match o.difficulty.enemy_level_offset() {
-            0 => format!("{} (원작)", o.difficulty.label()),
+            0 => o.difficulty.label().to_string(),
             n => format!("{} (적 Lv{n:+})", o.difficulty.label()),
         };
         let items = vec![
