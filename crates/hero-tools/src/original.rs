@@ -1336,6 +1336,19 @@ mod tests {
             .iter()
             .any(|u| u.officer.as_deref() == Some("liu_pi")
                 && u.side == hero_core::battledef::Side::Ally));
+        // The brothers start in the army: the prologue deploys them on the original's tiles,
+        // although the story takes them away and brings them back later (chapters 1 and 2).
+        for id in ["c0_s0_b5", "c0_s0_b7"] {
+            let b = &pack.battles[id];
+            assert_eq!((b.deploy.max, b.deploy.slots.len()), (3, 3), "{id}");
+            for o in ["guan_yu", "zhang_fei"] {
+                assert!(b.deploy.required.iter().any(|r| r == o), "{id}: {o}");
+                assert!(
+                    !b.units.iter().any(|u| u.officer.as_deref() == Some(o)),
+                    "{id}: {o}"
+                );
+            }
+        }
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()
