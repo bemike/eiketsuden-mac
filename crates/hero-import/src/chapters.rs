@@ -1283,24 +1283,93 @@ pub fn reachable(at: &[Place], nexts: &[Vec<Next>]) -> Vec<bool> {
             continue;
         }
         for next in &nexts[i] {
-            match next {
-                Next::Routes {
-                    targets, otherwise, ..
-                } => {
-                    todo.extend(step_after(
-                        at,
-                        i,
-                        &otherwise.map_or(Next::Default, Next::Block),
-                    ));
-                    for (_, b) in targets {
-                        todo.extend(step_after(at, i, &Next::Block(*b)));
-                    }
-                }
-                n => todo.extend(step_after(at, i, n)),
-            }
+            todo.extend(steps_after(at, i, next));
         }
     }
     seen
+}
+
+/// Every step the story can go on to from step `i` by `next`: a route's blocks and its other
+/// way, else the one [`step_after`].
+fn steps_after(at: &[Place], i: usize, next: &Next) -> Vec<usize> {
+    match next {
+        Next::Routes {
+            targets, otherwise, ..
+        } => step_after(at, i, &otherwise.map_or(Next::Default, Next::Block))
+            .into_iter()
+            .chain(
+                targets
+                    .iter()
+                    .filter_map(|(_, b)| step_after(at, i, &Next::Block(*b))),
+            )
+            .collect(),
+        n => step_after(at, i, n).into_iter().collect(),
+    }
+}
+
+/// An officer may be out of the army ([`ARMY_OUT`]), in it ([`ARMY_IN`]) or either, depending
+/// on the way the story went.
+pub const ARMY_OUT: u8 = 1;
+pub const ARMY_IN: u8 = 2;
+
+/// How one step's scenes move an officer: the last `@join` (`true`) or `@away` (`false`) of
+/// the scene before its battle, of the scene the step plays when it goes on (a story, a won
+/// battle's outro) and of a lost battle's scene.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StepMoves {
+    pub before: Option<bool>,
+    pub after: Option<bool>,
+    pub after_defeat: Option<bool>,
+}
+
+/// Whether an officer can be out of or in the army ([`ARMY_OUT`] | [`ARMY_IN`]) at the battle of
+/// each step of `at`, over every way the story reaches it from the first step: in it at the
+/// start when `start`, moved by each step's scenes ([`StepMoves`]). A step goes on by its
+/// `nexts`: the first is how it goes on after its story or won battle, the second (if any) after
+/// its lost battle. A step the story does not reach is `0`.
+///
+/// * Why paths and not the chapters' order: the scenes of another route or a lost battle's
+///   scene do not play before a battle the story reaches without them (the brothers' Xindu
+///   garrison, Han Ying and Guo Ji, join only on the Guangchuan road).
+pub fn army_at_steps(
+    at: &[Place],
+    nexts: &[Vec<Next>],
+    start: bool,
+    moves: &[StepMoves],
+) -> Vec<u8> {
+    let apply = |mv: Option<bool>, set: u8| match mv {
+        Some(true) => ARMY_IN,
+        Some(false) => ARMY_OUT,
+        None => set,
+    };
+    let mut entry = vec![0u8; at.len()];
+    let mut todo: Vec<usize> = Vec::new();
+    if let Some(first) = entry.first_mut() {
+        *first = if start { ARMY_IN } else { ARMY_OUT };
+        todo.push(0);
+    }
+    while let Some(i) = todo.pop() {
+        let at_battle = apply(moves[i].before, entry[i]);
+        for (k, next) in nexts[i].iter().enumerate() {
+            let scene = if k == 0 {
+                moves[i].after
+            } else {
+                moves[i].after_defeat
+            };
+            let leaves = apply(scene, at_battle);
+            for j in steps_after(at, i, next) {
+                if entry[j] | leaves != entry[j] {
+                    entry[j] |= leaves;
+                    todo.push(j);
+                }
+            }
+        }
+    }
+    entry
+        .iter()
+        .zip(moves)
+        .map(|(&e, m)| if e == 0 { 0 } else { apply(m.before, e) })
+        .collect()
 }
 
 /// The campaign of the original mode: `base`'s title, starting army, gold and items, and the
@@ -2517,6 +2586,50 @@ mod tests {
         // Everything is reached that the steps lead to in order.
         let nexts: Vec<Vec<Next>> = at.iter().map(|_| vec![Next::Default]).collect();
         assert_eq!(reachable(&at, &nexts), [true; 4]);
+    }
+
+    /// Who is in the army at a battle follows the ways the story reaches it, not the chapter's
+    /// order: chapter 1 goes by Guangchuan or by Xindu, and the Xindu garrison joins only after
+    /// Guangchuan.
+    #[test]
+    fn army_membership_follows_the_ways_to_a_battle() {
+        // A choice of roads, the Guangchuan battle, the Xindu battle, then a battle both reach.
+        let at = [(1, 0, 1, 0), (1, 0, 2, 0), (1, 0, 4, 0), (1, 0, 6, 0)];
+        let roads = Next::Routes {
+            flag: "orig_route".into(),
+            targets: vec![(1, 2), (2, 4)],
+            otherwise: None,
+        };
+        let nexts = vec![
+            vec![roads],
+            vec![Next::Block(6)],
+            vec![Next::Block(6)],
+            vec![Next::Default],
+        ];
+        // Han Ying joins in Guangchuan's outro.
+        let mut han_ying = vec![StepMoves::default(); 4];
+        han_ying[1].after = Some(true);
+        let army = army_at_steps(&at, &nexts, false, &han_ying);
+        assert_eq!(army, [ARMY_OUT, ARMY_OUT, ARMY_OUT, ARMY_OUT | ARMY_IN]);
+
+        // A starting officer who leaves before a battle and comes back after it.
+        let mut brother = vec![StepMoves::default(); 4];
+        brother[2].before = Some(false);
+        brother[2].after = Some(true);
+        let army = army_at_steps(&at, &nexts, true, &brother);
+        assert_eq!(army, [ARMY_IN, ARMY_IN, ARMY_OUT, ARMY_IN]);
+
+        // A lost battle's scene moves only the way that goes on from the defeat.
+        let mut nexts = nexts;
+        nexts[2].push(after_defeat(at[2], &Next::Default));
+        let mut lost = vec![StepMoves::default(); 4];
+        lost[2].after_defeat = Some(false);
+        let army = army_at_steps(&at, &nexts, true, &lost);
+        assert_eq!(army, [ARMY_IN, ARMY_IN, ARMY_IN, ARMY_OUT | ARMY_IN]);
+
+        // A step the story does not reach is 0.
+        let army = army_at_steps(&at, &[vec![], vec![], vec![], vec![]], true, &lost);
+        assert_eq!(army, [ARMY_IN, 0, 0, 0]);
     }
 
     #[test]
