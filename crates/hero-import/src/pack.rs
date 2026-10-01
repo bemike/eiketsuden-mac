@@ -2608,38 +2608,25 @@ fn convert_battles(
     // (the last `@join`/`@away` of the scene before its battle, of its story or outro, of its
     // lost battle's scene).
     let (at, next) = steps(&chapter);
-    let mut step_moves: BTreeMap<String, Vec<chapters::StepMoves>> = BTreeMap::new();
-    let mut part_of: BTreeMap<chapters::Place, usize> = BTreeMap::new();
-    for (i, ((_, _, part, story), place)) in chapter.iter().zip(&at).enumerate() {
-        if matches!(part, chapters::Part::Battle { .. }) {
-            part_of.insert(*place, i);
-        }
-        let scenes = [
-            befores.get(place).map(|(_, s)| s),
-            story.as_ref().map(|(_, s)| s),
-            defeats.get(place).map(|(_, s)| s),
-        ];
-        for (k, s) in scenes.into_iter().enumerate() {
-            for line in s.iter().flat_map(|s| s.text.lines()) {
-                let joins = if let Some(id) = line.strip_prefix("@join ") {
-                    Some((id, true))
-                } else {
-                    line.strip_prefix("@away ").map(|id| (id, false))
-                };
-                if let Some((id, joins)) = joins {
-                    let m = step_moves
-                        .entry(id.to_string())
-                        .or_insert_with(|| vec![chapters::StepMoves::default(); chapter.len()]);
-                    let scene = match k {
-                        0 => &mut m[i].before,
-                        1 => &mut m[i].after,
-                        _ => &mut m[i].after_defeat,
-                    };
-                    *scene = Some(joins);
-                }
-            }
-        }
-    }
+    let part_of: BTreeMap<chapters::Place, usize> = chapter
+        .iter()
+        .zip(&at)
+        .enumerate()
+        .filter(|(_, ((_, _, part, _), _))| matches!(part, chapters::Part::Battle { .. }))
+        .map(|(i, (_, place))| (*place, i))
+        .collect();
+    let step_scenes: Vec<[Option<&chapters::StoryScene>; 3]> = chapter
+        .iter()
+        .zip(&at)
+        .map(|((_, _, _, story), place)| {
+            [
+                befores.get(place).map(|(_, s)| s),
+                story.as_ref().map(|(_, s)| s),
+                defeats.get(place).map(|(_, s)| s),
+            ]
+        })
+        .collect();
+    let step_moves = chapters::army_moves(&step_scenes);
     let starting: BTreeSet<&str> = options
         .campaign
         .iter()
@@ -2773,6 +2760,8 @@ fn convert_battles(
             };
             // Officers placed by route ([`chapters::army_at_steps`]), for the notes.
             let mut by_route: Vec<String> = Vec::new();
+            // Officers the setup names who are not in the army then (allies at their slot).
+            let mut as_allies: Vec<String> = Vec::new();
             // A battle of a later chapter gets a base made from the original.
             let made;
             let base = match base {
@@ -2842,7 +2831,10 @@ fn convert_battles(
                                 b.deploy.required.push(id.clone());
                                 continue;
                             }
-                            chapters::ARMY_OUT => hero_core::battledef::Side::Ally,
+                            chapters::ARMY_OUT => {
+                                as_allies.push(id.clone());
+                                hero_core::battledef::Side::Ally
+                            }
                             _ => {
                                 by_route.push(id.clone());
                                 hero_core::battledef::Side::Player
@@ -2901,6 +2893,13 @@ fn convert_battles(
                     cell_change: &mut cell_change,
                 },
             )?;
+            if !as_allies.is_empty() {
+                converted.notes.push(format!(
+                    "named by the setup but not in the army at this battle, so allies at their \
+                     slot: {}",
+                    as_allies.join(", ")
+                ));
+            }
             if !by_route.is_empty() {
                 converted.notes.push(format!(
                     "in the army on some ways to this battle only, placed at their slot on the \

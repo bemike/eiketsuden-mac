@@ -648,6 +648,163 @@ mod tests {
         );
     }
 
+    /// What changed from the original pack at `prev` to the one at `new`: battles, scenes,
+    /// campaign nodes and officers added, removed or changed (for a battle, which of its fields),
+    /// and the battle notes of `original-pack.json` that came or went. For comparing the
+    /// conversion before and after a change (`golden_original_pack`).
+    fn pack_diff(prev: &Path, new: &Path) -> String {
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::fmt::Write as _;
+        fn keys<T: PartialEq>(
+            out: &mut String,
+            what: &str,
+            a: &BTreeMap<String, T>,
+            b: &BTreeMap<String, T>,
+            detail: impl Fn(&T, &T) -> String,
+        ) {
+            let gone: Vec<&String> = a.keys().filter(|k| !b.contains_key(*k)).collect();
+            let came: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
+            let changed: Vec<String> = a
+                .iter()
+                .filter_map(|(k, x)| b.get(k).filter(|y| *y != x).map(|y| (k, x, y)))
+                .map(|(k, x, y)| format!("{k}{}", detail(x, y)))
+                .collect();
+            let _ = writeln!(
+                out,
+                "{what}: {} removed, {} added, {} changed",
+                gone.len(),
+                came.len(),
+                changed.len()
+            );
+            for k in gone {
+                let _ = writeln!(out, "  - {k}");
+            }
+            for k in came {
+                let _ = writeln!(out, "  + {k}");
+            }
+            for k in changed {
+                let _ = writeln!(out, "  ~ {k}");
+            }
+        }
+        let load = |dir: &Path| crate::load_pack(dir);
+        let (a, b) = match (load(prev), load(new)) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err(e), _) | (_, Err(e)) => return format!("pack diff: a pack does not load: {e}\n"),
+        };
+        let mut out = String::from("Changes from the previous golden run's original pack:\n");
+        keys(&mut out, "battles", &a.battles, &b.battles, |x, y| {
+            let (x, y) = (
+                serde_json::to_value(x).unwrap(),
+                serde_json::to_value(y).unwrap(),
+            );
+            let fields: Vec<&String> = x
+                .as_object()
+                .into_iter()
+                .chain(y.as_object())
+                .flat_map(|o| o.keys())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .filter(|k| x.get(k.as_str()) != y.get(k.as_str()))
+                .collect();
+            format!(
+                " ({})",
+                fields
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        });
+        keys(&mut out, "scenes", &a.scenes, &b.scenes, |_, _| {
+            String::new()
+        });
+        let nodes = |p: &hero_core::pack::Pack| -> BTreeMap<String, String> {
+            p.campaign
+                .nodes
+                .iter()
+                .map(|n| (n.id().to_string(), format!("{n:?}")))
+                .collect()
+        };
+        keys(
+            &mut out,
+            "campaign nodes",
+            &nodes(&a),
+            &nodes(&b),
+            |_, _| String::new(),
+        );
+        keys(&mut out, "officers", &a.officers, &b.officers, |_, _| {
+            String::new()
+        });
+        let notes = |dir: &Path| -> BTreeSet<String> {
+            // (A pack without the index, such as a hand-made one, has no notes.)
+            let json: serde_json::Value = std::fs::read(dir.join(pack::PACK_INDEX))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or_default();
+            json["battles"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|b| {
+                    let id = b["id"].as_str().unwrap_or("?").to_string();
+                    b["notes"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(move |n| n.as_str().map(|n| format!("{id}: {n}")))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
+        let (na, nb) = (notes(prev), notes(new));
+        let _ = writeln!(
+            out,
+            "battle notes: {} gone, {} new",
+            na.difference(&nb).count(),
+            nb.difference(&na).count()
+        );
+        for n in na.difference(&nb) {
+            let _ = writeln!(out, "  - {n}");
+        }
+        for n in nb.difference(&na) {
+            let _ = writeln!(out, "  + {n}");
+        }
+        out
+    }
+
+    #[test]
+    fn the_pack_diff_names_what_changed() {
+        fn copy(from: &Path, to: &Path) {
+            std::fs::create_dir_all(to).unwrap();
+            for e in std::fs::read_dir(from).unwrap() {
+                let e = e.unwrap();
+                if e.file_type().unwrap().is_dir() {
+                    copy(&e.path(), &to.join(e.file_name()));
+                } else {
+                    std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+                }
+            }
+        }
+        let tmp = Temp::new("pack-diff");
+        let (a, b) = (tmp.0.join("a"), tmp.0.join("b"));
+        copy(&crate::tests::fixture_dir(), &a);
+        copy(&crate::tests::fixture_dir(), &b);
+        let same = pack_diff(&a, &b);
+        assert!(
+            same.contains("battles: 0 removed, 0 added, 0 changed"),
+            "{same}"
+        );
+        let file = b.join("battles/b01.toml");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, text.replace("turn_limit = 20", "turn_limit = 21")).unwrap();
+        let changed = pack_diff(&a, &b);
+        assert!(
+            changed.contains("battles: 0 removed, 0 added, 1 changed"),
+            "{changed}"
+        );
+        assert!(changed.contains("~ b01 (turn_limit)"), "{changed}");
+    }
+
     /// The whole conversion on a real install (`EIKETSU_ORIGINAL_DIR`, see
     /// docs/ORIGINAL_DATA.md §6), on top of the repository's base pack.
     #[test]
@@ -658,12 +815,28 @@ mod tests {
         };
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let work = root.join("target/golden-original-pack");
+        // The last run's pack is kept next to it (`.prev`, at the same depth so its `extends`
+        // still finds the base pack) and compared with this run's (`.diff.txt`).
+        let prev = root.join("target/golden-original-pack.prev");
+        let diff_file = root.join("target/golden-original-pack.diff.txt");
+        let _ = std::fs::remove_file(&diff_file);
+        if work.join("original").join(pack::PACK_INDEX).exists() {
+            let _ = std::fs::remove_dir_all(&prev);
+            std::fs::rename(&work, &prev).unwrap_or_else(|e| {
+                panic!("cannot move {} to {}: {e}", work.display(), prev.display())
+            });
+        }
         let _ = std::fs::remove_dir_all(&work);
         let out = work.join("original");
         let base = root.join("data/base");
         assert_eq!(run_pack(Path::new(&dir), &out, Some(&base), None), Ok(true));
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(out.join(pack::PACK_INDEX)).unwrap()).unwrap();
+        if prev.join("original").join(pack::PACK_INDEX).exists() {
+            let summary = pack_diff(&prev.join("original"), &out);
+            std::fs::write(&diff_file, &summary).unwrap();
+            eprintln!("{summary}(also in {})", diff_file.display());
+        }
         // Every class, every terrain tile key and most officers of the base pack.
         let files: Vec<&str> = json["files"]
             .as_array()
@@ -1366,6 +1539,40 @@ mod tests {
             xindu.deploy.slots.first(),
             Some(&hero_core::geom::Pos::new(21, 7))
         );
+        // The notes say who became an ally that way (issue #79): the garrison at Xindu. (The
+        // prologue's two battles take their setup from the base pack's, so they never get the
+        // note; the check guards against that changing with the brothers listed.)
+        let notes = |id: &str| -> Vec<String> {
+            json["battles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|b| b["id"] == id)
+                .and_then(|b| b["notes"].as_array())
+                .map(|n| {
+                    n.iter()
+                        .filter_map(|n| n.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let allies = |id: &str| {
+            notes(id)
+                .into_iter()
+                .find(|n| n.contains("not in the army at this battle"))
+        };
+        let xindu_allies = allies("c1_s0_b6").unwrap_or_default();
+        assert!(
+            xindu_allies.contains("orig_p244") && xindu_allies.contains("orig_p245"),
+            "{xindu_allies}"
+        );
+        for id in ["c0_s0_b5", "c0_s0_b7"] {
+            assert!(
+                allies(id).is_none_or(|n| !n.contains("guan_yu") && !n.contains("zhang_fei")),
+                "{id}: {:?}",
+                notes(id)
+            );
+        }
         // No officer of the original's data is in the army on some ways to a battle only.
         assert!(!json["battles"]
             .as_array()

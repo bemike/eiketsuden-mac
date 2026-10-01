@@ -38,6 +38,12 @@ the game converts it in memory at every launch (ORIGINAL_DATA.md §4.1). It is k
 explicit `--data data/base`, which wins over the setting. Gated real-copy test of the whole path:
 `EIKETSU_ORIGINAL_DIR=<install> cargo test -p hero-game golden_original_mode`.
 
+`EIKETSU_ORIGINAL_DIR=<install> cargo test -p hero-tools golden_original_pack` writes the whole
+original pack to `target/golden-original-pack/original`. It keeps the previous run's pack in
+`target/golden-original-pack.prev` and writes what changed between them (battles and which of their
+fields, scenes, campaign nodes, officers, battle notes) to `target/golden-original-pack.diff.txt`:
+run it before and after a converter change to see what the change does to the real data.
+
 `--original <dir>` (or the `EIKETSUDEN_ORIGINAL` environment variable) adds an original-data
 overlay written by `hero-tools original extract` from the player's own copy of the original game:
 media files are looked up there first, then in the pack (native builds only; a folder without

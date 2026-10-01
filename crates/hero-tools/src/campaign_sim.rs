@@ -7,13 +7,16 @@
 //!   or leaving. A choice takes the option `--choose SCENE=N,N,...` names for that scene's
 //!   choices in order (1 = the first), else the first option not taken yet at that question
 //!   in this play of the scene (so a question that loops back until answered right is left).
-//! * **Camp** nodes buy and equip nothing and deploy what the camp screen selects when the
-//!   player changes nothing ([`camp_deployment`]): the first camp the whole army, later camps
-//!   that same selection fitted to their battle (an officer who joined since is not added).
+//! * **Camp** nodes buy battle items as a careful player would ([`stock_up`]), equip nothing
+//!   and deploy what the camp screen selects when the player changes nothing
+//!   ([`camp_deployment`]): the first camp the whole army, later camps that same selection
+//!   fitted to their battle (an officer who joined since is not added).
 //! * A scene or battle that cannot run fails the run, where the game would show an error and
 //!   go on: the tool is a check.
 //! * **Battle** nodes are fought by the AI on both sides (at most [`MAX_PHASES`] phases, a seed
-//!   per battle made from the run's seed and the battle's number); the result is applied as
+//!   per battle made from the run's seed and the battle's number), the player's units pointed
+//!   at the battle's goal ([`aim_at_victory`]); with `--level-bonus` every army officer is
+//!   that many levels up before their first battle. The result is applied as
 //!   the game applies it, then a victory goes to `next`, a defeat to
 //!   `on_defeat` or ends the run (game over).
 //! * The run ends at an **Ending** node.
@@ -21,9 +24,9 @@
 use crate::simulate::MAX_PHASES;
 use crate::Failure;
 use hero_core::battle::{normalize_deployment, BattleEvent, BattleState, Outcome};
-use hero_core::battledef::{BattleDef, Side};
+use hero_core::battledef::{AiMode, BattleDef, Condition, Side};
 use hero_core::campaign::{CampaignState, Node};
-use hero_core::data::Id;
+use hero_core::data::{Id, ItemDef};
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::{Pack, Severity};
 use std::collections::{BTreeMap, BTreeSet};
@@ -78,7 +81,7 @@ pub struct Run {
 }
 
 /// `Ok(true)` when no run failed (stuck, looping, an error or a panic).
-pub fn run(dir: &Path, seeds: u32, choices: &Choices) -> Result<bool, Failure> {
+pub fn run(dir: &Path, seeds: u32, choices: &Choices, options: &Options) -> Result<bool, Failure> {
     let pack = crate::load_pack(dir).map_err(Failure::Failed)?;
     let errors = pack
         .validate()
@@ -97,22 +100,47 @@ pub fn run(dir: &Path, seeds: u32, choices: &Choices) -> Result<bool, Failure> {
             )));
         }
     }
-    println!("Simulating the campaign x {seeds} seed(s), at most {MAX_PHASES} phases per battle\n");
+    if let Some(battle) = &options.trace {
+        if !pack.battles.contains_key(battle) {
+            return Err(Failure::Usage(format!(
+                "--trace names unknown battle `{battle}`"
+            )));
+        }
+    }
+    print!("Simulating the campaign x {seeds} seed(s), at most {MAX_PHASES} phases per battle");
+    if options.level_bonus > 0 {
+        print!(
+            ", every army officer {} level(s) up before their first battle",
+            options.level_bonus
+        );
+    }
+    println!("\n");
     let _quiet = crate::simulate::QuietPanics::install();
     let runs: Vec<Run> = (1..=seeds)
-        .map(|seed| run_seed(&pack, seed, choices))
+        .map(|seed| run_seed(&pack, seed, choices, options))
         .collect();
     let (report, failed) = render(&pack, &runs, choices);
     print!("{report}");
     Ok(!failed)
 }
 
+/// `--level-bonus` and `--trace`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Levels every army officer gets once, before their first battle.
+    pub level_bonus: u32,
+    /// A battle whose every phase is written to stderr ([`trace_line`]).
+    pub trace: Option<String>,
+}
+
 /// One run from a new game. Battle `n` of the run is fought with a seed made of `seed` and `n`.
-pub fn run_seed(pack: &Pack, seed: u32, choices: &Choices) -> Run {
+pub fn run_seed(pack: &Pack, seed: u32, choices: &Choices, options: &Options) -> Run {
     let mut sim = Sim {
         pack,
         seed,
         choices,
+        options,
+        boosted: BTreeSet::new(),
         fought: Vec::new(),
         chose: Vec::new(),
         asked: BTreeMap::new(),
@@ -131,12 +159,19 @@ struct Sim<'a> {
     pack: &'a Pack,
     seed: u32,
     choices: &'a Choices,
+    options: &'a Options,
+    /// The officers who got the level bonus.
+    boosted: BTreeSet<Id>,
     fought: Vec<Fought>,
     chose: Vec<String>,
     asked: BTreeMap<String, usize>,
 }
 
 impl Sim<'_> {
+    fn traces(&self, battle: &str) -> bool {
+        self.options.trace.as_deref() == Some(battle)
+    }
+
     fn play(&mut self) -> End {
         let pack = self.pack;
         let mut campaign = CampaignState::new_game(pack);
@@ -151,7 +186,8 @@ impl Sim<'_> {
                     }
                     campaign.advance(pack)
                 }
-                Node::Camp { battle, .. } => {
+                Node::Camp { battle, shop, .. } => {
+                    stock_up(pack, &mut campaign, &shop);
                     if let Some(def) = battle.as_deref().and_then(|b| pack.battles.get(b)) {
                         campaign.deployed = camp_deployment(pack, def, &campaign);
                     }
@@ -203,10 +239,28 @@ impl Sim<'_> {
         battle: &str,
     ) -> Result<(BattleState, f64), End> {
         let pack = self.pack;
+        let bonus = self.options.level_bonus;
+        if bonus > 0 {
+            let new: Vec<Id> = campaign
+                .roster
+                .iter()
+                .map(|o| o.id.clone())
+                .filter(|id| !self.boosted.contains(id))
+                .collect();
+            for id in new {
+                campaign
+                    .add_levels(pack, &id, bonus)
+                    .expect("a roster officer is in the army");
+                self.boosted.insert(id);
+            }
+        }
         let seed = (u64::from(self.seed) << 16) | self.fought.len() as u64;
         let mut state = BattleState::new(pack, battle, campaign, seed)
             .map_err(|e| End::Error(format!("battle `{battle}`: {e}")))?;
         let level = average_level(&state);
+        if let Some(def) = pack.battles.get(battle) {
+            aim_at_victory(pack, &mut state, def);
+        }
         let mut events = state.begin(pack);
         let mut phases = 0;
         loop {
@@ -218,10 +272,17 @@ impl Sim<'_> {
                 }
             }
             if state.outcome.is_some() {
+                if let (true, Some(outcome)) = (self.traces(battle), &state.outcome) {
+                    let seed = self.seed;
+                    eprintln!("seed {seed} {battle}: {outcome:?} at turn {}", state.turn);
+                }
                 return Ok((state, level));
             }
             if phases == MAX_PHASES {
                 return Err(End::Stuck(battle.to_string()));
+            }
+            if self.traces(battle) {
+                eprintln!("seed {} {}", self.seed, trace_line(&state, phases));
             }
             events = state.run_ai_phase(pack);
             phases += 1;
@@ -275,6 +336,42 @@ impl Sim<'_> {
     }
 }
 
+/// Most battle items [`stock_up`] keeps in hand.
+pub const STOCK: u32 = 8;
+
+/// What a careful player buys at a camp: the shop's battle items (healing and the like), the
+/// cheapest first and one of each in turn, until [`STOCK`] battle items (bought anywhere) are
+/// in hand or the gold runs out. The battle AI uses them on units in need.
+fn stock_up(pack: &Pack, campaign: &mut CampaignState, shop: &[Id]) {
+    let mut wares: Vec<&ItemDef> = shop
+        .iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|i| pack.item(i))
+        .filter(|d| d.is_battle_item() && d.price > 0)
+        .collect();
+    wares.sort_by_key(|d| d.price);
+    let held = |c: &CampaignState| {
+        c.inventory
+            .iter()
+            .filter(|(id, _)| pack.item(id).is_some_and(ItemDef::is_battle_item))
+            .map(|(_, &n)| n)
+            .sum::<u32>()
+    };
+    loop {
+        let mut bought = false;
+        for d in &wares {
+            if held(campaign) >= STOCK {
+                return;
+            }
+            bought |= campaign.buy(pack, &d.id).is_ok();
+        }
+        if !bought {
+            return;
+        }
+    }
+}
+
 /// What the camp screen deploys when the player changes nothing (`initial_selection` in
 /// hero-game): the deployment chosen before, fitted to `def`, or the whole army when there is
 /// none. The camp stores it, so it carries on to the next camp.
@@ -285,6 +382,98 @@ fn camp_deployment(pack: &Pack, def: &BattleDef, campaign: &CampaignState) -> Ve
         campaign.deployed.clone()
     };
     normalize_deployment(pack, def, campaign, &chosen)
+}
+
+/// Point the player's units at the battle's victory conditions, as a player would: an officer
+/// who must reach a tile marches for it (the rest of the army fights on), a battle won by
+/// beating one unit sends everyone after it (the last such condition, when there are more:
+/// any one wins). Other conditions keep the army's default AI, and a unit the battle gives
+/// another AI (a player spawn that holds or marches) keeps it. Before the battle begins, so
+/// its opening events can still set AI.
+fn aim_at_victory(pack: &Pack, state: &mut BattleState, def: &BattleDef) {
+    let mut sent: BTreeSet<usize> = BTreeSet::new();
+    for condition in &def.victory {
+        if let Condition::Reach {
+            who,
+            pos,
+            radius,
+            to,
+        } = condition
+        {
+            for i in 0..state.units.len() {
+                let u = &state.units[i];
+                let named = who.as_deref().is_none_or(|w| u.matches(w));
+                if u.side == Side::Player && u.ai == AiMode::Aggressive && named && sent.insert(i) {
+                    let goal = goal_tile(pack, state, i, *pos, *radius, *to);
+                    let u = &mut state.units[i];
+                    u.ai = AiMode::Advance;
+                    u.ai_pos = Some(goal);
+                }
+            }
+        }
+    }
+    for condition in &def.victory {
+        if let Condition::DefeatUnit { target } = condition {
+            for (i, u) in state.units.iter_mut().enumerate() {
+                let army_default = u.ai == AiMode::Aggressive || u.ai == AiMode::Target;
+                if u.side == Side::Player && army_default && !sent.contains(&i) {
+                    u.ai = AiMode::Target;
+                    u.ai_target = Some(target.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Where unit `i` heads for a `reach` area: the tile of the area (`pos` with `radius`, or the
+/// rectangle to `to`) nearest to it that its class can enter, else `pos`.
+fn goal_tile(
+    pack: &Pack,
+    state: &BattleState,
+    i: usize,
+    pos: hero_core::geom::Pos,
+    radius: i32,
+    to: Option<hero_core::geom::Pos>,
+) -> hero_core::geom::Pos {
+    let u = &state.units[i];
+    let move_type = pack.classes.get(&u.class).map(|c| c.move_type.as_str());
+    let enterable = |p: hero_core::geom::Pos| {
+        let cost = state
+            .terrain_at(pack, p)
+            .zip(move_type)
+            .and_then(|(t, m)| t.move_cost(m));
+        cost.is_some_and(|c| c < u8::MAX)
+    };
+    (0..state.map.height)
+        .flat_map(|y| (0..state.map.width).map(move |x| hero_core::geom::Pos::new(x, y)))
+        .filter(|&p| hero_core::battledef::in_reach(pos, radius, to, p) && enterable(p))
+        .min_by_key(|p| (p.manhattan(u.pos), p.y, p.x))
+        .unwrap_or(pos)
+}
+
+/// One phase of a traced battle (`--trace`): every unit on the map, its side, tile, HP and AI.
+fn trace_line(state: &BattleState, phase: u32) -> String {
+    let units: Vec<String> = state
+        .units
+        .iter()
+        .filter(|u| u.is_active())
+        .map(|u| {
+            let side = match u.side {
+                Side::Player => "P",
+                Side::Ally => "A",
+                Side::Enemy => "E",
+            };
+            let who = u.officer.as_deref().unwrap_or(&u.name);
+            let (x, y, hp, ai) = (u.pos.x, u.pos.y, u.hp, u.ai);
+            format!("{side}:{who}@{x},{y} hp{hp} {ai:?}")
+        })
+        .collect();
+    format!(
+        "{} turn {} phase {phase}: {}",
+        state.battle_id,
+        state.turn,
+        units.join(" | ")
+    )
 }
 
 fn average_level(state: &BattleState) -> f64 {
@@ -415,7 +604,7 @@ mod tests {
         let mut pack = fixture();
         // Levels come quickly, so the first battle surely raises some.
         pack.rules.exp_per_level = 10;
-        let run = run_seed(&pack, 1, &Choices::new());
+        let run = run_seed(&pack, 1, &Choices::new(), &Options::default());
         // The fixture campaign: oath, camp1, b01, camp2, b02, the ending (with its scene).
         assert_eq!(run.end, End::Ending("finale".into()), "{run:?}");
         let battles: Vec<&str> = run.fought.iter().map(|f| f.battle.as_str()).collect();
@@ -434,7 +623,10 @@ mod tests {
             average_level(&fresh)
         );
         // Runs are deterministic for a seed.
-        assert_eq!(run, run_seed(&pack, 1, &Choices::new()));
+        assert_eq!(
+            run,
+            run_seed(&pack, 1, &Choices::new(), &Options::default())
+        );
     }
 
     #[test]
@@ -444,7 +636,7 @@ mod tests {
         let b01 = pack.battles.get_mut("b01").unwrap();
         b01.victory = vec![Condition::SurviveTurns { turns: 99 }];
         b01.turn_limit = 1;
-        let run = run_seed(&pack, 1, &Choices::new());
+        let run = run_seed(&pack, 1, &Choices::new(), &Options::default());
         assert!(!run.fought[0].won, "{run:?}");
         // `on_defeat = "retreat"` goes on to camp2 and b02.
         assert_eq!(run.fought.len(), 2, "{run:?}");
@@ -455,9 +647,106 @@ mod tests {
                 *on_defeat = None;
             }
         }
-        let run = run_seed(&pack, 1, &Choices::new());
+        let run = run_seed(&pack, 1, &Choices::new(), &Options::default());
         assert_eq!(run.end, End::GameOver("b01".into()));
         assert_eq!(run.fought.len(), 1);
+    }
+
+    #[test]
+    fn the_camp_stocks_battle_items_while_the_gold_lasts() {
+        let pack = fixture();
+        // 500 gold and 3 beans; the first camp sells bean (20), wine (50) and two weapons.
+        let mut campaign = CampaignState::new_game(&pack);
+        let shop: Vec<Id> = ["bean", "wine", "bronze_sword", "long_spear"]
+            .map(String::from)
+            .to_vec();
+        stock_up(&pack, &mut campaign, &shop);
+        // The cheapest first, one of each in turn, until 8 battle items are in hand.
+        assert_eq!(
+            (campaign.item_count("bean"), campaign.item_count("wine")),
+            (6, 2)
+        );
+        assert_eq!(campaign.gold, 500 - 3 * 20 - 2 * 50);
+        assert_eq!(campaign.item_count("bronze_sword"), 0);
+        // With the stock full nothing more is bought; without gold neither.
+        stock_up(&pack, &mut campaign, &shop);
+        assert_eq!(campaign.gold, 340);
+        let mut poor = CampaignState::new_game(&pack);
+        poor.gold = 10;
+        stock_up(&pack, &mut poor, &shop);
+        assert_eq!((poor.gold, poor.item_count("bean")), (10, 3));
+    }
+
+    #[test]
+    fn the_army_goes_for_the_battles_goal() {
+        let mut pack = fixture();
+        let goal = hero_core::geom::Pos::new(1, 1);
+        pack.battles.get_mut("b01").unwrap().victory = vec![
+            Condition::Reach {
+                who: Some("liu_bei".into()),
+                pos: goal,
+                radius: 0,
+                to: None,
+            },
+            Condition::DefeatUnit {
+                target: "deng_mao".into(),
+            },
+        ];
+        let mut campaign = CampaignState::new_game(&pack);
+        campaign.deployed = camp_deployment(&pack, &pack.battles["b01"], &campaign);
+        let mut state = BattleState::new(&pack, "b01", &campaign, 1).unwrap();
+        aim_at_victory(&pack, &mut state, &pack.battles["b01"]);
+        let unit = |id: &str| &state.units[state.find_unit(id).unwrap()];
+        // Liu Bei marches for his tile; the others go after the unit to beat.
+        assert_eq!(
+            (unit("liu_bei").ai, unit("liu_bei").ai_pos),
+            (AiMode::Advance, Some(goal))
+        );
+        assert_eq!(
+            (unit("guan_yu").ai, unit("guan_yu").ai_target.as_deref()),
+            (AiMode::Target, Some("deng_mao"))
+        );
+        // The enemy is left as the battle has it.
+        assert_ne!(unit("deng_mao").ai, AiMode::Target);
+
+        // A rectangle: the tile of it nearest to Liu Bei, not its `pos` corner.
+        let from = unit("liu_bei").pos;
+        let (far, near) = (
+            hero_core::geom::Pos::new(from.x + 6, from.y),
+            hero_core::geom::Pos::new(from.x + 3, from.y),
+        );
+        pack.battles.get_mut("b01").unwrap().victory = vec![Condition::Reach {
+            who: Some("liu_bei".into()),
+            pos: far,
+            radius: 0,
+            to: Some(near),
+        }];
+        let mut state = BattleState::new(&pack, "b01", &campaign, 1).unwrap();
+        aim_at_victory(&pack, &mut state, &pack.battles["b01"]);
+        let liu = &state.units[state.find_unit("liu_bei").unwrap()];
+        let goal = liu.ai_pos.unwrap();
+        assert!(
+            hero_core::battledef::in_reach(far, 0, Some(near), goal),
+            "{goal:?}"
+        );
+        assert!(goal.manhattan(from) <= 3 + 1, "{goal:?} from {from:?}");
+    }
+
+    #[test]
+    fn the_level_bonus_comes_once_per_officer() {
+        let pack = fixture();
+        let bonus = Options {
+            level_bonus: 2,
+            ..Options::default()
+        };
+        let plain = run_seed(&pack, 1, &Choices::new(), &Options::default());
+        let boosted = run_seed(&pack, 1, &Choices::new(), &bonus);
+        assert_eq!(boosted.fought[0].level, plain.fought[0].level + 2.0);
+        // Not again at the second battle: no more than the two levels plus what was earned.
+        assert!(
+            boosted.fought[1].level < plain.fought[1].level + 4.0,
+            "{boosted:?} vs {plain:?}"
+        );
     }
 
     #[test]
@@ -487,13 +776,13 @@ mod tests {
     fn choices_pick_their_option_per_visit() {
         let pack = fixture();
         // The prologue's scene `oath` asks whether to pursue.
-        let first = run_seed(&pack, 1, &Choices::new());
+        let first = run_seed(&pack, 1, &Choices::new(), &Options::default());
         assert_eq!(first.chose[0], "oath: 적을 끝까지 쫓는다");
         assert_eq!(first.asked["oath"], 1);
-        let second = run_seed(&pack, 1, &choose("oath", &[1]));
+        let second = run_seed(&pack, 1, &choose("oath", &[1]), &Options::default());
         assert_eq!(second.chose[0], "oath: 마을을 지킨다");
         // An option the choice does not have ends the run with an error that says so.
-        let bad = run_seed(&pack, 1, &choose("oath", &[8]));
+        let bad = run_seed(&pack, 1, &choose("oath", &[8]), &Options::default());
         assert_eq!(
             bad.end,
             End::Error(
@@ -528,7 +817,7 @@ mod tests {
         };
         oath.cmds.insert(at, ask("after_again"));
         oath.cmds.insert(at, ask("second"));
-        let run = run_seed(&pack, 1, &choose("oath", &[0, 1]));
+        let run = run_seed(&pack, 1, &choose("oath", &[0, 1]), &Options::default());
         assert_eq!(
             run.chose[..3],
             ["oath: 적을 끝까지 쫓는다", "oath: 둘", "oath: 하나"],
@@ -567,11 +856,11 @@ mod tests {
             );
             pack
         };
-        let run = run_seed(&with_loop(true), 1, &Choices::new());
+        let run = run_seed(&with_loop(true), 1, &Choices::new(), &Options::default());
         assert_eq!(run.chose[1..3], ["oath: 다시", "oath: 나간다"], "{run:?}");
         assert_eq!(run.end, End::Ending("finale".into()));
         // A question with no way out is reported, not played forever.
-        let run = run_seed(&with_loop(false), 1, &Choices::new());
+        let run = run_seed(&with_loop(false), 1, &Choices::new(), &Options::default());
         assert!(
             matches!(&run.end, End::Error(e) if e.contains("asked more than 100 choices")),
             "{:?}",
@@ -589,6 +878,8 @@ mod tests {
             pack: &pack,
             seed: 1,
             choices: &choices,
+            options: &Options::default(),
+            boosted: BTreeSet::new(),
             fought: Vec::new(),
             chose: Vec::new(),
             asked: BTreeMap::new(),

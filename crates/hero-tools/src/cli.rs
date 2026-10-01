@@ -20,10 +20,16 @@ USAGE:
         command line error (exit 2).
 
     hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N[,N...]]...
+                             [--level-bonus N] [--trace ID]
         Play the whole campaign from a new game N times (default 4), AI against AI, carrying
         levels, recruits, items and flags from battle to battle: dramas run with their side
-        effects, camps buy nothing and keep the camp screen's first selection, a lost battle
-        follows its on_defeat or ends the run. --choose takes option N (1 = first) at the
+        effects, camps buy battle items (until 8 are in hand) and keep the camp screen's first
+        selection, the player's units go for the battle's goal (an officer who must reach a
+        tile marches for it), a lost battle follows its on_defeat or ends the run.
+        --level-bonus N gives every army officer N levels once, before their first battle
+        (a check of how far a stronger army gets, not of the balance). --trace ID writes every
+        phase of battle ID to stderr (per seed: each unit's side, tile, HP and AI).
+        --choose takes option N (1 = first) at the
         choices of scene SCENE, one N per choice it asks in order (past them, and by default:
         the first option not taken yet at that question while the scene plays). Reports each run's end and, per battle, how often it was
         won, its average turns and the army's average level at its start; exits with 1 when a
@@ -83,6 +89,7 @@ pub enum Command {
         seeds: u32,
         /// Scene id -> option index (0-based) at each choice the scene asks, in order.
         choose: std::collections::BTreeMap<String, Vec<usize>>,
+        options: crate::campaign_sim::Options,
     },
     Info {
         pack: PathBuf,
@@ -231,6 +238,8 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
     let mut battle = None;
     let mut campaign = false;
     let mut choose = std::collections::BTreeMap::new();
+    let mut level_bonus = None;
+    let mut trace = None;
     let mut args = rest.iter();
     while let Some(arg) = args.next() {
         // Accept both `--seeds 8` and `--seeds=8`.
@@ -254,6 +263,14 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
                 };
             }
             "--battle" => battle = Some(value("a battle id")?),
+            "--trace" => trace = Some(value("a battle id")?),
+            "--level-bonus" => {
+                let v = value("a number")?;
+                level_bonus =
+                    Some(v.parse::<u32>().map_err(|_| {
+                        format!("`--level-bonus` needs a number of levels, got `{v}`")
+                    })?);
+            }
             "--campaign" if inline.is_some() => return Err("`--campaign` takes no value".into()),
             "--campaign" => campaign = true,
             "--choose" => {
@@ -296,10 +313,20 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
             pack,
             seeds,
             choose,
+            options: crate::campaign_sim::Options {
+                level_bonus: level_bonus.unwrap_or(0),
+                trace,
+            },
         });
     }
     if !choose.is_empty() {
         return Err("`--choose` needs `--campaign`".into());
+    }
+    if level_bonus.is_some() {
+        return Err("`--level-bonus` needs `--campaign`".into());
+    }
+    if trace.is_some() {
+        return Err("`--trace` needs `--campaign`".into());
     }
     Ok(Command::Simulate {
         pack,
@@ -376,9 +403,45 @@ mod tests {
                     ("a=b".to_string(), vec![0])
                 ]
                 .into(),
+                options: Default::default(),
+            })
+        );
+        assert_eq!(
+            parse_str(&[
+                "simulate",
+                "p",
+                "--campaign",
+                "--level-bonus",
+                "3",
+                "--trace=b01"
+            ]),
+            Ok(Command::SimulateCampaign {
+                pack: "p".into(),
+                seeds: DEFAULT_SEEDS,
+                choose: Default::default(),
+                options: crate::campaign_sim::Options {
+                    level_bonus: 3,
+                    trace: Some("b01".into()),
+                },
             })
         );
         for (args, msg) in [
+            (
+                &["simulate", "p", "--level-bonus", "2"][..],
+                "`--level-bonus` needs `--campaign`",
+            ),
+            (
+                &["simulate", "p", "--trace", "b"][..],
+                "`--trace` needs `--campaign`",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--trace"][..],
+                "needs a battle id",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--level-bonus", "x"][..],
+                "number of levels",
+            ),
             (
                 &["simulate", "p", "--campaign", "--battle", "b"][..],
                 "cannot be combined",

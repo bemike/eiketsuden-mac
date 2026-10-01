@@ -23,7 +23,7 @@ use hero_core::battledef::{BattleDef, Condition, DeployDef, MapDef};
 use hero_core::campaign::{CampaignDef, Node};
 use hero_core::geom::Pos;
 use hero_core::script::Compare;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 /// Campaign flag a story scene sets when the player takes an option that ends the game in the
@@ -1320,6 +1320,37 @@ pub struct StepMoves {
     pub before: Option<bool>,
     pub after: Option<bool>,
     pub after_defeat: Option<bool>,
+}
+
+/// How each step's scenes move each officer ([`StepMoves`]), from the scenes of every step:
+/// the one before its battle, the one it plays when it goes on (a story, a won battle's outro)
+/// and its lost battle's. A scene's last `@join` or `@away` of an officer counts.
+pub fn army_moves(steps: &[[Option<&StoryScene>; 3]]) -> BTreeMap<String, Vec<StepMoves>> {
+    let mut moves: BTreeMap<String, Vec<StepMoves>> = BTreeMap::new();
+    for (i, scenes) in steps.iter().enumerate() {
+        for (k, scene) in scenes.iter().enumerate() {
+            for line in scene.iter().flat_map(|s| s.text.lines()) {
+                let joins = if let Some(id) = line.strip_prefix("@join ") {
+                    Some((id, true))
+                } else {
+                    line.strip_prefix("@away ").map(|id| (id, false))
+                };
+                let Some((id, joins)) = joins else {
+                    continue;
+                };
+                let m = moves
+                    .entry(id.to_string())
+                    .or_insert_with(|| vec![StepMoves::default(); steps.len()]);
+                let at = match k {
+                    0 => &mut m[i].before,
+                    1 => &mut m[i].after,
+                    _ => &mut m[i].after_defeat,
+                };
+                *at = Some(joins);
+            }
+        }
+    }
+    moves
 }
 
 /// Whether an officer is in the army when the story starts, given whether they start in it
@@ -2648,6 +2679,41 @@ mod tests {
         // A step the story does not reach is 0.
         let army = army_at_steps(&at, &[vec![], vec![], vec![], vec![], vec![]], true, &lost);
         assert_eq!(army, [ARMY_IN, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn the_scenes_of_a_step_move_officers() {
+        let scene = |text: &str| StoryScene {
+            text: text.into(),
+            ..StoryScene::default()
+        };
+        let before = scene("@away guan_yu\n");
+        let outro = scene("관우: 형님!\n@join guan_yu\n@join han_ying\n@away han_ying\n");
+        let defeat = scene("@away zhang_fei\n");
+        let story = scene("@join jian_yong\n");
+        let moves = army_moves(&[
+            [Some(&before), Some(&outro), Some(&defeat)],
+            [None, Some(&story), None],
+            [None, None, None],
+        ]);
+        let none = StepMoves::default();
+        assert_eq!(
+            moves["guan_yu"],
+            [
+                StepMoves {
+                    before: Some(false),
+                    after: Some(true),
+                    after_defeat: None
+                },
+                none,
+                none
+            ]
+        );
+        // The scene's last move counts.
+        assert_eq!(moves["han_ying"][0].after, Some(false));
+        assert_eq!(moves["zhang_fei"][0].after_defeat, Some(false));
+        assert_eq!(moves["jian_yong"][1].after, Some(true));
+        assert_eq!(moves.len(), 4);
     }
 
     #[test]

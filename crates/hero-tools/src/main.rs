@@ -56,7 +56,8 @@ fn main() -> ExitCode {
             pack,
             seeds,
             choose,
-        } => campaign_sim::run(&pack, seeds, &choose),
+            options,
+        } => campaign_sim::run(&pack, seeds, &choose, &options),
         Command::Info { pack } => info::run(&pack).map_err(Failure::Failed),
         Command::OriginalProbe { dir, out } => {
             original::run_probe(&dir, out.as_deref()).map_err(Failure::Failed)

@@ -1255,6 +1255,7 @@ has errors (or a simulation failed), 2 = bad command line.
 hero-tools validate <pack_dir>
 hero-tools simulate <pack_dir> [--seeds N] [--battle ID]
 hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N[,N...]]...
+                                [--level-bonus N] [--trace ID]
 hero-tools info <pack_dir>
 hero-tools --help | --version
 ```
@@ -1274,11 +1275,18 @@ hero-tools --help | --version
   be set up or does not finish within 200 phases.
 * **simulate --campaign** — plays the whole campaign from a new game once per seed, the way the game does:
   drama nodes, the scenes battles play and an ending's scene run with their effects (flags, gold, items,
-  officers joining), camps buy and equip nothing and deploy what the camp screen selects when the player
-  changes nothing (the first camp the whole army fitted to `deploy.max`, later camps that same selection
-  fitted to their battle: an officer who joins later is not added), battles are fought AI against AI with
-  the army earlier battles left (levels, classes, recruits, items), and a defeat follows the battle's
-  `on_defeat` or ends the run (game over). A choice takes option N (1 = the first) where `--choose
+  officers joining), camps buy the shop's battle items (the cheapest first and one of each in turn,
+  until 8 battle items are in hand or the gold runs out), equip nothing and deploy what the camp screen
+  selects when the player changes nothing (the first camp the whole army fitted to `deploy.max`, later
+  camps that same selection fitted to their battle: an officer who joins later is not added), battles
+  are fought AI against AI with the army earlier battles left (levels, classes, recruits, items), the
+  player's units pointed at the battle's goal (an officer a `reach` victory names advances to the
+  nearest tile of its area they can enter; a `defeat_unit` victory sends the others after that unit; a
+  unit the battle gives another AI than the army's keeps it), and a defeat follows the battle's
+  `on_defeat` or ends the run (game over). `--level-bonus N` gives every army officer N levels once,
+  before their first battle: a check of how far a stronger army gets, not of the balance. `--trace ID`
+  writes every phase of battle `ID` (each unit's side, tile, HP and AI) and its outcome to stderr, each
+  line with its seed; a battle the pack does not have is a command line error (exit 2). A choice takes option N (1 = the first) where `--choose
   SCENE=N,N,...` names its scene, one N per choice the scene asks in order (a scene played again asks
   again); past them, and by default, the first option not taken yet at that question while the scene
   plays, so a question that leads back to itself until answered right is left the way a player would
