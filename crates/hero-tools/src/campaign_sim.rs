@@ -100,19 +100,19 @@ pub fn run(dir: &Path, seeds: u32, choices: &Choices, options: &Options) -> Resu
             )));
         }
     }
-    print!("Simulating the campaign x {seeds} seed(s), at most {MAX_PHASES} phases per battle");
-    if options.level_bonus > 0 {
-        print!(
-            ", every army officer {} level(s) up before their first battle",
-            options.level_bonus
-        );
-    }
     if let Some(battle) = &options.trace {
         if !pack.battles.contains_key(battle) {
             return Err(Failure::Usage(format!(
                 "--trace names unknown battle `{battle}`"
             )));
         }
+    }
+    print!("Simulating the campaign x {seeds} seed(s), at most {MAX_PHASES} phases per battle");
+    if options.level_bonus > 0 {
+        print!(
+            ", every army officer {} level(s) up before their first battle",
+            options.level_bonus
+        );
     }
     println!("\n");
     let _quiet = crate::simulate::QuietPanics::install();
