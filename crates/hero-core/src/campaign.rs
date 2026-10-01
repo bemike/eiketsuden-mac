@@ -659,7 +659,9 @@ impl CampaignState {
             if !copied.insert(id) {
                 continue;
             }
-            let Some(state) = self.officer_mut(id) else {
+            // An away officer did not fight: a unit of theirs is a guest built from
+            // `officers.toml` (a player spawn naming them), whose values are not theirs.
+            let Some(state) = self.officer_mut(id).filter(|o| !o.away) else {
                 continue;
             };
             state.level = unit.level;

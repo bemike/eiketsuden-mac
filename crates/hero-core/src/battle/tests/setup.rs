@@ -250,6 +250,29 @@ fn player_spawns_of_army_officers_place_the_army_officer() {
     );
     assert!(camp.officer("zhang_bao").is_none());
 
+    // An away officer is not the army's to field: the spawn is a guest built from
+    // `officers.toml`, and the army keeps their own state after the battle.
+    let mut away = camp.clone();
+    away.roster
+        .iter_mut()
+        .find(|o| o.id == "guan_yu")
+        .unwrap()
+        .away = true;
+    let mut st2 = BattleState::new(&pack, BATTLE, &away, 1).unwrap();
+    let g = st2
+        .units
+        .iter()
+        .find(|u| u.officer.as_deref() == Some("guan_yu"))
+        .unwrap();
+    assert_eq!((g.pos, g.class.as_str(), g.level), (p(5, 5), "bandit", 1));
+    let gi = st2.find_unit("guan_yu").unwrap();
+    st2.units[gi].exp = 5;
+    away.apply_battle_result(&pack, &st2);
+    assert_eq!(
+        away.officer("guan_yu").map(|o| (o.level, o.exp)),
+        Some((12, 90))
+    );
+
     // Should a battle hold two player units of one officer, the first one counts.
     let mut copy = st.units[2].clone();
     copy.id = st.units.len();

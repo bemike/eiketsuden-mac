@@ -1322,6 +1322,17 @@ pub struct StepMoves {
     pub after_defeat: Option<bool>,
 }
 
+/// Whether an officer is in the army when the story starts, given whether they start in it
+/// and how the steps move them: a starting officer is, and so is one the story never brings
+/// in (it only takes them away). One it moves away and back before they join (to change them
+/// first) is not.
+pub fn starts_in_army(starting: bool, moves: &[StepMoves]) -> bool {
+    starting
+        || !moves
+            .iter()
+            .any(|s| [s.before, s.after, s.after_defeat].contains(&Some(true)))
+}
+
 /// Whether an officer can be out of or in the army ([`ARMY_OUT`] | [`ARMY_IN`]) at the battle of
 /// each step of `at`, over every way the story reaches it from the first step: in it at the
 /// start when `start`, moved by each step's scenes ([`StepMoves`]). A step goes on by its
@@ -2606,7 +2617,7 @@ mod tests {
             vec![Next::Block(6)],
             vec![Next::Default],
         ];
-        // Han Ying joins in Guangchuan's outro.
+        // Han Ying joins in the story after Guangchuan.
         let mut han_ying = vec![StepMoves::default(); 4];
         han_ying[1].after = Some(true);
         let army = army_at_steps(&at, &nexts, false, &han_ying);
@@ -2619,17 +2630,48 @@ mod tests {
         let army = army_at_steps(&at, &nexts, true, &brother);
         assert_eq!(army, [ARMY_IN, ARMY_IN, ARMY_OUT, ARMY_IN]);
 
-        // A lost battle's scene moves only the way that goes on from the defeat.
-        let mut nexts = nexts;
-        nexts[2].push(after_defeat(at[2], &Next::Default));
-        let mut lost = vec![StepMoves::default(); 4];
+        // A lost battle's scene moves only the way that goes on from the defeat: Xindu lost
+        // goes on to a fifth step the won battles do not lead to.
+        let at = [at[0], at[1], at[2], at[3], (1, 0, 8, 0)];
+        let nexts = vec![
+            nexts[0].clone(),
+            vec![Next::Block(6)],
+            vec![Next::Block(6), Next::Block(8)],
+            vec![],
+            vec![],
+        ];
+        let mut lost = vec![StepMoves::default(); 5];
         lost[2].after_defeat = Some(false);
         let army = army_at_steps(&at, &nexts, true, &lost);
-        assert_eq!(army, [ARMY_IN, ARMY_IN, ARMY_IN, ARMY_OUT | ARMY_IN]);
+        assert_eq!(army, [ARMY_IN, ARMY_IN, ARMY_IN, ARMY_IN, ARMY_OUT]);
 
         // A step the story does not reach is 0.
-        let army = army_at_steps(&at, &[vec![], vec![], vec![], vec![]], true, &lost);
-        assert_eq!(army, [ARMY_IN, 0, 0, 0]);
+        let army = army_at_steps(&at, &[vec![], vec![], vec![], vec![], vec![]], true, &lost);
+        assert_eq!(army, [ARMY_IN, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn who_is_in_the_army_at_the_start() {
+        let moves = |m: &[(usize, Option<bool>, Option<bool>)]| {
+            let mut steps = vec![StepMoves::default(); 3];
+            for &(i, before, after) in m {
+                steps[i].before = before;
+                steps[i].after = after;
+            }
+            steps
+        };
+        // A starting officer, whatever the story does with them (the brothers).
+        assert!(starts_in_army(
+            true,
+            &moves(&[(1, Some(false), Some(true))])
+        ));
+        // One the story never moves, or only takes away, was in it.
+        assert!(starts_in_army(false, &moves(&[])));
+        assert!(starts_in_army(false, &moves(&[(1, Some(false), None)])));
+        // One it brings in was not, even when it first moves them away and back (to change
+        // them before they join).
+        assert!(!starts_in_army(false, &moves(&[(1, None, Some(true))])));
+        assert!(!starts_in_army(false, &moves(&[(0, Some(true), None)])));
     }
 
     #[test]

@@ -2569,21 +2569,27 @@ fn convert_battles(
     }
     // Only the parts the story reaches: an alternative the conversion offers no choice for
     // (the original lets one pick it by whom one talks to) is left out.
-    let at: Vec<chapters::Place> = chapter
-        .iter()
-        .map(|(file, scene, part, _)| part_place(*file, *scene, part))
-        .collect();
-    let next: Vec<Vec<chapters::Next>> = chapter
-        .iter()
-        .zip(&at)
-        .map(|((_, _, _, s), place)| {
-            let mut next = vec![s.as_ref().map(|(_, s)| s.next.clone()).unwrap_or_default()];
-            if let Some((_, d)) = defeats.get(place) {
-                next.push(chapters::after_defeat(*place, &d.next));
-            }
-            next
-        })
-        .collect();
+    // The chapter's steps and how each goes on: after its story or won battle, and after its
+    // lost battle when it has a scene for that.
+    let steps = |chapter: &[ChapterPart]| -> (Vec<chapters::Place>, Vec<Vec<chapters::Next>>) {
+        let at: Vec<chapters::Place> = chapter
+            .iter()
+            .map(|(file, scene, part, _)| part_place(*file, *scene, part))
+            .collect();
+        let next = chapter
+            .iter()
+            .zip(&at)
+            .map(|((_, _, _, s), place)| {
+                let mut next = vec![s.as_ref().map(|(_, s)| s.next.clone()).unwrap_or_default()];
+                if let Some((_, d)) = defeats.get(place) {
+                    next.push(chapters::after_defeat(*place, &d.next));
+                }
+                next
+            })
+            .collect();
+        (at, next)
+    };
+    let (at, next) = steps(&chapter);
     let reached = chapters::reachable(&at, &next);
     let mut reached = reached.into_iter();
     chapter.retain(|(file, scene, part, _)| {
@@ -2601,21 +2607,7 @@ fn convert_battles(
     // ([`chapters::army_at_steps`]): how each kept part goes on, and how its scenes move officers
     // (the last `@join`/`@away` of the scene before its battle, of its story or outro, of its
     // lost battle's scene).
-    let at: Vec<chapters::Place> = chapter
-        .iter()
-        .map(|(file, scene, part, _)| part_place(*file, *scene, part))
-        .collect();
-    let next: Vec<Vec<chapters::Next>> = chapter
-        .iter()
-        .zip(&at)
-        .map(|((_, _, _, s), place)| {
-            let mut next = vec![s.as_ref().map(|(_, s)| s.next.clone()).unwrap_or_default()];
-            if let Some((_, d)) = defeats.get(place) {
-                next.push(chapters::after_defeat(*place, &d.next));
-            }
-            next
-        })
-        .collect();
+    let (at, next) = steps(&chapter);
     let mut step_moves: BTreeMap<String, Vec<chapters::StepMoves>> = BTreeMap::new();
     let mut part_of: BTreeMap<chapters::Place, usize> = BTreeMap::new();
     for (i, ((_, _, part, story), place)) in chapter.iter().zip(&at).enumerate() {
@@ -2657,19 +2649,17 @@ fn convert_battles(
     let army: BTreeMap<&str, Vec<u8>> = step_moves
         .iter()
         .map(|(id, m)| {
-            // In the army at the start: a starting officer, or one the story never brings in
-            // (it only takes them away). One it moves away and back before they join (to
-            // change them first) was not.
-            let joins = m
-                .iter()
-                .any(|s| [s.before, s.after, s.after_defeat].contains(&Some(true)));
-            let start = starting.contains(id.as_str()) || !joins;
+            let start = chapters::starts_in_army(starting.contains(id.as_str()), m);
             (id.as_str(), chapters::army_at_steps(&at, &next, start, m))
         })
         .collect();
-    // An officer the story never moves is in the army.
+    // An officer the story never moves is in the army. (Every kept part is reached: dropping
+    // the others changes no way between the rest.)
     let army_at = |id: &str, part: Option<usize>| match (army.get(id), part) {
-        (Some(a), Some(i)) if a[i] != 0 => a[i],
+        (Some(a), Some(i)) => {
+            debug_assert!(a[i] != 0, "{id} at an unreached part {i}");
+            a[i]
+        }
         _ => chapters::ARMY_IN,
     };
     let joining_scenes = chapter
@@ -2831,7 +2821,8 @@ fn convert_battles(
                     // An officer the story has not brought into the army yet fights at their
                     // slot as an ally. One who is in it on some ways to the battle and not on
                     // others is placed at their slot on the player's side: the army's officer
-                    // when they are in it, else the officer as `officers.toml` has them.
+                    // when they are in it and not away, else the officer as `officers.toml`
+                    // has them.
                     let lord = names.officers.get(&battles::LIU_BEI);
                     let part = block.and_then(|(b, leg)| part_of.get(&(file, scene_index, b, leg)));
                     let army = |id: &String| army_at(id, part.copied());
@@ -2857,25 +2848,23 @@ fn convert_battles(
                                 hero_core::battledef::Side::Player
                             }
                         };
-                        {
-                            b.units.push(hero_core::battledef::UnitSpawn {
-                                side,
-                                officer: Some(id.clone()),
-                                name: None,
-                                class: None,
-                                level: None,
-                                stats: None,
-                                pos: hero_core::geom::Pos::new(i32::from(u.x), i32::from(u.y)),
-                                ai: hero_core::battledef::AiMode::Aggressive,
-                                ai_target: None,
-                                ai_pos: None,
-                                commander: false,
-                                tag: None,
-                                group: None,
-                                equip: None,
-                                drop: None,
-                            });
-                        }
+                        b.units.push(hero_core::battledef::UnitSpawn {
+                            side,
+                            officer: Some(id.clone()),
+                            name: None,
+                            class: None,
+                            level: None,
+                            stats: None,
+                            pos: hero_core::geom::Pos::new(i32::from(u.x), i32::from(u.y)),
+                            ai: hero_core::battledef::AiMode::Aggressive,
+                            ai_target: None,
+                            ai_pos: None,
+                            commander: false,
+                            tag: None,
+                            group: None,
+                            equip: None,
+                            drop: None,
+                        });
                     }
                     if !original.player.iter().any(|u| u.person == battles::LIU_BEI) {
                         b.deploy.forbidden.extend(lord.cloned());

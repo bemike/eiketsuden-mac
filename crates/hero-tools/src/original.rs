@@ -1366,6 +1366,14 @@ mod tests {
             xindu.deploy.slots.first(),
             Some(&hero_core::geom::Pos::new(21, 7))
         );
+        // No officer of the original's data is in the army on some ways to a battle only.
+        assert!(!json["battles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["notes"].as_array().is_some_and(|n| n
+                .iter()
+                .any(|n| n.as_str().is_some_and(|n| n.contains("some ways"))))));
         let json_battles = json["battles"].as_array().unwrap();
         let events: u64 = json_battles
             .iter()
