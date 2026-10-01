@@ -1366,6 +1366,39 @@ mod tests {
             xindu.deploy.slots.first(),
             Some(&hero_core::geom::Pos::new(21, 7))
         );
+        // The notes say who became an ally that way (issue #79): the garrison at Xindu, not
+        // the brothers in the prologue.
+        let notes = |id: &str| -> Vec<String> {
+            json["battles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|b| b["id"] == id)
+                .and_then(|b| b["notes"].as_array())
+                .map(|n| {
+                    n.iter()
+                        .filter_map(|n| n.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let allies = |id: &str| {
+            notes(id)
+                .into_iter()
+                .find(|n| n.contains("not in the army at this battle"))
+        };
+        let xindu_allies = allies("c1_s0_b6").unwrap_or_default();
+        assert!(
+            xindu_allies.contains("orig_p244") && xindu_allies.contains("orig_p245"),
+            "{xindu_allies}"
+        );
+        for id in ["c0_s0_b5", "c0_s0_b7"] {
+            assert!(
+                allies(id).is_none_or(|n| !n.contains("guan_yu") && !n.contains("zhang_fei")),
+                "{id}: {:?}",
+                notes(id)
+            );
+        }
         // No officer of the original's data is in the army on some ways to a battle only.
         assert!(!json["battles"]
             .as_array()
