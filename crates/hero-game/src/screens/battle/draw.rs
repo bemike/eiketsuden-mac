@@ -40,6 +40,22 @@ impl BattleScreen {
         }
     }
 
+    /// Tiles an enemy could attack next phase (D25 X4), under the other highlights.
+    pub(super) fn draw_danger(&self) {
+        let Some((_, tiles)) = &self.danger else {
+            return;
+        };
+        let tile = self.tile();
+        let vp = self.camera.viewport;
+        for p in tiles {
+            let at = self.camera.tile_screen(*p);
+            if at.x + tile < vp.x || at.y + tile < vp.y || at.x > vp.right() || at.y > vp.bottom() {
+                continue;
+            }
+            hud::draw_danger_tile(at, tile);
+        }
+    }
+
     pub(super) fn draw_highlights(&self, ctx: &Ctx) {
         let t = ctx.time;
         let tile = self.tile();

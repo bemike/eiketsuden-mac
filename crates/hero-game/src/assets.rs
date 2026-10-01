@@ -30,6 +30,14 @@
 //! art uses nearest filtering; hi-res art (`portraits/`, `bg/`, `ui/title`) uses linear filtering
 //! so it stays smooth when shown smaller than its native resolution.
 //!
+//! **Public portraits** (`docs/DECISIONS.md` D25 X2, the `Settings::portraits` choice): in the
+//! original mode the converted pack shadows the base pack's public-domain portraits. With
+//! [`Media::set_public_portraits`] on, `portraits/…` textures are looked up in the packs below
+//! the original mode's pack first ([`DataRoot::public_media_paths`]), and a face only the
+//! original has still shows. Those textures are cached under their own key
+//! ([`PUBLIC_SUFFIX`]), so switching back and forth swaps the pictures at once without reloading
+//! either set. Without an original pack in the chain the switch changes nothing.
+//!
 //! [`Media::pump`] (called by the app every frame) advances at most [`MAX_IN_FLIGHT`] loads and
 //! decodes at most [`DECODES_PER_FRAME`] images per frame, so lazy loading never stalls a frame
 //! for long. Decoded music is large (PCM); [`Media::release_sound`] drops a track that is no
@@ -40,7 +48,8 @@ use crate::platform::DataRoot;
 use macroquad::audio::{load_sound_from_bytes, Sound};
 use macroquad::prelude::*;
 use serde::Deserialize;
-use std::cell::RefCell;
+use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
@@ -317,6 +326,9 @@ const ICON_TEXTURE: &str = "ui/icons";
 const ICON_INDEX: &str = "gfx/ui/icons.toml";
 /// Portrait used for officers without their own portrait.
 pub const UNKNOWN_PORTRAIT: &str = "portraits/_unknown";
+/// Appended to a portrait's texture key to cache its public-portrait variant (see the module
+/// docs); `#` never occurs in a media key.
+pub const PUBLIC_SUFFIX: &str = "#public";
 
 #[derive(Default)]
 struct Inner {
@@ -330,6 +342,8 @@ struct Inner {
 pub struct Media {
     root: DataRoot,
     inner: RefCell<Inner>,
+    /// Portraits prefer the packs below the original mode's pack (see the module docs).
+    public_portraits: Cell<bool>,
 }
 
 impl Media {
@@ -337,7 +351,25 @@ impl Media {
         Media {
             root,
             inner: RefCell::new(Inner::default()),
+            public_portraits: Cell::new(false),
         }
+    }
+
+    /// Show the public-domain portraits of the packs below the original mode's pack instead of
+    /// the original's faces (D25 X2); takes effect with the next request.
+    pub fn set_public_portraits(&self, on: bool) {
+        self.public_portraits.set(on);
+    }
+
+    /// Cache key of texture `key` and, for the public variant of a portrait, the paths to read
+    /// it from: `None` means the usual lookup ([`Media::candidates`]).
+    fn texture_slot<'a>(&self, key: &'a str) -> (Cow<'a, str>, Option<Vec<String>>) {
+        if self.public_portraits.get() && key.starts_with("portraits/") {
+            if let Some(paths) = self.root.public_media_paths(&format!("gfx/{key}.png")) {
+                return (Cow::Owned(format!("{key}{PUBLIC_SUFFIX}")), Some(paths));
+            }
+        }
+        (Cow::Borrowed(key), None)
     }
 
     pub fn root(&self) -> &DataRoot {
@@ -364,17 +396,17 @@ impl Media {
     }
 
     fn request_texture(&self, key: &str) -> AssetState {
+        let (slot_key, public) = self.texture_slot(key);
         let mut inner = self.inner.borrow_mut();
-        if let Some(slot) = inner.textures.get(key) {
+        if let Some(slot) = inner.textures.get(slot_key.as_ref()) {
             return slot.state();
         }
-        inner.textures.insert(key.to_string(), Slot::Loading);
-        inner.jobs.push_back(Job::new(
-            JobKind::Texture {
-                key: key.to_string(),
-            },
-            self.candidates(&[format!("gfx/{key}.png")]),
-        ));
+        let paths = public.unwrap_or_else(|| self.candidates(&[format!("gfx/{key}.png")]));
+        let slot_key = slot_key.into_owned();
+        inner.textures.insert(slot_key.clone(), Slot::Loading);
+        inner
+            .jobs
+            .push_back(Job::new(JobKind::Texture { key: slot_key }, paths));
         AssetState::Loading
     }
 
@@ -383,7 +415,8 @@ impl Media {
         if self.request_texture(key) != AssetState::Ready {
             return None;
         }
-        match self.inner.borrow().textures.get(key) {
+        let (slot_key, _) = self.texture_slot(key);
+        match self.inner.borrow().textures.get(slot_key.as_ref()) {
             Some(Slot::Ready(t)) => Some(t.clone()),
             _ => None,
         }
@@ -964,6 +997,62 @@ mod tests {
                 "/p/sfx/x.ogg"
             ]
         );
+    }
+
+    #[test]
+    fn public_portraits_look_below_the_original_under_their_own_key() {
+        let root = DataRoot::from_dir(std::path::Path::new("/d/original"), &[])
+            .with_parent_packs(["../base"])
+            .with_original_layer(Some(0));
+        let media = Media::new(root);
+        let jobs = |m: &Media| -> Vec<(String, Vec<String>)> {
+            m.inner
+                .borrow()
+                .jobs
+                .iter()
+                .map(|j| match &j.kind {
+                    JobKind::Texture { key } => (key.clone(), j.paths.clone()),
+                    _ => unreachable!(),
+                })
+                .collect()
+        };
+        let original = "/d/original/gfx/portraits/liu_bei.png".to_string();
+        let base = "/d/original/../base/gfx/portraits/liu_bei.png".to_string();
+        assert_eq!(
+            media.texture_state("portraits/liu_bei"),
+            AssetState::Loading
+        );
+        media.set_public_portraits(true);
+        assert_eq!(
+            media.texture_state("portraits/liu_bei"),
+            AssetState::Loading
+        );
+        // Other pictures keep the usual lookup.
+        assert_eq!(media.texture_state("bg/palace"), AssetState::Loading);
+        let all = jobs(&media);
+        assert_eq!(
+            all[0],
+            (
+                "portraits/liu_bei".to_string(),
+                vec![original.clone(), base.clone()]
+            )
+        );
+        assert_eq!(
+            all[1],
+            ("portraits/liu_bei#public".to_string(), vec![base, original])
+        );
+        assert_eq!(all[2].0, "bg/palace");
+        assert_eq!(all[2].1[0], "/d/original/gfx/bg/palace.png");
+        assert_eq!(
+            Media::texture_filter("portraits/liu_bei#public"),
+            FilterMode::Linear
+        );
+
+        // Without the original's pack in the chain the switch changes nothing.
+        let plain = Media::new(DataRoot::from_dir(std::path::Path::new("/p"), &[]));
+        plain.set_public_portraits(true);
+        plain.texture_state("portraits/liu_bei");
+        assert_eq!(jobs(&plain)[0].0, "portraits/liu_bei");
     }
 
     #[test]

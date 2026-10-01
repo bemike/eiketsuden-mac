@@ -32,6 +32,9 @@ pub struct Camera {
     pub tile: f32,
     pos: Vec2,
     target: Option<Vec2>,
+    /// Drawing offset (canvas pixels) while the map shakes (D25 X5). It moves what is drawn
+    /// through [`Camera::to_screen`] only: picking a tile and the scrolling decisions ignore it.
+    pub shake: Vec2,
 }
 
 /// Clamp one axis: centre when the map is smaller than the view, else keep the view inside.
@@ -52,6 +55,7 @@ impl Camera {
             tile,
             pos: Vec2::ZERO,
             target: None,
+            shake: Vec2::ZERO,
         };
         c.pos = c.clamped(Vec2::ZERO);
         c
@@ -75,8 +79,13 @@ impl Camera {
         self.target.is_some()
     }
 
-    /// Screen position of a map pixel.
+    /// Screen position of a map pixel, as drawn (shake included).
     pub fn to_screen(&self, map_px: Vec2) -> Vec2 {
+        self.to_screen_still(map_px) + self.shake
+    }
+
+    /// Screen position of a map pixel without the shake.
+    fn to_screen_still(&self, map_px: Vec2) -> Vec2 {
         vec2(self.viewport.x, self.viewport.y) + map_px - self.pos()
     }
 
@@ -153,7 +162,7 @@ impl Camera {
 
     /// Whether a tile is fully inside the view (at the current position).
     pub fn is_visible(&self, p: Pos) -> bool {
-        let s = self.tile_screen(p);
+        let s = self.to_screen_still(self.tile_px(p));
         let v = self.viewport;
         s.x >= v.x && s.y >= v.y && s.x + self.tile <= v.right() && s.y + self.tile <= v.bottom()
     }

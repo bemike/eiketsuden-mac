@@ -39,6 +39,13 @@ pub const REF_TILE: f32 = 16.0;
 const LUNGE: f32 = 5.0;
 /// Fallback length of a missing effect strip.
 const DEFAULT_FX_SECONDS: f32 = 0.6;
+/// Enhanced presentation (D25 X5): seconds the map shakes after a heavy or defeating hit.
+pub const SHAKE_SECONDS: f32 = 0.25;
+/// Enhanced presentation: largest shake offset in canvas pixels.
+pub const SHAKE_PX: f32 = 3.0;
+/// Enhanced presentation: a hit taking at least this share of the target's maximum HP shakes the
+/// map (a defeating hit always does).
+pub const SHAKE_SHARE: f32 = 0.25;
 
 /// Knock-back of a hit in pixels of a [`REF_TILE`] tile, after the PC original: below 100
 /// damage no reaction, 100–299 a step back, from 300 on pushed further the bigger the hit.
@@ -159,6 +166,8 @@ impl UnitView {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloatKind {
     Damage,
+    /// HP damage in the enhanced presentation (D25 X5): red, with a minus sign.
+    Hit,
     Heal,
     Mp,
     Morale,
@@ -274,6 +283,11 @@ pub struct Scene {
     pub outcome: Option<bool>,
     pub outcome_age: f32,
     pub hud: HudView,
+    /// The enhanced hit presentation is chosen (`Settings::battle_fx`, D25 X5); the screen sets
+    /// it every frame, so a change applies from the next hit on.
+    pub enhanced: bool,
+    /// Seconds of map shake left (enhanced presentation only).
+    pub shake: f32,
 }
 
 impl Scene {
@@ -297,6 +311,8 @@ impl Scene {
                 weather: state.weather,
                 gold_found: state.gold_found,
             },
+            enhanced: false,
+            shake: 0.0,
         }
     }
 
@@ -338,6 +354,41 @@ impl Scene {
         if self.outcome.is_some() {
             self.outcome_age += dt;
         }
+        self.shake = (self.shake - dt).max(0.0);
+    }
+
+    /// Offset (canvas pixels) of the map and its units while the map shakes: alternating
+    /// left/right and up/down every 30 ms of animation time, fading out.
+    pub fn shake_offset(&self) -> Vec2 {
+        if self.shake <= 0.0 {
+            return Vec2::ZERO;
+        }
+        let amp = (SHAKE_PX * self.shake / SHAKE_SECONDS).round();
+        let step = ((SHAKE_SECONDS - self.shake) / 0.03) as i32;
+        let x = if step % 2 == 0 { amp } else { -amp };
+        let y = if step % 4 < 2 { -amp / 2.0 } else { amp / 2.0 };
+        vec2(x, y.round())
+    }
+
+    /// HP damage shown over `unit`: its number, and in the enhanced presentation a red `-123`
+    /// plus a shake when the hit takes [`SHAKE_SHARE`] of the unit's maximum HP or defeats it.
+    /// Call before the unit's HP bar starts draining.
+    fn damage_float(&mut self, unit: UnitId, damage: i32) {
+        if !self.enhanced {
+            self.float(unit, damage.to_string(), FloatKind::Damage);
+            return;
+        }
+        let v = &self.views[unit];
+        let lethal = v.hp - damage as f32 <= 0.0;
+        if damage > 0 && (lethal || damage as f32 >= SHAKE_SHARE * v.max_hp as f32) {
+            self.shake = SHAKE_SECONDS;
+        }
+        let text = if damage > 0 {
+            format!("-{damage}")
+        } else {
+            damage.to_string()
+        };
+        self.float(unit, text, FloatKind::Hit);
     }
 
     fn float(&mut self, unit: UnitId, text: impl Into<String>, kind: FloatKind) {
@@ -992,7 +1043,7 @@ fn step(
                 let key = if *ranged { "arrow" } else { "slash" };
                 let at = scene.views[d].pos;
                 scene.spawn_fx(key, at, fx);
-                scene.float(d, damage.to_string(), FloatKind::Damage);
+                scene.damage_float(d, *damage);
                 drain(drains, scene, d, -(*damage as f32));
                 let v = &mut scene.views[d];
                 v.pose = Pose::Hurt;
@@ -1077,7 +1128,7 @@ fn step(
                     }
                     if h.damage > 0 {
                         hurt = true;
-                        scene.float(u, h.damage.to_string(), FloatKind::Damage);
+                        scene.damage_float(u, h.damage);
                         scene.views[u].pose = Pose::Hurt;
                         scene.views[u].flash = 0.3;
                     }
@@ -1653,6 +1704,73 @@ mod tests {
         assert!(texts.iter().any(|t| t == "실패"));
         assert!(texts.iter().any(|t| t == "+60"));
         assert_eq!(scene.views[1].hp, hp - 40.0);
+    }
+
+    #[test]
+    fn enhanced_hits_show_red_numbers_and_shake_on_heavy_blows() {
+        let (pack, state) = testutil::sishui();
+        let gy = state.find_unit("guan_yu").unwrap();
+        let foe = state
+            .units
+            .iter()
+            .position(|u| u.side == Side::Enemy)
+            .unwrap();
+        let max = state.units[foe].max_hp;
+        let strike = |damage: i32| BattleEvent::Strike {
+            attacker: gy,
+            defender: foe,
+            damage,
+            morale_loss: 0,
+            counter: false,
+        };
+        // Floats and the most shake seen while one strike plays.
+        let play = |enhanced: bool, damage: i32| {
+            let mut scene = Scene::new(&state);
+            scene.enhanced = enhanced;
+            let mut player = EventPlayer::default();
+            player.push(plan(&[strike(damage)], &state, &pack, &BTreeMap::new()));
+            let (mut floats, mut shake) = (Vec::new(), 0.0f32);
+            for _ in 0..600 {
+                if player.is_idle() {
+                    break;
+                }
+                player.update(
+                    1.0 / 60.0,
+                    false,
+                    &mut scene,
+                    &BTreeMap::new(),
+                    &mut Vec::new(),
+                );
+                floats.extend(scene.floats.iter().map(|f| (f.text.clone(), f.kind)));
+                shake = shake.max(scene.shake);
+                scene.tick(1.0 / 60.0);
+            }
+            floats.dedup();
+            (floats, shake, scene.shake_offset())
+        };
+        let light = max / 10;
+        let heavy = max / 3;
+
+        // The original presentation: plain numbers, no shake, whatever the damage.
+        let (floats, shake, _) = play(false, heavy);
+        assert_eq!(floats, vec![(heavy.to_string(), FloatKind::Damage)]);
+        assert_eq!(shake, 0.0);
+
+        // Enhanced: a red minus number; only a heavy hit shakes, and the shake runs out.
+        let (floats, shake, _) = play(true, light);
+        assert_eq!(floats, vec![(format!("-{light}"), FloatKind::Hit)]);
+        assert_eq!(shake, 0.0);
+        let (_, shake, rest) = play(true, heavy);
+        assert_eq!(shake, SHAKE_SECONDS);
+        assert_eq!(rest, Vec2::ZERO);
+
+        let mut scene = Scene::new(&state);
+        scene.shake = SHAKE_SECONDS;
+        let first = scene.shake_offset();
+        assert_eq!(first.x.abs(), SHAKE_PX);
+        assert!(first.y.abs() <= SHAKE_PX);
+        scene.tick(0.04);
+        assert_eq!(scene.shake_offset().x.signum(), -first.x.signum());
     }
 
     #[test]

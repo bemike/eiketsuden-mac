@@ -375,6 +375,16 @@ pub const TARGET_COLOR: Color = Color::new(1.0, 0.22, 0.18, 0.55);
 pub const AIM_COLOR: Color = Color::new(0.72, 0.35, 1.0, 0.42);
 pub const AREA_COLOR: Color = Color::new(0.9, 0.55, 1.0, 0.6);
 pub const ITEM_COLOR: Color = Color::new(0.3, 0.9, 0.45, 0.45);
+/// Tiles an enemy could attack next phase (the "위험 범위" view option, D25 X4): a steady
+/// orange wash with a darker rim, so it reads apart from the pulsing selection highlights.
+pub const DANGER_COLOR: Color = Color::new(1.0, 0.42, 0.08, 0.26);
+
+/// One tile of the danger range at `screen` (top-left of its `tile` pixel tile).
+pub fn draw_danger_tile(screen: Vec2, tile: f32) {
+    let r = Rect::new(screen.x.round(), screen.y.round(), tile, tile);
+    fill_rect(r, DANGER_COLOR);
+    stroke_rect(r, Color::new(0.75, 0.22, 0.02, 0.35));
+}
 
 /// Map cursor around the `tile` pixel tile at `screen`: four gold corner brackets that breathe
 /// in and out.
@@ -447,6 +457,7 @@ pub fn draw_confusion(center: Vec2, time: f64, alpha: f32) {
 pub fn float_color(kind: FloatKind) -> Color {
     match kind {
         FloatKind::Damage => Color::from_hex(0xffffff),
+        FloatKind::Hit => Color::from_hex(0xff6b5c),
         FloatKind::Heal => Color::from_hex(0x7cf08c),
         FloatKind::Mp => Color::from_hex(0x7cc4ff),
         FloatKind::Morale => Color::from_hex(0xe7a6ff),
@@ -465,13 +476,15 @@ pub fn draw_float(gfx: &Gfx, tile_screen: Vec2, tile: f32, f: &FloatText) {
     } else {
         1.0
     };
-    let (font, size) = match f.kind {
-        FloatKind::Damage => (FontId::Main, 1),
-        _ => (FontId::Small, 1),
+    let damage = matches!(f.kind, FloatKind::Damage | FloatKind::Hit);
+    let (font, size) = if damage {
+        (FontId::Main, 1)
+    } else {
+        (FontId::Small, 1)
     };
     let w = gfx.text_width(&f.text, font, size);
     // Damage numbers pop in with a small bounce.
-    let bounce = if f.kind == FloatKind::Damage && f.age < 0.15 {
+    let bounce = if damage && f.age < 0.15 {
         -3.0 * (f.age / 0.15 * std::f32::consts::PI).sin()
     } else {
         0.0
@@ -479,7 +492,9 @@ pub fn draw_float(gfx: &Gfx, tile_screen: Vec2, tile: f32, f: &FloatText) {
     let x = (tile_screen.x + tile / 2.0 - w / 2.0).round();
     let y = (tile_screen.y - 8.0 - rise + bounce).round();
     let color = float_color(f.kind).with_alpha(alpha);
-    let outline = if f.kind == FloatKind::Damage {
+    let outline = if f.kind == FloatKind::Hit {
+        Color::from_hex(0x3a0404).with_alpha(alpha)
+    } else if damage {
         Color::from_hex(0x9a1010).with_alpha(alpha)
     } else {
         Color::new(0.0, 0.0, 0.0, 0.85 * alpha)
