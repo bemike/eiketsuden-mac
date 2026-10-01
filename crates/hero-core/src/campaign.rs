@@ -14,6 +14,66 @@ pub const FORBIDDEN_SECRET_ABILITY: i32 = 100;
 /// Gold the forbidden secret gives: the original's 10000.
 pub const FORBIDDEN_SECRET_GOLD: i64 = 10_000;
 
+/// Difficulty chosen for a new game (DECISIONS D25). [`Difficulty::Normal`] is the pack as it
+/// is: the original mode's numbers stay the original's. The others only move enemy levels
+/// ([`Difficulty::enemy_level_offset`]); everything else follows from the level by the usual
+/// formulas (RULES.md §7.6).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Difficulty {
+    Easy,
+    #[default]
+    Normal,
+    Hard,
+}
+
+impl Difficulty {
+    pub const ALL: [Difficulty; 3] = [Difficulty::Easy, Difficulty::Normal, Difficulty::Hard];
+
+    /// Levels added to every enemy unit when a battle is set up (clamped to `1..=level_cap`).
+    pub fn enemy_level_offset(self) -> i32 {
+        match self {
+            Difficulty::Easy => -2,
+            Difficulty::Normal => 0,
+            Difficulty::Hard => 2,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "쉬움",
+            Difficulty::Normal => "기본",
+            Difficulty::Hard => "어려움",
+        }
+    }
+}
+
+/// The choices of a new game (D25); the default is the pack as it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GameOptions {
+    pub difficulty: Difficulty,
+    pub free_edit: bool,
+    pub extended_rules: bool,
+}
+
+/// Highest 무력, 지력 or 통솔 that free editing sets (the forbidden secret's value).
+pub const ABILITY_MAX: i32 = FORBIDDEN_SECRET_ABILITY;
+
+/// One of an officer's three abilities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ability {
+    /// 무력
+    Strength,
+    /// 지력
+    Int,
+    /// 통솔
+    Lead,
+}
+
+impl Ability {
+    pub const ALL: [Ability; 3] = [Ability::Strength, Ability::Int, Ability::Lead];
+}
+
 /// One step of the campaign. Nodes are visited in order of their `next` links.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -227,6 +287,17 @@ pub struct CampaignState {
     /// original raises the officers of other armies, who come over later as they are then).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pending_growth: BTreeMap<Id, Growth>,
+    /// Chosen when the game began; saves from before D25 have none and play as `normal`.
+    #[serde(default)]
+    pub difficulty: Difficulty,
+    /// 능력치 자유 조정, chosen when the game began (D25): the camp may set the army's 무력,
+    /// 지력 and 통솔 ([`CampaignState::set_ability`]).
+    #[serde(default)]
+    pub free_edit: bool,
+    /// 확장 규칙, chosen when the game began (D25): battles use the joint attack bonus
+    /// (RULES.md §4).
+    #[serde(default)]
+    pub extended_rules: bool,
 }
 
 impl CampaignState {
@@ -245,6 +316,9 @@ impl CampaignState {
             battles_won: Vec::new(),
             play_seconds: 0,
             pending_growth: BTreeMap::new(),
+            difficulty: Difficulty::Normal,
+            free_edit: false,
+            extended_rules: false,
         };
         for def in campaign
             .starting_officers
@@ -262,6 +336,52 @@ impl CampaignState {
         }
         state.add_gold(pack, campaign.starting_gold);
         state
+    }
+
+    /// Take the new game's choices.
+    pub fn apply_options(&mut self, options: GameOptions) {
+        self.difficulty = options.difficulty;
+        self.free_edit = options.free_edit;
+        self.extended_rules = options.extended_rules;
+    }
+
+    /// Whether a choice of the new game moves this campaign away from the pack as it is
+    /// (D25): such saves say so and need a game that knows the choices.
+    pub fn off_original(&self) -> bool {
+        self.difficulty != Difficulty::Normal || self.free_edit || self.extended_rules
+    }
+
+    /// Short names of the new game's choices that are on, for save labels: `어려움`, `조정`,
+    /// `확장`.
+    pub fn option_tags(&self) -> Vec<&'static str> {
+        let mut tags = Vec::new();
+        if self.difficulty != Difficulty::Normal {
+            tags.push(self.difficulty.label());
+        }
+        if self.free_edit {
+            tags.push("조정");
+        }
+        if self.extended_rules {
+            tags.push("확장");
+        }
+        tags
+    }
+
+    /// 능력치 자유 조정: set one of an army officer's abilities, kept in `1..=ABILITY_MAX`.
+    /// Returns the value set; `None` when the campaign was not started with free editing or
+    /// the officer is not in the army.
+    pub fn set_ability(&mut self, officer: &str, ability: Ability, value: i32) -> Option<i32> {
+        if !self.free_edit {
+            return None;
+        }
+        let o = self.officer_mut(officer)?;
+        let v = value.clamp(1, ABILITY_MAX);
+        match ability {
+            Ability::Strength => o.strength = v,
+            Ability::Int => o.int = v,
+            Ability::Lead => o.lead = v,
+        }
+        Some(v)
     }
 
     pub fn officer(&self, id: &str) -> Option<&OfficerState> {

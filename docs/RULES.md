@@ -84,6 +84,10 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
   `counter_damage_pct / 100` *(design; the original is "weak", formula unknown)*, minimum 1. Counters give EXP and
   can defeat the attacker. Strategies never provoke counters.
 * Events: one `Strike` for the attack, one more `Strike { counter: true }` for a counter.
+* **Joint attack** (extended rules only, chosen for a new game; DECISIONS D25): the attack's damage (not a counter's)
+  rises by 10 % for every other active unit of the attacker's side (players and allies are one side) orthogonally next
+  to the defender, at most 30 %, rounded down: `damage * (100 + pct) / 100`. Where the attacker strikes from does not
+  matter. Off by default.
 
 ## 5. Strategies
 
@@ -172,6 +176,12 @@ morale reset to `morale_start` at the start of every battle (the campaign keeps 
    `fixed_class`.
 5. **Military band aura**: at the start of every phase, each active unit orthogonally adjacent to an active unit
    whose class has `mp_aura` regains `band.level / 10 + 1` MP per adjacent band (any side).
+6. **Difficulty** (DECISIONS D25): chosen for a new game and kept in the save. When a battle is set up, every enemy
+   unit's level (named officers and generic units, reinforcements included) moves by the difficulty's offset — easy −2,
+   normal 0, hard +2 — at least 1, and hard never raises it past `level_cap`; a pack level already above the cap is
+   not lowered to it (easy still takes 2 off). Player units,
+   allies and guests are unchanged. Everything that depends on the level follows (§2, learned strategies, the EXP
+   level difference above). Normal is the pack as it is.
 
 ## 8. Weather
 

@@ -491,6 +491,9 @@ pub fn campaign(roster: Vec<OfficerState>, deployed: &[&str]) -> CampaignState {
         battles_won: Vec::new(),
         play_seconds: 0,
         pending_growth: BTreeMap::new(),
+        difficulty: Default::default(),
+        free_edit: false,
+        extended_rules: false,
     }
 }
 

@@ -10,7 +10,7 @@
 use super::stats::{max_hp, max_mp};
 use super::{BattleError, BattleState, Unit, UnitId, UnitState, Weather};
 use crate::battledef::{AiMode, BattleDef, Side, UnitSpawn};
-use crate::campaign::{CampaignState, OfficerState};
+use crate::campaign::{CampaignState, Difficulty, OfficerState};
 use crate::data::{Equipment, Id};
 use crate::geom::{Dir, Pos};
 use crate::map::BattleMap;
@@ -100,6 +100,7 @@ pub(super) fn build(
         objective: None,
         start_flags: campaign.flags.clone(),
         map_images: Vec::new(),
+        extended_rules: campaign.extended_rules,
     })
 }
 
@@ -221,6 +222,22 @@ fn officer_unit(
     })
 }
 
+/// An enemy's level at `difficulty`: the defined level moved by the offset, at least 1 and at
+/// most `level_cap` (a level the pack defines above the cap is never lowered to it).
+fn enemy_level(pack: &Pack, level: u32, difficulty: Difficulty) -> u32 {
+    let level = level.max(1);
+    let offset = difficulty.enemy_level_offset();
+    if offset == 0 {
+        return level;
+    }
+    let moved = (level as i64 + offset as i64).max(1) as u32;
+    if offset > 0 {
+        moved.min(pack.rules.level_cap.max(level))
+    } else {
+        moved
+    }
+}
+
 /// The army's state of the officer a `side = "player"` spawn names, when that officer is in
 /// the army and not away. Such a spawn places the army's officer (one unit, with their
 /// progress) instead of a second copy built from `officers.toml`; an away officer is built
@@ -254,7 +271,7 @@ fn spawn_unit(
     // equipment are ignored. The spawn still decides where and how the unit fights.
     let mut unit = match army_officer(campaign, sp) {
         Some(state) => officer_unit(pack, id, state, sp.pos)?,
-        None => defined_unit(pack, id, sp, &who)?,
+        None => defined_unit(pack, id, sp, &who, campaign.difficulty)?,
     };
     unit.ai = sp.ai;
     unit.ai_target = sp.ai_target.clone();
@@ -276,8 +293,15 @@ fn spawn_unit(
 }
 
 /// A spawned unit as the battle defines it: a named officer from `officers.toml` (with the
-/// spawn's overrides) or a generic unit. [`spawn_unit`] sets the behaviour fields.
-fn defined_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn, who: &str) -> Result<Unit, BattleError> {
+/// spawn's overrides) or a generic unit. [`spawn_unit`] sets the behaviour fields. Enemy units
+/// get the difficulty's level offset (DECISIONS D25), kept within `1..=level_cap`.
+fn defined_unit(
+    pack: &Pack,
+    id: UnitId,
+    sp: &UnitSpawn,
+    who: &str,
+    difficulty: Difficulty,
+) -> Result<Unit, BattleError> {
     let (name, class_id, level, stats, equip, portrait, lord) = match &sp.officer {
         Some(oid) => {
             let od = pack
@@ -319,7 +343,10 @@ fn defined_unit(pack: &Pack, id: UnitId, sp: &UnitSpawn, who: &str) -> Result<Un
         .class(&class_id)
         .ok_or_else(|| setup_err(format!("unit `{who}` has unknown class `{class_id}`")))?;
     check_equipment(pack, who, &equip)?;
-    let level = level.max(1);
+    let level = match sp.side {
+        Side::Enemy => enemy_level(pack, level, difficulty),
+        Side::Player | Side::Ally => level.max(1),
+    };
     let [strength, int, lead] = stats;
     let hp = max_hp(class, level);
     let mp = max_mp(&pack.rules, level, int);

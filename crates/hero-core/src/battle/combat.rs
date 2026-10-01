@@ -17,6 +17,18 @@ pub(super) fn hit_damage(atk: i32, def: i32, affinity: i32, terrain_defense: i32
     raw.clamp(1, i32::MAX as i64) as i32
 }
 
+/// Joint attack bonus per joining unit and its cap, in percent (D25).
+pub(super) const JOINT_ATTACK_STEP: i32 = 10;
+pub(super) const JOINT_ATTACK_MAX: i32 = 30;
+
+/// `damage` raised by `pct` percent (rounded down), at least 1.
+pub(super) fn with_joint_attack(damage: i32, pct: i32) -> i32 {
+    if pct <= 0 {
+        return damage;
+    }
+    (damage as i64 * (100 + pct as i64) / 100).clamp(1, i32::MAX as i64) as i32
+}
+
 /// Morale lost when taking `damage`: `ceil(damage * pct / max_hp)`.
 pub(super) fn morale_loss(rules: &GameRules, damage: i32, max_hp: i32) -> i32 {
     if damage <= 0 || rules.morale_loss_pct <= 0 {
@@ -64,6 +76,32 @@ impl BattleState {
             self.affinity(pack, att, def),
             self.terrain_defense(pack, def_pos),
         )
+    }
+
+    /// Extended rules' joint attack (DECISIONS D25, RULES.md §4): percent added to the damage
+    /// of `att`'s attack on `def`, 10 per other active unit of `att`'s side (players and
+    /// allies are one side) orthogonally next to `def`, at most 30. Where `att` attacks from
+    /// does not matter, so forecasts made before a move hold. 0 without extended rules.
+    pub fn joint_attack_pct(&self, att: UnitId, def: UnitId) -> i32 {
+        if !self.extended_rules {
+            return 0;
+        }
+        let (side, at) = (self.units[att].side, self.units[def].pos);
+        let joined = self
+            .units
+            .iter()
+            .filter(|u| u.id != att && u.is_active() && !u.side.is_hostile(side))
+            .filter(|u| u.pos.manhattan(at) == 1)
+            .count() as i32;
+        (joined * JOINT_ATTACK_STEP).min(JOINT_ATTACK_MAX)
+    }
+
+    /// Damage of `att`'s attack on `def` where both stand now: one strike plus the joint
+    /// attack bonus (counters get no bonus).
+    pub(super) fn attack_damage(&self, pack: &Pack, att: UnitId, def: UnitId) -> i32 {
+        let (a, d) = (&self.units[att], &self.units[def]);
+        let dmg = self.strike_damage(pack, att, a.morale, def, d.morale, d.pos);
+        with_joint_attack(dmg, self.joint_attack_pct(att, def))
     }
 
     /// Counter damage: a normal strike by `counterer` times `counter_damage_pct`, at least 1.
@@ -122,7 +160,7 @@ impl BattleState {
 
     pub(super) fn attack_forecast(&self, pack: &Pack, att: UnitId, def: UnitId) -> AttackForecast {
         let (a, d) = (&self.units[att], &self.units[def]);
-        let damage = self.strike_damage(pack, att, a.morale, def, d.morale, d.pos);
+        let damage = self.attack_damage(pack, att, def);
         let affinity = self.affinity(pack, att, def);
         let mut counter = None;
         if damage < d.hp && self.counter_applies(pack, att, a.pos, def) {
@@ -247,14 +285,7 @@ impl BattleState {
         self.units[def].facing = Dir::towards(d_pos, a_pos);
         self.units[att].acted = true;
 
-        let damage = self.strike_damage(
-            pack,
-            att,
-            self.units[att].morale,
-            def,
-            self.units[def].morale,
-            d_pos,
-        );
+        let damage = self.attack_damage(pack, att, def);
         let before = self.units[def].morale;
         let loss = self.take_damage(pack, def, damage);
         ev.push(BattleEvent::Strike {

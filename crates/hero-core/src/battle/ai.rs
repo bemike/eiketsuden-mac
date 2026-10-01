@@ -35,7 +35,7 @@
 //! Scores are expressed in "HP-equivalents": one point is one HP of damage dealt or healed.
 
 use super::board::Board;
-use super::combat::{hit_damage, morale_loss};
+use super::combat::{hit_damage, morale_loss, with_joint_attack};
 use super::strategy;
 use super::{Action, BattleEvent, BattleState, Unit, UnitId};
 use crate::battledef::{in_reach, AiMode, Condition, EventAction, Side, Trigger};
@@ -894,11 +894,15 @@ impl<'a> Planner<'a> {
         let (st, pack) = (self.st, self.pack);
         let t = &st.units[target];
         let terrain = self.board.terrain(t.pos).map_or(0, |tt| tt.defense);
-        let dmg = hit_damage(
-            self.atk,
-            st.defense_power(pack, target),
-            st.affinity(pack, self.id, target),
-            terrain,
+        // The joint attack bonus does not depend on the tile attacked from (extended rules).
+        let dmg = with_joint_attack(
+            hit_damage(
+                self.atk,
+                st.defense_power(pack, target),
+                st.affinity(pack, self.id, target),
+                terrain,
+            ),
+            st.joint_attack_pct(self.id, target),
         );
         let kill = dmg >= t.hp;
         let mut value = damage_value(dmg, t) + self.protect_value(target, dmg, t.hp);
@@ -1255,6 +1259,8 @@ impl<'a> Planner<'a> {
                     }
                 }
                 let atk = st.attack_power(pack, h.id);
+                // A threat estimate: without the joint attack bonus of extended rules, which
+                // depends on where the others end up.
                 let hit = |target: UnitId, def: i32, i: usize| {
                     let terrain = self.board.terrain_at_index(i).map_or(0, |t| t.defense);
                     hit_damage(atk, def, st.affinity(pack, h.id, target), terrain) as i64

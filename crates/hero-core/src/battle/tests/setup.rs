@@ -404,3 +404,41 @@ fn battle_state_round_trips_through_json() {
     let (mut x, mut y) = (st.clone(), back);
     assert_eq!(x.rng.next_u64(), y.rng.next_u64());
 }
+
+#[test]
+fn difficulty_moves_only_enemy_levels_within_bounds() {
+    use crate::campaign::Difficulty;
+    let mut def = battle(OPEN_MAP);
+    let at = |side, x, level| UnitSpawn {
+        level: Some(level),
+        ..spawn(side, p(x, 5))
+    };
+    def.units = vec![
+        at(Side::Enemy, 0, 3),
+        at(Side::Enemy, 1, 1),
+        at(Side::Enemy, 2, 49),
+        // Above the test rules' level_cap of 50: never lowered by the cap.
+        at(Side::Enemy, 3, 60),
+        at(Side::Ally, 4, 3),
+        at(Side::Player, 5, 3),
+    ];
+    let pack = pack_with(def);
+    let levels = |difficulty| {
+        let mut camp = campaign(Vec::new(), &[]);
+        camp.difficulty = difficulty;
+        let st = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
+        st.units.iter().map(|u| u.level).collect::<Vec<_>>()
+    };
+    assert_eq!(levels(Difficulty::Normal), [3, 1, 49, 60, 3, 3]);
+    assert_eq!(levels(Difficulty::Easy), [1, 1, 47, 58, 3, 3]);
+    assert_eq!(levels(Difficulty::Hard), [5, 3, 50, 60, 3, 3]);
+
+    // HP and MP follow the moved level by the usual formulas.
+    let mut camp = campaign(Vec::new(), &[]);
+    camp.difficulty = Difficulty::Hard;
+    let hard = BattleState::new(&pack, BATTLE, &camp, 1).unwrap();
+    let normal = BattleState::new(&pack, BATTLE, &campaign(Vec::new(), &[]), 1).unwrap();
+    let hp_growth = pack.classes["infantry"].hp_growth;
+    assert_eq!(hard.units[0].max_hp, normal.units[0].max_hp + 2 * hp_growth);
+    assert_eq!(hard.units[0].hp, hard.units[0].max_hp);
+}

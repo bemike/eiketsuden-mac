@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// Newest save layout this game reads. Bump when the save layout changes incompatibly; add a
 /// migration in [`SaveGame::from_json`].
-pub const SAVE_VERSION: u32 = GROWTH_SAVE_VERSION;
+pub const SAVE_VERSION: u32 = OPTIONS_SAVE_VERSION;
 
 /// Layout of a save without a half-played scene or queued growth. Such a save is still written
 /// with this version (see [`SaveGame::stamp_version`]), so a game older than [`SAVE_VERSION`]
@@ -26,7 +26,12 @@ pub const GROWTH_SAVE_VERSION: u32 = 3;
 
 // A save that needs a newer layout must carry a version that a game older than this one refuses.
 const _: () = assert!(SCENE_SAVE_VERSION > PLAIN_SAVE_VERSION);
+/// Layout of a save whose campaign was started with choices of the new game (DECISIONS D25:
+/// difficulty, free editing, extended rules; [`CampaignState::off_original`]).
+pub const OPTIONS_SAVE_VERSION: u32 = 4;
+
 const _: () = assert!(GROWTH_SAVE_VERSION > SCENE_SAVE_VERSION);
+const _: () = assert!(OPTIONS_SAVE_VERSION > GROWTH_SAVE_VERSION);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SaveGame {
@@ -144,12 +149,15 @@ pub enum SaveError {
 impl SaveGame {
     /// Set `version` to the oldest layout that can hold this save: a game that predates
     /// [`SceneResume`] would restart a half-played scene with its side effects already applied
-    /// (gold and items twice), and one that predates [`CampaignState::pending_growth`] would
-    /// ignore the queued levels and drop them when it saves again, so such a save must be
-    /// refused by it (`TooNew`) rather than loaded. Every other save stays loadable by older
-    /// games.
+    /// (gold and items twice), one that predates [`CampaignState::pending_growth`] would
+    /// ignore the queued levels and drop them when it saves again, and one that predates the
+    /// new game's choices (difficulty, free editing, extended rules) would play such a campaign
+    /// as the pack as it is, so such a save must be refused by it (`TooNew`) rather than
+    /// loaded. Every other save stays loadable by older games.
     pub fn stamp_version(&mut self) {
-        self.version = if !self.campaign.pending_growth.is_empty() {
+        self.version = if self.campaign.off_original() {
+            OPTIONS_SAVE_VERSION
+        } else if !self.campaign.pending_growth.is_empty() {
             GROWTH_SAVE_VERSION
         } else if self.scene.is_some() || !self.pending_scenes.is_empty() {
             SCENE_SAVE_VERSION
@@ -241,6 +249,9 @@ mod tests {
             battles_won: Vec::new(),
             play_seconds: 1,
             pending_growth: BTreeMap::new(),
+            difficulty: Default::default(),
+            free_edit: false,
+            extended_rules: false,
         }
     }
 
@@ -356,6 +367,34 @@ mod tests {
         empty.version = 99;
         empty.stamp_version();
         assert_eq!(empty.version, PLAIN_SAVE_VERSION);
+    }
+
+    /// A campaign with new game options must not load in a game that predates them; a plain
+    /// one, and saves written before D25, stay plain.
+    #[test]
+    fn only_saves_with_new_game_options_need_their_version() {
+        use crate::campaign::Difficulty;
+        for edit in [false, true] {
+            let mut s = save();
+            s.campaign.free_edit = edit;
+            s.campaign.extended_rules = !edit;
+            s.stamp_version();
+            assert_eq!(s.version, OPTIONS_SAVE_VERSION);
+        }
+        let mut hard = save();
+        hard.campaign.difficulty = Difficulty::Hard;
+        hard.stamp_version();
+        assert_eq!(hard.version, OPTIONS_SAVE_VERSION);
+        let back = SaveGame::from_json(&hard.to_json(), "base").unwrap();
+        assert_eq!(back.campaign.difficulty, Difficulty::Hard);
+
+        let mut v = serde_json::to_value(save()).unwrap();
+        v["campaign"].as_object_mut().unwrap().remove("difficulty");
+        let old = SaveGame::from_json(&v.to_string(), "base").unwrap();
+        assert_eq!(old.campaign.difficulty, Difficulty::Normal);
+        let mut normal = old;
+        normal.stamp_version();
+        assert_eq!(normal.version, PLAIN_SAVE_VERSION);
     }
 
     #[test]

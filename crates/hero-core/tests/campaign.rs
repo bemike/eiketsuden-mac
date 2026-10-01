@@ -33,6 +33,41 @@ fn new_game_uses_the_campaign_definition() {
     assert!(state.flags.is_empty() && state.deployed.is_empty() && state.battles_won.is_empty());
 }
 
+/// 능력치 자유 조정 (D25): only a campaign started with it sets abilities, within 1..=100, and
+/// only for officers in the army; the new game's options are recorded and labelled.
+#[test]
+fn free_editing_sets_abilities_only_when_chosen() {
+    use hero_core::campaign::{Ability, Difficulty, GameOptions, ABILITY_MAX};
+    let (_, mut state) = new_game();
+    assert!(!state.off_original() && state.option_tags().is_empty());
+    assert_eq!(state.set_ability("liu_bei", Ability::Strength, 90), None);
+    assert_eq!(state.officer("liu_bei").unwrap().strength, 72);
+
+    state.apply_options(GameOptions {
+        difficulty: Difficulty::Easy,
+        free_edit: true,
+        extended_rules: false,
+    });
+    assert!(state.off_original());
+    assert_eq!(state.option_tags(), ["쉬움", "조정"]);
+    assert_eq!(
+        state.set_ability("liu_bei", Ability::Strength, 90),
+        Some(90)
+    );
+    assert_eq!(
+        state.set_ability("liu_bei", Ability::Int, 500),
+        Some(ABILITY_MAX)
+    );
+    assert_eq!(state.set_ability("liu_bei", Ability::Lead, -3), Some(1));
+    let liu_bei = state.officer("liu_bei").unwrap();
+    assert_eq!((liu_bei.strength, liu_bei.int, liu_bei.lead), (90, 100, 1));
+    assert_eq!(
+        state.set_ability("cao_cao", Ability::Lead, 50),
+        None,
+        "not in the army"
+    );
+}
+
 /// The original's hidden command: the lord at the level cap with 100 in every ability, 10000
 /// gold (clamped to the cap); the other officers are untouched.
 #[test]
