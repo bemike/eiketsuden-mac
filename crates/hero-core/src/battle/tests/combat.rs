@@ -527,8 +527,15 @@ fn the_documents_state_the_numbers_of_the_new_game_choices() {
         n => format!("+{n}"),
     };
     let [easy, normal, hard] = Difficulty::ALL.map(signed);
-    let text = format!("easy {easy}, normal {normal}, hard {hard}");
-    assert!(rules.contains(&text), "RULES.md lacks `{text}`");
+    for text in [
+        format!("easy {easy}, normal {normal}, hard {hard}"),
+        format!(
+            "(easy still takes {} off)",
+            -Difficulty::Easy.enemy_level_offset()
+        ),
+    ] {
+        assert!(rules.contains(&text), "RULES.md lacks `{text}`");
+    }
     let text = format!("쉬움 {easy}, 기본 {normal}, 어려움 {hard}");
     assert!(decisions.contains(&text), "DECISIONS.md lacks `{text}`");
 }

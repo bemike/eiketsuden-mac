@@ -1289,7 +1289,8 @@ hero-tools --help | --version
   writes every phase of battle `ID` (each unit's side, tile, HP and AI) and its outcome to stderr, each
   line with its seed; a battle the pack does not have is a command line error (exit 2).
   `--difficulty easy|normal|hard` and `--extended-rules` start every run with those choices of the title's
-  new game (DECISIONS D25: enemy levels −2/0/+2, joint attack); the default is the pack as it is. A choice takes option N (1 = the first) where `--choose
+  new game (DECISIONS D25; [RULES.md](RULES.md) §4 joint attack, §7.6 difficulty); the default is the pack as
+  it is. A choice takes option N (1 = the first) where `--choose
   SCENE=N,N,...` names its scene, one N per choice the scene asks in order (a scene played again asks
   again); past them, and by default, the first option not taken yet at that question while the scene
   plays, so a question that leads back to itself until answered right is left the way a player would

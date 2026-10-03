@@ -31,7 +31,7 @@ USAGE:
         (a check of how far a stronger army gets, not of the balance). --trace ID writes every
         phase of battle ID to stderr (per seed: each unit's side, tile, HP and AI).
         --difficulty and --extended-rules start the campaign with those new-game choices
-        (DECISIONS D25: enemy levels -2/0/+2, joint attack), as the title's new game does.
+        (DECISIONS D25; RULES.md §4 joint attack, §7.6 difficulty), as the title's new game does.
         --choose takes option N (1 = first) at the
         choices of scene SCENE, one N per choice it asks in order (past them, and by default:
         the first option not taken yet at that question while the scene plays). Reports each run's end and, per battle, how often it was

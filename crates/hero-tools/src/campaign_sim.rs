@@ -793,20 +793,27 @@ mod tests {
         assert_eq!(campaign.difficulty, Difficulty::Hard);
         assert!(campaign.extended_rules);
         assert_eq!(hard.game_tags(), ["hard difficulty", "extended rules"]);
-        // Enemies set up from that campaign are two levels up.
+        // Enemies set up from that campaign are the difficulty's levels up.
         let def = pack.battles.keys().next().unwrap().clone();
-        let level = |c: &CampaignState| -> Vec<u32> {
+        let level = |c: &CampaignState| -> Vec<i32> {
             BattleState::new(&pack, &def, c, 1)
                 .unwrap()
                 .units
                 .iter()
                 .filter(|u| u.side == Side::Enemy)
-                .map(|u| u.level)
+                .map(|u| u.level as i32)
                 .collect()
         };
         let normal = level(&Options::default().new_game(&pack));
         assert!(!normal.is_empty());
-        assert_ne!(level(&campaign), normal);
+        let offset = Difficulty::Hard.enemy_level_offset();
+        let cap = pack.rules.level_cap as i32;
+        // As set-up does: never past the cap, but a pack level above it stays.
+        let expected: Vec<i32> = normal
+            .iter()
+            .map(|&l| (l + offset).min(cap.max(l)))
+            .collect();
+        assert_eq!(level(&campaign), expected);
     }
 
     #[test]

@@ -944,7 +944,7 @@ fn convert_scenario(
                     .map(|i| {
                         Ok(InstrOut {
                             instr: i.clone(),
-                            resolved: resolve(i, section, look).map_err(&where_)?,
+                            resolved: resolve(i, section, look).map_err(where_)?,
                         })
                     })
                     .collect::<Result<Vec<_>, String>>()?;

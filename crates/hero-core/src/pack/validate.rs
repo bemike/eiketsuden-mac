@@ -1258,7 +1258,7 @@ impl<'a> Validator<'a> {
             })
             .collect();
         let open = |p: Pos| {
-            map.terrain_at(p).is_some_and(&walkable)
+            map.terrain_at(p).is_some_and(walkable)
                 || changed.iter().any(|&(q, t)| q == p && walkable(t))
         };
         let flood = |start: Vec<Pos>| {

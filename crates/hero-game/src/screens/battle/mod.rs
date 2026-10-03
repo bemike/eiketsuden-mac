@@ -520,11 +520,13 @@ impl BattleScreen {
                     self.use_tile_size(ts.tile_size);
                     self.meta.tileset = Some(ts);
                 }
-                Err(e) => macroquad::logging::warn!(
-                    "{} unavailable, drawing flat terrain: {}",
-                    tileset::TILESET_FILE,
-                    e
-                ),
+                Err(e) => {
+                    macroquad::logging::warn!(
+                        "{} unavailable, drawing flat terrain: {}",
+                        tileset::TILESET_FILE,
+                        e
+                    );
+                }
             }
         }
         if let Some(r) = request_text(&mut self.meta.units_req) {
@@ -559,11 +561,13 @@ impl BattleScreen {
                     ctx.media.preload_textures(&textures);
                     self.meta.units = units;
                 }
-                Err(e) => macroquad::logging::warn!(
-                    "{} unavailable, using 16x16 frames: {}",
-                    sprites::UNITS_FILE,
-                    e
-                ),
+                Err(e) => {
+                    macroquad::logging::warn!(
+                        "{} unavailable, using 16x16 frames: {}",
+                        sprites::UNITS_FILE,
+                        e
+                    );
+                }
             }
         }
         if let Some(r) = request_text(&mut self.meta.fx_req) {
@@ -576,7 +580,11 @@ impl BattleScreen {
                     self.meta.fx = fx;
                 }
                 Err(e) => {
-                    macroquad::logging::warn!("{} unavailable, no effects: {}", sprites::FX_FILE, e)
+                    macroquad::logging::warn!(
+                        "{} unavailable, no effects: {}",
+                        sprites::FX_FILE,
+                        e
+                    );
                 }
             }
         }
@@ -608,10 +616,12 @@ impl BattleScreen {
                             );
                         }
                     }
-                    AssetState::Missing => macroquad::logging::warn!(
-                        "gfx/{}.png unavailable; drawing the tileset",
-                        key
-                    ),
+                    AssetState::Missing => {
+                        macroquad::logging::warn!(
+                            "gfx/{}.png unavailable; drawing the tileset",
+                            key
+                        );
+                    }
                 }
                 self.meta.picture = None;
             }

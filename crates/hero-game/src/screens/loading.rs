@@ -438,7 +438,9 @@ impl LoadingScreen {
                 for issue in &issues {
                     let line = format!("{}: {}", issue.context, issue.msg);
                     match issue.severity {
-                        Severity::Warning => macroquad::logging::warn!("pack: {}", line),
+                        Severity::Warning => {
+                            macroquad::logging::warn!("pack: {}", line);
+                        }
                         Severity::Error => errors.push(line),
                     }
                 }
@@ -462,7 +464,9 @@ impl LoadingScreen {
                 // Saves written before the slots were split per pack move to this pack's slots.
                 match saves::migrate_legacy(ctx.storage.as_mut(), &pack.manifest.id) {
                     Ok(0) => {}
-                    Ok(n) => macroquad::logging::info!("moved {} saves to per-pack slots", n),
+                    Ok(n) => {
+                        macroquad::logging::info!("moved {} saves to per-pack slots", n);
+                    }
                     Err(e) => {
                         macroquad::logging::error!("save migration failed: {}", e);
                         ctx.toast(format!("이전 기록을 옮기지 못했습니다: {e}"));
