@@ -58,7 +58,10 @@ pub struct TitleScreen {
     confirm_quit: Option<ConfirmDialog>,
     /// The options of 새 게임, in the main menu's place while open.
     new_game: Option<NewGameMenu>,
+    /// A loadable save exists (이어하기).
     has_saves: bool,
+    /// Some slot holds a record, loadable or not (불러오기 shows why one is not).
+    has_records: bool,
     age: f32,
 }
 
@@ -78,6 +81,7 @@ impl TitleScreen {
             confirm_quit: None,
             new_game: None,
             has_saves: false,
+            has_records: false,
             age: 0.0,
         }
     }
@@ -94,7 +98,8 @@ impl TitleScreen {
             .map(|it| {
                 let enabled = match it {
                     Item::NewGame => has_pack,
-                    Item::Continue | Item::Load => has_pack && self.has_saves,
+                    Item::Continue => has_pack && self.has_saves,
+                    Item::Load => has_pack && self.has_records,
                     _ => true,
                 };
                 MenuItem::new(it.label()).enabled(enabled)
@@ -184,6 +189,9 @@ impl Screen for TitleScreen {
         self.has_saves = ctx
             .pack_id()
             .is_some_and(|id| saves::any(ctx.storage.as_ref(), id));
+        self.has_records = ctx
+            .pack_id()
+            .is_some_and(|id| saves::any_record(ctx.storage.as_ref(), id));
         self.rebuild_menu(ctx);
         if how == Enter::Fresh || ctx.audio.bgm() != Some(bgm::TITLE) {
             ctx.audio.play_bgm(bgm::TITLE);

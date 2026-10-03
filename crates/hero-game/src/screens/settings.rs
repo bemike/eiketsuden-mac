@@ -61,7 +61,10 @@ impl SettingsScreen {
         }
     }
 
-    fn items(&self, s: &Settings) -> Vec<MenuItem> {
+    /// Input: the settings and whether the chain holds the original mode's pack below the top
+    /// ([`crate::platform::DataRoot::has_original_layer`]). Without one (the web build, the
+    /// base pack alone) the face choice changes nothing, so its row is shown disabled.
+    fn items(&self, s: &Settings, faces: bool) -> Vec<MenuItem> {
         self.rows
             .iter()
             .map(|row| match row {
@@ -83,6 +86,9 @@ impl SettingsScreen {
                 Row::Fullscreen => MenuItem::new("전체 화면")
                     .detail(if s.fullscreen { "켬" } else { "끔" })
                     .adjustable(),
+                Row::Portraits if !faces => MenuItem::new("얼굴")
+                    .detail("원작 데이터 없음")
+                    .enabled(false),
                 Row::Portraits => MenuItem::new("얼굴")
                     .detail(s.portraits.label())
                     .adjustable(),
@@ -99,7 +105,7 @@ impl SettingsScreen {
     }
 
     fn refresh(&mut self, ctx: &Ctx) {
-        let items = self.items(&ctx.settings);
+        let items = self.items(&ctx.settings, ctx.data_root.has_original_layer());
         self.menu.set_items(items);
     }
 
@@ -155,7 +161,7 @@ impl Screen for SettingsScreen {
     }
 
     fn on_enter(&mut self, ctx: &mut Ctx, _how: crate::app::Enter) {
-        let items = self.items(&ctx.settings);
+        let items = self.items(&ctx.settings, ctx.data_root.has_original_layer());
         let mut menu = Menu::new(items);
         menu.framed = false;
         let h = menu.rect().h;
@@ -221,5 +227,27 @@ impl Screen for SettingsScreen {
             canvas.y - 4.0 - 12.0 * lines.len() as f32,
             TextStyle::small(theme::TEXT_DISABLED),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_face_row_is_disabled_without_an_original_layer() {
+        let screen = SettingsScreen::new();
+        let at = screen
+            .rows
+            .iter()
+            .position(|&r| r == Row::Portraits)
+            .unwrap();
+        let s = Settings::default();
+        let off = &screen.items(&s, false)[at];
+        assert!(!off.enabled && !off.adjustable);
+        assert_eq!(off.detail.as_deref(), Some("원작 데이터 없음"));
+        let on = &screen.items(&s, true)[at];
+        assert!(on.enabled && on.adjustable);
+        assert_eq!(on.detail.as_deref(), Some(s.portraits.label()));
     }
 }

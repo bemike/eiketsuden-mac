@@ -272,3 +272,29 @@ fn named_attack_shapes() {
     // From another tile the shape moves with the unit.
     assert_eq!(st.attack_targets(&pack, a, p(4, 3)), vec![near]);
 }
+
+#[test]
+fn the_threat_range_counts_a_confused_units_full_move() {
+    use crate::battle::ActiveStatus;
+    use crate::data::StatusKind;
+    let pack = pack(
+        "
+        .....
+        .....
+        .....",
+    );
+    let mut st = state(&pack);
+    let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(2, 1));
+    let full = st.movement_range(&pack, foe);
+    assert_eq!(st.threat_range(&pack, foe), full);
+    st.units[foe].statuses.push(ActiveStatus {
+        status: StatusKind::Confused,
+        turns: 2,
+    });
+    // Confused it cannot move now, but it may recover when its phase starts.
+    assert!(st.movement_range(&pack, foe).tiles.len() <= 1);
+    assert_eq!(st.threat_range(&pack, foe), full);
+    // A unit that is gone threatens nothing.
+    st.units[foe].state = crate::battle::UnitState::Retreated;
+    assert!(st.threat_range(&pack, foe).tiles.is_empty());
+}

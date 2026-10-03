@@ -490,3 +490,52 @@ fn joint_attack_bonus_of_extended_rules() {
     let old: crate::battle::BattleState = serde_json::from_value(v).unwrap();
     assert!(!old.extended_rules);
 }
+
+/// The extended rules' and the difficulty's numbers are stated in RULES.md and D25: a change
+/// of a constant must change the documents too (and the other way round).
+#[test]
+fn the_documents_state_the_numbers_of_the_new_game_choices() {
+    use crate::battle::combat::{JOINT_ATTACK_MAX, JOINT_ATTACK_STEP};
+    use crate::campaign::Difficulty;
+    let doc = |name: &str| {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs")
+            .join(name);
+        let text =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        // Paragraphs wrap anywhere: compare the words.
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+    let (rules, decisions) = (doc("RULES.md"), doc("DECISIONS.md"));
+    let (step, max) = (JOINT_ATTACK_STEP, JOINT_ATTACK_MAX);
+    for text in [
+        format!("rises by {step} % for every"),
+        format!("at most {max} %, rounded down"),
+    ] {
+        assert!(rules.contains(&text), "RULES.md lacks `{text}`");
+    }
+    for text in [
+        format!("피해가 {step} % 늘고 최대 {max} %"),
+        format!("최대치(+{max} %)"),
+    ] {
+        assert!(decisions.contains(&text), "DECISIONS.md lacks `{text}`");
+    }
+    // Written with the minus sign U+2212, as the documents do.
+    let signed = |d: Difficulty| match d.enemy_level_offset() {
+        n if n < 0 => format!("\u{2212}{}", -n),
+        0 => "0".to_string(),
+        n => format!("+{n}"),
+    };
+    let [easy, normal, hard] = Difficulty::ALL.map(signed);
+    for text in [
+        format!("easy {easy}, normal {normal}, hard {hard}"),
+        format!(
+            "(easy still takes {} off)",
+            -Difficulty::Easy.enemy_level_offset()
+        ),
+    ] {
+        assert!(rules.contains(&text), "RULES.md lacks `{text}`");
+    }
+    let text = format!("쉬움 {easy}, 기본 {normal}, 어려움 {hard}");
+    assert!(decisions.contains(&text), "DECISIONS.md lacks `{text}`");
+}

@@ -168,10 +168,23 @@ impl fmt::Display for SaveSlotError {
             SaveSlotError::Storage(e) => write!(f, "저장소 오류 ({e})"),
             SaveSlotError::Save(e) => match e {
                 SaveError::Corrupt(msg) => write!(f, "기록이 손상되었습니다 ({msg})"),
-                SaveError::TooNew { found, supported } => write!(
-                    f,
-                    "더 새로운 버전의 기록입니다 (기록 v{found}, 지원 v{supported})"
-                ),
+                SaveError::TooNew {
+                    found,
+                    supported,
+                    needs: Some(needs),
+                } => {
+                    let mut shown: String = needs.chars().take(MAX_NEEDS_CHARS).collect();
+                    if shown.len() < needs.len() {
+                        shown.push('…');
+                    }
+                    write!(
+                        f,
+                        "새 버전의 기록입니다: {shown} (기록 v{found}, 지원 v{supported})"
+                    )
+                }
+                SaveError::TooNew {
+                    found, supported, ..
+                } => write!(f, "새 버전의 기록입니다 (기록 v{found}, 지원 v{supported})"),
                 SaveError::WrongPack { found, expected } => write!(
                     f,
                     "다른 데이터 팩의 기록입니다 (기록 `{found}`, 현재 `{expected}`)"
@@ -332,6 +345,17 @@ pub fn any(store: &dyn KeyValueStore, pack_id: &str) -> bool {
     SaveSlot::all().any(|slot| read(store, slot, pack_id).is_ok())
 }
 
+/// Whether any slot of `pack_id` holds something, loadable or not: the load screen is worth
+/// opening then, since it says why a record cannot be loaded (a newer game's save, say).
+pub fn any_record(store: &dyn KeyValueStore, pack_id: &str) -> bool {
+    SaveSlot::all().any(|slot| !matches!(read(store, slot, pack_id), Err(SaveSlotError::Empty(_))))
+}
+
+/// Longest reason of a newer save ([`SaveError::TooNew`]) shown, in characters: it comes from
+/// the save file. With the words around it the message should stay within the load screen's
+/// detail panel (two lines; the reasons of this game's layouts fit one).
+const MAX_NEEDS_CHARS: usize = 30;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,9 +410,50 @@ mod tests {
     }
 
     #[test]
+    fn a_newer_save_says_why_and_still_opens_the_load_screen() {
+        let mut store = MemoryStore::default();
+        let newer = |needs: &str| {
+            format!(
+                r#"{{"version":{},"pack_id":"base","needs":"{needs}"}}"#,
+                SAVE_VERSION + 1
+            )
+        };
+        store
+            .set(&SaveSlot::Manual(1).key("base"), &newer("새 기능"))
+            .unwrap();
+        // Nothing to continue, but the load screen shows the record and why.
+        assert!(!any(&store, "base"));
+        assert!(any_record(&store, "base"));
+        assert!(!any_record(&store, "other"));
+        let why = read(&store, SaveSlot::Manual(1), "base")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            why,
+            format!(
+                "새 버전의 기록입니다: 새 기능 (기록 v{}, 지원 v{SAVE_VERSION})",
+                SAVE_VERSION + 1
+            )
+        );
+        // A long reason from the file is cut.
+        store
+            .set(&SaveSlot::Manual(1).key("base"), &newer(&"가".repeat(200)))
+            .unwrap();
+        let why = read(&store, SaveSlot::Manual(1), "base")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.contains(&format!("{}…", "가".repeat(MAX_NEEDS_CHARS))),
+            "{why}"
+        );
+        assert!(!why.contains(&"가".repeat(MAX_NEEDS_CHARS + 1)));
+    }
+
+    #[test]
     fn write_read_list_delete() {
         let mut store = MemoryStore::default();
         assert!(!any(&store, "base"));
+        assert!(!any_record(&store, "base"));
         assert_eq!(latest(&store, "base"), None);
 
         write(&mut store, SaveSlot::Manual(2), &save("탁현", 100, "base")).unwrap();

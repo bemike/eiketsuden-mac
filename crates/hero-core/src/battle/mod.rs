@@ -600,6 +600,22 @@ impl BattleState {
         self.reach(pack, &board, id, u.pos, self.move_points(pack, id))
     }
 
+    /// [`BattleState::movement_range`] with the unit's full move even while it is confused: a
+    /// confused unit may recover when its phase starts, so a view of what it threatens (the
+    /// danger range) counts its whole reach. Confusion changes nothing else about the range.
+    pub fn threat_range(&self, pack: &Pack, id: UnitId) -> MoveRange {
+        let u = &self.units[id];
+        let spent = u.side == self.phase && (u.moved || u.acted);
+        if !u.is_active() || spent {
+            return MoveRange {
+                origin: u.pos,
+                ..MoveRange::default()
+            };
+        }
+        let board = Board::new(self, pack);
+        self.reach(pack, &board, id, u.pos, self.base_move_points(pack, id))
+    }
+
     /// In-bounds tiles covered by the unit's attack range if it stood on `from`.
     pub fn attack_tiles(&self, pack: &Pack, id: UnitId, from: Pos) -> Vec<Pos> {
         let Some(offsets) = self.class_of(pack, id).range.offsets() else {

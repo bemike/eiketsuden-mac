@@ -25,7 +25,7 @@ use crate::simulate::MAX_PHASES;
 use crate::Failure;
 use hero_core::battle::{normalize_deployment, BattleEvent, BattleState, Outcome};
 use hero_core::battledef::{AiMode, BattleDef, Condition, Side};
-use hero_core::campaign::{CampaignState, Node};
+use hero_core::campaign::{CampaignState, Difficulty, GameOptions, Node};
 use hero_core::data::{Id, ItemDef};
 use hero_core::drama::{DramaRunner, Step};
 use hero_core::pack::{Pack, Severity};
@@ -114,6 +114,10 @@ pub fn run(dir: &Path, seeds: u32, choices: &Choices, options: &Options) -> Resu
             options.level_bonus
         );
     }
+    let tags = options.game_tags();
+    if !tags.is_empty() {
+        print!(", new game with {}", tags.join(", "));
+    }
     println!("\n");
     let _quiet = crate::simulate::QuietPanics::install();
     let runs: Vec<Run> = (1..=seeds)
@@ -124,13 +128,36 @@ pub fn run(dir: &Path, seeds: u32, choices: &Choices, options: &Options) -> Resu
     Ok(!failed)
 }
 
-/// `--level-bonus` and `--trace`.
+/// `--level-bonus`, `--trace`, `--difficulty` and `--extended-rules`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Options {
     /// Levels every army officer gets once, before their first battle.
     pub level_bonus: u32,
     /// A battle whose every phase is written to stderr ([`trace_line`]).
     pub trace: Option<String>,
+    /// The new game's choices (D25) the runs start with; the default is the pack as it is.
+    pub game: GameOptions,
+}
+
+impl Options {
+    /// A new game of `pack` with these choices, as the title's new game starts one.
+    fn new_game(&self, pack: &Pack) -> CampaignState {
+        let mut campaign = CampaignState::new_game(pack);
+        campaign.apply_options(self.game);
+        campaign
+    }
+
+    /// The new game's choices that are on, for the report header.
+    fn game_tags(&self) -> Vec<String> {
+        let mut tags = Vec::new();
+        if self.game.difficulty != Difficulty::Normal {
+            tags.push(format!("{:?} difficulty", self.game.difficulty).to_lowercase());
+        }
+        if self.game.extended_rules {
+            tags.push("extended rules".to_string());
+        }
+        tags
+    }
 }
 
 /// One run from a new game. Battle `n` of the run is fought with a seed made of `seed` and `n`.
@@ -174,7 +201,7 @@ impl Sim<'_> {
 
     fn play(&mut self) -> End {
         let pack = self.pack;
-        let mut campaign = CampaignState::new_game(pack);
+        let mut campaign = self.options.new_game(pack);
         for _ in 0..MAX_NODES {
             let Some(node) = pack.campaign.node(&campaign.node).cloned() else {
                 return End::Error(format!("unknown node `{}`", campaign.node));
@@ -747,6 +774,46 @@ mod tests {
             boosted.fought[1].level < plain.fought[1].level + 4.0,
             "{boosted:?} vs {plain:?}"
         );
+    }
+
+    #[test]
+    fn the_runs_start_with_the_new_game_choices() {
+        let pack = fixture();
+        assert!(!Options::default().new_game(&pack).off_original());
+        assert!(Options::default().game_tags().is_empty());
+        let hard = Options {
+            game: GameOptions {
+                difficulty: Difficulty::Hard,
+                free_edit: false,
+                extended_rules: true,
+            },
+            ..Options::default()
+        };
+        let campaign = hard.new_game(&pack);
+        assert_eq!(campaign.difficulty, Difficulty::Hard);
+        assert!(campaign.extended_rules);
+        assert_eq!(hard.game_tags(), ["hard difficulty", "extended rules"]);
+        // Enemies set up from that campaign are the difficulty's levels up.
+        let def = pack.battles.keys().next().unwrap().clone();
+        let level = |c: &CampaignState| -> Vec<i32> {
+            BattleState::new(&pack, &def, c, 1)
+                .unwrap()
+                .units
+                .iter()
+                .filter(|u| u.side == Side::Enemy)
+                .map(|u| u.level as i32)
+                .collect()
+        };
+        let normal = level(&Options::default().new_game(&pack));
+        assert!(!normal.is_empty());
+        let offset = Difficulty::Hard.enemy_level_offset();
+        let cap = pack.rules.level_cap as i32;
+        // As set-up does: never past the cap, but a pack level above it stays.
+        let expected: Vec<i32> = normal
+            .iter()
+            .map(|&l| (l + offset).min(cap.max(l)))
+            .collect();
+        assert_eq!(level(&campaign), expected);
     }
 
     #[test]
