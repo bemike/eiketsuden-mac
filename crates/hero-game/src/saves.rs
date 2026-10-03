@@ -184,10 +184,7 @@ impl fmt::Display for SaveSlotError {
                 }
                 SaveError::TooNew {
                     found, supported, ..
-                } => write!(
-                    f,
-                    "더 새로운 버전의 기록입니다 (기록 v{found}, 지원 v{supported})"
-                ),
+                } => write!(f, "새 버전의 기록입니다 (기록 v{found}, 지원 v{supported})"),
                 SaveError::WrongPack { found, expected } => write!(
                     f,
                     "다른 데이터 팩의 기록입니다 (기록 `{found}`, 현재 `{expected}`)"
@@ -355,7 +352,8 @@ pub fn any_record(store: &dyn KeyValueStore, pack_id: &str) -> bool {
 }
 
 /// Longest reason of a newer save ([`SaveError::TooNew`]) shown, in characters: it comes from
-/// the save file, and the message should fit the load screen's line.
+/// the save file. With the words around it the message should stay within the load screen's
+/// detail panel (two lines; the reasons of this game's layouts fit one).
 const MAX_NEEDS_CHARS: usize = 30;
 
 #[cfg(test)]

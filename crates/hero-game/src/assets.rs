@@ -347,6 +347,8 @@ pub struct Media {
 }
 
 impl Media {
+    /// A media store with the view settings at their defaults. The game builds its stores with
+    /// [`Media::for_settings`], so the first frame of a new store already shows the chosen faces.
     pub fn new(root: DataRoot) -> Media {
         Media {
             root,

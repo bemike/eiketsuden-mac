@@ -40,9 +40,11 @@ pub const NEEDS_FIELD: &str = "needs";
 /// What a save of layout `version` holds that a game predating that layout cannot play, in
 /// words for the load screen. The save carries it ([`NEEDS_FIELD`]) because only a game that
 /// knows the layout knows the reason: a game too old to read the save shows the text it
-/// finds there (keep it short: the load screen has one line for it). `None` for the plain
-/// layout. Every layout above [`PLAIN_SAVE_VERSION`] needs
-/// an entry (a test checks it), so a new layout comes with its reason.
+/// finds there. Keep it short: the load screen shows at most 30 characters of it (hero-game
+/// `saves::MAX_NEEDS_CHARS`) inside a message that should stay on one line of its detail
+/// panel (two at most). `None` for the plain layout. Every layout above
+/// [`PLAIN_SAVE_VERSION`] needs an entry (a test checks it), so a new layout comes with its
+/// reason.
 pub fn version_needs(version: u32) -> Option<&'static str> {
     match version {
         SCENE_SAVE_VERSION => Some("장면 도중 저장"),
