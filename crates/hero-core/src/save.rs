@@ -40,13 +40,14 @@ pub const NEEDS_FIELD: &str = "needs";
 /// What a save of layout `version` holds that a game predating that layout cannot play, in
 /// words for the load screen. The save carries it ([`NEEDS_FIELD`]) because only a game that
 /// knows the layout knows the reason: a game too old to read the save shows the text it
-/// finds there. `None` for the plain layout. Every layout above [`PLAIN_SAVE_VERSION`] needs
+/// finds there (keep it short: the load screen has one line for it). `None` for the plain
+/// layout. Every layout above [`PLAIN_SAVE_VERSION`] needs
 /// an entry (a test checks it), so a new layout comes with its reason.
 pub fn version_needs(version: u32) -> Option<&'static str> {
     match version {
         SCENE_SAVE_VERSION => Some("장면 도중 저장"),
-        GROWTH_SAVE_VERSION => Some("군에 없는 무장의 성장 기록"),
-        OPTIONS_SAVE_VERSION => Some("새 게임 선택 기능(난이도·능력치 조정·확장 규칙)"),
+        GROWTH_SAVE_VERSION => Some("합류 전 무장의 성장"),
+        OPTIONS_SAVE_VERSION => Some("새 게임 선택 기능(난이도·조정·확장)"),
         _ => None,
     }
 }
