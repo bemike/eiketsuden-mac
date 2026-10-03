@@ -33,6 +33,24 @@ pub const OPTIONS_SAVE_VERSION: u32 = 4;
 const _: () = assert!(GROWTH_SAVE_VERSION > SCENE_SAVE_VERSION);
 const _: () = assert!(OPTIONS_SAVE_VERSION > GROWTH_SAVE_VERSION);
 
+/// Field of the save JSON holding [`version_needs`] of its version (written by
+/// [`SaveGame::to_json`], read only when the save is too new, [`SaveError::TooNew`]).
+pub const NEEDS_FIELD: &str = "needs";
+
+/// What a save of layout `version` holds that a game predating that layout cannot play, in
+/// words for the load screen. The save carries it ([`NEEDS_FIELD`]) because only a game that
+/// knows the layout knows the reason: a game too old to read the save shows the text it
+/// finds there. `None` for the plain layout. Every layout above [`PLAIN_SAVE_VERSION`] needs
+/// an entry (a test checks it), so a new layout comes with its reason.
+pub fn version_needs(version: u32) -> Option<&'static str> {
+    match version {
+        SCENE_SAVE_VERSION => Some("장면 도중 저장"),
+        GROWTH_SAVE_VERSION => Some("군에 없는 무장의 성장 기록"),
+        OPTIONS_SAVE_VERSION => Some("새 게임 선택 기능(난이도·능력치 조정·확장 규칙)"),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SaveGame {
     pub version: u32,
@@ -141,7 +159,13 @@ pub enum SaveError {
     #[error("save data is corrupt: {0}")]
     Corrupt(String),
     #[error("save version {found} is newer than this game supports ({supported})")]
-    TooNew { found: u32, supported: u32 },
+    TooNew {
+        found: u32,
+        supported: u32,
+        /// What the save holds that this game cannot play, as the newer game wrote it
+        /// ([`NEEDS_FIELD`]); `None` from games that predate the field.
+        needs: Option<String>,
+    },
     #[error("save belongs to pack `{found}`, not `{expected}`")]
     WrongPack { found: String, expected: String },
 }
@@ -206,8 +230,14 @@ impl SaveGame {
         }
     }
 
+    /// The save as JSON, with the reason its layout needs ([`version_needs`]) for games too
+    /// old to read it.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).expect("save game serialization cannot fail")
+        let mut v = serde_json::to_value(self).expect("save game serialization cannot fail");
+        if let (Some(needs), Some(map)) = (version_needs(self.version), v.as_object_mut()) {
+            map.insert(NEEDS_FIELD.into(), needs.into());
+        }
+        v.to_string()
     }
 
     /// Parse and check the version. `expected_pack` guards against loading a save of another pack.
@@ -219,6 +249,10 @@ impl SaveGame {
             return Err(SaveError::TooNew {
                 found,
                 supported: SAVE_VERSION,
+                needs: v
+                    .get(NEEDS_FIELD)
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string),
             });
         }
         let save: SaveGame =
@@ -418,9 +452,43 @@ mod tests {
     fn a_newer_save_is_refused() {
         let mut s = save();
         s.version = SAVE_VERSION + 1;
-        assert!(matches!(
+        assert_eq!(
             SaveGame::from_json(&s.to_json(), "base"),
-            Err(SaveError::TooNew { .. })
-        ));
+            Err(SaveError::TooNew {
+                found: SAVE_VERSION + 1,
+                supported: SAVE_VERSION,
+                needs: None
+            })
+        );
+        // A newer game writes why; this one passes the words on.
+        let mut v = serde_json::to_value(&s).unwrap();
+        v[NEEDS_FIELD] = "새 기능".into();
+        assert_eq!(
+            SaveGame::from_json(&v.to_string(), "base"),
+            Err(SaveError::TooNew {
+                found: SAVE_VERSION + 1,
+                supported: SAVE_VERSION,
+                needs: Some("새 기능".into())
+            })
+        );
+    }
+
+    #[test]
+    fn every_layout_above_the_plain_one_says_what_it_needs() {
+        use crate::campaign::Difficulty;
+        assert_eq!(version_needs(PLAIN_SAVE_VERSION), None);
+        for version in PLAIN_SAVE_VERSION + 1..=SAVE_VERSION {
+            assert!(version_needs(version).is_some(), "layout {version}");
+        }
+        let mut hard = save();
+        hard.campaign.difficulty = Difficulty::Hard;
+        hard.stamp_version();
+        let json = hard.to_json();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v[NEEDS_FIELD], version_needs(OPTIONS_SAVE_VERSION).unwrap());
+        // The field is only for older games: this one reads the save as before.
+        assert_eq!(SaveGame::from_json(&json, "base").unwrap(), hard);
+        let plain: serde_json::Value = serde_json::from_str(&save().to_json()).unwrap();
+        assert!(plain.get(NEEDS_FIELD).is_none());
     }
 }

@@ -168,7 +168,17 @@ impl fmt::Display for SaveSlotError {
             SaveSlotError::Storage(e) => write!(f, "저장소 오류 ({e})"),
             SaveSlotError::Save(e) => match e {
                 SaveError::Corrupt(msg) => write!(f, "기록이 손상되었습니다 ({msg})"),
-                SaveError::TooNew { found, supported } => write!(
+                SaveError::TooNew {
+                    found,
+                    supported,
+                    needs: Some(needs),
+                } => write!(
+                    f,
+                    "더 새로운 버전에서 만든 기록입니다: {needs} (기록 v{found}, 지원 v{supported})"
+                ),
+                SaveError::TooNew {
+                    found, supported, ..
+                } => write!(
                     f,
                     "더 새로운 버전의 기록입니다 (기록 v{found}, 지원 v{supported})"
                 ),

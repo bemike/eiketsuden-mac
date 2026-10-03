@@ -84,7 +84,7 @@ impl Ctx {
             gfx: Gfx::new(),
             input: Input::new(),
             audio: Audio::new(&settings),
-            media: Media::new(data_root.clone()),
+            media: Media::for_settings(data_root.clone(), &settings),
             settings,
             storage,
             toasts: Toasts::default(),
@@ -277,8 +277,8 @@ impl App {
         ctx.gfx.canvas.update();
         ctx.input.update(dt, &ctx.gfx.canvas);
         ctx.media.pump();
-        // A view-only setting (D25 X2): follows the settings screen at once, and the media store
-        // the loading screen rebuilds.
+        // A view-only setting (D25 X2): follows the settings screen at once (a rebuilt media
+        // store starts with it, `Media::for_settings`).
         ctx.media
             .set_public_portraits(ctx.settings.portraits == crate::settings::PortraitStyle::Public);
         #[cfg(not(target_arch = "wasm32"))]

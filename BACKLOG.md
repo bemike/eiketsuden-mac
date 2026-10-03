@@ -13,6 +13,8 @@
   - 무엇을: 쉬움·어려움(적 레벨 ±2)과 협공(1명당 +10 %, 최대 +30 %)으로 서장·1장 몇 전투를 해 보고 폭을 정한다.
   - 왜: 값은 플레이 전 추정이다. 경험치가 레벨 차를 따라 함께 바뀌는 효과와, 협공이 적에게도 붙는 효과를 체감으로 확인해야 한다.
   - 영향 범위: hero-core `campaign.rs` `Difficulty::enemy_level_offset`, `battle/combat.rs` `JOINT_ATTACK_STEP`·`JOINT_ATTACK_MAX`
+    (값을 바꾸면 RULES.md §4·§7.6과 D25의 숫자도 고친다: 테스트 `the_documents_state_the_numbers_of_the_new_game_choices`).
+    사람 플레이 전 기계 비교: `hero-tools simulate <팩> --campaign --difficulty hard` / `--extended-rules`.
 - [ ] **능력치 자유 조정의 빠른 입력 (PR #89 리뷰)**
   - 무엇을: 길게 누르면 빨라지거나 ±10 단계를 더한다.
   - 왜: 지금은 1씩이라 1→100이 99번이다.

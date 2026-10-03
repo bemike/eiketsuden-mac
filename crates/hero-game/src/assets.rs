@@ -355,24 +355,43 @@ impl Media {
         }
     }
 
+    /// A media store on `root` that already follows the view settings (the face choice), so
+    /// a request in its first frame reads the right picture.
+    pub fn for_settings(root: DataRoot, settings: &crate::settings::Settings) -> Media {
+        let media = Media::new(root);
+        media.set_public_portraits(settings.portraits == crate::settings::PortraitStyle::Public);
+        media
+    }
+
     /// Show the public-domain portraits of the packs below the original mode's pack instead of
     /// the original's faces (D25 X2); takes effect with the next request.
     pub fn set_public_portraits(&self, on: bool) {
         self.public_portraits.set(on);
     }
 
-    /// Cache key of texture `key` and, for the public variant of a portrait, the paths to read
-    /// it from: `None` means the usual lookup ([`Media::candidates`]).
-    fn texture_slot<'a>(&self, key: &'a str) -> (Cow<'a, str>, Option<Vec<String>>) {
+    /// Cache key of texture `key`: `<key>#public` for the public variant of a portrait (see the
+    /// module docs), else the key itself.
+    fn texture_slot<'a>(&self, key: &'a str) -> Cow<'a, str> {
         if self.public_portraits.get()
             && key.starts_with("portraits/")
             && self.root.has_original_layer()
         {
-            if let Some(paths) = self.root.public_media_paths(&format!("gfx/{key}.png")) {
-                return (Cow::Owned(format!("{key}{PUBLIC_SUFFIX}")), Some(paths));
+            Cow::Owned(format!("{key}{PUBLIC_SUFFIX}"))
+        } else {
+            Cow::Borrowed(key)
+        }
+    }
+
+    /// Paths to read texture `key` from when it is cached under `slot_key`
+    /// ([`Media::texture_slot`]). Built only when the texture is not cached yet.
+    fn texture_paths(&self, key: &str, slot_key: &str) -> Vec<String> {
+        let rel = format!("gfx/{key}.png");
+        if slot_key != key {
+            if let Some(paths) = self.root.public_media_paths(&rel) {
+                return paths;
             }
         }
-        (Cow::Borrowed(key), None)
+        self.candidates(&[rel])
     }
 
     pub fn root(&self) -> &DataRoot {
@@ -398,36 +417,34 @@ impl Media {
         }
     }
 
-    fn request_texture(&self, key: &str) -> AssetState {
-        let (slot_key, public) = self.texture_slot(key);
+    /// State of texture `key` and the texture when it is ready; requests it when unknown.
+    fn request_texture(&self, key: &str) -> (AssetState, Option<Texture2D>) {
+        let slot_key = self.texture_slot(key);
         let mut inner = self.inner.borrow_mut();
         if let Some(slot) = inner.textures.get(slot_key.as_ref()) {
-            return slot.state();
+            let texture = match slot {
+                Slot::Ready(t) => Some(t.clone()),
+                _ => None,
+            };
+            return (slot.state(), texture);
         }
-        let paths = public.unwrap_or_else(|| self.candidates(&[format!("gfx/{key}.png")]));
+        let paths = self.texture_paths(key, &slot_key);
         let slot_key = slot_key.into_owned();
         inner.textures.insert(slot_key.clone(), Slot::Loading);
         inner
             .jobs
             .push_back(Job::new(JobKind::Texture { key: slot_key }, paths));
-        AssetState::Loading
+        (AssetState::Loading, None)
     }
 
     /// Texture `gfx/<key>.png`; `None` while loading or if it does not exist.
     pub fn texture(&self, key: &str) -> Option<Texture2D> {
-        if self.request_texture(key) != AssetState::Ready {
-            return None;
-        }
-        let (slot_key, _) = self.texture_slot(key);
-        match self.inner.borrow().textures.get(slot_key.as_ref()) {
-            Some(Slot::Ready(t)) => Some(t.clone()),
-            _ => None,
-        }
+        self.request_texture(key).1
     }
 
     /// Load state of a texture (requests it when unknown).
     pub fn texture_state(&self, key: &str) -> AssetState {
-        self.request_texture(key)
+        self.request_texture(key).0
     }
 
     /// Portrait `portraits/<key>`, falling back to `portraits/_unknown`. `None` while loading or
@@ -1050,6 +1067,22 @@ mod tests {
             Media::texture_filter("portraits/liu_bei#public"),
             FilterMode::Linear
         );
+
+        // A cached variant is answered from the cache: no second job.
+        assert_eq!(
+            media.texture_state("portraits/liu_bei"),
+            AssetState::Loading
+        );
+        assert_eq!(jobs(&media).len(), 3);
+
+        // A store built for the settings asks for the public variant from its first request.
+        let settings = crate::settings::Settings {
+            portraits: crate::settings::PortraitStyle::Public,
+            ..Default::default()
+        };
+        let fresh = Media::for_settings(media.root().clone(), &settings);
+        fresh.texture_state("portraits/liu_bei");
+        assert_eq!(jobs(&fresh)[0].0, "portraits/liu_bei#public");
 
         // Without the original's pack in the chain the switch changes nothing.
         let plain = Media::new(DataRoot::from_dir(std::path::Path::new("/p"), &[]));

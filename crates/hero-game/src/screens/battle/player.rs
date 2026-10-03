@@ -186,27 +186,17 @@ pub fn reach_tiles(state: &BattleState, pack: &Pack, unit: UnitId, range: &MoveR
 /// with its full move as if it had (the view errs on the side of danger).
 pub fn danger_tiles(state: &BattleState, pack: &Pack) -> Vec<Pos> {
     let mut out = BTreeSet::new();
-    let mut recovered: Option<BattleState> = None;
     for (id, u) in state.units.iter().enumerate() {
         if u.side != Side::Enemy || !u.is_active() {
             continue;
         }
-        let st = if u.has_status(StatusKind::Confused) {
-            let s = recovered.get_or_insert_with(|| state.clone());
-            s.units[id]
-                .statuses
-                .retain(|a| a.status != StatusKind::Confused);
-            &*s
-        } else {
-            state
-        };
-        let range = st.movement_range(pack, id);
+        let range = state.threat_range(pack, id);
         let mut from: Vec<Pos> = range.tiles.keys().copied().collect();
         if from.is_empty() {
             from.push(u.pos);
         }
         for p in from {
-            out.extend(st.attack_tiles(pack, id, p));
+            out.extend(state.attack_tiles(pack, id, p));
         }
     }
     out.into_iter().collect()

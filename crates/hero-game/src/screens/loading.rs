@@ -25,6 +25,7 @@ use crate::assets::{FileBatch, FileRequest, FirstOf, Media};
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
 use crate::gfx::{canvas_size, fill_rect, stroke_rect, Align, FontId, TextStyle};
+use crate::platform::DataRoot;
 use crate::saves;
 use crate::ui::theme;
 use hero_core::pack::{Pack, PackChain, PackError, Severity};
@@ -121,6 +122,20 @@ fn parent_dirs(chain: Option<&PackChain>) -> Vec<String> {
     chain.map_or_else(Vec::new, |c| {
         c.layers().iter().skip(1).map(|l| l.dir.clone()).collect()
     })
+}
+
+/// The data root of a chain read to its end: the top pack of `current`, the packs the chain
+/// extends and where the original mode's pack sits in it, for views that look past it
+/// (D25 X2, [`DataRoot::public_media_paths`]).
+fn chain_root(current: &DataRoot, chain: &PackChain) -> DataRoot {
+    let original = chain
+        .layers()
+        .iter()
+        .position(|l| l.manifest.id == crate::platform::ORIGINAL_PACK_ID);
+    current
+        .top_pack()
+        .with_parent_packs(parent_dirs(Some(chain)))
+        .with_original_layer(original)
 }
 
 /// A pack error for the error screen.
@@ -245,19 +260,10 @@ impl LoadingScreen {
             );
         }
         let parents = parent_dirs(Some(&chain));
-        // Where the original mode's pack sits, for views that look past it (D25 X2).
-        let original = chain
-            .layers()
-            .iter()
-            .position(|l| l.manifest.id == crate::platform::ORIGINAL_PACK_ID);
-        let root = ctx
-            .data_root
-            .top_pack()
-            .with_parent_packs(parents.clone())
-            .with_original_layer(original);
+        let root = chain_root(&ctx.data_root, &chain);
         if root != ctx.data_root {
             // Nothing has been requested from the media store yet: start it over on the chain.
-            ctx.media = Media::new(root.clone());
+            ctx.media = Media::for_settings(root.clone(), &ctx.settings);
             ctx.data_root = root;
         }
         let next = match (self.target, chain.text_files()) {
@@ -615,7 +621,7 @@ impl LoadingScreen {
             root.top_dir()
         );
         memfs::mount(root.top_dir(), converted.files);
-        ctx.media = Media::new(root.clone());
+        ctx.media = Media::for_settings(root.clone(), &ctx.settings);
         ctx.data_root = root;
         // The original's music follows while the game runs.
         ctx.music = Some(crate::original::MusicRender::start(install.to_path_buf()));
@@ -713,6 +719,70 @@ mod tests {
         .unwrap();
         chain.push_parent(&base).unwrap();
         assert_eq!(parent_dirs(Some(&chain)), ["../base"]);
+    }
+
+    #[test]
+    fn the_chain_root_marks_where_the_original_pack_sits() {
+        let manifest = |id: &str, extends: Option<&str>| {
+            let mut toml = format!(
+                "id = \"{id}\"
+name = \"{id}\"
+version = \"1\"
+"
+            );
+            if let Some(dir) = extends {
+                toml.push_str(&format!(
+                    "extends = \"{dir}\"
+"
+                ));
+            }
+            toml
+        };
+        let chain = |layers: &[(&str, Option<&str>)]| {
+            let mut chain = PackChain::new(&manifest(layers[0].0, layers[0].1)).unwrap();
+            for (id, extends) in &layers[1..] {
+                chain.push_parent(&manifest(id, *extends)).unwrap();
+            }
+            chain
+        };
+        let original = crate::platform::ORIGINAL_PACK_ID;
+        let at = |dir: &str| DataRoot::from_dir(std::path::Path::new(dir), &[]);
+        let face = "gfx/portraits/a.png";
+
+        // The original mode (also the in-memory mount): the converted pack on top of the base.
+        let root = chain_root(
+            &at("/d/original"),
+            &chain(&[(original, Some("../base")), ("base", None)]),
+        );
+        assert!(root.has_original_layer());
+        assert_eq!(
+            root.public_media_paths(face).unwrap()[0],
+            "/d/original/../base/gfx/portraits/a.png"
+        );
+        // A mod on top of the original: the original is the first parent, the base below it.
+        let root = chain_root(
+            &at("/m"),
+            &chain(&[
+                ("mod", Some("../original")),
+                (original, Some("../base")),
+                ("base", None),
+            ]),
+        );
+        assert_eq!(root.parent_packs(), ["../original", "../base"]);
+        assert_eq!(
+            root.public_media_paths(face).unwrap()[0],
+            "/m/../base/gfx/portraits/a.png"
+        );
+        // No original pack: the face choice has nothing to reorder.
+        let root = chain_root(&at("/b"), &chain(&[("base", None)]));
+        assert!(!root.has_original_layer());
+        assert_eq!(root.public_media_paths(face), None);
+        // A chain read again forgets the previous chain's position.
+        let stale = at("/d/original")
+            .with_parent_packs(["../base"])
+            .with_original_layer(Some(0));
+        let root = chain_root(&stale, &chain(&[("base", None)]));
+        assert!(!root.has_original_layer());
     }
 
     #[test]

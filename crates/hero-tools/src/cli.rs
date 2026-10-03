@@ -21,6 +21,7 @@ USAGE:
 
     hero-tools simulate <pack_dir> --campaign [--seeds N] [--choose SCENE=N[,N...]]...
                              [--level-bonus N] [--trace ID]
+                             [--difficulty easy|normal|hard] [--extended-rules]
         Play the whole campaign from a new game N times (default 4), AI against AI, carrying
         levels, recruits, items and flags from battle to battle: dramas run with their side
         effects, camps buy battle items (until 8 are in hand) and keep the camp screen's first
@@ -29,6 +30,8 @@ USAGE:
         --level-bonus N gives every army officer N levels once, before their first battle
         (a check of how far a stronger army gets, not of the balance). --trace ID writes every
         phase of battle ID to stderr (per seed: each unit's side, tile, HP and AI).
+        --difficulty and --extended-rules start the campaign with those new-game choices
+        (DECISIONS D25: enemy levels -2/0/+2, joint attack), as the title's new game does.
         --choose takes option N (1 = first) at the
         choices of scene SCENE, one N per choice it asks in order (past them, and by default:
         the first option not taken yet at that question while the scene plays). Reports each run's end and, per battle, how often it was
@@ -240,6 +243,7 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
     let mut choose = std::collections::BTreeMap::new();
     let mut level_bonus = None;
     let mut trace = None;
+    let mut game: Option<hero_core::campaign::GameOptions> = None;
     let mut args = rest.iter();
     while let Some(arg) = args.next() {
         // Accept both `--seeds 8` and `--seeds=8`.
@@ -271,6 +275,25 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
                         format!("`--level-bonus` needs a number of levels, got `{v}`")
                     })?);
             }
+            "--difficulty" => {
+                use hero_core::campaign::Difficulty;
+                let v = value("easy, normal or hard")?;
+                let difficulty = match v.as_str() {
+                    "easy" => Difficulty::Easy,
+                    "normal" => Difficulty::Normal,
+                    "hard" => Difficulty::Hard,
+                    _ => {
+                        return Err(format!(
+                            "`--difficulty` needs easy, normal or hard, got `{v}`"
+                        ))
+                    }
+                };
+                game.get_or_insert_with(Default::default).difficulty = difficulty;
+            }
+            "--extended-rules" if inline.is_some() => {
+                return Err("`--extended-rules` takes no value".into())
+            }
+            "--extended-rules" => game.get_or_insert_with(Default::default).extended_rules = true,
             "--campaign" if inline.is_some() => return Err("`--campaign` takes no value".into()),
             "--campaign" => campaign = true,
             "--choose" => {
@@ -316,6 +339,7 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
             options: crate::campaign_sim::Options {
                 level_bonus: level_bonus.unwrap_or(0),
                 trace,
+                game: game.unwrap_or_default(),
             },
         });
     }
@@ -327,6 +351,9 @@ fn parse_simulate(rest: &[String]) -> Result<Command, String> {
     }
     if trace.is_some() {
         return Err("`--trace` needs `--campaign`".into());
+    }
+    if game.is_some() {
+        return Err("`--difficulty` and `--extended-rules` need `--campaign`".into());
     }
     Ok(Command::Simulate {
         pack,
@@ -422,6 +449,29 @@ mod tests {
                 options: crate::campaign_sim::Options {
                     level_bonus: 3,
                     trace: Some("b01".into()),
+                    ..Default::default()
+                },
+            })
+        );
+        assert_eq!(
+            parse_str(&[
+                "simulate",
+                "p",
+                "--campaign",
+                "--difficulty=hard",
+                "--extended-rules"
+            ]),
+            Ok(Command::SimulateCampaign {
+                pack: "p".into(),
+                seeds: DEFAULT_SEEDS,
+                choose: Default::default(),
+                options: crate::campaign_sim::Options {
+                    game: hero_core::campaign::GameOptions {
+                        difficulty: hero_core::campaign::Difficulty::Hard,
+                        free_edit: false,
+                        extended_rules: true,
+                    },
+                    ..Default::default()
                 },
             })
         );
@@ -437,6 +487,22 @@ mod tests {
             (
                 &["simulate", "p", "--campaign", "--trace"][..],
                 "needs a battle id",
+            ),
+            (
+                &["simulate", "p", "--difficulty", "easy"][..],
+                "need `--campaign`",
+            ),
+            (
+                &["simulate", "p", "--extended-rules"][..],
+                "need `--campaign`",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--difficulty", "brutal"][..],
+                "easy, normal or hard, got `brutal`",
+            ),
+            (
+                &["simulate", "p", "--campaign", "--extended-rules=1"][..],
+                "takes no value",
             ),
             (
                 &["simulate", "p", "--campaign", "--level-bonus", "x"][..],

@@ -259,7 +259,7 @@ pub fn enter(flow: Flow, ctx: &mut Ctx) -> Box<dyn Screen> {
             }
             memfs::unmount();
             ctx.data_root = DataRoot::resolve(&ctx.options);
-            ctx.media = Media::new(ctx.data_root.clone());
+            ctx.media = Media::for_settings(ctx.data_root.clone(), &ctx.settings);
             Box::new(LoadingScreen::new(Target::Game))
         }
     }
