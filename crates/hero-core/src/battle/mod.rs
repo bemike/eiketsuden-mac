@@ -438,15 +438,18 @@ pub struct BattleState {
     pub outcome: Option<Outcome>,
     pub bonus_done: bool,
     /// Consumables available to the player in this battle: a copy of the campaign inventory
-    /// taken when the battle was built, minus what has been used since.
+    /// taken when the battle was built, plus loot, minus what has been used since.
     pub inventory: BTreeMap<Id, u32>,
-    /// Battle consumables used from `inventory` so far: item id -> count. When the battle ends,
+    /// Older saves kept loot outside the usable stock. Migrated once on load.
+    #[serde(default)]
+    pub loot_in_inventory: bool,
+    /// Pre-battle consumables used so far (loot is spent first): item id -> count. When the battle ends,
     /// won or lost, [`CampaignState::apply_battle_result`] takes exactly these out of the
     /// campaign inventory. (Mid-battle saves written before this field existed load with an
     /// empty map: items used before such a save are not taken out.)
     #[serde(default)]
     pub items_used: BTreeMap<Id, u32>,
-    /// Gold and items picked up during the battle (added to the campaign after victory).
+    /// Gold and unconsumed loot (added to the campaign after victory).
     pub gold_found: i64,
     pub items_found: Vec<Id>,
     /// Campaign flags set by event actions during the battle.
@@ -472,6 +475,47 @@ pub struct BattleState {
 }
 
 impl BattleState {
+    /// Make loot in old saves usable without crediting it again on subsequent loads.
+    pub fn restore_loot_inventory(&mut self) {
+        if !self.loot_in_inventory {
+            for item in &self.items_found {
+                let count = self.inventory.entry(item.clone()).or_insert(0);
+                *count = count.saturating_add(1);
+            }
+            self.loot_in_inventory = true;
+        }
+    }
+
+    pub fn item_count_for(&self, unit: UnitId, item: &str) -> u32 {
+        self.units.get(unit).map_or(0, |u| {
+            self.inventory
+                .get(item)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(u.equip.carried.as_ref().map_or(0, |p| p.count(item)))
+        })
+    }
+
+    /// Acquire into the actual finder's pocket. A full pocket does not destroy treasure.
+    pub fn gain_item_for(&mut self, unit: UnitId, item: &str) -> bool {
+        let Some(u) = self.units.get_mut(unit) else {
+            return false;
+        };
+        if let Some(pocket) = &mut u.equip.carried {
+            pocket.insert(item.into()).is_ok()
+        } else {
+            self.gain_item(item);
+            true
+        }
+    }
+
+    /// Treasure, enemy drops and event gifts are available immediately in this battle.
+    pub fn gain_item(&mut self, item: &str) {
+        self.restore_loot_inventory();
+        self.items_found.push(item.to_string());
+        let count = self.inventory.entry(item.to_string()).or_insert(0);
+        *count = count.saturating_add(1);
+    }
     /// Build the initial state of `battle`: player units from `campaign.deployed` (the whole
     /// roster when empty), normalised to this battle by [`normalize_deployment`] and placed on
     /// deploy slots; spawns without a `group` placed on the map, grouped spawns hidden.

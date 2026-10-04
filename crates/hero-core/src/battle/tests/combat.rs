@@ -16,6 +16,7 @@ fn cao_cao_worked_example() {
     assert_eq!(st.attack_power(&pack, cao), 1669);
     assert_eq!(st.defense_power(&pack, cao), 1638);
     st.units[cao].equip = Equipment {
+        carried: None,
         weapon: Some("sword".into()),
         armor: Some("book".into()),
         accessory: None,

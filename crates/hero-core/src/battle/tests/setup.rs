@@ -42,6 +42,7 @@ fn deployed_officers_take_slots_with_campaign_progress() {
     guan.level = 12;
     guan.exp = 40;
     guan.equip = Equipment {
+        carried: None,
         weapon: Some("sword".into()),
         armor: None,
         accessory: Some("horse".into()),

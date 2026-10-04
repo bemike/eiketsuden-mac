@@ -176,7 +176,7 @@ pub enum FloatKind {
     Miss,
 }
 
-/// Rising text above a unit (damage numbers, `+6 EXP`, `퇴각` ...).
+/// Rising text above a unit (damage numbers, `+6 EXP`, `撤退` ...).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatText {
     pub text: String,
@@ -705,13 +705,13 @@ pub fn plan(
                 mp_gain,
             } => {
                 let mut lines = vec![format!("Lv {} → {level}", level.saturating_sub(1))];
-                lines.push(format!("병력 +{hp_gain}"));
+                lines.push(format!("兵力 +{hp_gain}"));
                 if *mp_gain != 0 {
                     lines.push(format!("MP {mp_gain:+}"));
                 }
                 BeatKind::LevelUp {
                     unit: *unit,
-                    popup: popup(format!("{} 레벨 업!", name(*unit)), lines, Some(*unit)),
+                    popup: popup(format!("{} 升级！", name(*unit)), lines, Some(*unit)),
                     level: *level,
                     hp_gain: *hp_gain,
                     mp_gain: *mp_gain,
@@ -722,7 +722,7 @@ pub fn plan(
                 BeatKind::Promoted {
                     unit: *unit,
                     popup: popup(
-                        format!("{} 전직!", name(*unit)),
+                        format!("{} 转职！", name(*unit)),
                         vec![format!("{} → {}", cname(from), cname(to))],
                         Some(*unit),
                     ),
@@ -734,8 +734,8 @@ pub fn plan(
                     .strategy(strategy)
                     .map_or(strategy.clone(), |s| s.name.clone());
                 BeatKind::Popup(popup(
-                    "새 책략",
-                    vec![format!("{} {} 익혔다!", name(*unit), text::object(&sname))],
+                    "新策略",
+                    vec![format!("{} 学会了 {}！", name(*unit), text::object(&sname))],
                     Some(*unit),
                 ))
             }
@@ -746,7 +746,7 @@ pub fn plan(
                 BeatKind::Treasure {
                     banner: banner(
                         text::treasure_text(iname.as_deref(), *gold),
-                        Some(format!("{} 보물을 찾았다", text::subject(&name(*unit)))),
+                        Some(format!("{} 找到了宝物", text::subject(&name(*unit)))),
                         Tone::Good,
                         1.6,
                     ),
@@ -754,19 +754,19 @@ pub fn plan(
                 }
             }
             BattleEvent::ItemDropped { unit, item } => BeatKind::Banner(banner(
-                format!("{} 얻었다!", text::object(&item_name(item))),
-                Some(format!("{} 떨어뜨린 물건", text::subject(&name(*unit)))),
+                format!("获得了 {}！", text::object(&item_name(item))),
+                Some(format!("{} 掉落的物品", text::subject(&name(*unit)))),
                 Tone::Good,
                 1.6,
             )),
             BattleEvent::Drama { scene } => BeatKind::Drama(scene.clone()),
             BattleEvent::TerrainChanged { pos } => BeatKind::Terrain(*pos),
             BattleEvent::ObjectiveChanged { text } => {
-                BeatKind::Banner(banner("목표 변경", Some(text.clone()), Tone::Neutral, 2.0))
+                BeatKind::Banner(banner("目标变更", Some(text.clone()), Tone::Neutral, 2.0))
             }
             BattleEvent::BonusAchieved { exp } => BeatKind::Banner(banner(
-                "보너스 달성!",
-                Some(format!("승리하면 출진한 전원 경험치 +{exp}")),
+                "达成额外目标！",
+                Some(format!("获胜后所有出战武将经验 +{exp}")),
                 Tone::Good,
                 1.8,
             )),
@@ -963,7 +963,7 @@ fn step(
                 scene.hud.weather = *w;
             }
             let mut b = banner(
-                format!("날씨: {}", text::weather_name(*w)),
+                format!("天气：{}", text::weather_name(*w)),
                 None,
                 Tone::Neutral,
                 1.2,
@@ -1023,7 +1023,7 @@ fn step(
                     cues.push(Cue::Sfx(sfx::ARROW));
                 }
                 if *counter {
-                    scene.float(a, "반격", FloatKind::Info);
+                    scene.float(a, "反击", FloatKind::Info);
                 }
             }
             // Attacker lunge: out until the impact, back afterwards.
@@ -1123,7 +1123,7 @@ fn step(
                 for h in hits.iter() {
                     let u = h.unit;
                     if !h.success {
-                        scene.float(u, "실패", FloatKind::Miss);
+                        scene.float(u, "失败", FloatKind::Miss);
                         continue;
                     }
                     if h.damage > 0 {
@@ -1153,7 +1153,7 @@ fn step(
                         v.morale = (v.morale + h.morale).clamp(0, 100);
                     }
                     if h.damage == 0 && h.healed == 0 && h.morale == 0 && h.status.is_none() {
-                        scene.float(u, "효과 없음", FloatKind::Miss);
+                        scene.float(u, "没有效果", FloatKind::Miss);
                     }
                     let delta = (h.healed - h.damage) as f32;
                     if delta != 0.0 {
@@ -1228,7 +1228,7 @@ fn step(
                     v.morale = (v.morale + *morale).clamp(0, 100);
                 }
                 if *healed == 0 && *morale == 0 {
-                    scene.float(*target, "효과 없음", FloatKind::Miss);
+                    scene.float(*target, "没有效果", FloatKind::Miss);
                 }
             }
             if *stage >= 2 {
@@ -1271,7 +1271,7 @@ fn step(
             if first {
                 let at = scene.views[*u].pos;
                 scene.spawn_fx("confuse", at, fx);
-                scene.float(*u, "혼란", FloatKind::Morale);
+                scene.float(*u, "混乱", FloatKind::Morale);
                 scene.views[*u].confused = true;
                 cues.push(Cue::Sfx(sfx::CONFUSE));
                 cues.push(Cue::Follow(scene.views[*u].tile()));
@@ -1280,7 +1280,7 @@ fn step(
         }
         BeatKind::Recovered(u) => {
             if first {
-                scene.float(*u, "혼란 회복", FloatKind::Info);
+                scene.float(*u, "混乱恢复", FloatKind::Info);
                 scene.views[*u].confused = false;
             }
             t >= 0.6
@@ -1330,7 +1330,7 @@ fn step(
             let u = *u;
             if first {
                 cues.push(Cue::Sfx(sfx::RETREAT));
-                scene.float(u, "퇴각", FloatKind::Info);
+                scene.float(u, "撤退", FloatKind::Info);
             }
             const LEN: f32 = 0.7;
             let k = (t / LEN).clamp(0.0, 1.0);
@@ -1376,7 +1376,7 @@ fn step(
             let tone = units
                 .first()
                 .map_or(Tone::Enemy, |&u| Tone::of(scene.views[u].side));
-            let mut b = banner("원군 출현!", None, tone, 1.6);
+            let mut b = banner("援军出现！", None, tone, 1.6);
             b.age = t;
             let done = show_banner(&b, first, skip && t > 0.9, scene, cues, Some(sfx::PHASE));
             if done {
@@ -1701,7 +1701,7 @@ mod tests {
             texts.extend(scene.floats.iter().map(|f| f.text.clone()));
         }
         assert!(player.is_idle());
-        assert!(texts.iter().any(|t| t == "실패"));
+        assert!(texts.iter().any(|t| t == "失败"));
         assert!(texts.iter().any(|t| t == "+60"));
         assert_eq!(scene.views[1].hp, hp - 40.0);
     }
@@ -1791,7 +1791,7 @@ mod tests {
         assert_eq!(scene.views[5].alpha, 0.0);
         assert_eq!(
             scene.banner.as_ref().map(|b| b.title.as_str()),
-            Some("원군 출현!")
+            Some("援军出现！")
         );
         assert!(cues.contains(&Cue::Center(Pos::new(4, 4))));
         let mut guard = 0;
@@ -1830,13 +1830,13 @@ mod tests {
         assert_eq!(scene.views[0].hp, hp + 50.0);
         assert!(cues.contains(&Cue::Sfx(sfx::LEVELUP)));
         let title = scene.popup.as_ref().map(|p| p.title.clone()).unwrap();
-        assert!(title.contains("레벨 업"), "{title}");
+        assert!(title.contains("升级"), "{title}");
         // Confirm dismisses it after a moment; then the strategy popup follows.
         player.update(0.5, true, &mut scene, &fx, &mut cues);
         player.update(0.05, false, &mut scene, &fx, &mut cues);
         let p = scene.popup.as_ref().unwrap();
-        assert_eq!(p.title, "새 책략");
-        assert!(p.lines[0].contains("초열을 익혔다"), "{:?}", p.lines);
+        assert_eq!(p.title, "新策略");
+        assert!(p.lines[0].contains("学会了 焦熱"), "{:?}", p.lines);
     }
 
     #[test]

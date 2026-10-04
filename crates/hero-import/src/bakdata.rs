@@ -149,7 +149,9 @@ impl Bakdata {
 
 fn name(encoding: TextEncoding, bytes: &[u8]) -> String {
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    encoding.decode(&bytes[..end]).text
+    // The Chinese release pads several item names with ASCII spaces inside the fixed field.
+    // Padding is storage, not part of the name used to match an item to the engine's rule id.
+    encoding.decode(&bytes[..end]).text.trim_end().to_string()
 }
 
 /// Half-width katakana (JIS X 0201 0xA1–0xDF) up to the first NUL; other bytes as U+FFFD.
@@ -271,6 +273,14 @@ pub fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chinese_fixed_width_item_names_ignore_space_padding() {
+        let bytes = build(TextEncoding::Big5, &[], &[("孫子兵法    ", 255, 22, 5)]);
+        let parsed = parse(&bytes, TextEncoding::Big5).unwrap();
+        assert_eq!(parsed.item_name(0), Some("孫子兵法"));
+        assert_eq!(parsed.items[0].power, 22);
+    }
 
     #[test]
     fn layout_adds_up_to_the_file() {

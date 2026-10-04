@@ -60,7 +60,7 @@ pub fn draw_top_bar(ctx: &Ctx, name: &str, hud: &HudView, turn_limit: u32, gold:
     let y = 2.0;
     let name_w = gfx.text(name, 6.0, y, small.color(theme::TEXT_ACCENT));
     let mut x = (6.0 + name_w + 12.0).max(150.0);
-    x += gfx.text(&format!("제 {}턴", hud.turn), x, y, small);
+    x += gfx.text(&format!("第 {} 回合", hud.turn), x, y, small);
     x += gfx.text(
         &format!(" / {turn_limit}"),
         x,
@@ -142,7 +142,7 @@ pub fn draw_frame_title(
         out
     };
     let phase = text::phase_title(hud.phase);
-    let turn = format!("제 {}턴 / {turn_limit}", hud.turn);
+    let turn = format!("第 {} 回合 / {turn_limit}", hud.turn);
     let right = gfx.text_width(&turn, FontId::Small, 1) + gfx.text_width(&phase, FontId::Small, 1);
     let y = title.y + (title.h - 12.0).max(0.0) / 2.0;
     let shown = fit(name, title.w - right - 16.0);
@@ -227,9 +227,9 @@ pub fn draw_unit_panel(
     let nw = gfx.text(&u.name, x, r.y + 3.0, main);
     let mut tag_x = x + nw + 4.0;
     if u.lord {
-        tag_x += gfx.text("총대장", tag_x, r.y + 6.0, small.color(theme::TEXT_ACCENT)) + 3.0;
+        tag_x += gfx.text("主将", tag_x, r.y + 6.0, small.color(theme::TEXT_ACCENT)) + 3.0;
     } else if u.commander {
-        tag_x += gfx.text("대장", tag_x, r.y + 6.0, small.color(theme::TEXT_ACCENT)) + 3.0;
+        tag_x += gfx.text("队长", tag_x, r.y + 6.0, small.color(theme::TEXT_ACCENT)) + 3.0;
     }
     if view.confused {
         let turns = u
@@ -239,9 +239,9 @@ pub fn draw_unit_panel(
             .map_or(0, |s| s.turns);
         // Without a length (the original strategy formulas) it ends on a roll: no count.
         let label = if turns == hero_core::battle::UNTIL_RECOVERED {
-            "혼란".to_string()
+            "混乱".to_string()
         } else {
-            format!("혼란 {turns}")
+            format!("混乱 {turns}")
         };
         gfx.text(&label, tag_x, r.y + 6.0, small.color(theme::TEXT_BAD));
     }
@@ -265,7 +265,7 @@ pub fn draw_unit_panel(
     gauge_row(
         gfx,
         vec2(x, r.y + 33.0),
-        "병력",
+        "兵力",
         (view.hp, view.max_hp as f32),
         GaugeKind::Hp,
         &format!("{}/{}", view.hp.round() as i32, view.max_hp),
@@ -281,13 +281,13 @@ pub fn draw_unit_panel(
     gauge_row(
         gfx,
         vec2(x, r.y + 53.0),
-        "사기",
+        "士气",
         (view.morale as f32, 100.0),
         GaugeKind::Morale,
         &view.morale.to_string(),
     );
     let stats = format!(
-        "공격 {}  방어 {}  이동 {}",
+        "攻击 {}  防御 {}  移动 {}",
         state.attack_power(pack, id),
         state.defense_power(pack, id),
         state.move_points(pack, id)
@@ -317,7 +317,7 @@ pub fn draw_terrain_panel(ctx: &Ctx, at: Vec2, t: &TerrainDef, treasure: bool, p
     gfx.text(&t.name, r.x + 7.0, r.y + 3.0, main);
     if treasure {
         gfx.text_aligned(
-            "보물",
+            "宝物",
             r.x,
             r.y + 6.0,
             r.w - 7.0,
@@ -327,14 +327,14 @@ pub fn draw_terrain_panel(ctx: &Ctx, at: Vec2, t: &TerrainDef, treasure: bool, p
     }
     if passable {
         gfx.text(
-            &format!("방어 {}%", t.defense),
+            &format!("防御 {}%", t.defense),
             r.x + 7.0,
             r.y + 18.0,
             small,
         );
     } else {
         gfx.text(
-            "진입 불가",
+            "无法进入",
             r.x + 7.0,
             r.y + 18.0,
             small.color(theme::TEXT_DIM),
@@ -342,9 +342,9 @@ pub fn draw_terrain_panel(ctx: &Ctx, at: Vec2, t: &TerrainDef, treasure: bool, p
     }
     let heal = match (t.heal_hp, t.heal_morale) {
         (0, 0) => None,
-        (h, 0) => Some(format!("회복 {h}%")),
-        (0, m) => Some(format!("사기 +{m}")),
-        (h, m) => Some(format!("회복 {h}% · 사기 +{m}")),
+        (h, 0) => Some(format!("恢复 {h}%")),
+        (0, m) => Some(format!("士气 +{m}")),
+        (h, m) => Some(format!("恢复 {h}% · 士气 +{m}")),
     };
     if let Some(h) = heal {
         gfx.text(&h, r.x + 7.0, r.y + 29.0, small.color(theme::TEXT_GOOD));
@@ -375,7 +375,7 @@ pub const TARGET_COLOR: Color = Color::new(1.0, 0.22, 0.18, 0.55);
 pub const AIM_COLOR: Color = Color::new(0.72, 0.35, 1.0, 0.42);
 pub const AREA_COLOR: Color = Color::new(0.9, 0.55, 1.0, 0.6);
 pub const ITEM_COLOR: Color = Color::new(0.3, 0.9, 0.45, 0.45);
-/// Tiles an enemy could attack next phase (the "위험 범위" view option, D25 X4): a steady
+/// Tiles an enemy could attack next phase (the "敌军威胁范围" view option, D25 X4): a steady
 /// orange wash with a darker rim, so it reads apart from the pulsing selection highlights.
 pub const DANGER_COLOR: Color = Color::new(1.0, 0.42, 0.08, 0.26);
 
@@ -422,21 +422,6 @@ pub fn draw_mini_hp(screen: Vec2, tile: f32, hp: f32, max_hp: i32, alpha: f32) {
             GaugeKind::Hp.color(k).with_alpha(alpha),
         );
     }
-}
-
-/// Tiny gold crown marking the lord (`at` = top-left of the 7×5 mark).
-pub fn draw_crown(at: Vec2, alpha: f32) {
-    let gold = Color::from_hex(0xffd23f).with_alpha(alpha);
-    let dark = Color::new(0.2, 0.1, 0.0, 0.9 * alpha);
-    fill_rect(Rect::new(at.x - 1.0, at.y - 1.0, 9.0, 7.0), dark);
-    fill_rect(Rect::new(at.x, at.y + 2.0, 7.0, 3.0), gold);
-    for dx in [0.0, 3.0, 6.0] {
-        fill_rect(Rect::new(at.x + dx, at.y, 1.0, 2.0), gold);
-    }
-    fill_rect(
-        Rect::new(at.x + 3.0, at.y + 3.0, 1.0, 1.0),
-        Color::from_hex(0xd8342c).with_alpha(alpha),
-    );
 }
 
 /// Stars circling above a confused unit.
@@ -659,9 +644,9 @@ pub fn draw_outcome(ctx: &Ctx, victory: bool, age: f32) {
     let a = (age / 0.4).min(1.0);
     fill_rect(gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.35 * a));
     let (title, sub, tone) = if victory {
-        ("승 리", "적군을 물리쳤다!", Tone::Good)
+        ("胜 利", "击退敌军！", Tone::Good)
     } else {
-        ("패 배", "아군이 패했다…", Tone::Enemy)
+        ("败 北", "我军败北…", Tone::Enemy)
     };
     let h = 70.0;
     let y = ((canvas_h - h) / 2.0).round() - 10.0;

@@ -155,7 +155,7 @@ mod native {
 
     /// Directory name under the OS user data directory.
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    const APP_DIR: &str = "EiketsudenReloaded";
+    const APP_DIR: &str = "EiketsudenNative";
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     const APP_DIR: &str = "eiketsuden-reloaded";
 
@@ -166,6 +166,11 @@ mod native {
                 .map(PathBuf::from)
                 .filter(|p| p.is_absolute())
         };
+        // UI verification can keep its saves inside the workspace, without changing HOME
+        // or touching the player's saves. An invalid relative override is ignored.
+        if let Some(dir) = var("EIKETSUDEN_SAVE_DIR") {
+            return Some(dir);
+        }
         #[cfg(target_os = "windows")]
         {
             var("APPDATA").map(|d| d.join(APP_DIR))

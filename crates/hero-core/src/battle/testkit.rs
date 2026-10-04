@@ -268,6 +268,7 @@ fn item(id: &str, kind: ItemKind) -> ItemDef {
         hanja: String::new(),
         kind,
         price: 0,
+        resale_price: None,
         desc: String::new(),
         families: Vec::new(),
         atk_pct: 0,

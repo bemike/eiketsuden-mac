@@ -40,13 +40,13 @@ use macroquad::prelude::*;
 const ROW_H: f32 = 22.0;
 /// Column x offsets from the row's left edge, after the sprite and name.
 const COLUMNS: [(&str, f32); 8] = [
-    ("병과", 104.0),
+    ("兵种", 104.0),
     ("Lv", 160.0),
-    ("병력", 200.0),
-    ("책략치", 250.0),
-    ("공격력", 300.0),
-    ("방어력", 350.0),
-    ("이동력", 400.0),
+    ("兵力", 200.0),
+    ("策略值", 250.0),
+    ("攻击力", 300.0),
+    ("防御力", 350.0),
+    ("移动力", 400.0),
     ("", 440.0),
 ];
 
@@ -83,8 +83,7 @@ fn orb_rect() -> Rect {
 }
 
 /// The prompt of the hidden command (our wording; the original's warning is not reproduced).
-const SECRET_PROMPT: &str =
-    "금단의 비법\n이 명령은 게임의 균형을 무너뜨립니다. 그래도 쓰시겠습니까?";
+const SECRET_PROMPT: &str = "隐藏秘籍\n此命令会破坏游戏平衡，仍要使用？";
 
 /// The status window's picture placed in the camp screens' `area`: centred, whole pixels.
 struct StatusLayout<'a> {
@@ -229,11 +228,11 @@ impl OfficersScreen {
     fn draw_table(&self, ctx: &Ctx, pack: &Pack, roster: &[OfficerState]) {
         let gfx = &ctx.gfx;
         let table = content_rect(gfx.size());
-        draw_list_frame(ctx, table, "무장 일람", true);
+        draw_list_frame(ctx, table, "武将一览", true);
         let head = TextStyle::small(theme::TEXT_DIM);
         let base = self.menu.row_rect(0).x;
         let hy = table.y + 16.0;
-        gfx.text("이름", base + 40.0, hy, head);
+        gfx.text("姓名", base + 40.0, hy, head);
         gfx.text(COLUMNS[0].0, base + COLUMNS[0].1, hy, head);
         // Number columns: headers right-aligned over their numbers.
         for k in 1..COLUMNS.len() - 1 {
@@ -305,7 +304,7 @@ impl OfficersScreen {
             names.push(def.hanja.clone());
         }
         if !def.courtesy.is_empty() {
-            names.push(format!("자 {}", def.courtesy));
+            names.push(format!("字 {}", def.courtesy));
         }
         gfx.text(
             &names.join("  "),
@@ -333,14 +332,14 @@ impl OfficersScreen {
         }
         let per_level = pack.rules.exp_per_level.max(1);
         if o.level >= pack.rules.level_cap {
-            gfx.text("경험치", cx, y + 18.0, small);
-            gfx.text_aligned("최고 레벨", cx, y + 18.0, cw, Align::Right, small);
+            gfx.text("经验", cx, y + 18.0, small);
+            gfx.text_aligned("最高等级", cx, y + 18.0, cw, Align::Right, small);
         } else {
             draw_gauge_labeled(
                 gfx,
                 vec2(cx, y + 18.0),
                 cw,
-                "경험치",
+                "经验",
                 i64::from(o.exp),
                 i64::from(per_level),
                 GaugeKind::Exp,
@@ -354,7 +353,7 @@ impl OfficersScreen {
             draw_highlight(ability_rect(gfx.size(), row), true, ctx.time);
         }
         let by = y + 120.0;
-        for (i, (label, v)) in [("무력", o.strength), ("지력", o.int), ("통솔", o.lead)]
+        for (i, (label, v)) in [("武力", o.strength), ("智力", o.int), ("统率", o.lead)]
             .into_iter()
             .enumerate()
         {
@@ -383,7 +382,7 @@ impl OfficersScreen {
         // Equipment and strategies.
         let rx = cx + cw + 14.0;
         let rw = panel.right() - 8.0 - rx;
-        draw_caption(gfx, "장비", rx, y);
+        draw_caption(gfx, "装备", rx, y);
         for (i, slot) in [ItemKind::Weapon, ItemKind::Armor, ItemKind::Accessory]
             .into_iter()
             .enumerate()
@@ -393,7 +392,16 @@ impl OfficersScreen {
                 ItemKind::Armor => o.equip.armor.as_ref(),
                 _ => o.equip.accessory.as_ref(),
             };
-            let item = id.and_then(|id| pack.item(id));
+            let item = o
+                .equip
+                .carried
+                .as_ref()
+                .and_then(|p| {
+                    p.iter()
+                        .filter_map(|id| pack.item(id))
+                        .find(|i| i.kind == slot)
+                })
+                .or_else(|| id.and_then(|id| pack.item(id)));
             let ry = y + 14.0 + i as f32 * 17.0;
             draw_icon(ctx, item.map_or(slot_icon(slot), item_icon), vec2(rx, ry));
             gfx.text(slot_name(slot), rx + 20.0, ry + 2.0, small);
@@ -406,10 +414,10 @@ impl OfficersScreen {
         }
         let sy = y + 70.0;
         draw_divider(rx, sy - 4.0, rw);
-        draw_caption(gfx, "책략", rx, sy);
+        draw_caption(gfx, "策略", rx, sy);
         let strategies = strategy_list(pack, o);
         if strategies.is_empty() {
-            gfx.text("없음", rx, sy + 14.0, TextStyle::main(theme::TEXT_DIM));
+            gfx.text("无", rx, sy + 14.0, TextStyle::main(theme::TEXT_DIM));
         } else {
             let col_w = (rw / 2.0).floor();
             let rows = 6;
@@ -429,7 +437,7 @@ impl OfficersScreen {
             }
             if strategies.len() > rows * 2 {
                 gfx.text_aligned(
-                    &format!("외 {}개", strategies.len() - rows * 2),
+                    &format!("另有 {} 件", strategies.len() - rows * 2),
                     rx,
                     sy,
                     rw,
@@ -537,7 +545,7 @@ impl OfficersScreen {
             gfx.text_aligned(&shown, r.x + pad, y, r.w - 2.0 * pad, align, style);
         };
         put(
-            "무장 정보",
+            "武将信息",
             layout.rect(frame.title),
             Align::Left,
             TextStyle::main(theme::TEXT_NAME).shadow(theme::TEXT_SHADOW),
@@ -638,15 +646,23 @@ impl OfficersScreen {
             (ItemKind::Armor, o.equip.armor.as_ref()),
             (ItemKind::Accessory, o.equip.accessory.as_ref()),
         ] {
-            let item = id
-                .and_then(|id| pack.item(id))
+            let item = o
+                .equip
+                .carried
+                .as_ref()
+                .and_then(|p| {
+                    p.iter()
+                        .filter_map(|id| pack.item(id))
+                        .find(|i| i.kind == slot)
+                })
+                .or_else(|| id.and_then(|id| pack.item(id)))
                 .map_or("—", |i| i.name.as_str());
             lines.push((format!("{} {item}", slot_name(slot)), theme::TEXT, true));
         }
         let strategies = strategy_list(pack, o);
-        lines.push(("책략".to_string(), theme::TEXT_DIM, false));
+        lines.push(("策略".to_string(), theme::TEXT_DIM, false));
         if strategies.is_empty() {
-            lines.push(("없음".to_string(), theme::TEXT_DIM, false));
+            lines.push(("无".to_string(), theme::TEXT_DIM, false));
         }
         for (name, mp) in strategies {
             lines.push((format!("{name} {mp}"), theme::TEXT, true));
@@ -656,7 +672,7 @@ impl OfficersScreen {
         for (n, (text, color, _)) in lines.iter().take(fit).enumerate() {
             let text = if overflow && n + 1 == fit {
                 let hidden = lines[n..].iter().filter(|(_, _, entry)| *entry).count();
-                format!("외 {hidden}개")
+                format!("另有 {hidden} 件")
             } else {
                 text.clone()
             };
@@ -704,7 +720,7 @@ impl OfficersScreen {
                 let gained = session.campaign.gold - gold;
                 ctx.sfx(sfx::LEVELUP);
                 ctx.toast(format!(
-                    "금단의 비법: {} Lv {level} · 무력·지력·통솔 {} · 군자금 +{}",
+                    "隐藏秘籍：{} Lv {level} · 武力／智力／统率 {} · 军资金 +{}",
                     officer_name(&pack, &lord),
                     hero_core::campaign::FORBIDDEN_SECRET_ABILITY,
                     format::thousands(gained),
@@ -735,7 +751,7 @@ impl OfficersScreen {
             SecretStep::Ask => {
                 self.prompt = Some(
                     ConfirmDialog::new(&ctx.gfx, SECRET_PROMPT)
-                        .labels("예", "아니오")
+                        .labels("是", "否")
                         .default_no(),
                 );
             }
@@ -925,18 +941,18 @@ impl Screen for OfficersScreen {
             Some((i, o)) => {
                 draw_header(
                     ctx,
-                    &format!("무장 정보 — {}", officer_name(pack, &o.id)),
+                    &format!("武将信息 — {}", officer_name(pack, &o.id)),
                     campaign.gold,
                 );
                 self.draw_detail(ctx, pack, o);
                 draw_help(
                     ctx,
                     if self.edit.is_some() {
-                        "↑↓ 능력치 · ←→ 1씩 조정 · Z/X 조정 끝"
+                        "↑↓：能力 · ←→：调整 · Z/X：完成"
                     } else if campaign.free_edit {
-                        "←→ 다른 무장 · Z 능력치 조정 · X 목록으로"
+                        "←→：其他武将 · Z：调整能力 · X：返回"
                     } else {
-                        "←→ 다른 무장 · X 목록으로"
+                        "←→：其他武将 · X：返回"
                     },
                 );
                 ctx.gfx.text_aligned(
@@ -954,9 +970,9 @@ impl Screen for OfficersScreen {
                     self.draw_secret(ctx);
                     return;
                 }
-                draw_header(ctx, "무장 정보", campaign.gold);
+                draw_header(ctx, "武将信息", campaign.gold);
                 self.draw_table(ctx, pack, &campaign.roster);
-                draw_help(ctx, "Z 자세히 · X 돌아가기");
+                draw_help(ctx, "Z：详情 · X：返回");
             }
         }
         draw_back_button(ctx);

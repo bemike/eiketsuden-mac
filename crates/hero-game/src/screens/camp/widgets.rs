@@ -73,7 +73,7 @@ pub fn draw_header(ctx: &Ctx, title: &str, gold: i64) {
     gfx.text(&amount, x, 2.0, style);
     draw_icon(ctx, "gold", vec2(x - 19.0, 2.0));
     gfx.text_aligned(
-        "군자금",
+        "军资金",
         0.0,
         4.0,
         x - 23.0,
@@ -137,7 +137,7 @@ pub fn draw_back_button(ctx: &Ctx) {
     let color = if hover { theme::TEXT } else { theme::TEXT_DIM };
     draw_side_arrow(r.x + 9.0, r.center().y, false, color);
     ctx.gfx.text_aligned(
-        "돌아가기",
+        "返回",
         r.x + 12.0,
         r.y + 2.0,
         r.w - 14.0,
@@ -212,10 +212,10 @@ pub fn draw_officer_sprite(
 /// Name of an item slot.
 pub fn slot_name(kind: ItemKind) -> &'static str {
     match kind {
-        ItemKind::Weapon => "무기",
-        ItemKind::Armor => "병법서",
-        ItemKind::Accessory => "보물",
-        ItemKind::Consumable => "도구",
+        ItemKind::Weapon => "武器",
+        ItemKind::Armor => "兵法书",
+        ItemKind::Accessory => "宝物",
+        ItemKind::Consumable => "道具",
     }
 }
 
@@ -242,35 +242,35 @@ pub fn item_icon(item: &ItemDef) -> &str {
 pub fn item_effect(pack: &Pack, item: &ItemDef) -> String {
     let mut parts: Vec<String> = Vec::new();
     if item.atk_pct > 0 {
-        parts.push(format!("공격 {:+}%", item.atk_pct - 100));
+        parts.push(format!("攻击 {:+}%", item.atk_pct - 100));
     }
     if item.def_pct > 0 {
-        parts.push(format!("방어 {:+}%", item.def_pct - 100));
+        parts.push(format!("防御 {:+}%", item.def_pct - 100));
     }
     if item.move_bonus != 0 {
-        parts.push(format!("이동 {:+}", item.move_bonus));
+        parts.push(format!("移动 {:+}", item.move_bonus));
     }
     if item.regen_hp > 0 {
-        parts.push(format!("매 턴 병력 {}% 회복", item.regen_hp));
+        parts.push(format!("每回合恢复兵力 {}%", item.regen_hp));
     }
     if item.regen_morale > 0 {
-        parts.push(format!("매 턴 사기 {} 회복", item.regen_morale));
+        parts.push(format!("每回合恢复士气 {}", item.regen_morale));
     }
     if let Some(s) = &item.strategy {
         let name = pack.strategy(s).map_or(s.as_str(), |d| d.name.as_str());
-        parts.push(format!("책략 「{name}」"));
+        parts.push(format!("策略「{name}」"));
     }
     for e in &item.effects {
         match e {
-            Effect::Heal { power } => parts.push(format!("병력 {power} 회복")),
-            Effect::Morale { amount } if *amount >= 0 => parts.push(format!("사기 {amount} 회복")),
-            Effect::Morale { amount } => parts.push(format!("사기 {} 감소", -amount)),
-            Effect::Promote => parts.push("병과 향상".to_string()),
+            Effect::Heal { power } => parts.push(format!("恢复兵力 {power}")),
+            Effect::Morale { amount } if *amount >= 0 => parts.push(format!("恢复士气 {amount}")),
+            Effect::Morale { amount } => parts.push(format!("士气减少 {}", -amount)),
+            Effect::Promote => parts.push("兵种晋升".to_string()),
             Effect::ChangeClass { to } => {
-                parts.push(format!("병과 → {}", class_name(pack, to)));
+                parts.push(format!("兵种 → {}", class_name(pack, to)));
             }
-            Effect::Damage { power } => parts.push(format!("피해 {power}")),
-            Effect::Status { .. } => parts.push("혼란".to_string()),
+            Effect::Damage { power } => parts.push(format!("伤害 {power}")),
+            Effect::Status { .. } => parts.push("混乱".to_string()),
         }
     }
     parts.join(" · ")
@@ -331,11 +331,11 @@ pub fn draw_stats_block(
     w: f32,
 ) -> f32 {
     let rows = [
-        ("병력", stats.hp, after.map(|a| a.hp)),
-        ("책략치", stats.mp, after.map(|a| a.mp)),
-        ("공격력", stats.atk, after.map(|a| a.atk)),
-        ("방어력", stats.def, after.map(|a| a.def)),
-        ("이동력", stats.mov, after.map(|a| a.mov)),
+        ("兵力", stats.hp, after.map(|a| a.hp)),
+        ("策略值", stats.mp, after.map(|a| a.mp)),
+        ("攻击力", stats.atk, after.map(|a| a.atk)),
+        ("防御力", stats.def, after.map(|a| a.def)),
+        ("移动力", stats.mov, after.map(|a| a.mov)),
     ];
     for (i, (label, before, after)) in rows.into_iter().enumerate() {
         draw_stat(gfx, label, before, after, x, y + i as f32 * 15.0, w);
@@ -531,7 +531,7 @@ impl QuantityDialog {
             max: max.max(1),
             qty: 1,
             total_label: total_label.to_string(),
-            buttons: TwoButtons::new(yes, "취소"),
+            buttons: TwoButtons::new(yes, "取消"),
             rect: Rect::new(
                 ((canvas.x - w) / 2.0).round(),
                 ((canvas.y - h) / 2.0).round(),
@@ -631,7 +631,7 @@ impl QuantityDialog {
         draw_side_arrow(la.center().x, la.center().y, false, arrow(can_less));
         draw_side_arrow(ra.center().x, ra.center().y, true, arrow(can_more));
         gfx.text_aligned(
-            &format!("{} 개", self.qty),
+            &format!("{} 件", self.qty),
             la.right(),
             la.y,
             ra.x - la.right(),
@@ -640,7 +640,7 @@ impl QuantityDialog {
         );
         gfx.text_aligned(
             &format!(
-                "{} {}  (최대 {}개)",
+                "{} {}（最多 {} 件）",
                 self.total_label,
                 format::thousands(self.total()),
                 self.max
@@ -701,18 +701,18 @@ mod tests {
     fn item_effect_summaries() {
         let pack = test_pack();
         let text = |id: &str| item_effect(&pack, pack.item(id).unwrap());
-        assert_eq!(text("green_dragon_blade"), "공격 +12%");
-        assert_eq!(text("sunzi"), "방어 +22%");
-        assert_eq!(text("red_hare"), "이동 +3");
-        assert_eq!(text("bean"), "병력 400 회복");
-        assert_eq!(text("salve"), "병력 400 회복 · 사기 20 회복");
+        assert_eq!(text("green_dragon_blade"), "攻击 +12%");
+        assert_eq!(text("sunzi"), "防御 +22%");
+        assert_eq!(text("red_hare"), "移动 +3");
+        assert_eq!(text("bean"), "恢复兵力 400");
+        assert_eq!(text("salve"), "恢复兵力 400 · 恢复士气 20");
         assert_eq!(
             text("imperial_seal"),
-            "매 턴 병력 10% 회복 · 매 턴 사기 10 회복"
+            "每回合恢复兵力 10% · 每回合恢复士气 10"
         );
-        assert_eq!(text("long_spear"), "병과 향상");
-        assert_eq!(text("archery_guide"), "병과 → 궁병");
-        assert!(text("scroll_scorch").starts_with("책략 「"));
+        assert_eq!(text("long_spear"), "兵种晋升");
+        assert_eq!(text("archery_guide"), "兵种 → 弓兵");
+        assert!(text("scroll_scorch").starts_with("策略「"));
         assert_eq!(delta_color(5, 7), theme::TEXT_GOOD);
         assert_eq!(delta_color(5, 3), theme::TEXT_BAD);
         assert_eq!(delta_color(5, 5), theme::TEXT);

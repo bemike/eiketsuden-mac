@@ -99,7 +99,7 @@ pub fn snapshot(
 /// on screen, but the app owns it, so it passes it in and keeps this logic testable.
 pub fn save(ctx: &mut Ctx, stack: &[Box<dyn Screen>]) -> Result<(), String> {
     let (Some(pack), Some(session)) = (ctx.pack.clone(), ctx.session.as_ref()) else {
-        return Err("진행 중인 게임이 없습니다".into());
+        return Err("没有正在进行的游戏".into());
     };
     let points = stack.iter().filter_map(|s| s.resume_point(ctx)).collect();
     let save = snapshot(&pack, session, points).map_err(str::to_string)?;
@@ -111,7 +111,7 @@ pub fn save(ctx: &mut Ctx, stack: &[Box<dyn Screen>]) -> Result<(), String> {
 /// of the pack).
 pub fn read(ctx: &Ctx) -> Result<SaveGame, String> {
     let (Some(pack), Some(pack_id)) = (ctx.pack.as_deref(), ctx.pack_id()) else {
-        return Err("데이터 팩이 로드되지 않았습니다".into());
+        return Err("游戏数据尚未载入".into());
     };
     let save =
         saves::read(ctx.storage.as_ref(), SaveSlot::Quick, pack_id).map_err(|e| e.to_string())?;
@@ -132,14 +132,14 @@ pub fn playable(pack: &Pack, save: &SaveGame) -> Result<(), String> {
 /// The player-facing text of a [`ResumeError`].
 pub fn describe(error: &ResumeError) -> String {
     match error {
-        ResumeError::PackVersion { saved, current } => format!(
-            "장면 도중의 기록은 같은 버전의 데이터 팩에서만 이어 할 수 있습니다 (기록 {saved}, 현재 {current})"
-        ),
+        ResumeError::PackVersion { saved, current } => {
+            format!("剧情中的存档需要相同版本的游戏数据（存档 {saved}，当前 {current}）")
+        }
         ResumeError::SceneChanged(scene) => {
-            format!("기록된 장면 `{scene}`이(가) 데이터 팩에서 바뀌었거나 없어졌습니다")
+            format!("存档中的场景 `{scene}` 已被修改或移除")
         }
         ResumeError::WrongNode(_) | ResumeError::NoBattle | ResumeError::UnexpectedBattle => {
-            "기록이 데이터 팩과 맞지 않습니다".into()
+            "存档与游戏数据不匹配".into()
         }
     }
 }
@@ -251,11 +251,11 @@ mod tests {
         let (pack, session) = fixtures();
         let points = vec![
             ResumePoint::Scene(Box::new(scene())),
-            ResumePoint::Unavailable("장면이 준비되지 않았습니다"),
+            ResumePoint::Unavailable("场景尚未准备好"),
         ];
         assert_eq!(
             snapshot(&pack, &session, points).unwrap_err(),
-            "장면이 준비되지 않았습니다"
+            "场景尚未准备好"
         );
     }
 }

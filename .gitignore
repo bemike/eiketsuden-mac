@@ -13,3 +13,17 @@ __pycache__/
 
 # The owner's original game install (never commit KOEI files)
 /res/
+
+# Mac builds, local saves, original installations and release payloads
+/.venv/
+/.release/
+*.app/
+*.zip
+*.dmg
+*.HEIC
+*.heic
+.env
+.env.*
+/converted-original/
+/original-game/
+/data/original/

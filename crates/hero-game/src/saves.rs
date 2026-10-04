@@ -80,9 +80,9 @@ impl SaveSlot {
     /// Name shown in slot lists.
     pub fn name(self) -> String {
         match self {
-            SaveSlot::Auto => "자동 기록".into(),
-            SaveSlot::Quick => "순간 저장".into(),
-            SaveSlot::Manual(n) => format!("기록 {n}"),
+            SaveSlot::Auto => "自动存档".into(),
+            SaveSlot::Quick => "快速存档".into(),
+            SaveSlot::Manual(n) => format!("存档 {n}"),
         }
     }
 
@@ -163,11 +163,11 @@ pub enum SaveSlotError {
 impl fmt::Display for SaveSlotError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SaveSlotError::Empty(slot) => write!(f, "{}은(는) 비어 있습니다", slot.name()),
-            SaveSlotError::InvalidSlot(slot) => write!(f, "잘못된 슬롯: {slot:?}"),
-            SaveSlotError::Storage(e) => write!(f, "저장소 오류 ({e})"),
+            SaveSlotError::Empty(slot) => write!(f, "{}为空", slot.name()),
+            SaveSlotError::InvalidSlot(slot) => write!(f, "无效的存档槽：{slot:?}"),
+            SaveSlotError::Storage(e) => write!(f, "存储错误（{e}）"),
             SaveSlotError::Save(e) => match e {
-                SaveError::Corrupt(msg) => write!(f, "기록이 손상되었습니다 ({msg})"),
+                SaveError::Corrupt(msg) => write!(f, "存档损坏（{msg}）"),
                 SaveError::TooNew {
                     found,
                     supported,
@@ -179,16 +179,15 @@ impl fmt::Display for SaveSlotError {
                     }
                     write!(
                         f,
-                        "새 버전의 기록입니다: {shown} (기록 v{found}, 지원 v{supported})"
+                        "较新版本的存档：{shown}（存档 v{found}，支持 v{supported}）"
                     )
                 }
                 SaveError::TooNew {
                     found, supported, ..
-                } => write!(f, "새 버전의 기록입니다 (기록 v{found}, 지원 v{supported})"),
-                SaveError::WrongPack { found, expected } => write!(
-                    f,
-                    "다른 데이터 팩의 기록입니다 (기록 `{found}`, 현재 `{expected}`)"
-                ),
+                } => write!(f, "较新版本的存档（存档 v{found}，支持 v{supported}）"),
+                SaveError::WrongPack { found, expected } => {
+                    write!(f, "其他游戏数据的存档（存档 `{found}`，当前 `{expected}`）")
+                }
             },
         }
     }
@@ -431,7 +430,7 @@ mod tests {
         assert_eq!(
             why,
             format!(
-                "새 버전의 기록입니다: 새 기능 (기록 v{}, 지원 v{SAVE_VERSION})",
+                "较新版本的存档：새 기능（存档 v{}，支持 v{SAVE_VERSION}）",
                 SAVE_VERSION + 1
             )
         );
@@ -506,11 +505,11 @@ mod tests {
     fn packs_do_not_share_slots() {
         let mut store = MemoryStore::default();
         write(&mut store, SaveSlot::Auto, &save("기본", 100, "base")).unwrap();
-        write(&mut store, SaveSlot::Auto, &save("원작", 200, "original")).unwrap();
+        write(&mut store, SaveSlot::Auto, &save("原版", 200, "original")).unwrap();
         assert_eq!(read(&store, SaveSlot::Auto, "base").unwrap().label, "기본");
         assert_eq!(
             read(&store, SaveSlot::Auto, "original").unwrap().label,
-            "원작"
+            "原版"
         );
         delete(&mut store, SaveSlot::Auto, "original").unwrap();
         assert_eq!(read(&store, SaveSlot::Auto, "base").unwrap().label, "기본");
@@ -524,7 +523,7 @@ mod tests {
             "base_auto",
             "base-1",
             "Base",
-            "원작",
+            "原版",
             "mod.balance",
             &long,
             &long[..MAX_PLAIN_PACK_ID],
@@ -540,13 +539,13 @@ mod tests {
             }
         }
         // Stable across runs and versions.
-        assert_eq!(SaveSlot::Auto.key("원작"), SaveSlot::Auto.key("원작"));
+        assert_eq!(SaveSlot::Auto.key("原版"), SaveSlot::Auto.key("原版"));
         assert!(SaveSlot::Auto.key("Base").starts_with("save-"));
         // A hashed id still round-trips through write/read.
         let mut store = MemoryStore::default();
-        write(&mut store, SaveSlot::Manual(1), &save("x", 1, "원작")).unwrap();
+        write(&mut store, SaveSlot::Manual(1), &save("x", 1, "原版")).unwrap();
         assert_eq!(
-            read(&store, SaveSlot::Manual(1), "원작").unwrap().label,
+            read(&store, SaveSlot::Manual(1), "原版").unwrap().label,
             "x"
         );
     }
@@ -678,9 +677,9 @@ mod tests {
             found: "x".into(),
             expected: "base".into(),
         });
-        assert!(e.to_string().contains("다른 데이터 팩"));
+        assert!(e.to_string().contains("其他游戏数据"));
         assert!(SaveSlotError::Empty(SaveSlot::Auto)
             .to_string()
-            .contains("자동 기록"));
+            .contains("自动存档"));
     }
 }

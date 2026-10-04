@@ -20,8 +20,10 @@
 
 pub mod deploy;
 pub mod equip;
+pub mod exchange;
 pub mod frame;
 pub mod officers;
+pub mod personal_shop;
 pub mod shop;
 pub mod stats;
 pub mod tools;
@@ -67,17 +69,17 @@ enum Command {
 impl Command {
     fn label(self, has_battle: bool) -> &'static str {
         match self {
-            Command::Sortie if has_battle => "출진",
-            Command::Sortie => "다음으로",
-            Command::Deploy => "부대 편성",
-            Command::Equip => "장비",
-            Command::Shop => "상점",
-            Command::Tools => "도구",
-            Command::Officers => "무장 정보",
-            Command::Save => "기록",
-            Command::Load => "불러오기",
-            Command::Settings => "설정",
-            Command::Title => "타이틀로",
+            Command::Sortie if has_battle => "出战",
+            Command::Sortie => "继续",
+            Command::Deploy => "部队编成",
+            Command::Equip => "交换道具",
+            Command::Shop => "商店",
+            Command::Tools => "道具",
+            Command::Officers => "武将信息",
+            Command::Save => "存档",
+            Command::Load => "读取存档",
+            Command::Settings => "游戏设置",
+            Command::Title => "返回标题",
         }
     }
 }
@@ -118,7 +120,7 @@ impl SortieDialog {
     fn new(gfx: &Gfx, def: &BattleDef, selection: Vec<Id>) -> SortieDialog {
         let inner_w = SORTIE_W - 24.0;
         let mut objective = gfx.wrap(
-            &format!("승리 조건: {}", def.objective),
+            &format!("胜利条件：{}", def.objective),
             FontId::Main,
             1,
             inner_w,
@@ -137,7 +139,7 @@ impl SortieDialog {
         SortieDialog {
             selection,
             objective,
-            buttons: TwoButtons::new("출진", "취소"),
+            buttons: TwoButtons::new("出战", "取消"),
             rect: Rect::new(
                 ((canvas.x - SORTIE_W) / 2.0).round(),
                 ((canvas.y - h) / 2.0).round(),
@@ -209,8 +211,8 @@ impl CampScreen {
             return self.title.clone();
         }
         match self.battle_def(pack) {
-            Some(def) => format!("{} 준비", def.name),
-            None => "출진 준비".to_string(),
+            Some(def) => format!("{} 准备", def.name),
+            None => "出战准备".to_string(),
         }
     }
 
@@ -243,22 +245,20 @@ impl CampScreen {
 
     fn help(&self, command: Command) -> String {
         match command {
-            Command::Sortie if self.battle.is_some() => {
-                "편성을 확인하고 전투에 나섭니다.".to_string()
-            }
-            Command::Sortie => "준비를 마치고 다음으로 진행합니다.".to_string(),
-            Command::Deploy => "이번 전투에 출진할 무장을 고릅니다.".to_string(),
-            Command::Equip => "무기·병법서·보물을 장비하거나 해제합니다.".to_string(),
+            Command::Sortie if self.battle.is_some() => "确认编成并进入战斗。".to_string(),
+            Command::Sortie => "完成准备，进入下一阶段。".to_string(),
+            Command::Deploy => "选择本场出战的武将。".to_string(),
+            Command::Equip => "转交、交换随身物品，或领取公用道具。".to_string(),
             Command::Shop if self.shop.is_empty() => {
-                "가진 물건을 팝니다. 이곳에서는 파는 물건이 없습니다.".to_string()
+                "出售持有物品，此处没有可购买的商品。".to_string()
             }
-            Command::Shop => "물건을 사고팝니다.".to_string(),
-            Command::Tools => "승급·병과 변경 도구를 무장에게 사용합니다.".to_string(),
-            Command::Officers => "무장의 능력·책략·장비를 봅니다.".to_string(),
-            Command::Save => "지금까지의 진행을 기록합니다.".to_string(),
-            Command::Load => "기록을 불러옵니다.".to_string(),
-            Command::Settings => "음량, 글자 속도 등을 바꿉니다.".to_string(),
-            Command::Title => "타이틀 화면으로 돌아갑니다.".to_string(),
+            Command::Shop => "购买和出售物品。".to_string(),
+            Command::Tools => "为武将使用晋升或转职道具。".to_string(),
+            Command::Officers => "查看武将能力、策略和装备。".to_string(),
+            Command::Save => "保存当前进度。".to_string(),
+            Command::Load => "读取游戏存档。".to_string(),
+            Command::Settings => "调整音量、文字速度等设置。".to_string(),
+            Command::Title => "返回标题画面。".to_string(),
         }
     }
 
@@ -275,7 +275,7 @@ impl CampScreen {
                     let selection = self.deployment(&pack, &session.campaign);
                     if selection.is_empty() {
                         ctx.sfx(sfx::ERROR);
-                        ctx.toast("출진할 무장이 없습니다. 부대를 편성하세요.");
+                        ctx.toast("没有出战武将，请先编成部队。");
                         return Transition::None;
                     }
                     if let Some(def) = self.battle_def(&pack) {
@@ -284,7 +284,7 @@ impl CampScreen {
                 } else {
                     self.popup = Popup::Confirm(
                         Command::Sortie,
-                        ConfirmDialog::new(&ctx.gfx, "준비를 마치고 다음으로 진행할까요?"),
+                        ConfirmDialog::new(&ctx.gfx, "完成准备，进入下一阶段？"),
                     );
                 }
                 Transition::None
@@ -293,8 +293,18 @@ impl CampScreen {
                 Some(b) => Transition::push(DeployScreen::new(b)),
                 None => Transition::None,
             },
-            Command::Equip => Transition::push(equip::EquipScreen::new()),
-            Command::Shop => Transition::push(shop::ShopScreen::new(&self.shop)),
+            Command::Equip => Transition::push(exchange::ExchangeScreen::new()),
+            Command::Shop => {
+                if ctx
+                    .session
+                    .as_ref()
+                    .is_some_and(|s| s.campaign.roster.iter().any(|o| o.equip.carried.is_some()))
+                {
+                    Transition::push(personal_shop::PersonalShop::new(&self.shop))
+                } else {
+                    Transition::push(shop::ShopScreen::new(&self.shop))
+                }
+            }
             Command::Tools => Transition::push(tools::ToolsScreen::new()),
             Command::Officers => Transition::push(officers::OfficersScreen::new()),
             Command::Save => match ctx.session.as_ref() {
@@ -306,11 +316,8 @@ impl CampScreen {
             Command::Title => {
                 self.popup = Popup::Confirm(
                     Command::Title,
-                    ConfirmDialog::new(
-                        &ctx.gfx,
-                        "타이틀 화면으로 돌아갈까요?\n기록하지 않은 진행은 사라집니다.",
-                    )
-                    .default_no(),
+                    ConfirmDialog::new(&ctx.gfx, "返回标题画面？\n未保存的进度将会丢失。")
+                        .default_no(),
                 );
                 Transition::None
             }
@@ -354,7 +361,7 @@ impl CampScreen {
         let x = panel.x + 10.0;
         let w = panel.w - 20.0;
         let mut y = panel.y + 6.0;
-        draw_caption(gfx, "다음 전투", x, y);
+        draw_caption(gfx, "下一场战斗", x, y);
         y += 13.0;
         gfx.text(
             &def.name,
@@ -386,23 +393,23 @@ impl CampScreen {
             .iter()
             .find(|o| pack.officer(&o.id).is_some_and(|d| d.lord))
             .filter(|o| !def.deploy.forbidden.contains(&o.id))
-            .map(|o| format!("{} 퇴각", officer_name(pack, &o.id)))
+            .map(|o| format!("{} 撤退", officer_name(pack, &o.id)))
             // Without the lord the troop is lost when it has retreated.
-            .or_else(|| Some("아군 전멸".to_string()));
+            .or_else(|| Some("我军全灭".to_string()));
         let own = def.defeat.iter().map(|c| {
             crate::screens::battle::text::condition_text(c, |id| officer_name(pack, id).to_string())
         });
         let defeat = lord
             .into_iter()
             .chain(own)
-            .chain([format!("{}턴 경과", def.turn_limit)])
+            .chain([format!("经过 {} 回合", def.turn_limit)])
             .collect::<Vec<_>>()
             .join(" · ");
-        let mut rows = vec![("승리 조건", def.objective.clone()), ("패배 조건", defeat)];
+        let mut rows = vec![("胜利条件", def.objective.clone()), ("失败条件", defeat)];
         if def.reward_gold > 0 {
             rows.push((
-                "승리 보상",
-                format!("금 {}", format::thousands(def.reward_gold)),
+                "胜利奖励",
+                format!("金 {}", format::thousands(def.reward_gold)),
             ));
         }
         for (k, v) in rows {
@@ -417,7 +424,7 @@ impl CampScreen {
         let selection = self.deployment(pack, campaign);
         draw_caption(
             gfx,
-            &format!("출진 부대 {}/{}", selection.len(), deploy_max(def)),
+            &format!("出战部队 {}/{}", selection.len(), deploy_max(def)),
             x,
             y,
         );
@@ -453,7 +460,7 @@ impl CampScreen {
             draw_officer_sprite(ctx, pack, o, vec2(px + 12.0, py + row_h - 2.0), false);
             gfx.text(
                 officer_name(pack, id),
-                px + 28.0,
+                px + 36.0,
                 py + 5.0,
                 TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW),
             );
@@ -468,7 +475,7 @@ impl CampScreen {
         }
         if ids.len() > shown {
             gfx.text_aligned(
-                &format!("외 {}명", ids.len() - shown),
+                &format!("另有 {} 人", ids.len() - shown),
                 x,
                 panel.bottom() - 14.0,
                 w,
@@ -487,7 +494,7 @@ impl CampScreen {
         let w = r.w - 24.0;
         let mut y = r.y + 8.0;
         gfx.text_aligned(
-            "출진하시겠습니까?",
+            "开始出战？",
             r.x,
             y,
             r.w,
@@ -503,7 +510,7 @@ impl CampScreen {
                 TextStyle::main(theme::TEXT_NAME).shadow(theme::TEXT_SHADOW),
             );
             gfx.text_aligned(
-                &format!("출진 {}/{}명", dialog.selection.len(), deploy_max(def)),
+                &format!("出战 {}/{} 人", dialog.selection.len(), deploy_max(def)),
                 x,
                 y + 2.0,
                 w,
@@ -567,6 +574,9 @@ impl Screen for CampScreen {
                 }
             }
         }
+        if let Some(session) = ctx.session.as_mut() {
+            session.campaign.enable_personal_inventory();
+        }
         self.rebuild();
     }
 
@@ -601,7 +611,7 @@ impl Screen for CampScreen {
                 let x = panel.x + 10.0;
                 draw_caption(
                     &ctx.gfx,
-                    &format!("아군 {}명", campaign.roster.len()),
+                    &format!("我军 {} 人", campaign.roster.len()),
                     x,
                     panel.y + 6.0,
                 );
@@ -620,7 +630,7 @@ impl Screen for CampScreen {
         // Play time under the menu.
         let m = self.menu.rect();
         ctx.gfx.text_aligned(
-            &format!("플레이 {}", format::play_time(campaign.play_seconds)),
+            &format!("游戏时长 {}", format::play_time(campaign.play_seconds)),
             m.x,
             m.bottom() + 6.0,
             m.w,
@@ -657,10 +667,10 @@ mod tests {
         let with = commands(true);
         assert_eq!(with[0], Command::Sortie);
         assert!(with.contains(&Command::Deploy));
-        assert_eq!(Command::Sortie.label(true), "출진");
+        assert_eq!(Command::Sortie.label(true), "出战");
         let without = commands(false);
         assert!(!without.contains(&Command::Deploy));
-        assert_eq!(Command::Sortie.label(false), "다음으로");
+        assert_eq!(Command::Sortie.label(false), "继续");
         assert_eq!(with.len(), without.len() + 1);
     }
 
@@ -680,9 +690,9 @@ mod tests {
     fn headings() {
         let pack = test_pack();
         let camp = CampScreen::new("", &[], Some("p1_sishui"));
-        assert_eq!(camp.heading(&pack), "사수관 전투 준비");
+        assert_eq!(camp.heading(&pack), "사수관 전투 准备");
         let camp = CampScreen::new("진류", &[], None);
         assert_eq!(camp.heading(&pack), "진류");
-        assert_eq!(CampScreen::new("", &[], None).heading(&pack), "출진 준비");
+        assert_eq!(CampScreen::new("", &[], None).heading(&pack), "出战准备");
     }
 }

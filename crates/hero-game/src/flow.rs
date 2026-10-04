@@ -152,21 +152,21 @@ fn place_label(pack: &Pack, campaign: &CampaignState, battle: Option<&BattleStat
             .unwrap_or_else(|| id.to_string())
     };
     if let Some(b) = battle {
-        return format!("{} · {}턴", battle_name(&b.battle_id), b.turn);
+        return format!("{} · 第 {} 回合", battle_name(&b.battle_id), b.turn);
     }
     match pack.campaign.node(&campaign.node) {
         Some(Node::Camp { title, battle, .. }) => {
             if !title.is_empty() {
                 title.clone()
             } else if let Some(b) = battle {
-                format!("{} 준비", battle_name(b))
+                format!("{} 准备", battle_name(b))
             } else {
-                "출진 준비".into()
+                "出战准备".into()
             }
         }
         Some(Node::Battle { battle, .. }) => battle_name(battle),
         Some(Node::Ending { title, .. }) if !title.is_empty() => title.clone(),
-        Some(Node::Ending { .. }) => "엔딩".into(),
+        Some(Node::Ending { .. }) => "结局".into(),
         Some(Node::Drama { .. }) | Some(Node::Branch { .. }) | None => pack.campaign.title.clone(),
     }
 }
@@ -179,7 +179,7 @@ pub fn autosave(ctx: &mut Ctx) {
     let save = session.to_save(&pack);
     if let Err(e) = saves::write(ctx.storage.as_mut(), SaveSlot::Auto, &save) {
         macroquad::logging::error!("autosave failed: {}", e);
-        ctx.toast(format!("자동 기록 실패: {e}"));
+        ctx.toast(format!("自动存档失败：{e}"));
     }
 }
 
@@ -207,10 +207,7 @@ pub fn enter(flow: Flow, ctx: &mut Ctx) -> Box<dyn Screen> {
             // node's start: the saved campaign already holds the effects of the steps before
             // the saved position (see `SaveGame::check_resume`).
             if let Err(why) = crate::quicksave::playable(&pack, &save) {
-                return Box::new(ErrorScreen::recoverable(
-                    "기록을 불러올 수 없습니다",
-                    vec![why],
-                ));
+                return Box::new(ErrorScreen::recoverable("无法读取存档", vec![why]));
             }
             let resume = save.scene.clone();
             let pending_scenes = save.pending_scenes.clone();
@@ -275,10 +272,8 @@ fn show_current_node(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
         Some(Node::Branch { .. }) => advance(ctx, pack),
         Some(node) => node_screen(ctx, pack, &node.clone()),
         None => Box::new(ErrorScreen::recoverable(
-            "캠페인 오류",
-            vec![format!(
-                "캠페인 노드 `{id}`를 찾을 수 없습니다. 데이터 팩을 확인하세요."
-            )],
+            "战役错误",
+            vec![format!("找不到战役节点 `{id}`，请检查游戏数据。")],
         )),
     }
 }
@@ -290,8 +285,8 @@ fn advance(ctx: &mut Ctx, pack: &Rc<Pack>) -> Box<dyn Screen> {
     match session.campaign.advance(pack) {
         Ok(_) => arrive(ctx, pack),
         Err(e) => Box::new(ErrorScreen::recoverable(
-            "캠페인 오류",
-            vec![format!("다음 단계로 진행할 수 없습니다: {e}")],
+            "战役错误",
+            vec![format!("无法进入下一阶段：{e}")],
         )),
     }
 }
@@ -347,8 +342,8 @@ fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn S
                 Some(node) => match apply_defeat(&mut session.campaign, pack, &state, &node) {
                     Ok(_) => arrive(ctx, pack),
                     Err(e) => Box::new(ErrorScreen::recoverable(
-                        "캠페인 오류",
-                        vec![format!("패배 후 진행할 수 없습니다: {e}")],
+                        "战役错误",
+                        vec![format!("战败后无法继续：{e}")],
                     )),
                 },
                 None => {
@@ -358,8 +353,8 @@ fn battle_ended(ctx: &mut Ctx, pack: &Rc<Pack>, state: BattleState) -> Box<dyn S
             }
         }
         None => Box::new(ErrorScreen::recoverable(
-            "전투 오류",
-            vec!["전투가 끝나지 않은 상태로 종료되었습니다.".into()],
+            "战斗错误",
+            vec!["战斗尚未结束便已退出。".into()],
         )),
     }
 }
@@ -385,8 +380,8 @@ pub fn node_screen(ctx: &mut Ctx, pack: &Rc<Pack>, node: &Node) -> Box<dyn Scree
             ..
         } => Box::new(DramaScreen::ending(ctx, scene, title.clone())),
         Node::Branch { id, .. } => Box::new(ErrorScreen::recoverable(
-            "캠페인 오류",
-            vec![format!("분기 노드 `{id}`는 화면을 가질 수 없습니다.")],
+            "战役错误",
+            vec![format!("分支节点 `{id}` 无法显示画面。")],
         )),
     }
 }
@@ -409,18 +404,15 @@ pub fn battle_screen(
 
 fn no_pack() -> Box<dyn Screen> {
     Box::new(ErrorScreen::recoverable(
-        "데이터 팩 없음",
-        vec![
-            "데이터 팩이 로드되지 않았습니다. (UI 갤러리 모드에서는 게임을 시작할 수 없습니다.)"
-                .into(),
-        ],
+        "缺少游戏数据",
+        vec!["游戏数据尚未载入，无法开始游戏。".into()],
     ))
 }
 
 fn no_session() -> Box<dyn Screen> {
     Box::new(ErrorScreen::recoverable(
-        "진행 중인 게임 없음",
-        vec!["진행 중인 캠페인이 없습니다.".into()],
+        "没有正在进行的游戏",
+        vec!["没有正在进行的战役。".into()],
     ))
 }
 
@@ -480,12 +472,15 @@ mod tests {
 
         camp.difficulty = hero_core::campaign::Difficulty::Hard;
         let hard = Session::new(camp.clone()).to_save(&pack);
-        assert_eq!(hard.label, format!("[어려움] {}", normal.label));
+        assert_eq!(hard.label, format!("[困难] {}", normal.label));
         assert_eq!(hard.version, OPTIONS_SAVE_VERSION);
         camp.extended_rules = true;
         camp.free_edit = true;
         let all = Session::new(camp).to_save(&pack);
-        assert_eq!(all.label, format!("[어려움·조정·확장] {}", normal.label));
+        assert_eq!(
+            all.label,
+            format!("[困难·能力调整·扩展规则] {}", normal.label)
+        );
     }
 
     /// The base pack with a scene node whose branch leads, on flag `t_flag`, to an ending

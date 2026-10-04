@@ -676,7 +676,7 @@ fn joined_notice(pack: &Pack, officer: &str, name: &str, returned: bool) -> Noti
             parts.push(d.hanja.clone());
         }
         if !d.courtesy.is_empty() {
-            parts.push(format!("자 {}", d.courtesy));
+            parts.push(format!("字 {}", d.courtesy));
         }
         parts.push(format!("{class} Lv{}", d.level));
         parts.join(" · ")
@@ -685,9 +685,9 @@ fn joined_notice(pack: &Pack, officer: &str, name: &str, returned: bool) -> Noti
         // One back from `@away` returns with what they had (the story says so too): a quieter
         // banner, without the exclamation mark.
         title: if returned {
-            format!("{name} 복귀")
+            format!("{name} 归队")
         } else {
-            format!("{name} 합류!")
+            format!("{name} 加入！")
         },
         subtitle,
         art: NoticeArt::Portrait(def.map_or(officer, |d| d.portrait_key()).to_string()),
@@ -706,15 +706,15 @@ fn received_notice(pack: &Pack, gold: i64, item: Option<&str>) -> Option<Notice>
                 .filter(|i| !i.is_empty())
                 .unwrap_or("consumable");
             let sub = def.map(|d| d.hanja.clone()).filter(|h| !h.is_empty());
-            (format!("{name} 획득"), sub, icon.to_string())
+            (format!("获得 {name}"), sub, icon.to_string())
         }
         None if gold > 0 => (
-            format!("금 {} 획득", format::thousands(gold)),
+            format!("获得金 {}", format::thousands(gold)),
             None,
             "gold".to_string(),
         ),
         None if gold < 0 => (
-            format!("금 {} 지출", format::thousands(-gold)),
+            format!("支出金 {}", format::thousands(-gold)),
             None,
             "gold".to_string(),
         ),
@@ -803,10 +803,10 @@ impl Tool {
 
     fn label(self) -> &'static str {
         match self {
-            Tool::Backlog => "최근 대사",
-            Tool::Fast => "빨리 넘기기",
-            Tool::Skip => "건너뛰기",
-            Tool::Settings => "설정",
+            Tool::Backlog => "对话记录",
+            Tool::Fast => "快进",
+            Tool::Skip => "跳过",
+            Tool::Settings => "游戏设置",
         }
     }
 }
@@ -1057,7 +1057,7 @@ impl DramaScreen {
     /// what each step does, so a replayed stage cannot drift from a played one. The runner is
     /// put back at its saved position and is **not** run again, because the saved campaign
     /// already holds the side effects up to that position.
-    pub fn restore(ctx: &mut Ctx, resume: SceneResume) -> DramaScreen {
+    pub fn restore(ctx: &mut Ctx, mut resume: SceneResume) -> DramaScreen {
         let end = match &resume.kind {
             SceneKind::Node => DramaEnd::Advance,
             SceneKind::Ending { title } => DramaEnd::Ending {
@@ -1072,6 +1072,9 @@ impl DramaScreen {
         };
         if screen.runner.is_none() {
             return screen;
+        }
+        if let Some(scene) = pack.scene(&resume.runner.scene) {
+            upgrade_original_stage_resume(&scene.cmds, &mut resume);
         }
         screen.runner = Some(resume.runner);
         replay_stage(
@@ -1133,7 +1136,7 @@ impl DramaScreen {
                 }
                 Err(e) => (None, Some(e.to_string())),
             },
-            None => (None, Some("데이터 팩이 로드되지 않았습니다".to_string())),
+            None => (None, Some("游戏数据尚未载入".to_string())),
         };
         let backdrop = if end == DramaEnd::Pop {
             Backdrop::Transparent
@@ -1177,10 +1180,7 @@ impl DramaScreen {
     fn fail(&mut self, ctx: &mut Ctx, why: &str) -> Transition {
         macroquad::logging::error!("drama `{}`: {}", self.scene, why);
         ctx.sfx(sfx::ERROR);
-        ctx.toast(format!(
-            "장면 `{}`을(를) 재생할 수 없습니다: {why}",
-            self.scene
-        ));
+        ctx.toast(format!("无法播放场景 `{}`：{why}", self.scene));
         self.finish()
     }
 
@@ -1233,14 +1233,14 @@ impl DramaScreen {
         let labels: Vec<&str> = MENU
             .iter()
             .map(|m| match m {
-                MenuItem::Continue => "계속",
-                MenuItem::Backlog => "최근 대사",
-                MenuItem::Fast if self.fast_toggle => "빨리 넘기기 끄기",
-                MenuItem::Fast => "빨리 넘기기",
-                MenuItem::Skip => "장면 건너뛰기",
-                MenuItem::QuickSave => "순간 저장 (F5)",
-                MenuItem::QuickLoad => "순간 불러오기 (F9)",
-                MenuItem::Settings => "설정",
+                MenuItem::Continue => "继续",
+                MenuItem::Backlog => "对话记录",
+                MenuItem::Fast if self.fast_toggle => "停止快进",
+                MenuItem::Fast => "快进",
+                MenuItem::Skip => "跳过剧情",
+                MenuItem::QuickSave => "快速存档（F5）",
+                MenuItem::QuickLoad => "快速读档（F9）",
+                MenuItem::Settings => "游戏设置",
             })
             .collect();
         self.popup = Popup::Menu(ChoiceBox::new(&ctx.gfx, None, &labels, Some(0)));
@@ -1249,8 +1249,8 @@ impl DramaScreen {
 
     fn open_skip_confirm(&mut self, ctx: &Ctx) {
         self.popup = Popup::ConfirmSkip(
-            ConfirmDialog::new(&ctx.gfx, "이 장면을 건너뛸까요?")
-                .labels("건너뛰기", "계속 보기")
+            ConfirmDialog::new(&ctx.gfx, "跳过这段剧情？")
+                .labels("跳过", "继续观看")
                 .default_no(),
         );
         self.cancel.reset();
@@ -1373,11 +1373,11 @@ impl DramaScreen {
         let runner = self
             .runner
             .as_mut()
-            .ok_or_else(|| "장면이 준비되지 않았습니다".to_string())?;
+            .ok_or_else(|| "场景尚未准备好".to_string())?;
         let campaign = &mut ctx
             .session
             .as_mut()
-            .ok_or_else(|| "진행 중인 캠페인이 없습니다".to_string())?
+            .ok_or_else(|| "没有正在进行的战役".to_string())?
             .campaign;
         runner.next(pack, campaign).map_err(|e| e.to_string())
     }
@@ -1568,7 +1568,7 @@ impl DramaScreen {
                 ChoiceEvent::Chosen(i) => {
                     let chosen = match self.runner.as_mut() {
                         Some(r) => r.choose(pack, i).map_err(|e| e.to_string()),
-                        None => Err("장면이 준비되지 않았습니다".to_string()),
+                        None => Err("场景尚未准备好".to_string()),
                     };
                     if let Err(why) = chosen {
                         return Some(self.fail(ctx, &why));
@@ -1670,6 +1670,39 @@ impl DramaScreen {
     }
 }
 
+/// The 0.1.0 importer omitted interior commands. Keep its saved dialogue position while
+/// inserting the newly restored background, without running gold/join/flag effects again.
+fn upgrade_original_stage_resume(cmds: &[Cmd], resume: &mut SceneResume) {
+    let original_bg =
+        |cmd: &Cmd| matches!(cmd, Cmd::Bg(Some(key)) if key.starts_with("orig_stage_"));
+    if !cmds.iter().any(original_bg)
+        || resume.stage.iter().any(
+            |step| matches!(step, Step::Background(Some(key)) if key.starts_with("orig_stage_")),
+        )
+    {
+        return;
+    }
+    let old_pc = resume.runner.pc;
+    let mut consumed = 0;
+    let mut new_pc = 0;
+    for cmd in cmds {
+        if consumed == old_pc {
+            break;
+        }
+        new_pc += 1;
+        if !original_bg(cmd) {
+            consumed += 1;
+        }
+    }
+    resume.runner.pc = new_pc;
+    if let Some(Cmd::Bg(key)) = cmds[..new_pc].iter().rev().find(|cmd| original_bg(cmd)) {
+        resume
+            .stage
+            .retain(|step| !matches!(step, Step::Background(_)));
+        resume.stage.push(Step::Background(key.clone()));
+    }
+}
+
 /// Steps of the duel scene between `@duel` and `@duel_end`.
 fn is_duel_step(step: &Step) -> bool {
     matches!(
@@ -1761,7 +1794,7 @@ impl Screen for DramaScreen {
             return self.fail(ctx, &why);
         }
         let Some(pack) = ctx.pack.clone() else {
-            return self.fail(ctx, "데이터 팩이 로드되지 않았습니다");
+            return self.fail(ctx, "游戏数据尚未载入");
         };
         if let Some(t) = self.update_popup(ctx) {
             return t;
@@ -1835,10 +1868,10 @@ impl Screen for DramaScreen {
     /// card or a banner is kept as the step so it shows again.
     fn resume_point(&self, ctx: &Ctx) -> Option<ResumePoint> {
         let Some(runner) = &self.runner else {
-            return Some(ResumePoint::Unavailable("장면이 준비되지 않았습니다"));
+            return Some(ResumePoint::Unavailable("场景尚未准备好"));
         };
         if matches!(self.current, Current::Done) {
-            return Some(ResumePoint::Unavailable("장면이 끝나 가는 중입니다"));
+            return Some(ResumePoint::Unavailable("场景即将结束"));
         }
         let (shown, choice) = match &self.current {
             Current::Text { .. } | Current::Title(_) | Current::Notice(_) => {
@@ -1878,6 +1911,46 @@ impl Screen for DramaScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_scene_save_keeps_dialogue_position_and_restores_original_stage_once() {
+        let cmds = vec![
+            Cmd::Bgm(Some("camp".into())),
+            Cmd::Bg(Some("orig_stage_first".into())),
+            Cmd::Narr("宫殿".into()),
+            Cmd::Bg(Some("orig_stage_second".into())),
+            Cmd::Say {
+                speaker: "董卓".into(),
+                text: "迎战".into(),
+            },
+            Cmd::Gold(500),
+        ];
+        let mut resume = SceneResume {
+            kind: SceneKind::Node,
+            runner: DramaRunner {
+                scene: "c0_s0_story3".into(),
+                pc: 3,
+                pending_choice: None,
+                finished: false,
+            },
+            stage: vec![],
+            shown: Some(Step::Narration("迎战".into())),
+            last_text: None,
+            choice: None,
+            bgm: None,
+            terrain: BTreeMap::new(),
+            backlog: vec![],
+        };
+        upgrade_original_stage_resume(&cmds, &mut resume);
+        assert_eq!(resume.runner.pc, 5);
+        assert_eq!(
+            resume.stage,
+            vec![Step::Background(Some("orig_stage_second".into()))]
+        );
+        let migrated = resume.clone();
+        upgrade_original_stage_resume(&cmds, &mut resume);
+        assert_eq!(resume, migrated);
+    }
 
     #[test]
     fn speakers_are_lit_and_others_dimmed() {
@@ -2075,21 +2148,21 @@ mod tests {
     fn notices() {
         let pack = crate::screens::camp::test_pack();
         let n = joined_notice(&pack, "guan_yu", "관우", false);
-        assert_eq!(n.title, "관우 합류!");
+        assert_eq!(n.title, "관우 加入！");
         assert_eq!(
             joined_notice(&pack, "guan_yu", "관우", true).title,
-            "관우 복귀"
+            "관우 归队"
         );
         assert!(n.subtitle.as_deref().unwrap().contains("關羽"));
         assert_eq!(n.art, NoticeArt::Portrait("guan_yu".into()));
         let n = received_notice(&pack, 500, None).unwrap();
-        assert_eq!(n.title, "금 500 획득");
+        assert_eq!(n.title, "获得金 500");
         let n = received_notice(&pack, 0, Some("bean")).unwrap();
-        assert_eq!(n.title, "콩 획득");
+        assert_eq!(n.title, "获得 豆");
         assert_eq!(n.art, NoticeArt::Icon("item_bean".into()));
         assert_eq!(
             received_notice(&pack, -1200, None).unwrap().title,
-            "금 1,200 지출"
+            "支出金 1,200"
         );
         assert!(received_notice(&pack, 0, None).is_none());
     }

@@ -18,6 +18,9 @@ pub fn has_batchim(word: &str) -> bool {
 /// `word` followed by the particle that fits it: `with` after a 받침, `without` otherwise
 /// (`josa("관우", "이", "가")` = `관우가`).
 pub fn josa(word: &str, with: &str, without: &str) -> String {
+    if word.chars().any(|c| ('\u{3400}'..='\u{9FFF}').contains(&c)) {
+        return word.to_string();
+    }
     let p = if has_batchim(word) { with } else { without };
     format!("{word}{p}")
 }
@@ -34,27 +37,27 @@ pub fn object(word: &str) -> String {
 
 pub fn side_name(side: Side) -> &'static str {
     match side {
-        Side::Player => "아군",
-        Side::Ally => "우군",
-        Side::Enemy => "적군",
+        Side::Player => "我军",
+        Side::Ally => "友军",
+        Side::Enemy => "敌军",
     }
 }
 
 /// Phase banner title: `적군 페이즈`.
 pub fn phase_title(side: Side) -> String {
-    format!("{} 페이즈", side_name(side))
+    format!("{}行动", side_name(side))
 }
 
 /// Phase banner subtitle: `제 3턴 / 30`.
 pub fn turn_text(turn: u32, limit: u32) -> String {
-    format!("제 {turn}턴 / {limit}")
+    format!("第 {turn} 回合 / {limit}")
 }
 
 pub fn weather_name(w: Weather) -> &'static str {
     match w {
-        Weather::Clear => "맑음",
-        Weather::Cloudy => "흐림",
-        Weather::Rain => "비",
+        Weather::Clear => "晴",
+        Weather::Cloudy => "阴",
+        Weather::Rain => "雨",
     }
 }
 
@@ -71,27 +74,27 @@ pub fn weather_icon(w: Weather) -> &'static str {
 /// to a display name.
 pub fn condition_text(c: &Condition, name: impl Fn(&str) -> String) -> String {
     match c {
-        Condition::DefeatAll => "적군 전멸".into(),
-        Condition::DefeatUnit { target } => format!("{} 격파", name(target)),
-        Condition::DefeatCommander => "적 대장 격파".into(),
+        Condition::DefeatAll => "敌军全灭".into(),
+        Condition::DefeatUnit { target } => format!("击败 {}", name(target)),
+        Condition::DefeatCommander => "击败敌军主将".into(),
         Condition::Reach {
             who,
             pos,
             radius,
             to,
         } => {
-            let who = who.as_deref().map(&name).unwrap_or_else(|| "아군".into());
+            let who = who.as_deref().map(&name).unwrap_or_else(|| "我军".into());
             let place = if let Some(to) = to {
-                format!("({}, {})–({}, {}) 구역", pos.x, pos.y, to.x, to.y)
+                format!("({}, {})–({}, {}) 区域", pos.x, pos.y, to.x, to.y)
             } else if *radius > 0 {
-                format!("({}, {}) 부근 {}칸 이내", pos.x, pos.y, radius)
+                format!("({}, {}) 附近 {} 格内", pos.x, pos.y, radius)
             } else {
-                format!("({}, {}) 지점", pos.x, pos.y)
+                format!("({}, {}) 位置", pos.x, pos.y)
             };
-            format!("{} {place} 도달", subject(&who))
+            format!("{} 到达 {place}", subject(&who))
         }
-        Condition::SurviveTurns { turns } => format!("{turns}턴 동안 버티기"),
-        Condition::UnitRetreated { target } => format!("{} 퇴각", name(target)),
+        Condition::SurviveTurns { turns } => format!("坚持 {turns} 回合"),
+        Condition::UnitRetreated { target } => format!("{} 撤退", name(target)),
     }
 }
 
@@ -99,13 +102,13 @@ pub fn condition_text(c: &Condition, name: impl Fn(&str) -> String) -> String {
 pub fn defeat_text(reason: DefeatReason, lord: Option<&str>) -> String {
     match reason {
         DefeatReason::LordRetreated => match lord {
-            Some(l) => format!("{} 퇴각했다", subject(l)),
-            None => "총대장이 퇴각했다".into(),
+            Some(l) => format!("{} 已撤退", subject(l)),
+            None => "主将已撤退".into(),
         },
-        DefeatReason::ArmyRetreated => "아군이 모두 퇴각했다".into(),
-        DefeatReason::TurnLimit => "제한 턴이 지났다".into(),
-        DefeatReason::Condition => "패배 조건을 충족했다".into(),
-        DefeatReason::Event => "전황이 기울었다".into(),
+        DefeatReason::ArmyRetreated => "我军全部撤退".into(),
+        DefeatReason::TurnLimit => "超过回合限制".into(),
+        DefeatReason::Condition => "满足失败条件".into(),
+        DefeatReason::Event => "战局不利".into(),
     }
 }
 
@@ -133,15 +136,15 @@ pub fn attack_lines(f: &AttackForecast, target_hp: i32) -> AttackLines {
     let left = (target_hp - f.damage).max(0);
     let defeats = left == 0;
     AttackLines {
-        damage: format!("피해 {}", f.damage),
+        damage: format!("伤害 {}", f.damage),
         result: if defeats {
-            format!("병력 {target_hp} → 퇴각")
+            format!("兵力 {target_hp} → 撤退")
         } else {
-            format!("병력 {target_hp} → {left}")
+            format!("兵力 {target_hp} → {left}")
         },
         counter: match f.counter {
-            Some(c) => format!("반격 {}% · 피해 {}", c.chance, c.damage),
-            None => "반격 없음".into(),
+            Some(c) => format!("反击 {}% · 伤害 {}", c.chance, c.damage),
+            None => "无反击".into(),
         },
         defeats,
     }
@@ -151,32 +154,32 @@ pub fn attack_lines(f: &AttackForecast, target_hp: i32) -> AttackLines {
 /// `명중 60%` (pure status/morale effects).
 pub fn strategy_line(f: &StrategyForecast) -> String {
     let amount = if f.amount > 0 {
-        Some(format!("피해 {}", f.amount))
+        Some(format!("伤害 {}", f.amount))
     } else if f.amount < 0 {
-        Some(format!("회복 {}", -f.amount))
+        Some(format!("恢复 {}", -f.amount))
     } else {
         None
     };
     match (f.chance >= 100, amount) {
         (true, Some(a)) => a,
-        (true, None) => "성공 100%".into(),
-        (false, Some(a)) => format!("명중 {}% · {a}", f.chance),
-        (false, None) => format!("명중 {}%", f.chance),
+        (true, None) => "成功 100%".into(),
+        (false, Some(a)) => format!("命中 {}% · {a}", f.chance),
+        (false, None) => format!("命中 {}%", f.chance),
     }
 }
 
 /// `사기 +20` / `사기 -23`.
 pub fn morale_text(delta: i32) -> String {
-    format!("사기 {delta:+}")
+    format!("士气 {delta:+}")
 }
 
 /// Element label used in the strategy list.
 pub fn element_name(element: Option<&str>) -> &'static str {
     match element {
-        Some("fire") => "화계",
-        Some("water") => "수계",
-        Some("earth") => "지계",
-        Some(_) => "특수",
+        Some("fire") => "火计",
+        Some("water") => "水计",
+        Some("earth") => "地计",
+        Some(_) => "特殊",
         None => "",
     }
 }
@@ -185,9 +188,9 @@ pub fn element_name(element: Option<&str>) -> &'static str {
 /// `초열서와 금 50을 얻었다!`.
 pub fn treasure_text(item: Option<&str>, gold: i64) -> String {
     match (item, gold) {
-        (Some(i), g) if g > 0 => format!("{} 금 {g}을 얻었다!", josa(i, "과", "와")),
-        (Some(i), _) => format!("{} 얻었다!", object(i)),
-        (None, g) => format!("금 {g}을 얻었다!"),
+        (Some(i), g) if g > 0 => format!("{} 获得金 {g}！", josa(i, "과", "와")),
+        (Some(i), _) => format!("获得了 {}！", object(i)),
+        (None, g) => format!("获得金 {g}！"),
     }
 }
 
@@ -203,19 +206,21 @@ mod tests {
         assert_eq!(subject("화웅"), "화웅이");
         assert_eq!(object("콩"), "콩을");
         assert_eq!(object("초열서"), "초열서를");
-        assert_eq!(josa("금 100", "을", "를"), "금 100을");
-        assert_eq!(josa("금 2", "을", "를"), "금 2를");
+        assert_eq!(josa("金 100", "을", "를"), "金 100");
+        assert_eq!(josa("金 2", "을", "를"), "金 2");
         assert_eq!(josa("Lu Bu", "이", "가"), "Lu Bu가");
+        assert_eq!(subject("關羽"), "關羽");
+        assert_eq!(object("豆"), "豆");
         assert!(!has_batchim(""));
     }
 
     #[test]
     fn names() {
-        assert_eq!(phase_title(Side::Enemy), "적군 페이즈");
-        assert_eq!(turn_text(3, 30), "제 3턴 / 30");
-        assert_eq!(weather_name(Weather::Rain), "비");
+        assert_eq!(phase_title(Side::Enemy), "敌军行动");
+        assert_eq!(turn_text(3, 30), "第 3 回合 / 30");
+        assert_eq!(weather_name(Weather::Rain), "雨");
         assert_eq!(weather_icon(Weather::Cloudy), "weather_cloudy");
-        assert_eq!(element_name(Some("fire")), "화계");
+        assert_eq!(element_name(Some("fire")), "火计");
         assert_eq!(element_name(None), "");
     }
 
@@ -235,12 +240,12 @@ mod tests {
                 },
                 name
             ),
-            "화웅 격파"
+            "击败 화웅"
         );
-        assert_eq!(condition_text(&Condition::DefeatAll, name), "적군 전멸");
+        assert_eq!(condition_text(&Condition::DefeatAll, name), "敌军全灭");
         assert_eq!(
             condition_text(&Condition::SurviveTurns { turns: 10 }, name),
-            "10턴 동안 버티기"
+            "坚持 10 回合"
         );
         assert_eq!(
             condition_text(
@@ -252,7 +257,7 @@ mod tests {
                 },
                 name
             ),
-            "아군이 (3, 4) 지점 도달"
+            "我军 到达 (3, 4) 位置"
         );
         assert_eq!(
             condition_text(
@@ -264,7 +269,7 @@ mod tests {
                 },
                 name
             ),
-            "화웅이 (3, 4) 부근 2칸 이내 도달"
+            "화웅이 到达 (3, 4) 附近 2 格内"
         );
         assert_eq!(
             condition_text(
@@ -276,16 +281,13 @@ mod tests {
                 },
                 name
             ),
-            "아군이 (29, 10)–(29, 14) 구역 도달"
+            "我军 到达 (29, 10)–(29, 14) 区域"
         );
         assert_eq!(
             defeat_text(DefeatReason::LordRetreated, Some("유비")),
-            "유비가 퇴각했다"
+            "유비가 已撤退"
         );
-        assert_eq!(
-            defeat_text(DefeatReason::TurnLimit, None),
-            "제한 턴이 지났다"
-        );
+        assert_eq!(defeat_text(DefeatReason::TurnLimit, None), "超过回合限制");
     }
 
     #[test]
@@ -299,9 +301,9 @@ mod tests {
             }),
         };
         let l = attack_lines(&f, 500);
-        assert_eq!(l.damage, "피해 210");
-        assert_eq!(l.result, "병력 500 → 290");
-        assert_eq!(l.counter, "반격 61% · 피해 45");
+        assert_eq!(l.damage, "伤害 210");
+        assert_eq!(l.result, "兵力 500 → 290");
+        assert_eq!(l.counter, "反击 61% · 伤害 45");
         assert!(!l.defeats);
         assert_eq!(affinity_mark(f.affinity), Some(true));
         assert_eq!(affinity_mark(125), Some(false));
@@ -312,8 +314,8 @@ mod tests {
             counter: None,
         };
         let l = attack_lines(&f, 500);
-        assert_eq!(l.result, "병력 500 → 퇴각");
-        assert_eq!(l.counter, "반격 없음");
+        assert_eq!(l.result, "兵力 500 → 撤退");
+        assert_eq!(l.counter, "无反击");
         assert!(l.defeats);
     }
 
@@ -324,22 +326,19 @@ mod tests {
             chance,
             amount,
         };
-        assert_eq!(strategy_line(&f(85, 230)), "명중 85% · 피해 230");
-        assert_eq!(strategy_line(&f(100, -400)), "회복 400");
-        assert_eq!(strategy_line(&f(60, 0)), "명중 60%");
-        assert_eq!(strategy_line(&f(100, 0)), "성공 100%");
-        assert_eq!(morale_text(20), "사기 +20");
-        assert_eq!(morale_text(-23), "사기 -23");
+        assert_eq!(strategy_line(&f(85, 230)), "命中 85% · 伤害 230");
+        assert_eq!(strategy_line(&f(100, -400)), "恢复 400");
+        assert_eq!(strategy_line(&f(60, 0)), "命中 60%");
+        assert_eq!(strategy_line(&f(100, 0)), "成功 100%");
+        assert_eq!(morale_text(20), "士气 +20");
+        assert_eq!(morale_text(-23), "士气 -23");
     }
 
     #[test]
     fn treasures() {
-        assert_eq!(treasure_text(Some("콩"), 0), "콩을 얻었다!");
-        assert_eq!(treasure_text(None, 100), "금 100을 얻었다!");
-        assert_eq!(
-            treasure_text(Some("초열서"), 50),
-            "초열서와 금 50을 얻었다!"
-        );
-        assert_eq!(treasure_text(Some("콩"), 50), "콩과 금 50을 얻었다!");
+        assert_eq!(treasure_text(Some("콩"), 0), "获得了 콩을！");
+        assert_eq!(treasure_text(None, 100), "获得金 100！");
+        assert_eq!(treasure_text(Some("초열서"), 50), "초열서와 获得金 50！");
+        assert_eq!(treasure_text(Some("콩"), 50), "콩과 获得金 50！");
     }
 }

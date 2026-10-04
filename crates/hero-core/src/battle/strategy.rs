@@ -618,9 +618,7 @@ impl BattleState {
         item: &str,
     ) -> Result<BattleItem<'a>, ActionError> {
         let bad = || ActionError::BadItem(item.to_string());
-        if self.units[user].side != Side::Player
-            || self.inventory.get(item).copied().unwrap_or(0) == 0
-        {
+        if self.units[user].side != Side::Player || self.item_count_for(user, item) == 0 {
             return Err(bad());
         }
         let def = pack
@@ -713,7 +711,7 @@ impl BattleState {
                     return Err(ActionError::OutOfRange);
                 }
                 let (from, to) = (user.pos, t.pos);
-                self.consume(item);
+                self.consume(unit, item);
                 let (mut healed, mut morale) = (0, 0);
                 let before = self.units[target].morale;
                 for e in &def.effects {
@@ -775,7 +773,7 @@ impl BattleState {
                 }
                 let (from, aim) = (user.pos, t.pos);
                 let targets = self.strategy_area(&Board::new(self, pack), unit, s, from, aim)?;
-                self.consume(item);
+                self.consume(unit, item);
                 ev.push(BattleEvent::ItemUsed {
                     user: unit,
                     target,
@@ -791,7 +789,12 @@ impl BattleState {
 
     /// Take one `item` out of the battle's stock and record the use in `items_used`, which the
     /// campaign subtracts when the battle ends. Callers checked the stock with `battle_item`.
-    fn consume(&mut self, item: &str) {
+    fn consume(&mut self, unit: UnitId, item: &str) {
+        if let Some(pocket) = &mut self.units[unit].equip.carried {
+            if pocket.consume(item).is_ok() {
+                return;
+            }
+        }
         let Some(n) = self.inventory.get_mut(item).filter(|n| **n > 0) else {
             return;
         };
@@ -799,7 +802,13 @@ impl BattleState {
         if *n == 0 {
             self.inventory.remove(item);
         }
-        let used = self.items_used.entry(item.to_string()).or_insert(0);
-        *used = used.saturating_add(1);
+        // Spend newly found stock first. It must neither be awarded again after victory
+        // nor deducted from the campaign's pre-battle stock after defeat.
+        if let Some(index) = self.items_found.iter().position(|found| found == item) {
+            self.items_found.remove(index);
+        } else {
+            let used = self.items_used.entry(item.to_string()).or_insert(0);
+            *used = used.saturating_add(1);
+        }
     }
 }

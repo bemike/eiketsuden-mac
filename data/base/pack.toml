@@ -2,7 +2,7 @@
 # Every text file the engine reads is listed here; media files are looked up by key (docs/ASSETS.md).
 
 id = "base"
-name = "영걸전 Reloaded 기본 팩"
+name = "英杰传基础数据"
 version = "0.3.0"
 authors = ["Eiketsuden Reloaded contributors"]
 license = "CC-BY-SA-4.0 (text) / see CREDITS.md (media)"

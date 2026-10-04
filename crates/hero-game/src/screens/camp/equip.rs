@@ -213,7 +213,7 @@ impl EquipScreen {
         if choices.is_empty() {
             ctx.sfx(sfx::ERROR);
             ctx.toast(format!(
-                "장비할 수 있는 {} 없습니다.",
+                "没有可装备的 {}。",
                 with_particle(slot_name(slot), Particle::IGa)
             ));
             return;
@@ -221,7 +221,7 @@ impl EquipScreen {
         let items = choices
             .iter()
             .map(|c| match c {
-                Choice::Unequip => MenuItem::new("장비 해제"),
+                Choice::Unequip => MenuItem::new("卸下装备"),
                 Choice::Item { id, allowed } => {
                     let item = pack.item(id);
                     let name = item.map_or(id.as_str(), |i| i.name.as_str());
@@ -233,7 +233,7 @@ impl EquipScreen {
                     });
                     match allowed {
                         Ok(()) => row.detail(item.map_or(String::new(), |i| item_effect(&pack, i))),
-                        Err(_) => row.detail("장비 불가").enabled(false),
+                        Err(_) => row.detail("无法装备").enabled(false),
                     }
                 }
             })
@@ -267,7 +267,7 @@ impl EquipScreen {
         let result = match choice {
             Choice::Unequip => campaign.unequip(&officer, slot).map(|()| {
                 format!(
-                    "{}의 {} 해제했습니다.",
+                    "已卸下 {} 的 {}。",
                     name,
                     with_particle(slot_name(slot), Particle::EulReul)
                 )
@@ -275,7 +275,7 @@ impl EquipScreen {
             Choice::Item { id, .. } => campaign.equip(&pack, &officer, id).map(|()| {
                 let item = pack.item(id).map_or(id.as_str(), |i| i.name.as_str());
                 format!(
-                    "{} {} 장비했습니다.",
+                    "{} 已装备 {}。",
                     with_particle(&name, Particle::IGa),
                     with_particle(item, Particle::EulReul)
                 )
@@ -302,7 +302,7 @@ pub fn equip_error(pack: &Pack, e: &CampaignError) -> String {
         CampaignError::CannotEquip { item, .. } => {
             let item = pack.item(item).map_or(item.as_str(), |i| i.name.as_str());
             format!(
-                "{} 이 무장의 병과로는 장비할 수 없습니다.",
+                "{} 无法由此武将的兵种装备。",
                 with_particle(item, Particle::EunNeun)
             )
         }
@@ -388,10 +388,10 @@ impl Screen for EquipScreen {
         let gfx = &ctx.gfx;
         let (list, panel, picker) = layout(gfx.size());
         draw_camp_backdrop(ctx, 0.8);
-        draw_header(ctx, "장비", campaign.gold);
+        draw_header(ctx, "装备", campaign.gold);
 
         // Officer list.
-        draw_list_frame(ctx, list, "무장", matches!(self.focus, Focus::Officers));
+        draw_list_frame(ctx, list, "武将", matches!(self.focus, Focus::Officers));
         self.officers.draw(ctx);
         for (i, row) in visible_rows(&self.officers) {
             if let Some(o) = campaign.roster.get(i) {
@@ -408,7 +408,7 @@ impl Screen for EquipScreen {
         // Officer panel.
         draw_window_ex(panel, WindowStyle::Panel, 1.0);
         let Some(officer) = campaign.roster.get(self.officers.cursor()) else {
-            draw_help(ctx, "X 돌아가기");
+            draw_help(ctx, "X：返回");
             draw_back_button(ctx);
             return;
         };
@@ -468,7 +468,7 @@ impl Screen for EquipScreen {
             );
         }
         draw_divider(x, panel.y + 110.0, panel.w - 16.0);
-        draw_caption(gfx, "장비", x, panel.y + 114.0);
+        draw_caption(gfx, "装备", x, panel.y + 114.0);
         self.slots.draw(ctx);
         for (i, row) in visible_rows(&self.slots) {
             let slot = SLOTS[i];
@@ -512,7 +512,7 @@ impl Screen for EquipScreen {
             menu,
         } = &self.focus
         {
-            draw_list_frame(ctx, picker, &format!("{} 고르기", slot_name(*slot)), true);
+            draw_list_frame(ctx, picker, &format!("选择 {}", slot_name(*slot)), true);
             menu.draw(ctx);
             for (i, row) in visible_rows(menu) {
                 let icon = match &choices[i] {
@@ -529,7 +529,7 @@ impl Screen for EquipScreen {
                     (Ok(()), None) => (String::new(), theme::TEXT_DIM),
                 },
                 _ => (
-                    "장비를 벗어 보관합니다. · Z 결정 · X 취소".to_string(),
+                    "卸下并放回仓库 · Z：确定 · X：取消".to_string(),
                     theme::TEXT_DIM,
                 ),
             };
@@ -540,8 +540,8 @@ impl Screen for EquipScreen {
         draw_help(
             ctx,
             match self.focus {
-                Focus::Officers => "Z 무장 선택 · X 돌아가기",
-                _ => "Z 장비 바꾸기 · X 무장 목록",
+                Focus::Officers => "Z：选择武将 · X：返回",
+                _ => "Z：更换装备 · X：武将列表",
             },
         );
         draw_back_button(ctx);
@@ -588,6 +588,6 @@ mod tests {
             .clone()
             .equip(&pack, "guan_yu", "seven_star_sword")
             .unwrap_err();
-        assert!(equip_error(&pack, &e).starts_with("칠성검은"));
+        assert!(equip_error(&pack, &e).starts_with("七星劍"));
     }
 }

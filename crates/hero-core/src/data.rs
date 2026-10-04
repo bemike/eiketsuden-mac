@@ -391,6 +391,9 @@ pub struct ItemDef {
     /// Shop price; 0 = cannot be bought (treasure / event item). Sells for half.
     #[serde(default)]
     pub price: u32,
+    /// Explicit resale value from the original data. None keeps the base pack's half-price rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resale_price: Option<u32>,
     #[serde(default)]
     pub desc: String,
     /// Class families that may equip it (empty = everyone). Ignored for consumables.
@@ -431,6 +434,9 @@ pub struct ItemDef {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Equipment {
+    /// Original mode: physical item slots; None retains legacy shared-stock rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carried: Option<crate::inventory::Pocket>,
     #[serde(default)]
     pub weapon: Option<Id>,
     #[serde(default)]
@@ -441,9 +447,12 @@ pub struct Equipment {
 
 impl Equipment {
     pub fn iter(&self) -> impl Iterator<Item = &Id> {
-        [&self.weapon, &self.armor, &self.accessory]
-            .into_iter()
-            .flatten()
+        self.carried.iter().flat_map(|p| p.iter()).chain(
+            [&self.weapon, &self.armor, &self.accessory]
+                .into_iter()
+                .flatten()
+                .filter(|_| self.carried.is_none()),
+        )
     }
 }
 

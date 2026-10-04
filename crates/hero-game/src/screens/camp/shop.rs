@@ -28,7 +28,8 @@ pub const MAX_QUANTITY: u32 = 99;
 
 /// Sale price of one copy (`None`: the item cannot be sold).
 pub fn sell_price(item: &ItemDef) -> Option<i64> {
-    (item.price > 0).then(|| i64::from(item.price / 2))
+    let price = item.resale_price.unwrap_or(item.price / 2);
+    (price > 0).then(|| i64::from(price))
 }
 
 /// How many copies of an item priced `price` the army can pay for (capped at [`MAX_QUANTITY`]).
@@ -50,20 +51,20 @@ pub fn error_message(pack: &Pack, e: &CampaignError) -> String {
         |id: &str, p: Particle| with_particle(pack.item(id).map_or(id, |i| i.name.as_str()), p);
     match e {
         CampaignError::NotEnoughGold { need, have } => format!(
-            "군자금이 부족합니다. (필요 {}, 소지 {})",
+            "军资金不足（需要 {}，持有 {}）。",
             format::thousands(*need),
             format::thousands(*have)
         ),
         CampaignError::CannotBuy(id) => {
-            format!("{} 팔지 않는 물건입니다.", name(id, Particle::EunNeun))
+            format!("{} 为非卖品。", name(id, Particle::EunNeun))
         }
         CampaignError::CannotSell(id) => {
-            format!("{} 팔 수 없는 물건입니다.", name(id, Particle::EunNeun))
+            format!("{} 无法出售。", name(id, Particle::EunNeun))
         }
         CampaignError::NotOwned(id) => {
-            format!("{} 가지고 있지 않습니다.", name(id, Particle::EulReul))
+            format!("没有持有 {}。", name(id, Particle::EulReul))
         }
-        CampaignError::UnknownItem(id) => format!("알 수 없는 물건입니다: {id}"),
+        CampaignError::UnknownItem(id) => format!("未知物品：{id}"),
         other => other.to_string(),
     }
 }
@@ -170,7 +171,7 @@ impl ShopScreen {
                     }
                     None => {
                         MenuItem::new(format!("{} ×{}", item.name, campaign.item_count(&item.id)))
-                            .detail("매각 불가")
+                            .detail("无法出售")
                             .enabled(false)
                     }
                 },
@@ -225,12 +226,12 @@ impl ShopScreen {
                 }
                 QuantityDialog::new(
                     &ctx.gfx,
-                    &format!("{} 사기", with_particle(&item.name, Particle::EulReul)),
-                    &format!("한 개 {}", format::thousands(i64::from(item.price))),
+                    &format!("购买 {}", with_particle(&item.name, Particle::EulReul)),
+                    &format!("单价 {}", format::thousands(i64::from(item.price))),
                     i64::from(item.price),
                     max,
-                    "합계",
-                    "구입",
+                    "合计",
+                    "购买",
                 )
             }
             Tab::Sell => {
@@ -244,22 +245,22 @@ impl ShopScreen {
                 };
                 let count = campaign.item_count(&item.id).min(MAX_QUANTITY);
                 let note = if lost_to_cap(campaign.gold, price, pack.rules.gold_cap) > 0 {
-                    let cap = format!("상한 {}", format::thousands(pack.rules.gold_cap));
+                    let cap = format!("上限 {}", format::thousands(pack.rules.gold_cap));
                     format!(
-                        "군자금 {} 넘는 금액은 사라집니다",
+                        "超过军资金 {} 的金额无法保留",
                         with_particle(&cap, Particle::EulReul)
                     )
                 } else {
-                    format!("한 개 {} (정가의 절반)", format::thousands(price))
+                    format!("单价 {}（原价一半）", format::thousands(price))
                 };
                 QuantityDialog::new(
                     &ctx.gfx,
-                    &format!("{} 팔기", with_particle(&item.name, Particle::EulReul)),
+                    &format!("出售 {}", with_particle(&item.name, Particle::EulReul)),
                     &note,
                     price,
                     count,
-                    "매각액",
-                    "매각",
+                    "出售金额",
+                    "出售",
                 )
             }
         };
@@ -294,13 +295,13 @@ impl ShopScreen {
             ctx.sfx(sfx::TREASURE);
             ctx.toast(match self.tab {
                 Tab::Buy => format!(
-                    "{} {}개를 {}에 샀습니다.",
+                    "购买 {} 共 {} 件，花费 {}。",
                     name,
                     done,
                     format::thousands(spent)
                 ),
                 Tab::Sell => format!(
-                    "{} {}개를 {}에 팔았습니다.",
+                    "出售 {} 共 {} 件，获得 {}。",
                     name,
                     done,
                     format::thousands(spent)
@@ -381,7 +382,7 @@ impl Screen for ShopScreen {
         let gfx = &ctx.gfx;
         let (list, panel) = layout(gfx.size());
         draw_camp_backdrop(ctx, 0.8);
-        draw_header(ctx, "상점", campaign.gold);
+        draw_header(ctx, "商店", campaign.gold);
 
         for tab in [Tab::Buy, Tab::Sell] {
             let r = Self::tab_rect(gfx.size(), tab);
@@ -400,8 +401,8 @@ impl Screen for ShopScreen {
             }
             gfx.text_aligned(
                 match tab {
-                    Tab::Buy => "구입",
-                    Tab::Sell => "매각",
+                    Tab::Buy => "购买",
+                    Tab::Sell => "出售",
                 },
                 r.x,
                 r.y + 1.0,
@@ -416,15 +417,15 @@ impl Screen for ShopScreen {
             );
         }
         let caption = match self.tab {
-            Tab::Buy => "파는 물건 · 값",
-            Tab::Sell => "가진 물건 · 매각가",
+            Tab::Buy => "商品 · 价格",
+            Tab::Sell => "持有物品 · 售价",
         };
         draw_list_frame(ctx, list, caption, true);
         if self.rows.is_empty() {
             gfx.text_aligned(
                 match self.tab {
-                    Tab::Buy => "이곳에서는 파는 물건이 없습니다.",
-                    Tab::Sell => "팔 물건이 없습니다.",
+                    Tab::Buy => "此处没有可购买的商品。",
+                    Tab::Sell => "没有可出售的物品。",
                 },
                 list.x,
                 list.y + list.h / 2.0 - 8.0,
@@ -488,16 +489,16 @@ impl Screen for ShopScreen {
             let (inv, equipped) = owned(campaign, &item.id);
             let small = TextStyle::small(theme::TEXT_DIM);
             let value = TextStyle::main(theme::TEXT).shadow(theme::TEXT_SHADOW);
-            gfx.text("소지", x, bottom + 7.0, small);
+            gfx.text("持有", x, bottom + 7.0, small);
             let have = if equipped > 0 {
-                format!("{inv}개 (장비 중 {equipped})")
+                format!("{inv} 件（已装备 {equipped}）")
             } else {
-                format!("{inv}개")
+                format!("{inv} 件")
             };
             gfx.text_aligned(&have, x, bottom + 5.0, w, Align::Right, value);
             let (label, price) = match self.tab {
-                Tab::Buy => ("값", (item.price > 0).then(|| i64::from(item.price))),
-                Tab::Sell => ("매각가", sell_price(item)),
+                Tab::Buy => ("价格", (item.price > 0).then(|| i64::from(item.price))),
+                Tab::Sell => ("售价", sell_price(item)),
             };
             gfx.text(label, x, bottom + 25.0, small);
             gfx.text_aligned(
@@ -511,7 +512,7 @@ impl Screen for ShopScreen {
             if self.tab == Tab::Buy {
                 let n = max_affordable(campaign.gold, item.price);
                 gfx.text_aligned(
-                    &format!("살 수 있는 수량 {n}"),
+                    &format!("可购买数量 {n}"),
                     x,
                     bottom + 39.0,
                     w,
@@ -524,7 +525,7 @@ impl Screen for ShopScreen {
                 );
             }
         }
-        draw_help(ctx, "←→ 구입/매각 · Z 선택 · X 돌아가기");
+        draw_help(ctx, "←→：购买／出售 · Z：选择 · X：返回");
         draw_back_button(ctx);
         if let Some((_, dialog)) = &self.dialog {
             dialog.draw(ctx);
@@ -565,7 +566,7 @@ mod tests {
         }
         assert_eq!(campaign.item_count("wine"), n);
         let err = campaign.buy(&pack, "wine").unwrap_err();
-        assert!(error_message(&pack, &err).starts_with("군자금이 부족합니다"));
+        assert!(error_message(&pack, &err).starts_with("军资金不足"));
         assert!(sell_rows(&pack, &campaign).contains(&"wine".to_string()));
         assert_eq!(
             buy_rows(&pack, &["bean".into(), "nonexistent".into()]),
@@ -574,9 +575,6 @@ mod tests {
         // Guan Yu's blade is owned but equipped.
         assert_eq!(owned(&campaign, "green_dragon_blade"), (0, 1));
         let err = campaign.sell(&pack, "green_dragon_blade").unwrap_err();
-        assert_eq!(
-            error_message(&pack, &err),
-            "청룡언월도를 가지고 있지 않습니다."
-        );
+        assert_eq!(error_message(&pack, &err), "没有持有 青龍偃月刀。");
     }
 }

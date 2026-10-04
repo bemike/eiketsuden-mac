@@ -82,6 +82,7 @@ fn probe(pack: &Pack, officer: &OfficerState, hp: i32, mp: i32) -> BattleState {
         drop: None,
     };
     BattleState {
+        loot_in_inventory: true,
         battle_id: String::new(),
         map: BattleMap {
             width: 1,

@@ -258,13 +258,16 @@ impl SaveGame {
                     .map(str::to_string),
             });
         }
-        let save: SaveGame =
+        let mut save: SaveGame =
             serde_json::from_value(v).map_err(|e| SaveError::Corrupt(e.to_string()))?;
         if save.pack_id != expected_pack {
             return Err(SaveError::WrongPack {
                 found: save.pack_id,
                 expected: expected_pack.to_string(),
             });
+        }
+        if let Some(battle) = save.battle.as_mut() {
+            battle.restore_loot_inventory();
         }
         Ok(save)
     }

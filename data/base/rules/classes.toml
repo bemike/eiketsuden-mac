@@ -21,7 +21,7 @@
 
 [[class]]
 id = "short_infantry"
-name = "단병"
+name = "短兵"
 hanja = "短兵"
 family = "infantry"
 tier = 1
@@ -43,11 +43,11 @@ strategies = [
 ]
 promote = { to = "long_infantry", level = 15, item = "long_spear" }
 sprite = "short_infantry"
-desc = "칼과 방패를 든 보병. 궁병에 강하고 기병에 약하다. 대각선은 공격할 수 없다."
+desc = "短兵，克制弓兵，弱于骑兵。"
 
 [[class]]
 id = "long_infantry"
-name = "장병"
+name = "長兵"
 hanja = "長兵"
 family = "infantry"
 tier = 2
@@ -61,11 +61,11 @@ hp_growth = 50
 generic = [40, 30, 50]
 promote = { to = "chariot", level = 30, item = "war_cart" }
 sprite = "long_infantry"
-desc = "긴 창을 든 보병. 주위 여덟 칸을 모두 공격할 수 있다."
+desc = "步兵晋升，兵力与攻防增强。"
 
 [[class]]
 id = "chariot"
-name = "전차"
+name = "戰車"
 hanja = "戰車"
 family = "infantry"
 tier = 3
@@ -78,7 +78,7 @@ hp = 500
 hp_growth = 50
 generic = [40, 30, 50]
 sprite = "chariot"
-desc = "말이 끄는 전차 부대. 보병계 최상위 병과로 방어가 매우 단단하다."
+desc = "步兵最终晋升，攻防与移动增强。"
 
 # ---------------------------------------------------------------------------------------------------
 # Cavalry line (기병계) - no forest, no mountains, slow on wasteland; no attack strategies.
@@ -86,7 +86,7 @@ desc = "말이 끄는 전차 부대. 보병계 최상위 병과로 방어가 매
 
 [[class]]
 id = "light_cavalry"
-name = "경기병"
+name = "輕騎兵"
 hanja = "輕騎兵"
 family = "cavalry"
 tier = 1
@@ -106,11 +106,11 @@ strategies = [
 promote = { to = "heavy_cavalry", level = 15, item = "horse_armor" }
 sprite = "light_cavalry"
 provokes_counter = true
-desc = "발 빠른 기마 부대. 보병에 강하고 궁병에 약하다. 숲과 산에는 들어갈 수 없다."
+desc = "轻骑兵，克制步兵，弱于弓兵。"
 
 [[class]]
 id = "heavy_cavalry"
-name = "중기병"
+name = "重騎兵"
 hanja = "重騎兵"
 family = "cavalry"
 tier = 2
@@ -125,11 +125,11 @@ generic = [50, 30, 40]
 promote = { to = "guard_cavalry", level = 30, item = "guard_armor" }
 sprite = "heavy_cavalry"
 provokes_counter = true
-desc = "말에게도 갑옷을 입힌 기마 부대. 경기병보다 느리지만 훨씬 튼튼하다."
+desc = "骑兵晋升，兵力与攻防增强。"
 
 [[class]]
 id = "guard_cavalry"
-name = "친위대"
+name = "親衛隊"
 hanja = "親衛隊"
 family = "cavalry"
 tier = 3
@@ -143,7 +143,7 @@ hp_growth = 60
 generic = [50, 30, 40]
 sprite = "guard_cavalry"
 provokes_counter = true
-desc = "군주를 지키는 정예 기마대. 공격력이 모든 병과 가운데 손꼽힌다."
+desc = "骑兵最终晋升，攻防与移动增强。"
 
 # ---------------------------------------------------------------------------------------------------
 # Archer line (궁병계)
@@ -151,7 +151,7 @@ desc = "군주를 지키는 정예 기마대. 공격력이 모든 병과 가운�
 
 [[class]]
 id = "archer"
-name = "궁병"
+name = "弓兵"
 hanja = "弓兵"
 family = "archer"
 tier = 1
@@ -173,11 +173,11 @@ strategies = [
 ]
 promote = { to = "crossbow", level = 15, item = "repeater" }
 sprite = "archer"
-desc = "활을 쏘는 부대. 기병에 강하고 보병에 약하다. 바로 옆 칸은 쏠 수 없다."
+desc = "弓兵，克制骑兵，弱于步兵，不能攻击相邻格。"
 
 [[class]]
 id = "crossbow"
-name = "연노병"
+name = "連弩兵"
 hanja = "連弩兵"
 family = "archer"
 tier = 2
@@ -191,11 +191,11 @@ hp_growth = 40
 generic = [40, 50, 30]
 promote = { to = "catapult", level = 30, item = "stone_thrower" }
 sprite = "crossbow"
-desc = "연발 쇠뇌로 무장한 부대. 사거리가 넓고 공격력이 크게 오른다."
+desc = "弓兵晋升，攻击范围扩大。"
 
 [[class]]
 id = "catapult"
-name = "발석차"
+name = "發石車"
 hanja = "發石車"
 family = "archer"
 tier = 3
@@ -208,7 +208,7 @@ hp = 500
 hp_growth = 40
 generic = [40, 50, 30]
 sprite = "catapult"
-desc = "돌을 날리는 공성 병기. 느리지만 먼 곳까지 강력한 일격을 날린다."
+desc = "弓兵最终晋升，攻击范围进一步扩大。"
 
 # ---------------------------------------------------------------------------------------------------
 # Bandit line (적병계) - climbs mountains, high troop count, counter-attacks.
@@ -216,7 +216,7 @@ desc = "돌을 날리는 공성 병기. 느리지만 먼 곳까지 강력한 일
 
 [[class]]
 id = "bandit"
-name = "산적"
+name = "山賊"
 hanja = "山賊"
 family = "bandit"
 tier = 1
@@ -243,11 +243,11 @@ promote = { to = "brigand", level = 15, item = "martial_manual" }
 sprite = "bandit"
 can_counter = true
 provokes_counter = true
-desc = "산을 타는 도적 떼. 병력이 많고 지계 책략을 쓰며, 붙어 온 적에게 반격하기도 한다."
+desc = "山贼，擅长山地作战。"
 
 [[class]]
 id = "brigand"
-name = "흉적"
+name = "凶賊"
 hanja = "凶賊"
 family = "bandit"
 tier = 2
@@ -263,11 +263,11 @@ promote = { to = "outlaw", level = 30, item = "chivalry_manual" }
 sprite = "brigand"
 can_counter = true
 provokes_counter = true
-desc = "사나운 무리를 이끄는 도적. 주위 여덟 칸을 공격할 수 있다."
+desc = "山贼晋升，擅长地计。"
 
 [[class]]
 id = "outlaw"
-name = "의적"
+name = "義賊"
 hanja = "義賊"
 family = "bandit"
 tier = 3
@@ -282,7 +282,7 @@ generic = [50, 40, 30]
 sprite = "outlaw"
 can_counter = true
 provokes_counter = true
-desc = "의리를 아는 협객 무리. 적병계의 최상위 병과다."
+desc = "山贼最终晋升。"
 
 # ---------------------------------------------------------------------------------------------------
 # Special classes - single tier, no class affinity.
@@ -290,7 +290,7 @@ desc = "의리를 아는 협객 무리. 적병계의 최상위 병과다."
 
 [[class]]
 id = "martial"
-name = "무도가"
+name = "武道家"
 hanja = "武道家"
 family = "martial"
 tier = 1
@@ -312,11 +312,11 @@ strategies = [
 sprite = "martial"
 can_counter = true
 provokes_counter = true
-desc = "맨손 무예를 닦은 무인 집단. 산을 넘나들며 화계를 쓰고 반격에도 능하다."
+desc = "武术家，擅长火计。"
 
 [[class]]
 id = "tribe"
-name = "이민족"
+name = "異民族"
 hanja = "異民族"
 family = "tribe"
 tier = 1
@@ -338,11 +338,11 @@ strategies = [
 ]
 sprite = "tribe"
 provokes_counter = true
-desc = "변방의 용맹한 부족 전사. 병력 성장이 가장 크고 방어도 단단하며 수계를 쓴다."
+desc = "异民族，擅长水计。"
 
 [[class]]
 id = "beast"
-name = "맹수사"
+name = "猛獸使"
 hanja = "猛獸使"
 family = "beast"
 tier = 1
@@ -365,7 +365,7 @@ strategies = [
 ]
 sprite = "beast"
 provokes_counter = true
-desc = "맹수를 부리는 부대. 공격력은 최강이지만 방어가 약하다. 혼란과 사기 저하 책략을 쓴다."
+desc = "猛兽兵，擅长干扰敌军。"
 
 # ---------------------------------------------------------------------------------------------------
 # Support classes - half strategy damage, doubled strategy evasion (`strategy_guard`).
@@ -373,7 +373,7 @@ desc = "맹수를 부리는 부대. 공격력은 최강이지만 방어가 약�
 
 [[class]]
 id = "supply"
-name = "수송대"
+name = "輸送隊"
 hanja = "輸送隊"
 family = "supply"
 tier = 1
@@ -397,11 +397,11 @@ strategies = [
 sprite = "supply"
 strategy_guard = true
 support_exp = 12
-desc = "군량을 나르는 부대. 병력 회복 책략을 모두 익히며 책략에 강하다."
+desc = "輸送隊"
 
 [[class]]
 id = "band"
-name = "군악대"
+name = "軍樂隊"
 hanja = "軍樂隊"
 family = "band"
 tier = 1
@@ -426,11 +426,11 @@ sprite = "band"
 strategy_guard = true
 mp_aura = true
 support_exp = 12
-desc = "북과 나팔로 군사를 북돋는 부대. 곁에 선 부대의 책략치를 매 턴 회복시킨다(적군도 마찬가지)."
+desc = "军乐队，每回合恢复相邻部队的策略值，包括敌军。"
 
 [[class]]
 id = "sorcerer"
-name = "주술사"
+name = "呪術師"
 hanja = "呪術師"
 family = "sorcerer"
 tier = 1
@@ -478,7 +478,7 @@ strategies = [
 ]
 sprite = "sorcerer"
 strategy_guard = true
-desc = "천문과 도술에 통달한 책사의 부대. 거의 모든 책략을 다루지만 직접 싸우는 힘은 약하다."
+desc = "咒术师，可以使用多种策略。"
 
 # ---------------------------------------------------------------------------------------------------
 # Event class
@@ -488,7 +488,7 @@ desc = "천문과 도술에 통달한 책사의 부대. 거의 모든 책략을 
 # (design) The PC troop count and move are undocumented; the console versions use a flat 200 troops.
 [[class]]
 id = "civilian"
-name = "백성"
+name = "百姓"
 hanja = "百姓"
 family = "civilian"
 tier = 1
@@ -501,4 +501,4 @@ hp = 200
 hp_growth = 0
 generic = [0, 0, 0]
 sprite = "civilian"
-desc = "전란을 피해 달아나는 백성들. 싸울 힘이 없다."
+desc = "百姓，需要保护。"

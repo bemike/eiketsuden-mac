@@ -73,12 +73,31 @@ pub fn particle(word: &str, p: Particle) -> String {
 /// `word` followed by the matching particle, e.g. `with_particle("관우", Particle::EulReul)` →
 /// `관우를`.
 pub fn with_particle(word: &str, p: Particle) -> String {
+    // Chinese names have no Korean grammatical suffix. Preserve the underlying Korean
+    // helper for its original callers and tests, but never append particles to Chinese UI.
+    if word.chars().any(|c| ('\u{3400}'..='\u{9fff}').contains(&c)) {
+        return word.to_string();
+    }
     format!("{word}{}", particle(word, p))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chinese_names_do_not_get_korean_particles() {
+        for p in [
+            Particle::EulReul,
+            Particle::IGa,
+            Particle::EunNeun,
+            Particle::GwaWa,
+            Particle::EuroRo,
+        ] {
+            assert_eq!(with_particle("劉備", p), "劉備");
+            assert_eq!(with_particle("军资金 500", p), "军资金 500");
+        }
+    }
 
     #[test]
     fn picks_the_form_by_final_consonant() {

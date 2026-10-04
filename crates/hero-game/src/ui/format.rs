@@ -36,17 +36,17 @@ pub fn play_time(seconds: u64) -> String {
 /// needing the player's time zone, which neither the browser build nor std can provide portably.
 pub fn relative_time(then: u64, now: u64) -> String {
     if then == 0 {
-        return "시각 모름".into();
+        return "时间未知".into();
     }
     if then > now + 60 {
         return date_utc(then);
     }
     let age = now.saturating_sub(then);
     match age {
-        0..=59 => "방금 전".into(),
-        60..=3599 => format!("{}분 전", age / 60),
-        3600..=86_399 => format!("{}시간 전", age / 3600),
-        86_400..=2_591_999 => format!("{}일 전", age / 86_400),
+        0..=59 => "刚刚".into(),
+        60..=3599 => format!("{}分钟前", age / 60),
+        3600..=86_399 => format!("{}小时前", age / 3600),
+        86_400..=2_591_999 => format!("{}天前", age / 86_400),
         _ => date_utc(then),
     }
 }
@@ -109,11 +109,11 @@ mod tests {
     #[test]
     fn relative_times() {
         let now = 1_790_380_800;
-        assert_eq!(relative_time(0, now), "시각 모름");
-        assert_eq!(relative_time(now - 5, now), "방금 전");
-        assert_eq!(relative_time(now - 300, now), "5분 전");
-        assert_eq!(relative_time(now - 3 * 3600, now), "3시간 전");
-        assert_eq!(relative_time(now - 2 * 86_400, now), "2일 전");
+        assert_eq!(relative_time(0, now), "时间未知");
+        assert_eq!(relative_time(now - 5, now), "刚刚");
+        assert_eq!(relative_time(now - 300, now), "5分钟前");
+        assert_eq!(relative_time(now - 3 * 3600, now), "3小时前");
+        assert_eq!(relative_time(now - 2 * 86_400, now), "2天前");
         assert_eq!(
             relative_time(now - 40 * 86_400, now),
             date_utc(now - 40 * 86_400)

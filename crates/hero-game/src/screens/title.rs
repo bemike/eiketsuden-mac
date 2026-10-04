@@ -3,7 +3,6 @@
 //! 설정 / 제작진 / 종료 (native only). 새 게임 first asks for its options: difficulty, free
 //! editing and extended rules (DECISIONS D25).
 
-use super::backdrop::draw_backdrop;
 use super::credits::CreditsScreen;
 use super::saveload::SaveLoadScreen;
 use super::settings::SettingsScreen;
@@ -11,7 +10,7 @@ use crate::app::{Ctx, Enter, Screen, Transition};
 use crate::assets::AssetState;
 use crate::audio::{bgm, sfx};
 use crate::flow::Flow;
-use crate::gfx::{draw_texture_fit, fill_gradient_v, Align, Fit, TextStyle};
+use crate::gfx::{draw_texture_fit, Align, Fit, TextStyle};
 use crate::quicksave;
 use crate::saves;
 use crate::ui::dialog::{ConfirmDialog, ConfirmEvent};
@@ -20,11 +19,7 @@ use crate::ui::theme;
 use hero_core::campaign::{Difficulty, GameOptions};
 use macroquad::prelude::*;
 
-const TITLE_ART: &str = "ui/title";
-/// Top of the logo on canvases with room for it.
-const LOGO_TOP: f32 = 34.0;
-/// Height of the logo block: the big name (3 × 16 px lines) and the hanja line below it.
-const LOGO_H: f32 = 86.0;
+const TITLE_ART: &str = "ui/original_title";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -41,13 +36,13 @@ enum Item {
 impl Item {
     fn label(self) -> &'static str {
         match self {
-            Item::NewGame => "새 게임",
-            Item::Continue => "이어하기",
-            Item::Load => "불러오기",
-            Item::Original => "원작 데이터",
-            Item::Settings => "설정",
-            Item::Credits => "제작진",
-            Item::Quit => "종료",
+            Item::NewGame => "新的征程",
+            Item::Continue => "继续游戏",
+            Item::Load => "读取存档",
+            Item::Original => "原版数据",
+            Item::Settings => "游戏设置",
+            Item::Credits => "制作与鸣谢",
+            Item::Quit => "退出游戏",
         }
     }
 }
@@ -63,6 +58,7 @@ pub struct TitleScreen {
     /// Some slot holds a record, loadable or not (불러오기 shows why one is not).
     has_records: bool,
     age: f32,
+    menu_visible: bool,
 }
 
 impl TitleScreen {
@@ -83,6 +79,7 @@ impl TitleScreen {
             has_saves: false,
             has_records: false,
             age: 0.0,
+            menu_visible: false,
         }
     }
 
@@ -112,8 +109,8 @@ impl TitleScreen {
         let canvas = ctx.gfx.size();
         // Centred near the bottom edge.
         menu.set_position(
-            ((canvas.x - 112.0) / 2.0).round(),
-            (canvas.y - 18.0 - h).round(),
+            (canvas.x - 122.0).max(2.0).round(),
+            ((canvas.y - h) / 2.0).max(2.0).round(),
         );
         // Keep the cursor where it was, but land on "continue" when saves exist on first show.
         if self.age == 0.0 && self.has_saves {
@@ -154,7 +151,7 @@ impl TitleScreen {
                     },
                     None => {
                         ctx.sfx(sfx::ERROR);
-                        ctx.toast("이어할 기록이 없습니다.");
+                        ctx.toast("没有可继续的存档。");
                         Transition::None
                     }
                 }
@@ -167,7 +164,7 @@ impl TitleScreen {
             Item::Settings => Transition::push(SettingsScreen::new()),
             Item::Credits => Transition::push(CreditsScreen::new()),
             Item::Quit => {
-                self.confirm_quit = Some(ConfirmDialog::new(&ctx.gfx, "게임을 종료할까요?"));
+                self.confirm_quit = Some(ConfirmDialog::new(&ctx.gfx, "退出游戏？"));
                 Transition::None
             }
         }
@@ -200,6 +197,13 @@ impl Screen for TitleScreen {
 
     fn update(&mut self, ctx: &mut Ctx) -> Transition {
         self.age += ctx.dt;
+        if !self.menu_visible {
+            if ctx.input.confirm_key() || ctx.input.tap().is_some() || ctx.input.cancel() {
+                self.menu_visible = true;
+                ctx.input.consume();
+            }
+            return Transition::None;
+        }
         if let Some(dialog) = self.confirm_quit.as_mut() {
             match dialog.update(ctx) {
                 ConfirmEvent::Yes => {
@@ -249,45 +253,13 @@ impl Screen for TitleScreen {
                     draw_texture_fit(&t, gfx.screen(), Fit::Cover, WHITE);
                 }
             }
-            _ => draw_backdrop(gfx.size(), ctx.time),
+            _ => crate::gfx::fill_rect(gfx.screen(), BLACK),
         }
-        // Darken the top for the logo and the bottom for the menu.
-        fill_gradient_v(
-            Rect::new(0.0, 0.0, w, 120.0),
-            Color::new(0.0, 0.0, 0.05, 0.55),
-            Color::new(0.0, 0.0, 0.05, 0.0),
-        );
-
-        // Logo: "영걸전" large with "Reloaded", hanja subtitle below.
-        let intro = (self.age / 0.8).min(1.0);
-        let alpha = intro;
-        let big = TextStyle::main(theme::TEXT_ACCENT.with_alpha(alpha))
-            .size(3)
-            .shadow(Color::new(0.1, 0.02, 0.0, 0.85 * alpha));
-        let tag = TextStyle::main(theme::TEXT.with_alpha(alpha))
-            .size(2)
-            .shadow(Color::new(0.0, 0.0, 0.0, 0.8 * alpha));
-        let w_big = gfx.text_width("영걸전", big.font, big.size);
-        let w_tag = gfx.text_width("Reloaded", tag.font, tag.size);
-        let gap = 10.0;
-        let x0 = ((w - (w_big + gap + w_tag)) / 2.0).round();
-        // 34 pixels from the top, moved up on canvases too low to fit it above the menu.
-        let top = LOGO_TOP.min(self.menu.rect().y - LOGO_H - 4.0).max(2.0);
-        let y0 = top + (1.0 - intro) * 6.0;
-        gfx.text("영걸전", x0, y0, big);
-        // Align the baseline of "Reloaded" with the big text's baseline.
-        let dy = gfx.line_height(big.font, big.size) - gfx.line_height(tag.font, tag.size) - 3.0;
-        gfx.text("Reloaded", x0 + w_big + gap, y0 + dy, tag);
-        gfx.text_aligned(
-            "英 傑 傳",
-            0.0,
-            y0 + 54.0,
-            w,
-            Align::Center,
-            TextStyle::main(theme::TEXT_NAME.with_alpha(0.85 * alpha))
-                .size(2)
-                .shadow(Color::new(0.0, 0.0, 0.0, 0.7 * alpha)),
-        );
+        // The DOS title already contains the complete logo and copyright line.
+        // Keep it unobstructed until the player opens the native menu.
+        if !self.menu_visible {
+            return;
+        }
 
         // The new game's options take the main menu's place while they are open.
         if let Some(new_game) = &self.new_game {
@@ -298,7 +270,7 @@ impl Screen for TitleScreen {
                 Color::new(0.0, 0.0, 0.05, 0.6),
             );
             gfx.text_aligned(
-                "새 게임",
+                "新的征程",
                 0.0,
                 r.y - 16.0,
                 w,
@@ -310,23 +282,13 @@ impl Screen for TitleScreen {
             self.menu.draw(ctx);
         }
 
-        // Footer: pack and engine versions.
-        let small = TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW);
-        if let Some(pack) = &ctx.pack {
-            gfx.text(
-                &format!("{} {}", pack.manifest.name, pack.manifest.version),
-                4.0,
-                h - 13.0,
-                small,
-            );
-        }
         gfx.text_aligned(
-            concat!("v", env!("CARGO_PKG_VERSION")),
+            "Mac 原生版 0.1.9",
             0.0,
             h - 13.0,
             w - 4.0,
             Align::Right,
-            small,
+            TextStyle::small(theme::TEXT_DIM).shadow(theme::TEXT_SHADOW),
         );
 
         if let Some(dialog) = &self.confirm_quit {
@@ -368,20 +330,20 @@ impl NewGameMenu {
 
     fn rebuild(&mut self, ctx: &Ctx, cursor: usize) {
         let o = self.options;
-        let on_off = |on: bool| if on { "켬" } else { "끔" };
+        let on_off = |on: bool| if on { "开" } else { "关" };
         let difficulty = match o.difficulty.enemy_level_offset() {
             0 => o.difficulty.label().to_string(),
-            n => format!("{} (적 Lv{n:+})", o.difficulty.label()),
+            n => format!("{}（敌军 Lv{n:+}）", o.difficulty.label()),
         };
         let items = vec![
-            MenuItem::new("난이도").detail(difficulty).adjustable(),
-            MenuItem::new("능력치 자유 조정")
+            MenuItem::new("难度").detail(difficulty).adjustable(),
+            MenuItem::new("自由调整能力")
                 .detail(on_off(o.free_edit))
                 .adjustable(),
-            MenuItem::new("확장 규칙 (협공)")
+            MenuItem::new("扩展规则（夹击）")
                 .detail(on_off(o.extended_rules))
                 .adjustable(),
-            MenuItem::new("시작"),
+            MenuItem::new("开始"),
         ];
         let mut menu = Menu::new(items).cancellable(true);
         let width = 230.0;

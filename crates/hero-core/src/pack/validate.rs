@@ -623,6 +623,20 @@ impl<'a> Validator<'a> {
     /// Items exist and sit in the slot of their kind. The family restriction is only a warning
     /// here: enemy officers may carry anything, and the camp enforces it for the player.
     fn equipment(&mut self, ctx: &str, equip: &Equipment, family: Option<&str>) {
+        if let Some(pocket) = &equip.carried {
+            for (slot, id) in pocket.slots().iter().enumerate() {
+                if let Some(id) = id {
+                    if self.pack.item(id).is_none() {
+                        self.error(
+                            ctx,
+                            format!("personal item slot {}: `{id}` does not exist", slot + 1),
+                        );
+                    }
+                }
+            }
+            return;
+        }
+
         let slots = [
             ("weapon", ItemKind::Weapon, &equip.weapon),
             ("armor", ItemKind::Armor, &equip.armor),

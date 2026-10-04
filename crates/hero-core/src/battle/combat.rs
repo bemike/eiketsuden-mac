@@ -239,10 +239,12 @@ impl BattleState {
             if t.pos != pos || self.treasures_taken[i] {
                 continue;
             }
-            self.treasures_taken[i] = true;
             if let Some(item) = &t.item {
-                self.items_found.push(item.clone());
+                if !self.gain_item_for(unit, item) {
+                    continue;
+                }
             }
+            self.treasures_taken[i] = true;
             self.gold_found = self.gold_found.saturating_add(t.gold);
             ev.push(BattleEvent::TreasureFound {
                 unit,
@@ -365,7 +367,7 @@ impl BattleState {
         u.state = UnitState::Retreated;
         ev.push(BattleEvent::Retreated { unit: id });
         if let (true, Some(item)) = (drop, u.drop.clone()) {
-            self.items_found.push(item.clone());
+            self.gain_item(&item);
             ev.push(BattleEvent::ItemDropped { unit: id, item });
         }
     }

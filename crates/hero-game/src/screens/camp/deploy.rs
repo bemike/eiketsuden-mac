@@ -60,9 +60,9 @@ impl DeployStatus {
     /// Badge shown next to the officer.
     pub fn badge(self) -> Option<&'static str> {
         match self {
-            DeployStatus::Lord => Some("군주"),
-            DeployStatus::Required => Some("필수"),
-            DeployStatus::Forbidden => Some("출진 불가"),
+            DeployStatus::Lord => Some("君主"),
+            DeployStatus::Required => Some("必选"),
+            DeployStatus::Forbidden => Some("无法出战"),
             DeployStatus::Free => None,
         }
     }
@@ -114,14 +114,14 @@ impl ToggleError {
     pub fn message(&self, name: &str) -> String {
         let topic = with_particle(name, Particle::EunNeun);
         match self {
-            ToggleError::NotInArmy => format!("{topic} 아군에 없습니다."),
-            ToggleError::Away => format!("{topic} 지금 부재 중입니다."),
+            ToggleError::NotInArmy => format!("{topic} 不在我军中。"),
+            ToggleError::Away => format!("{topic} 当前离队。"),
             ToggleError::Locked(DeployStatus::Lord) => {
-                format!("군주인 {topic} 반드시 출진합니다.")
+                format!("君主 {topic} 必须出战。")
             }
-            ToggleError::Locked(_) => format!("{topic} 이번 전투에 반드시 출진합니다."),
-            ToggleError::Forbidden => format!("{topic} 이번 전투에 출진할 수 없습니다."),
-            ToggleError::Full(max) => format!("최대 {max}명까지 출진할 수 있습니다."),
+            ToggleError::Locked(_) => format!("{topic} 本场必须出战。"),
+            ToggleError::Forbidden => format!("{topic} 本场无法出战。"),
+            ToggleError::Full(max) => format!("最多可出战 {max} 人。"),
         }
     }
 }
@@ -292,13 +292,13 @@ impl Screen for DeployScreen {
         let gfx = &ctx.gfx;
         let (list, panel) = columns(gfx.size(), LIST_W);
         draw_camp_backdrop(ctx, 0.8);
-        draw_header(ctx, &format!("부대 편성 — {}", def.name), campaign.gold);
+        draw_header(ctx, &format!("部队编成 — {}", def.name), campaign.gold);
 
         // Roster list.
-        draw_list_frame(ctx, list, "무장", true);
+        draw_list_frame(ctx, list, "武将", true);
         let max = deploy_max(def);
         gfx.text_aligned(
-            &format!("출진 {}/{}", self.selection.len(), max),
+            &format!("出战 {}/{}", self.selection.len(), max),
             list.x,
             list.y + 3.0,
             list.w - 10.0,
@@ -349,7 +349,7 @@ impl Screen for DeployScreen {
             );
             // An officer away from the army is shown as such, whatever the battle says.
             let badge = if o.away {
-                Some("부재")
+                Some("离队")
             } else {
                 status.badge()
             };
@@ -393,11 +393,11 @@ impl Screen for DeployScreen {
             );
             let status = deploy_status(pack, def, &o.id);
             let (text, color) = match (status, self.selection.contains(&o.id)) {
-                (DeployStatus::Lord, _) => ("군주 — 반드시 출진", theme::TEXT_NAME),
-                (DeployStatus::Required, _) => ("이번 전투 필수 출진", theme::TEXT_NAME),
-                (DeployStatus::Forbidden, _) => ("이번 전투 출진 불가", theme::TEXT_BAD),
-                (DeployStatus::Free, true) => ("출진", theme::TEXT_GOOD),
-                (DeployStatus::Free, false) => ("대기", theme::TEXT_DIM),
+                (DeployStatus::Lord, _) => ("君主 — 必须出战", theme::TEXT_NAME),
+                (DeployStatus::Required, _) => ("本场必须出战", theme::TEXT_NAME),
+                (DeployStatus::Forbidden, _) => ("本场无法出战", theme::TEXT_BAD),
+                (DeployStatus::Free, true) => ("出战", theme::TEXT_GOOD),
+                (DeployStatus::Free, false) => ("待命", theme::TEXT_DIM),
             };
             gfx.text(text, tx, panel.y + 44.0, TextStyle::small(color));
             if let Some(stats) = officer_stats(pack, o) {
@@ -412,7 +412,7 @@ impl Screen for DeployScreen {
             .map(|id| officer_name(pack, id))
             .collect();
         gfx.text(
-            "출진 순서",
+            "出战顺序",
             panel.x + 8.0,
             panel.bottom() - 45.0,
             TextStyle::small(theme::TEXT_ACCENT),
@@ -424,7 +424,7 @@ impl Screen for DeployScreen {
             panel.bottom() - 31.0,
             TextStyle::small(theme::TEXT),
         );
-        draw_help(ctx, "Z 출진/대기 전환 · X 편성 완료");
+        draw_help(ctx, "Z：出战／待命 · X：完成编成");
         draw_back_button(ctx);
     }
 }

@@ -44,8 +44,6 @@ BACKGROUNDS: list[Background] = [
     Background("town", "qingming_qing", "14", (300, 300, 2400)),
     # willows, a farmstead and travellers on the village green
     Background("village", "qingming_qing", "03", (300, 680, 2400)),
-    # the yurt camp and ranks of officials at Chengde
-    Background("camp", "wanshuyuan", "", (1700, 150, 2900)),
     # open country under the hills, a road and a column of riders
     Background("field", "kangxi_tour", "", (400, 40, 2400)),
     # the broad river below the Red Cliff
@@ -139,6 +137,11 @@ def build_backgrounds(src: Sources, pack: Path) -> list[str]:
     for bg in BACKGROUNDS:
         save_png(render(src, bg), out_dir / f"{bg.key}.png")
         written.append(f"gfx/bg/{bg.key}.png")
+    # Preserve the Han-style camp in subsequent asset rebuilds; the earlier Qing
+    # imperial-banquet crop was inconsistent with this campaign's setting.
+    with Image.open(Path(__file__).parent / "custom" / "han_camp.png") as camp:
+        save_png(camp.convert("RGB"), out_dir / "camp.png")
+    written.append("gfx/bg/camp.png")
     save_png(Image.new("RGB", SIZE), out_dir / "black.png")
     written.append("gfx/bg/black.png")
     return written

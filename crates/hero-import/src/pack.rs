@@ -1811,15 +1811,12 @@ fn original_items(
     let mut items = chain.to_vec();
     let mut notes = Vec::new();
     for it in release {
-        let Some(effects) = original_item_effects(it.index) else {
-            continue;
-        };
         let mut ids = names.iter().filter(|(_, name)| *name == it.name);
         let id = match (ids.next(), ids.next()) {
             (Some((id, _)), None) => id,
             _ => {
                 notes.push(format!(
-                    "healing item {} ({}): no single item of the chain by that name",
+                    "item {} ({}): no single item of the chain by that name",
                     it.index, it.name
                 ));
                 continue;
@@ -1829,6 +1826,15 @@ fn original_items(
             .iter_mut()
             .find(|i| i.id.as_str() == id)
             .expect("the names come from the chain's items");
+        item.price = if it.price == 255 {
+            0
+        } else {
+            u32::from(it.price) * 10
+        };
+        item.resale_price = Some(u32::from(it.price) * 3 / 4 * 10);
+        let Some(effects) = original_item_effects(it.index) else {
+            continue;
+        };
         if item.effects != effects {
             notes.push(format!("{id}: {:?} -> {:?}", item.effects, effects));
             match bracketed_amounts(&item.desc, &item.effects, &effects) {
@@ -3586,6 +3592,18 @@ fn convert_battles(
             (chapters::Part::Story { .. }, None) => {}
         }
     }
+    let stages: BTreeMap<String, chapters::StoryStage> = chapter
+        .iter()
+        .filter_map(|(_, _, _, story)| story.as_ref().map(|(_, s)| s))
+        .chain(befores.values().map(|(_, s)| s))
+        .chain(defeats.values().map(|(_, s)| s))
+        .flat_map(|s| {
+            s.stages
+                .iter()
+                .map(|(key, stage)| (key.clone(), stage.clone()))
+        })
+        .collect();
+    convert_story_stages(install, encoding, exe, &stages, out, &mut report)?;
     let mut wrote_campaign = false;
     if let Some(campaign) = options.campaign.as_ref().filter(|_| !steps.is_empty()) {
         let last = CHAPTER_FILES[CHAPTER_FILES.len() - 1];
@@ -3643,6 +3661,127 @@ fn convert_battles(
 
 /// Scene `scene_index` of `SNR<file>D.R3` and its text in `SNR<file>M.R3`. Without the text
 /// the scene is still converted: the text source reports why its lines are left out.
+fn convert_story_stages(
+    install: &InstallDir,
+    encoding: TextEncoding,
+    exe: &Exe,
+    stages: &BTreeMap<String, chapters::StoryStage>,
+    out: &mut Output,
+    report: &mut KindReport,
+) -> Result<(), ExtractError> {
+    if stages.is_empty() {
+        return Ok(());
+    }
+    let bank = match &exe.bank {
+        Ok(bank) => bank,
+        Err(e) => {
+            report.errors.push(e.clone());
+            return Ok(());
+        }
+    };
+    let archive = |name: &str, report: &mut KindReport| -> Result<Vec<Vec<u8>>, String> {
+        let bytes = read_source(install, name, report)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("{name} missing"))?;
+        let a = ls11::Archive::parse(&bytes).map_err(|e| e.to_string())?;
+        (0..a.len())
+            .map(|i| a.decode(i).map_err(|e| e.to_string()))
+            .collect()
+    };
+    let inputs = (|| -> Result<_, String> {
+        let maps = archive("PMAP.R3", report)?;
+        let chips = archive("SMAPBGPL.R3", report)?
+            .get(1)
+            .cloned()
+            .ok_or("palace chips missing")?;
+        let sprites = archive("SSCCHR2.R3", report)?;
+        let bytes = read_source(install, "BAKDATA.R3", report)
+            .map_err(|e| e.to_string())?
+            .ok_or("BAKDATA.R3 missing")?;
+        let bak = bakdata::parse(&bytes, encoding).map_err(|e| e.to_string())?;
+        Ok((maps, chips, sprites, bak))
+    })();
+    let (interiors, chips, sprites, bak) = match inputs {
+        Ok(inputs) => inputs,
+        Err(e) => {
+            report.errors.push(format!("story stages: {e}"));
+            return Ok(());
+        }
+    };
+    let mut count = 0;
+    for (key, stage) in stages {
+        let rendered = (|| -> Result<IndexedImage, String> {
+            let bytes = interiors
+                .get(usize::from(stage.map & 0xff))
+                .ok_or("interior map missing")?;
+            let map = maps::TownMap::parse(bytes).map_err(|e| e.to_string())?;
+            let mut image =
+                maps::render_tiles(&map.tiles, 32, 20, &chips).map_err(|e| e.to_string())?;
+            let mut people: Vec<_> = stage.people.iter().collect();
+            people.sort_by_key(|(id, [x, y, _])| (*y, *x, **id));
+            for (person, [x, y, dir]) in people {
+                let Some(officer) = bak.officers.get(usize::from(*person)) else {
+                    continue;
+                };
+                let Some(data) = sprites.get(usize::from(officer.sprite)) else {
+                    continue;
+                };
+                let actor = town_person(data, *dir)?;
+                blit_town_person(
+                    &mut image,
+                    &actor,
+                    i32::from(*x) * 16,
+                    i32::from(*y) * 16 + 8 - 40,
+                );
+            }
+            Ok(image)
+        })();
+        match rendered {
+            Ok(image) => {
+                let png = encode_png(&image, &bank[2], false)
+                    .map_err(|e| output_error(&out.root, std::io::Error::other(e)))?;
+                out.write(&format!("gfx/bg/{key}.png"), &png)?;
+                count += 1;
+            }
+            Err(e) => report.errors.push(format!("{key}: {e}")),
+        }
+    }
+    report.outputs += count;
+    report.notes.push(format!("{count} original interior views with placed people; walking is presented at dialogue boundaries, decorative object layouts are not decoded"));
+    Ok(())
+}
+
+/// SSCCHR2 has four 32×40 planar frames, two poses for each stored facing.
+fn town_person(data: &[u8], dir: u8) -> Result<IndexedImage, String> {
+    if data.len() != 2560 {
+        return Err(format!(
+            "town sprite: expected 2560 bytes, got {}",
+            data.len()
+        ));
+    }
+    let frame = if dir == 0 || dir == 3 { 2 } else { 0 };
+    let mut image =
+        planar::decode(&data[frame * 640..(frame + 1) * 640], 32, 40).map_err(|e| e.to_string())?;
+    if dir == 1 || dir == 3 {
+        for row in image.pixels.chunks_exact_mut(32) {
+            row.reverse();
+        }
+    }
+    Ok(image)
+}
+
+fn blit_town_person(dst: &mut IndexedImage, src: &IndexedImage, x: i32, y: i32) {
+    for sy in 0..src.height {
+        for sx in 0..src.width {
+            let (dx, dy) = (x + sx as i32, y + sy as i32);
+            let color = src.pixels[sy * src.width + sx];
+            if color != 0 && dx >= 0 && dy >= 0 && dx < dst.width as i32 && dy < dst.height as i32 {
+                dst.pixels[dy as usize * dst.width + dx as usize] = color;
+            }
+        }
+    }
+}
+
 fn scene_and_text<'a>(
     scenario: Option<&[u8]>,
     payload: Result<&'a [u8], &String>,
@@ -4075,9 +4214,8 @@ fn original_level(level: u8, level_cap: u32) -> u32 {
     u32::from(level).clamp(1, level_cap.max(1))
 }
 
-/// The equipment an officer holds in `BAKDATA` (`items`): each held item the pack has, in the
-/// slot of its kind (weapon, war manual = armor, horse = accessory), the first one per slot; and
-/// what is left out (consumables, items without a pack item, a second item of a slot).
+/// Preserve every physical item, including consumables and duplicate equipment.
+/// The legacy fields remain a compatibility view; original inventory rules use `carried`.
 fn original_equip(
     items: &[u8],
     names: &battles::Names,
@@ -4085,26 +4223,30 @@ fn original_equip(
 ) -> (Equipment, Vec<String>) {
     let mut equip = Equipment::default();
     let mut notes = Vec::new();
+    let mut carried = Vec::new();
     for item in items {
-        let Some(item_id) = names.items.get(item) else {
-            notes.push(format!("item {item} has no pack item; left out"));
-            continue;
-        };
-        let slot = match item_kinds.get(item_id) {
+        let item_id = names.items.get(item).cloned().unwrap_or_else(|| {
+            notes.push(format!(
+                "item {item} has no pack item; preserved as unresolved item"
+            ));
+            format!("unresolved_original_item_{item}")
+        });
+        carried.push(item_id.clone());
+        let slot = match item_kinds.get(&item_id) {
             Some(ItemKind::Weapon) => &mut equip.weapon,
             Some(ItemKind::Armor) => &mut equip.armor,
             Some(ItemKind::Accessory) => &mut equip.accessory,
-            _ => {
-                notes.push(format!("{item_id} is not equipment; left out"));
-                continue;
-            }
+            _ => continue,
         };
         if slot.is_none() {
-            *slot = Some(item_id.clone());
-        } else {
-            notes.push(format!("{item_id}: its slot is taken; left out"));
+            *slot = Some(item_id);
         }
     }
+    // BAKDATA initial records have exactly eight bytes for held items.
+    equip.carried = Some(
+        hero_core::inventory::Pocket::from_items(carried)
+            .expect("BAKDATA item records contain at most eight entries"),
+    );
     (equip, notes)
 }
 
@@ -5725,6 +5867,30 @@ fn convert_maps(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn town_sprite_frames_and_transparent_clipped_blit() {
+        let mut frames = vec![0u8; 2560];
+        frames[2 * 640] = 0x80;
+        let north = town_person(&frames, 0).unwrap();
+        assert_eq!((north.width, north.height), (32, 40));
+        assert_eq!(north.pixels[0], 1);
+        assert_eq!(town_person(&frames, 3).unwrap().pixels[31], 1);
+        assert_eq!(town_person(&frames, 2).unwrap().pixels[0], 0);
+        assert!(town_person(&frames[..2559], 0).is_err());
+        let mut dst = IndexedImage {
+            width: 2,
+            height: 2,
+            pixels: vec![5; 4],
+        };
+        let src = IndexedImage {
+            width: 2,
+            height: 2,
+            pixels: vec![0, 7, 8, 9],
+        };
+        blit_town_person(&mut dst, &src, -1, 0);
+        assert_eq!(dst.pixels, vec![7, 5, 9, 5]);
+    }
     use crate::testutil::{self, TempDir};
 
     fn officer(index: usize, name: &str, reading: &str, portrait: u16) -> Officer {
@@ -5894,6 +6060,7 @@ mod tests {
             officer_def("ours", "없는사람", [5, 5, 5]),
             OfficerDef {
                 equip: Equipment {
+                    carried: None,
                     armor: Some("book".into()),
                     ..Equipment::default()
                 },
@@ -5960,6 +6127,7 @@ mod tests {
         let zhang = &made.defs[3];
         assert_eq!((zhang.class.as_str(), zhang.level), ("sorcerer", 3));
         assert_eq!(zhang.equip.weapon.as_deref(), Some("sword"));
+        assert_eq!(zhang.equip.carried.as_ref().unwrap().count("bean"), 1);
         assert_eq!(zhang.equip.armor, None, "the original holds no war manual");
         let changes = &made
             .records
@@ -5970,7 +6138,6 @@ mod tests {
         for change in [
             "class short_infantry → sorcerer",
             "level 1 → 3",
-            "bean is not equipment; left out",
             "weapon - → sword",
             "armor book → -",
         ] {
@@ -6008,15 +6175,24 @@ mod tests {
         assert_eq!(added.equip.weapon.as_deref(), Some("sword"));
         assert_eq!(added.equip.armor.as_deref(), Some("book"));
         assert_eq!(added.equip.accessory, None);
+        assert_eq!(added.equip.carried.as_ref().unwrap().count("bean"), 1);
+        assert_eq!(added.equip.carried.as_ref().unwrap().count("axe"), 1);
+        assert_eq!(
+            added
+                .equip
+                .carried
+                .as_ref()
+                .unwrap()
+                .count("unresolved_original_item_9"),
+            1
+        );
         assert!(!added.lord);
         let record = made.records.iter().find(|r| r.added).unwrap();
         assert_eq!(record.officer, "orig_p3");
         assert_eq!(
             record.changes,
             [
-                "bean is not equipment; left out",
-                "item 9 has no pack item; left out",
-                "axe: its slot is taken; left out",
+                "item 9 has no pack item; preserved as unresolved item",
                 "level 0 → 1",
             ]
         );
@@ -6455,12 +6631,11 @@ mod tests {
         );
         assert_eq!(items[0].effects, [Effect::Heal { power: 600 }]);
         assert_eq!(items[0].desc, "병력을 조금(600) 회복한다.");
-        assert_eq!(items[1], chain[1]);
+        assert_eq!(items[1].effects, chain[1].effects);
+        assert_eq!(items[1].price, 0);
+        assert_eq!(items[1].resale_price, Some(0));
         assert!(notes.iter().any(|n| n.starts_with("bean:")), "{notes:?}");
-        assert!(
-            notes.iter().any(|n| n.contains("healing item 31")),
-            "{notes:?}"
-        );
+        assert!(notes.iter().any(|n| n.contains("item 31")), "{notes:?}");
         // The amounts in a description go by kind, at once, and only when they are clear.
         let heal = |power| Effect::Heal { power };
         let morale = |amount| Effect::Morale { amount };

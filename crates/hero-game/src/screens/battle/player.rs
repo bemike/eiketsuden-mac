@@ -33,10 +33,10 @@ pub enum Blocked {
 impl Blocked {
     pub fn text(self) -> &'static str {
         match self {
-            Blocked::NoMp => "MP가 부족하다",
-            Blocked::Rain => "비가 와서 쓸 수 없다",
-            Blocked::Terrain => "지형이 맞지 않는다",
-            Blocked::NoTarget => "범위 안에 대상이 없다",
+            Blocked::NoMp => "策略值不足",
+            Blocked::Rain => "雨天无法使用",
+            Blocked::Terrain => "地形不适用",
+            Blocked::NoTarget => "范围内没有目标",
         }
     }
 }
@@ -85,10 +85,10 @@ impl Command {
 
     pub fn label(self) -> &'static str {
         match self {
-            Command::Attack => "공격",
-            Command::Strategy => "책략",
-            Command::Item => "도구",
-            Command::Wait => "대기",
+            Command::Attack => "攻击",
+            Command::Strategy => "策略",
+            Command::Item => "道具",
+            Command::Wait => "待命",
         }
     }
 }
@@ -180,7 +180,7 @@ pub fn reach_tiles(state: &BattleState, pack: &Pack, unit: UnitId, range: &MoveR
 }
 
 /// Tiles some active enemy could attack in its next phase: its attack range from every tile of
-/// its move range, as [`Mode::Inspect`] shows for one enemy (the "위험 범위" view option,
+/// its move range, as [`Mode::Inspect`] shows for one enemy (the "敌军威胁范围" view option,
 /// `docs/DECISIONS.md` D25 X4). Meant for the player's phase, when the enemies' move ranges are
 /// those of their coming phase. A confused enemy may recover when its phase starts, so it counts
 /// with its full move as if it had (the view errs on the side of danger).
@@ -264,7 +264,7 @@ pub fn command_enabled(state: &BattleState, pack: &Pack, unit: UnitId, c: Comman
             !u.has_status(StatusKind::Confused)
                 && !pack.known_strategies(&u.class, u.level).is_empty()
         }
-        Command::Item => !battle_items(state, pack).is_empty(),
+        Command::Item => !battle_items(state, pack, unit).is_empty(),
         Command::Wait => true,
     }
 }
@@ -272,12 +272,16 @@ pub fn command_enabled(state: &BattleState, pack: &Pack, unit: UnitId, c: Comman
 /// Battle consumables of the army inventory, in inventory order: the items the engine accepts
 /// in `Action::UseItem` (`ItemDef::is_battle_item`), so equipment marked `battle_use` by
 /// mistake is not offered.
-fn battle_items<'a>(state: &'a BattleState, pack: &'a Pack) -> Vec<(&'a Id, u32)> {
-    state
-        .inventory
-        .iter()
-        .filter(|(id, n)| **n > 0 && pack.item(id).is_some_and(|d| d.is_battle_item()))
-        .map(|(id, n)| (id, *n))
+fn battle_items<'a>(state: &'a BattleState, pack: &'a Pack, unit: UnitId) -> Vec<(&'a Id, u32)> {
+    let mut ids: std::collections::BTreeSet<&Id> = state.inventory.keys().collect();
+    if let Some(pocket) = &state.units[unit].equip.carried {
+        ids.extend(pocket.iter());
+    }
+    ids.into_iter()
+        .filter_map(|id| {
+            let n = state.item_count_for(unit, id);
+            (n > 0 && pack.item(id).is_some_and(|d| d.is_battle_item())).then_some((id, n))
+        })
         .collect()
 }
 
@@ -340,7 +344,7 @@ pub fn strategy_entries(state: &BattleState, pack: &Pack, unit: UnitId) -> Vec<S
 
 /// Battle consumables with their targets or the reason they cannot be used.
 pub fn item_entries(state: &BattleState, pack: &Pack, unit: UnitId) -> Vec<ItemEntry> {
-    battle_items(state, pack)
+    battle_items(state, pack, unit)
         .into_iter()
         .filter_map(|(id, count)| {
             let d = pack.item(id)?;

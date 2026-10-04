@@ -51,7 +51,22 @@ impl BattleState {
     pub(super) fn attack_with_morale(&self, pack: &Pack, id: UnitId, morale: i32) -> i32 {
         let u = &self.units[id];
         let class = self.class_of(pack, id);
-        let pct = equipped(pack, &u.equip.weapon).map_or(0, |i| i.atk_pct);
+        let pct = u
+            .equip
+            .carried
+            .as_ref()
+            .map(|p| {
+                p.iter()
+                    .filter_map(|id| pack.item(id))
+                    .filter(|i| {
+                        i.families.is_empty()
+                            || i.families.contains(&self.class_of(pack, id).family)
+                    })
+                    .map(|i| i.atk_pct)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or_else(|| equipped(pack, &u.equip.weapon).map_or(0, |i| i.atk_pct));
         power(u.level, morale, u.strength, class.atk, pct)
     }
 
@@ -59,14 +74,44 @@ impl BattleState {
     pub(super) fn defense_with_morale(&self, pack: &Pack, id: UnitId, morale: i32) -> i32 {
         let u = &self.units[id];
         let class = self.class_of(pack, id);
-        let pct = equipped(pack, &u.equip.armor).map_or(0, |i| i.def_pct);
+        let pct = u
+            .equip
+            .carried
+            .as_ref()
+            .map(|p| {
+                p.iter()
+                    .filter_map(|id| pack.item(id))
+                    .filter(|i| {
+                        i.families.is_empty()
+                            || i.families.contains(&self.class_of(pack, id).family)
+                    })
+                    .map(|i| i.def_pct)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or_else(|| equipped(pack, &u.equip.armor).map_or(0, |i| i.def_pct));
         power(u.level, morale, u.lead, class.def, pct)
     }
 
     /// Movement points ignoring confusion: `class.move + accessory move_bonus`.
     pub(super) fn base_move_points(&self, pack: &Pack, id: UnitId) -> i32 {
         let u = &self.units[id];
-        let bonus = equipped(pack, &u.equip.accessory).map_or(0, |i| i.move_bonus);
+        let bonus = u
+            .equip
+            .carried
+            .as_ref()
+            .map(|p| {
+                p.iter()
+                    .filter_map(|id| pack.item(id))
+                    .filter(|i| {
+                        i.families.is_empty()
+                            || i.families.contains(&self.class_of(pack, id).family)
+                    })
+                    .map(|i| i.move_bonus)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or_else(|| equipped(pack, &u.equip.accessory).map_or(0, |i| i.move_bonus));
         (self.class_of(pack, id).move_points as i32 + bonus).max(0)
     }
 }

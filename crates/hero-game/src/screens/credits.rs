@@ -29,7 +29,7 @@ const TEXT_SIDE_MARGINS: f32 = 80.0;
 /// The engine's own credits, shown after the pack credits.
 pub fn engine_credits() -> String {
     format!(
-        "# 영걸전 Reloaded\n\
+        "# 三国志英杰传 原生版（Eiketsuden Reloaded）\n\
          Eiketsuden Reloaded {version}\n\
          \n\
          ## 엔진\n\
@@ -44,7 +44,7 @@ pub fn engine_credits() -> String {
          이 게임은 KOEI의 『삼국지 영걸전』(1995)에서 영감을 받은 오픈소스 재구현입니다. \
          KOEI TECMO의 그래픽·음악·텍스트·프로그램을 포함하지 않으며, KOEI TECMO와는 관계가 없습니다.\n\
          \n\
-         콘텐츠 제작진은 데이터 팩의 credits.txt와 CREDITS.md에 있습니다.",
+         内容制作人员详见 credits.txt 和 CREDITS.md。",
         version = env!("CARGO_PKG_VERSION"),
         repo = env!("CARGO_PKG_REPOSITORY"),
     )
@@ -289,7 +289,7 @@ impl Screen for CreditsScreen {
         }
         if self.scroll >= self.max_scroll(canvas_h) && (ctx.time * 2.0).fract() < 0.7 {
             gfx.text_aligned(
-                "Z / 클릭: 돌아가기",
+                "Z / 点击：返回",
                 0.0,
                 canvas_h - 18.0,
                 w,

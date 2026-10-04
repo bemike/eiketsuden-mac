@@ -124,7 +124,7 @@ impl Ctx {
         }
         if let Err(e) = self.settings.save(self.storage.as_mut()) {
             macroquad::logging::error!("cannot save settings: {}", e);
-            self.toast(format!("설정을 저장하지 못했습니다: {e}"));
+            self.toast(format!("无法保存设置：{e}"));
         }
     }
 }
@@ -315,7 +315,23 @@ impl App {
             Fade::Idle => {
                 if let Some(top) = self.stack.last_mut() {
                     let framed = top.in_camp_frame();
-                    let transition = in_camp_view(&mut self.ctx, framed, |ctx| top.update(ctx));
+                    // The DOS command icons are outside the content viewport: inspect them
+                    // before enter_view filters taps on the surrounding frame.
+                    let officer_icon = framed
+                        && top.name() == "camp"
+                        && self
+                            .ctx
+                            .pack
+                            .as_ref()
+                            .and_then(|p| p.manifest.presentation.camp_frame.as_ref())
+                            .is_some_and(|f| f.image == "ui/orig_camp_frame")
+                        && self.ctx.input.tapped(Rect::new(587.0, 242.0, 39.0, 43.0));
+                    let transition = if officer_icon {
+                        self.ctx.input.consume();
+                        Transition::push(crate::screens::camp::exchange::OfficerMenu::new())
+                    } else {
+                        in_camp_view(&mut self.ctx, framed, |ctx| top.update(ctx))
+                    };
                     self.handle(transition);
                 }
             }
@@ -358,12 +374,12 @@ impl App {
         match quicksave::save(&mut self.ctx, &self.stack) {
             Ok(()) => {
                 self.ctx.sfx(sfx::CONFIRM);
-                self.ctx.toast("순간 저장했습니다.");
+                self.ctx.toast("已快速存档。");
             }
             Err(why) => {
                 macroquad::logging::warn!("quick save failed: {}", why);
                 self.ctx.sfx(sfx::ERROR);
-                self.ctx.toast(format!("순간 저장을 할 수 없습니다: {why}"));
+                self.ctx.toast(format!("无法快速存档：{why}"));
             }
         }
     }
@@ -376,13 +392,12 @@ impl App {
         }
         match quicksave::read(&self.ctx) {
             Ok(save) => {
-                self.ctx.toast("순간 저장을 불러옵니다.");
+                self.ctx.toast("正在读取快速存档。");
                 Some(Transition::Flow(Flow::Continue(Box::new(save))))
             }
             Err(why) => {
                 self.ctx.sfx(sfx::ERROR);
-                self.ctx
-                    .toast(format!("순간 저장을 불러올 수 없습니다: {why}"));
+                self.ctx.toast(format!("无法读取快速存档：{why}"));
                 None
             }
         }

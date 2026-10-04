@@ -40,10 +40,10 @@ impl TextSpeed {
 
     pub fn label(self) -> &'static str {
         match self {
-            TextSpeed::Slow => "느림",
-            TextSpeed::Normal => "보통",
-            TextSpeed::Fast => "빠름",
-            TextSpeed::Instant => "즉시",
+            TextSpeed::Slow => "慢",
+            TextSpeed::Normal => "普通",
+            TextSpeed::Fast => "快",
+            TextSpeed::Instant => "即时",
         }
     }
 }
@@ -76,9 +76,9 @@ impl BattleSpeed {
 
     pub fn label(self) -> &'static str {
         match self {
-            BattleSpeed::Normal => "보통",
-            BattleSpeed::Fast => "빠름",
-            BattleSpeed::VeryFast => "매우 빠름",
+            BattleSpeed::Normal => "普通",
+            BattleSpeed::Fast => "快",
+            BattleSpeed::VeryFast => "很快",
         }
     }
 }
@@ -102,8 +102,8 @@ impl PortraitStyle {
 
     pub fn label(self) -> &'static str {
         match self {
-            PortraitStyle::Original => "원작",
-            PortraitStyle::Public => "공개 초상화",
+            PortraitStyle::Original => "原版",
+            PortraitStyle::Public => "替代头像",
         }
     }
 }
@@ -124,8 +124,8 @@ impl BattleFx {
 
     pub fn label(self) -> &'static str {
         match self {
-            BattleFx::Original => "원작",
-            BattleFx::Enhanced => "강화",
+            BattleFx::Original => "原版",
+            BattleFx::Enhanced => "增强",
         }
     }
 }

@@ -217,13 +217,13 @@ impl BacklogView {
         draw_window(self.window);
         let inner = inset(self.window, theme::PADDING + 2.0);
         gfx.text(
-            "최근 대사",
+            "对话记录",
             inner.x + 2.0,
             inner.y,
             TextStyle::main(theme::TEXT_ACCENT).shadow(theme::TEXT_SHADOW),
         );
         gfx.text_aligned(
-            "방향키·휠·끌기 스크롤 · X·터치 닫기",
+            "方向键／滚轮／拖动：滚动 · X：关闭",
             inner.x,
             inner.y + 2.0,
             inner.w - 2.0,
@@ -235,7 +235,7 @@ impl BacklogView {
         let view = self.viewport();
         if self.lines.is_empty() {
             gfx.text_aligned(
-                "아직 대사가 없습니다.",
+                "暂无对话记录。",
                 view.x,
                 view.y + view.h / 2.0 - 8.0,
                 view.w,
@@ -319,13 +319,13 @@ mod tests {
     #[test]
     fn layout_rows_and_scrolling() {
         let mut b = Backlog::default();
-        b.push(Some("장비"), "형님 a b");
+        b.push(Some("装备"), "형님 a b");
         b.push(None, "밤이 깊었다");
         let rows = layout(b.entries(), |t| t.split(' ').map(str::to_string).collect());
         assert_eq!(
             rows,
             vec![
-                BacklogLine::Speaker("장비".into()),
+                BacklogLine::Speaker("装备".into()),
                 BacklogLine::Text("형님".into()),
                 BacklogLine::Text("a".into()),
                 BacklogLine::Text("b".into()),

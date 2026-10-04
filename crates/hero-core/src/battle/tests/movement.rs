@@ -231,6 +231,54 @@ fn treasure_gold_saturates() {
 }
 
 #[test]
+fn newly_collected_bean_can_heal_self_or_adjacent_friend_immediately() {
+    for heal_friend in [false, true] {
+        let mut def = battle(OPEN_MAP);
+        def.treasures = vec![TreasureDef {
+            pos: p(2, 0),
+            item: Some("bean".into()),
+            gold: 0,
+        }];
+        let pack = pack_with(def);
+        let mut st = state(&pack);
+        let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 0));
+        let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(2, 1));
+        add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+        let target = if heal_friend { friend } else { me };
+        st.units[target].hp = 1;
+        st.apply(
+            &pack,
+            Action::Move {
+                unit: me,
+                to: p(2, 0),
+            },
+        )
+        .unwrap();
+        assert_eq!(st.inventory.get("bean"), Some(&1));
+        assert!(st.item_targets(&pack, me, "bean").contains(&target));
+        st.apply(
+            &pack,
+            Action::UseItem {
+                unit: me,
+                item: "bean".into(),
+                target,
+            },
+        )
+        .unwrap();
+        assert!(st.units[target].hp > 1);
+        assert!(!st.inventory.contains_key("bean"));
+        assert!(
+            st.items_found.is_empty(),
+            "used loot must not be awarded again"
+        );
+        assert!(
+            st.items_used.is_empty(),
+            "using loot must not spend pre-battle stock"
+        );
+    }
+}
+
+#[test]
 fn named_attack_shapes() {
     let mut pack = pack(OPEN_MAP);
     for (shape, n) in [
@@ -297,4 +345,46 @@ fn the_threat_range_counts_a_confused_units_full_move() {
     // A unit that is gone threatens nothing.
     st.units[foe].state = crate::battle::UnitState::Retreated;
     assert!(st.threat_range(&pack, foe).tiles.is_empty());
+}
+
+#[test]
+fn personal_loot_is_only_usable_by_its_finder_and_consumes_one_slot() {
+    use crate::inventory::Pocket;
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    let friend = add(&mut st, &pack, Side::Player, "infantry", 1, p(1, 0));
+    add(&mut st, &pack, Side::Enemy, "infantry", 1, p(7, 7));
+    for id in [me, friend] {
+        st.units[id].equip.carried = Some(Pocket::default());
+    }
+    assert!(st.gain_item_for(me, "bean"));
+    st.units[friend].hp = 1;
+    assert!(st.item_targets(&pack, friend, "bean").is_empty());
+    st.apply(
+        &pack,
+        Action::UseItem {
+            unit: me,
+            item: "bean".into(),
+            target: friend,
+        },
+    )
+    .unwrap();
+    assert!(st.units[friend].hp > 1);
+    assert_eq!(st.item_count_for(me, "bean"), 0);
+    assert!(st.items_used.is_empty());
+    assert!(st.items_found.is_empty());
+    assert!(st.inventory.is_empty());
+}
+
+#[test]
+fn full_personal_pocket_cannot_destroy_a_new_item() {
+    use crate::inventory::Pocket;
+    let pack = pack(OPEN_MAP);
+    let mut st = state(&pack);
+    let me = add(&mut st, &pack, Side::Player, "infantry", 1, p(0, 0));
+    st.units[me].equip.carried = Some(Pocket::from_items(vec!["bean".into(); 8]).unwrap());
+    let before = st.clone();
+    assert!(!st.gain_item_for(me, "wine"));
+    assert_eq!(st, before);
 }

@@ -228,7 +228,21 @@ pub fn draw_background(ctx: &Ctx, key: &str, alpha: f32) -> bool {
     match ctx.media.texture_state(&tex_key) {
         AssetState::Ready => match ctx.media.texture(&tex_key) {
             Some(t) => {
-                draw_texture_fit(&t, ctx.gfx.screen(), Fit::Cover, fade(WHITE, alpha));
+                if key.starts_with("orig_stage_") {
+                    let r = original_stage_rect(ctx.gfx.size(), vec2(t.width(), t.height()));
+                    draw_texture_ex(
+                        &t,
+                        r.x,
+                        r.y,
+                        fade(WHITE, alpha),
+                        DrawTextureParams {
+                            dest_size: Some(vec2(r.w, r.h)),
+                            ..Default::default()
+                        },
+                    );
+                } else {
+                    draw_texture_fit(&t, ctx.gfx.screen(), Fit::Cover, fade(WHITE, alpha));
+                }
                 true
             }
             None => false,
@@ -239,6 +253,18 @@ pub fn draw_background(ctx: &Ctx, key: &str, alpha: f32) -> bool {
             true
         }
     }
+}
+
+/// Preserve the DOS interior's aspect and every map edge above the dialogue box.
+fn original_stage_rect(canvas: Vec2, image: Vec2) -> Rect {
+    let room = vec2(canvas.x, (canvas.y - 88.0 - 30.0).max(1.0));
+    let scale = (room.x / image.x).min(room.y / image.y);
+    Rect::new(
+        (canvas.x - image.x * scale) / 2.0,
+        30.0,
+        image.x * scale,
+        image.y * scale,
+    )
 }
 
 /// Portrait art for a key.
@@ -519,6 +545,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn original_interiors_fit_above_dialogue_without_cropping() {
+        for canvas in [vec2(640.0, 400.0), vec2(1280.0, 800.0), vec2(400.0, 600.0)] {
+            let r = original_stage_rect(canvas, vec2(512.0, 320.0));
+            assert!(r.x >= 0.0 && r.x + r.w <= canvas.x + 0.001);
+            assert!(r.y + r.h <= canvas.y - 88.0 + 0.001);
+            assert!((r.w / r.h - 1.6).abs() < 0.001);
+        }
+    }
+
+    #[test]
     fn known_backgrounds_have_moods() {
         assert_eq!(fallback_palette("black").2, Scenery::Plain);
         assert_eq!(fallback_palette("night").2, Scenery::Night);
@@ -534,7 +570,7 @@ mod tests {
         let pack = crate::screens::camp::test_pack();
         assert_eq!(
             name_card_text(Some(&pack), "guan_yu"),
-            ("關羽".to_string(), "관우".to_string())
+            ("關羽".to_string(), "關羽".to_string())
         );
         assert_eq!(
             name_card_text(Some(&pack), "전령"),

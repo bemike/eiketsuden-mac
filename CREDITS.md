@@ -1,14 +1,14 @@
 # Credits
 
-Eiketsuden Reloaded is an original reimplementation. **No material from KOEI / KOEI TECMO — no
-graphics, music, sound, text, data or code of the original game — is included in this repository
-or in its releases.** The base pack (`data/base`) is built only from the openly licensed sources
-below, from art made for this project and from text written for it. The rules and numbers of the
-original are reproduced as facts (see D5 in [`docs/DECISIONS.md`](docs/DECISIONS.md)); people,
-places and events come from history and the public-domain novel; the names of classes,
-strategies and items are plain words for what they are, so some of them coincide with the terms of
-the original's localisations. The story, the dialogue and the titles of the chapters, acts and
-scenes are our own.
+## This Mac adaptation
+
+This is a non-official Chinese macOS adaptation of [Eiketsuden Reloaded](https://github.com/jeiel85/eiketsuden-reloaded), based on upstream v0.4.1 (commit `202e2771a8b674616a8e75e799c1490411e7b164`). Upstream engine contributors retain their copyright and GPL-3.0-or-later notices. Local adaptation and packaging changes were made with assistance from OpenAI Codex.
+
+**This private repository and its full-game releases differ from upstream's licence-clean distribution.** This repository includes the original Chinese title picture and title-derived icon artwork. Full-game release ZIPs also contain converted original game graphics, dialogue, maps, rules data and music. These assets remain owned by their original rights holders and are **not** relicensed under GPL, CC0 or the base-pack text licence. See `docs/ORIGINAL_TITLE_SOURCES.md`. Keep the repository private; visibility changes or wider redistribution require a separate review of these assets.
+
+The custom Han-style camp background is AI-generated; the high-resolution rounded icon is an AI reconstruction of the original title mark, not an official high-resolution source image.
+
+The attribution and licences below describe the upstream base assets; changes in this adaptation are noted separately.
 
 ## Licences
 
@@ -109,7 +109,7 @@ woodblock lines are also thickened; show-through from the back of the leaf is pa
 
 ### Paintings used for the drama backgrounds
 
-All from Wikimedia Commons (original files). Used in `gfx/bg/*.png`; changes for all: cropped to
+Except for the custom `camp` illustration described below, paintings are from Wikimedia Commons (original files). Used in `gfx/bg/*.png`; changes for paintings: cropped to
 16:9, scaled to 960x540, colour-graded (less saturation, a common brightness, highlight roll-off,
 vignette; `night` tinted blue), reduced to 256 colours.
 
@@ -117,11 +117,12 @@ vignette; `night` tinted blue), reduced to 256 colours.
 |---|---|---|---|---|---|
 | `palace` | 漢宮春曉圖 *Spring Morning in the Han Palace* | Qiu Ying (仇英), Ming | National Palace Museum, Taipei | public domain | <https://commons.wikimedia.org/wiki/File:Spring_Morning_in_the_Han_Palace_(%E6%B1%89%E5%AE%AB%E6%98%A5%E6%99%93%E5%9B%BE).jpg> |
 | `town`, `village`, `castle` | 清院本清明上河圖 *Along the River During the Qingming Festival*, Qing Court Version (1736), sections 14, 03, 11 | Chen Mei (陳枚), Sun Hu (孫祜), Jin Kun (金昆), Dai Hong (戴洪), Cheng Zhidao (程志道) | National Palace Museum, Taipei | public domain | [14](https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version)_14.jpg), [03](https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version)_03.jpg), [11](https://commons.wikimedia.org/wiki/File:Along_the_River_During_the_Qingming_Festival_(Qing_Court_Version)_11.jpg) |
-| `camp` | 萬樹園賜宴圖 *Imperial Banquet in the Garden of Ten Thousand Trees* (1755) | Jean-Denis Attiret (王致誠), Giuseppe Castiglione (郎世寧) and other court painters | Palace Museum, Beijing | public domain | <https://commons.wikimedia.org/wiki/File:%E8%90%AC%E6%A8%B9%E5%9C%92%E8%B3%9C%E5%AE%B4%E5%9C%96.jpg> |
 | `field` | 康熙南巡圖 卷三 *The Kangxi Emperor's Southern Inspection Tour, Scroll Three: Jinan to Mount Tai* (detail DP105294) | Wang Hui (王翬) and assistants, 1698 | The Metropolitan Museum of Art | CC0 (Met Open Access) | <https://commons.wikimedia.org/wiki/File:%E6%B8%85_%E7%8E%8B%E7%BF%AC_%E7%AD%89_%E5%BA%B7%E7%86%99%E5%8D%97%E5%B7%A1%E5%9C%96_%EF%BC%88%E5%8D%B7%E4%B8%89-_%E6%BF%9F%E5%8D%97%E8%87%B3%E6%B3%B0%E5%B1%B1%EF%BC%89_%E5%8D%B7-The_Kangxi_Emperor%27s_Southern_Inspection_Tour,_Scroll_Three-_Jinan_to_Mount_Tai_MET_DP105294.jpg> |
 | `river` | 赤壁圖 *Red Cliff* (detail 5) | Wu Yuanzhi (武元直), Jin | National Palace Museum, Taipei | CC BY 4.0 (the museum's open-data licence) | <https://commons.wikimedia.org/wiki/File:%E9%87%91%E6%AD%A6%E5%85%83%E7%9B%B4%E8%B5%A4%E5%A3%81%E5%9C%96_%E5%8D%B7%EF%BC%88%E5%B1%80%E9%83%A85%EF%BC%89.jpg> |
 | `mountain` | 明皇幸蜀圖 *Emperor Minghuang's Journey to Shu* | attributed to Qiu Ying (仇英) | Freer Gallery of Art, Smithsonian | public domain | <https://commons.wikimedia.org/wiki/File:Emperor_Minghuang%27s_Journey_to_Sichuan,_Freer_Gallery_of_Art.jpg> |
 | `night` | 千里江山圖 *A Thousand Li of Rivers and Mountains* (1113), section 1 | Wang Ximeng (王希孟) | Palace Museum, Beijing | CC0 | <https://commons.wikimedia.org/wiki/File:A_Thousand_Li_of_Rivers_and_Mountains_Section_1.jpg> |
+
+`camp` is a custom AI-generated late Eastern Han-style field camp illustration, created with OpenAI imagegen on 2026-10-04 for this local adaptation. It replaces the former Qing imperial banquet backdrop. The full-resolution RGB image is used without painting-source grading. Prompt and source details: `docs/HAN_CAMP_AND_CHINESE_FONTS.md`. This is a stylized game illustration, not an archaeological reconstruction.
 
 `black` is a plain black image made by the pipeline.
 
@@ -202,5 +203,8 @@ bales) and the walls, palisades, bridges and paving generated by `tools/assets/b
 is dedicated to the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 It uses the Ninja Adventure colour palette. The same applies to the images the pipeline draws
 itself: the fallback portrait `gfx/portraits/_unknown.png` (`tools/assets/build_portraits.py`) and
-`gfx/bg/black.png`, and the application icon (`crates/hero-game/icon/`, drawn by
-`tools/assets/build_icon.py`: the web page's banner favicon as pixel art).
+`gfx/bg/black.png`, and the upstream procedural application icon (generated by `tools/assets/build_icon.py`). This CC0 dedication does not apply to the title-derived `original_icon_*` assets or the replacement runtime bitmaps in this Mac adaptation.
+
+### Chinese adaptation font completion (0.1.7)
+
+Both game fonts include additional Simplified and Traditional Chinese glyphs from the Fusion Pixel Chinese build under OFL-1.1. Modified internal families are Galmuri11 ER Chinese and Galmuri9 ER Chinese. The 0.1.7 audit includes current native UI source and the final packaged Chinese campaign data, and adds 么宫报给贩领 to both fonts. Original font copyrights and the shipped OFL licences remain in place.

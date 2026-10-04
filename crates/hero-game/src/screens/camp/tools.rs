@@ -22,11 +22,19 @@ use macroquad::prelude::*;
 
 /// Inventory items that can be used in camp (class-up and class-change items).
 pub fn camp_items(pack: &Pack, campaign: &CampaignState) -> Vec<Id> {
-    campaign
+    let mut ids: std::collections::BTreeSet<&Id> = campaign
         .inventory
         .iter()
         .filter(|(_, n)| **n > 0)
-        .filter_map(|(id, _)| pack.item(id))
+        .map(|(id, _)| id)
+        .collect();
+    for officer in campaign.roster.iter().filter(|o| !o.away) {
+        if let Some(pocket) = &officer.equip.carried {
+            ids.extend(pocket.iter());
+        }
+    }
+    ids.into_iter()
+        .filter_map(|id| pack.item(id))
         .filter(|item| {
             item.effects
                 .iter()
@@ -48,7 +56,7 @@ pub fn usability(
         Ok(()) => trial
             .officer(officer)
             .map(|o| o.class.clone())
-            .ok_or_else(|| "아군에 없는 무장입니다.".to_string()),
+            .ok_or_else(|| "此武将不在我军中。".to_string()),
         Err(e) => Err(reason(pack, campaign, officer, item, &e)),
     }
 }
@@ -73,27 +81,24 @@ fn reason(
             Effect::Promote => {
                 let Some(promotion) = pack.class(&state.class).and_then(|c| c.promote.as_ref())
                 else {
-                    return format!(
-                        "{} 더 이상 승급할 수 없습니다.",
-                        with_particle(class, Particle::EunNeun)
-                    );
+                    return format!("{} 无法继续晋升。", with_particle(class, Particle::EunNeun));
                 };
                 if promotion.item != item {
-                    return format!("{} 승급하는 도구가 아닙니다.", class_to(class));
+                    return format!("{} 不是晋升道具。", class_to(class));
                 }
                 if state.level < promotion.level {
                     return format!(
-                        "레벨 {} 이상이어야 합니다. (현재 {})",
+                        "需要等级 {} 以上（当前 {}）。",
                         promotion.level, state.level
                     );
                 }
             }
             Effect::ChangeClass { to } => {
                 if pack.officer(officer).is_some_and(|o| o.fixed_class) {
-                    return "병과를 바꿀 수 없는 무장입니다.".to_string();
+                    return "此武将无法改变兵种。".to_string();
                 }
                 if state.class == *to {
-                    return format!("이미 {}입니다.", class_name(pack, to));
+                    return format!("已经是 {}。", class_name(pack, to));
                 }
             }
             _ => {}
@@ -171,7 +176,17 @@ impl ToolsScreen {
             .iter()
             .filter_map(|id| pack.item(id))
             .map(|item| {
-                MenuItem::new(&item.name).detail(format!("×{}", campaign.item_count(&item.id)))
+                MenuItem::new(&item.name).detail(format!(
+                    "×{}",
+                    campaign.item_count(&item.id)
+                        + campaign
+                            .roster
+                            .iter()
+                            .filter(|o| !o.away)
+                            .filter_map(|o| o.equip.carried.as_ref())
+                            .map(|p| p.count(&item.id))
+                            .sum::<u32>()
+                ))
             })
             .collect();
         let cursor = self.item_menu.cursor();
@@ -244,7 +259,7 @@ impl ToolsScreen {
                 let name = officer_name(&pack, &officer.id);
                 let item_name = pack.item(item).map_or(item.as_str(), |i| i.name.as_str());
                 let text = format!(
-                    "{}에게 {} 사용할까요?\n{} → {}",
+                    "为 {} 使用 {}？\n{} → {}",
                     name,
                     with_particle(item_name, Particle::EulReul),
                     class_name(&pack, &officer.class),
@@ -253,7 +268,7 @@ impl ToolsScreen {
                 self.popup = Popup::Confirm {
                     officer: officer.id.clone(),
                     item: item.clone(),
-                    dialog: ConfirmDialog::new(&ctx.gfx, &text).labels("사용", "취소"),
+                    dialog: ConfirmDialog::new(&ctx.gfx, &text).labels("使用", "取消"),
                 };
             }
             Err(why) => {
@@ -288,14 +303,14 @@ impl ToolsScreen {
                     .collect();
                 if !returned.is_empty() {
                     lines.push(format!(
-                        "새 병과로 쓸 수 없는 {} 보관함으로 돌아갔습니다.",
+                        "新兵种无法使用的 {} 已放回仓库。",
                         with_particle(&returned.join(", "), Particle::EunNeun)
                     ));
                 }
                 ctx.sfx(sfx::LEVELUP);
                 self.popup = Popup::Outcome(Outcome {
                     title: format!(
-                        "{} {} 되었습니다!",
+                        "{} 成为了 {}！",
                         with_particle(name, Particle::IGa),
                         with_particle(class_name(&pack, &after.class), Particle::IGa)
                     ),
@@ -392,7 +407,7 @@ impl Screen for ToolsScreen {
                     self.rebuild(ctx);
                 } else {
                     ctx.sfx(sfx::ERROR);
-                    ctx.toast("지금 이 도구를 쓸 수 있는 무장이 없습니다.");
+                    ctx.toast("当前没有武将能使用此道具。");
                 }
             }
             MenuEvent::Moved(_) => self.rebuild_officers(ctx),
@@ -410,12 +425,12 @@ impl Screen for ToolsScreen {
         let gfx = &ctx.gfx;
         let (items_rect, officers_rect) = columns(gfx.size(), ITEMS_W);
         draw_camp_backdrop(ctx, 0.8);
-        draw_header(ctx, "도구", campaign.gold);
+        draw_header(ctx, "道具", campaign.gold);
 
-        draw_list_frame(ctx, items_rect, "병과 도구", !self.choosing_officer);
+        draw_list_frame(ctx, items_rect, "转职道具", !self.choosing_officer);
         if self.items.is_empty() {
             let lines = gfx.wrap(
-                "승급이나 병과 변경에 쓰는 도구가 없습니다. 도구상에서 사거나 전투에서 얻을 수 있습니다.",
+                "没有晋升或转职道具，可在商店购买或在战斗中获得。",
                 FontId::Main,
                 1,
                 items_rect.w - 20.0,
@@ -435,7 +450,7 @@ impl Screen for ToolsScreen {
             }
         }
 
-        draw_list_frame(ctx, officers_rect, "사용할 무장", self.choosing_officer);
+        draw_list_frame(ctx, officers_rect, "选择使用的武将", self.choosing_officer);
         self.officer_menu.draw(ctx);
         let item = self.selected_item();
         for (i, row) in visible_rows(&self.officer_menu) {
@@ -472,8 +487,8 @@ impl Screen for ToolsScreen {
             Some(it) if !self.choosing_officer => {
                 format!("{} — {}", item_effect(pack, it), it.desc)
             }
-            _ if self.choosing_officer => "Z 사용 · X 도구 목록".to_string(),
-            _ => "X 돌아가기".to_string(),
+            _ if self.choosing_officer => "Z：使用 · X：道具列表".to_string(),
+            _ => "X：返回".to_string(),
         };
         draw_help(ctx, &help);
         draw_back_button(ctx);
@@ -545,7 +560,7 @@ mod tests {
 
         // Level too low for the class-up item.
         let why = usability(&pack, &campaign, "guan_yu", "horse_armor").unwrap_err();
-        assert_eq!(why, "레벨 15 이상이어야 합니다. (현재 1)");
+        assert_eq!(why, "需要等级 15 以上（当前 1）。");
         campaign.officer_mut("guan_yu").unwrap().level = 15;
         assert_eq!(
             usability(&pack, &campaign, "guan_yu", "horse_armor"),
@@ -553,17 +568,17 @@ mod tests {
         );
         // Wrong item for the class.
         let why = usability(&pack, &campaign, "guan_yu", "long_spear").unwrap_err();
-        assert_eq!(why, "경기병을 승급하는 도구가 아닙니다.");
+        assert_eq!(why, "輕騎兵 不是晋升道具。");
         // The lord cannot change class; others can.
         let why = usability(&pack, &campaign, "liu_bei", "archery_guide").unwrap_err();
-        assert_eq!(why, "병과를 바꿀 수 없는 무장입니다.");
+        assert_eq!(why, "此武将无法改变兵种。");
         assert_eq!(
             usability(&pack, &campaign, "zhang_fei", "archery_guide"),
             Ok("archer".to_string())
         );
         // Not owned.
         let why = usability(&pack, &campaign, "zhang_fei", "war_cart").unwrap_err();
-        assert!(why.contains("가지고 있지 않습니다"));
+        assert!(why.contains("没有持有"));
         // The dry runs changed nothing.
         assert_eq!(campaign.item_count("horse_armor"), 1);
         assert_eq!(campaign.officer("guan_yu").unwrap().class, "light_cavalry");

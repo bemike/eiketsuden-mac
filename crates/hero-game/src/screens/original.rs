@@ -189,12 +189,11 @@ const READS_IN_BACKGROUND: bool = false;
 /// forever on the main thread (docs/DECISIONS.md D14).
 #[cfg(target_os = "linux")]
 fn read_clipboard() -> Result<Option<String>, String> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("클립보드를 열지 못했습니다: {e}"))?;
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("无法打开剪贴板：{e}"))?;
     match clipboard.get_text() {
         Ok(text) => Ok(first_line(&text)),
         Err(arboard::Error::ContentNotAvailable) => Ok(None),
-        Err(e) => Err(format!("클립보드를 읽지 못했습니다: {e}")),
+        Err(e) => Err(format!("无法读取剪贴板：{e}")),
     }
 }
 
@@ -236,7 +235,7 @@ fn next_starting_with(rows: &[Row], cursor: usize, c: char) -> Option<usize> {
 /// How the browser names a place.
 fn place_name(place: &Place) -> String {
     match place {
-        Place::Roots => "드라이브".to_string(),
+        Place::Roots => "磁盘".to_string(),
         Place::Dir(dir) => dir.display().to_string(),
     }
 }
@@ -308,7 +307,7 @@ impl OriginalScreen {
     /// being typed). Linux reads it in the background ([`read_clipboard`]).
     fn paste(&mut self, ctx: &mut Ctx) {
         if READS_IN_BACKGROUND {
-            self.start(ctx, true, "클립보드".into(), || {
+            self.start(ctx, true, "剪贴板".into(), || {
                 Done::Pasted(read_clipboard())
             });
         } else {
@@ -333,7 +332,7 @@ impl OriginalScreen {
         drain_chars();
         let saved = ctx.settings.original_dir.clone().filter(|_| use_saved);
         let skips_saved = saved.is_some();
-        let what = saved.clone().unwrap_or_else(|| "시작 위치".to_string());
+        let what = saved.clone().unwrap_or_else(|| "起始位置".to_string());
         self.start(ctx, true, what, move || {
             Done::Show(
                 original::look(original::start_place(saved.as_deref())),

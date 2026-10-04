@@ -39,10 +39,10 @@ enum SlotAction {
 impl SlotAction {
     fn label(self) -> &'static str {
         match self {
-            SlotAction::Load => "불러오기",
-            SlotAction::Save => "여기에 기록",
-            SlotAction::Delete => "삭제",
-            SlotAction::Cancel => "취소",
+            SlotAction::Load => "读取存档",
+            SlotAction::Save => "存入此处",
+            SlotAction::Delete => "删除",
+            SlotAction::Cancel => "取消",
         }
     }
 }
@@ -113,11 +113,11 @@ impl SaveLoadScreen {
             .iter()
             .map(|info| {
                 let (text, detail) = match &info.status {
-                    SlotStatus::Empty => ("— 비어 있음 —".to_string(), String::new()),
+                    SlotStatus::Empty => ("— 空存档 —".to_string(), String::new()),
                     SlotStatus::Ready(s) => {
                         (s.label.clone(), format::relative_time(s.saved_at, self.now))
                     }
-                    SlotStatus::Unreadable(_) => ("(읽을 수 없는 기록)".to_string(), String::new()),
+                    SlotStatus::Unreadable(_) => ("（无法读取的存档）".to_string(), String::new()),
                 };
                 let enabled = match (&info.status, info.slot) {
                     (_, slot) if saving && slot.is_system() => false,
@@ -177,9 +177,9 @@ impl SaveLoadScreen {
         let name = self.slots[slot].slot.name();
         let dialog = match action {
             SlotAction::Delete => {
-                ConfirmDialog::new(&ctx.gfx, &format!("{name}을(를) 삭제할까요?")).default_no()
+                ConfirmDialog::new(&ctx.gfx, &format!("删除 {name}？")).default_no()
             }
-            _ => ConfirmDialog::new(&ctx.gfx, &format!("{name}에 덮어쓸까요?")).default_no(),
+            _ => ConfirmDialog::new(&ctx.gfx, &format!("覆盖 {name}？")).default_no(),
         };
         self.popup = Popup::Confirm {
             slot,
@@ -211,21 +211,21 @@ impl SaveLoadScreen {
                     save.saved_at = unix_now();
                     match saves::write(ctx.storage.as_mut(), slot, &save) {
                         Ok(()) => {
-                            ctx.toast(format!("{}에 기록했습니다.", slot.name()));
+                            ctx.toast(format!("已保存至{}。", slot.name()));
                             return Transition::Pop;
                         }
                         Err(e) => {
                             ctx.sfx(sfx::ERROR);
-                            ctx.toast(format!("기록하지 못했습니다: {e}"));
+                            ctx.toast(format!("无法存档：{e}"));
                         }
                     }
                 }
             }
             SlotAction::Delete => match saves::delete(ctx.storage.as_mut(), slot, &self.pack_id) {
-                Ok(()) => ctx.toast(format!("{}을(를) 삭제했습니다.", slot.name())),
+                Ok(()) => ctx.toast(format!("已删除{}。", slot.name())),
                 Err(e) => {
                     ctx.sfx(sfx::ERROR);
-                    ctx.toast(format!("삭제하지 못했습니다: {e}"));
+                    ctx.toast(format!("无法删除：{e}"));
                 }
             },
             SlotAction::Cancel => {}
@@ -329,9 +329,9 @@ impl Screen for SaveLoadScreen {
         draw_title_bar(
             ctx,
             if self.saving() {
-                "기록하기"
+                "保存进度"
             } else {
-                "불러오기"
+                "读取存档"
             },
         );
         self.menu.draw(ctx);
@@ -361,35 +361,25 @@ impl Screen for SaveLoadScreen {
                                 format::date_utc(s.saved_at)
                             )
                         } else {
-                            "시각 모름".into()
+                            "时间未知".into()
                         };
                         let mut detail = format!(
-                            "기록 시각 {when}   플레이 {}",
+                            "存档时间 {when}   游戏时长 {}",
                             format::play_time(s.play_seconds)
                         );
                         if s.mid_battle {
-                            detail.push_str("   전투 중");
+                            detail.push_str("   战斗中");
                         }
                         if s.mid_scene {
-                            detail.push_str("   장면 중");
+                            detail.push_str("   剧情中");
                         }
                         gfx.text(&detail, x, y + 17.0, small);
                     }
                     SlotStatus::Empty => {
-                        gfx.text(
-                            "비어 있는 칸입니다.",
-                            x,
-                            y,
-                            TextStyle::main(theme::TEXT_DIM),
-                        );
+                        gfx.text("此存档槽为空。", x, y, TextStyle::main(theme::TEXT_DIM));
                     }
                     SlotStatus::Unreadable(why) => {
-                        gfx.text(
-                            "읽을 수 없는 기록입니다.",
-                            x,
-                            y,
-                            TextStyle::main(theme::TEXT_BAD),
-                        );
+                        gfx.text("无法读取此存档。", x, y, TextStyle::main(theme::TEXT_BAD));
                         let lines = gfx.wrap(why, crate::gfx::FontId::Small, 1, info_rect.w - 20.0);
                         gfx.text_lines(&lines[..lines.len().min(2)], x, y + 17.0, small);
                     }
@@ -397,7 +387,7 @@ impl Screen for SaveLoadScreen {
             }
         }
         gfx.text_aligned(
-            "Z/Enter 선택 · X/Esc 돌아가기 · Delete 삭제",
+            "Z/Enter：选择 · X/Esc：返回 · Delete：删除",
             0.0,
             h - 15.0,
             w - 8.0,

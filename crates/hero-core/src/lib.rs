@@ -8,6 +8,7 @@ pub mod campaign;
 pub mod data;
 pub mod drama;
 pub mod geom;
+pub mod inventory;
 pub mod map;
 pub mod media_index;
 pub mod pack;

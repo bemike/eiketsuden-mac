@@ -141,7 +141,7 @@ fn chain_root(current: &DataRoot, chain: &PackChain) -> DataRoot {
 /// A pack error for the error screen.
 fn describe(e: &PackError) -> String {
     match e {
-        PackError::Missing { file } => format!("{file}: 파일이 없습니다"),
+        PackError::Missing { file } => format!("{file}：文件不存在"),
         other => other.to_string(),
     }
 }
@@ -165,8 +165,7 @@ impl LoadingScreen {
         if self.original == Original::Mounted {
             // The converted pack itself does not load: the base pack is still playable.
             let mut lines = vec![
-                "원작에서 변환한 팩을 불러오지 못했습니다. 기본 팩으로 계속하거나 다른 폴더를 고를 수 있습니다."
-                    .to_string(),
+                "无法载入转换后的原版数据，可使用基础数据或选择其他文件夹。".to_string(),
                 String::new(),
             ];
             lines.extend(details);
@@ -174,16 +173,16 @@ impl LoadingScreen {
         }
         let mut lines = details;
         lines.push(String::new());
-        lines.push(format!("데이터 위치: {}", ctx.data_root.display()));
+        lines.push(format!("数据位置：{}", ctx.data_root.display()));
         if ctx.data_root.candidates().len() > 1 {
             lines.push(format!(
-                "찾아본 위치: {}",
+                "已查找的位置：{}",
                 ctx.data_root.candidates().join(", ")
             ));
         }
         if !crate::platform::is_web() {
             lines.push(format!(
-                "--data <폴더> 옵션이나 {} 환경 변수로 데이터 팩 위치를 지정할 수 있습니다.",
+                "可用 --data <文件夹> 或 {} 环境变量指定数据位置。",
                 crate::platform::DATA_ENV
             ));
         }
@@ -210,7 +209,7 @@ impl LoadingScreen {
 
     /// Load the fonts from the top pack and the given parents, then continue with `next`.
     fn load_fonts(&mut self, ctx: &Ctx, parents: Vec<String>, next: Next) {
-        self.status = "글꼴".into();
+        self.status = "字体".into();
         self.progress = 0.05;
         let root = ctx.data_root.top_pack().with_parent_packs(parents);
         let pending = [FontId::Main, FontId::Small]
@@ -276,7 +275,7 @@ impl LoadingScreen {
                 }
             }
             (Target::Game, Err(e)) => Next::Fail {
-                title: "데이터 팩 오류",
+                title: "游戏数据错误",
                 details: vec![describe(&e)],
             },
         };
@@ -318,12 +317,12 @@ impl LoadingScreen {
                 let text = match (text, &chain) {
                     (Ok(text), _) => text,
                     (Err(e), None) => {
-                        self.chain_failed(ctx, known, "데이터 팩을 찾을 수 없습니다", e);
+                        self.chain_failed(ctx, known, "找不到游戏数据", e);
                         return Transition::None;
                     }
                     (Err(e), Some(c)) => {
                         let e = describe(&c.parent_unreadable(&e));
-                        self.chain_failed(ctx, known, "데이터 팩 오류", e);
+                        self.chain_failed(ctx, known, "游戏数据错误", e);
                         return Transition::None;
                     }
                 };
@@ -334,7 +333,7 @@ impl LoadingScreen {
                 let chain = match pushed {
                     Ok(c) => c,
                     Err(e) => {
-                        self.chain_failed(ctx, known, "데이터 팩 오류", describe(&e));
+                        self.chain_failed(ctx, known, "游戏数据错误", describe(&e));
                         return Transition::None;
                     }
                 };
@@ -420,18 +419,18 @@ impl LoadingScreen {
                     }
                 }
                 if !errors.is_empty() {
-                    return self.fail("데이터 팩 파일을 읽을 수 없습니다", errors, ctx);
+                    return self.fail("无法读取游戏数据文件", errors, ctx);
                 }
                 // `Pack::load` reads the chain's `pack.toml` files through the same source.
                 files.extend(manifests);
-                self.status = "규칙 해석".into();
+                self.status = "解析规则".into();
                 self.progress = 0.8;
                 self.stage = Stage::Parse(files);
             }
             Stage::Parse(files) => {
                 let pack = match Pack::load(&files) {
                     Ok(p) => p,
-                    Err(e) => return self.fail("데이터 팩 오류", vec![describe(&e)], ctx),
+                    Err(e) => return self.fail("游戏数据错误", vec![describe(&e)], ctx),
                 };
                 let issues = pack.validate();
                 let mut errors = Vec::new();
@@ -448,9 +447,9 @@ impl LoadingScreen {
                     let total = errors.len();
                     errors.truncate(MAX_LISTED_ISSUES);
                     if total > MAX_LISTED_ISSUES {
-                        errors.push(format!("… 외 {}건", total - MAX_LISTED_ISSUES));
+                        errors.push(format!("… 另有 {} 项", total - MAX_LISTED_ISSUES));
                     }
-                    return self.fail("데이터 팩 검증 실패", errors, ctx);
+                    return self.fail("游戏数据校验失败", errors, ctx);
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Original::Wanted(install) = &self.original {
@@ -469,7 +468,7 @@ impl LoadingScreen {
                     }
                     Err(e) => {
                         macroquad::logging::error!("save migration failed: {}", e);
-                        ctx.toast(format!("이전 기록을 옮기지 못했습니다: {e}"));
+                        ctx.toast(format!("无法迁移旧存档：{e}"));
                     }
                 }
                 // A written original pack in the chain on disk (`--data data/original`, or a mod
@@ -481,7 +480,7 @@ impl LoadingScreen {
                     for (layer, why) in hero_import::pack::stale_packs(dir, &pack) {
                         macroquad::logging::warn!("original pack {}: {}", layer.display(), why);
                         ctx.toast(format!(
-                            "원작 팩을 다시 변환하세요 (hero-tools original pack): {}",
+                            "请重新转换原版数据（hero-tools original pack）：{}",
                             layer.display()
                         ));
                     }
@@ -494,7 +493,7 @@ impl LoadingScreen {
                     .collect();
                 ctx.media.preload_sounds(&sounds);
                 ctx.media.preload_textures(&["ui/title"]);
-                self.status = "음악·그림".into();
+                self.status = "音乐与图像".into();
                 self.progress = 0.9;
                 self.stage = Stage::Media { since: ctx.time };
             }
@@ -531,14 +530,13 @@ impl LoadingScreen {
         let check = check_folder(&dir);
         if !check.is_supported() {
             let title = match check {
-                FolderCheck::Unreadable(_) => "원작 폴더를 찾을 수 없습니다",
-                _ => "원작 폴더를 쓸 수 없습니다",
+                FolderCheck::Unreadable(_) => "找不到原版文件夹",
+                _ => "无法使用原版文件夹",
             };
             let mut lines = vec![
-                format!("원작 폴더: {install}"),
+                format!("原版文件夹：{install}"),
                 check.summary(),
-                "폴더가 옮겨졌거나 지워졌다면 다시 골라 주세요. 기본 팩으로는 계속 플레이할 수 있습니다."
-                    .to_string(),
+                "文件夹可能已移动或删除，请重新选择。".to_string(),
             ];
             if !check.evidence().is_empty() {
                 lines.push(String::new());
@@ -549,12 +547,12 @@ impl LoadingScreen {
             }
             return Transition::replace(ErrorScreen::original(title, lines));
         }
-        let display = format!("원작 모드 (메모리 변환: {install})");
+        let display = format!("原版模式（内存转换：{install}）");
         let Some((root, extends)) = ctx.data_root.memory_pack(PACK_DIR, &display) else {
             return Transition::replace(ErrorScreen::original(
-                "원작 모드를 시작할 수 없습니다",
+                "无法启动原版模式",
                 vec![format!(
-                    "기본 팩 폴더 {} 옆에 원작 모드 팩을 둘 수 없습니다(드라이브 최상위 폴더). 기본 팩을 하위 폴더로 옮겨 주세요.",
+                    "无法在基础数据文件夹 {} 旁放置转换数据，请使用子文件夹。",
                     ctx.data_root.display()
                 )],
             ));
@@ -565,7 +563,7 @@ impl LoadingScreen {
             check.summary()
         );
         let options = PackOptions::for_pack(base, extends, None);
-        self.status = "원작 변환".into();
+        self.status = "转换原版数据".into();
         self.progress = 0.0;
         self.stage = Stage::Convert(Box::new((Conversion::start(dir, options), root)));
         Transition::None
@@ -586,11 +584,10 @@ impl LoadingScreen {
             Err(e) => {
                 macroquad::logging::error!("original mode: {}: {}", install.display(), e);
                 return Transition::replace(ErrorScreen::original(
-                    "원작 변환 실패",
+                    "原版数据转换失败",
                     vec![
-                        format!("원작 폴더: {}", install.display()),
-                        "원작 파일을 변환하지 못했습니다. 파일이 손상되었거나 다른 판본일 수 있습니다."
-                            .to_string(),
+                        format!("原版文件夹：{}", install.display()),
+                        "无法转换原版文件，文件可能损坏或版本不同。".to_string(),
                         String::new(),
                         e,
                     ],
@@ -615,7 +612,7 @@ impl LoadingScreen {
         }
         if !incomplete.is_empty() {
             ctx.toast(format!(
-                "원작에서 일부를 변환하지 못해 기본 팩 그림을 씁니다: {}",
+                "部分原版资源无法转换，使用替代图像：{}",
                 incomplete.join(", ")
             ));
         }
@@ -686,7 +683,7 @@ impl Screen for LoadingScreen {
         }
         if self.fonts_ready {
             gfx.text_aligned(
-                "영걸전 Reloaded",
+                "三国志英杰传 · 原生版",
                 0.0,
                 mid - 39.0,
                 w,
@@ -696,7 +693,7 @@ impl Screen for LoadingScreen {
                     .shadow(theme::TEXT_SHADOW),
             );
             gfx.text_aligned(
-                &format!("불러오는 중… {}", self.status),
+                &format!("正在载入… {}", self.status),
                 0.0,
                 mid + 47.0,
                 w,
@@ -794,6 +791,6 @@ version = \"1\"
         let e = PackError::Missing {
             file: "../base/rules/game.toml".into(),
         };
-        assert_eq!(describe(&e), "../base/rules/game.toml: 파일이 없습니다");
+        assert_eq!(describe(&e), "../base/rules/game.toml：文件不存在");
     }
 }

@@ -1,0 +1,32 @@
+name: Manual Mac source check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the native Apple Silicon engine
+        run: cargo build --locked --release -p hero-game --target aarch64-apple-darwin
+      - name: Rust tests
+        run: cargo test --locked --workspace
+      - name: Base pack validation
+        run: cargo run --locked --release -p hero-tools -- validate data/base
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Font audit
+        run: |
+          pip install 'fonttools[woff]'
+          python tools/assets/verify_chinese_fonts.py --data-root data
+
+# This workflow never publishes a release or imports original game files.
+# Full-game ZIPs are reviewed and uploaded manually to this PRIVATE repository.

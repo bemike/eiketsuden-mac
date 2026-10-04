@@ -410,7 +410,7 @@ impl BattleState {
                     self.gain_levels(pack, id, *amount, ev);
                 }
             }
-            EventAction::GiveItem { item } => self.items_found.push(item.clone()),
+            EventAction::GiveItem { item } => self.gain_item(item),
             EventAction::GiveGold { amount } => {
                 self.gold_found = self.gold_found.saturating_add(*amount)
             }

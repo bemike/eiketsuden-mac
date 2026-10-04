@@ -54,8 +54,8 @@ impl Screen for GameOverScreen {
             .is_some_and(|id| saves::any(ctx.storage.as_ref(), id));
         let cursor = if can_load { 0 } else { 1 };
         let mut menu = Menu::new(vec![
-            MenuItem::new("불러오기").enabled(can_load),
-            MenuItem::new("타이틀로"),
+            MenuItem::new("读取存档").enabled(can_load),
+            MenuItem::new("返回标题"),
         ])
         .cancellable(false)
         .at(
@@ -92,7 +92,7 @@ impl Screen for GameOverScreen {
         );
         let alpha = (self.age / 1.2).min(1.0);
         gfx.text_aligned(
-            "패 배",
+            "败 北",
             0.0,
             mid - HEADING_ABOVE,
             w,
@@ -102,7 +102,7 @@ impl Screen for GameOverScreen {
                 .shadow(Color::new(0.0, 0.0, 0.0, 0.8 * alpha)),
         );
         gfx.text_aligned(
-            "군이 무너졌습니다. 기록을 불러와 다시 도전하십시오.",
+            "我军败北，请读取存档重新挑战。",
             0.0,
             mid - MESSAGE_ABOVE,
             w,

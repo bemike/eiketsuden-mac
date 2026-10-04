@@ -2,7 +2,7 @@
 //! adjustable values (◀ value ▶) and cancel.
 //!
 //! ```ignore
-//! let mut menu = Menu::new(vec![MenuItem::new("새 게임"), MenuItem::new("종료")])
+//! let mut menu = Menu::new(vec![MenuItem::new("新的征程"), MenuItem::new("退出游戏")])
 //!     .at(180.0, 120.0, 120.0);
 //! match menu.update(ctx) {
 //!     MenuEvent::Selected(0) => { /* ... */ }

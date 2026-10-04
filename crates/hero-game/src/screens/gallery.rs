@@ -52,7 +52,7 @@ use crate::ui::window::{
 };
 use macroquad::prelude::*;
 
-const TABS: [&str; 5] = ["글꼴", "창·메뉴", "대화", "게이지·숫자", "화면"];
+const TABS: [&str; 5] = ["字体", "窗口与菜单", "对话", "数值与状态条", "画面"];
 const TAB_H: f32 = 18.0;
 /// Top of the page area below the tab bar.
 const TOP: f32 = TAB_H + 5.0;
@@ -63,7 +63,7 @@ const PAGE_DIALOGUE: usize = 2;
 const PAGE_GAUGES: usize = 3;
 const PAGE_SCREENS: usize = 4;
 
-const HANGUL: &str = "가나다라마바사 아자차카타파하 · 유비 관우 장비 조조";
+const HANGUL: &str = "中文字体测试 · 刘备 关羽 张飞 曹操";
 const HANJA: &str = "劉備 關羽 張飛 諸葛亮 曹操 · 英傑傳 · 三國志";
 const LATIN: &str = "ABC xyz 0123456789 ,.!?%()[]:; 1,200/1,500";
 
@@ -1105,7 +1105,7 @@ mod tests {
         let items = g.demo_items();
         assert_eq!(items.len(), DEMO_ITEMS.len());
         assert_eq!(items[5].detail.as_deref(), Some("30%"));
-        assert_eq!(items[6].detail.as_deref(), Some("빠름"));
+        assert_eq!(items[6].detail.as_deref(), Some("快"));
         assert!(!items[4].enabled);
         assert!(items[5].adjustable && items[6].adjustable);
     }

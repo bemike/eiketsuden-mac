@@ -93,6 +93,8 @@ pub fn parts(scene: &Scene) -> Vec<Part> {
 /// A story block as a drama scene.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StoryScene {
+    /// Original interior views referenced by the scene's background commands.
+    pub stages: BTreeMap<String, StoryStage>,
     /// The scene's lines (without its `== id` heading).
     pub text: String,
     /// An option of it ends the game in the original (the scene sets [`GAME_OVER_FLAG`]).
@@ -106,6 +108,27 @@ pub struct StoryScene {
     /// Where the story goes on after the scene.
     pub next: Next,
     pub notes: Vec<String>,
+}
+
+/// An original interior and its placed people, captured at a dialogue boundary.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StoryStage {
+    pub map: u16,
+    pub people: BTreeMap<u16, [u8; 3]>,
+}
+
+impl StoryStage {
+    fn key(&self) -> String {
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in self.map.to_le_bytes().into_iter().chain(
+            self.people
+                .iter()
+                .flat_map(|(id, pose)| id.to_le_bytes().into_iter().chain(*pose)),
+        ) {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+        }
+        format!("orig_stage_{:04x}_{hash:016x}", self.map)
+    }
 }
 
 /// Where the campaign goes after a part of a chapter.
@@ -179,9 +202,19 @@ struct Writer<'c, 'a> {
     speech: bool,
     /// A picture is shown (`@picture`): the next instruction but a narration clears it.
     picture: bool,
+    stage: StoryStage,
+    stage_dirty: bool,
 }
 
 impl Writer<'_, '_> {
+    fn flush_stage(&mut self) {
+        if self.stage_dirty && self.stage.map & 0xf000 == 0x2000 {
+            let key = self.stage.key();
+            let _ = writeln!(self.out.text, "@bg {key}");
+            self.out.stages.insert(key, self.stage.clone());
+            self.stage_dirty = false;
+        }
+    }
     fn label(&mut self) -> usize {
         self.labels += 1;
         self.labels
@@ -381,12 +414,40 @@ impl Writer<'_, '_> {
         {
             return;
         }
+        if matches!(
+            instr.mnemonic,
+            "dialogue" | "narration" | "caption" | "show_screen"
+        ) {
+            self.flush_stage();
+        }
         let ctx = self.ctx;
         let names = ctx.names;
         let officer = |person: u16| names.officers.get(&person).cloned();
         let get = |name: &str| instr.operands.get(name).unwrap_or(0);
         let out = &mut self.out;
         match instr.mnemonic {
+            "load_map" => {
+                self.stage = StoryStage {
+                    map: get("map"),
+                    people: BTreeMap::new(),
+                };
+                self.stage_dirty = true;
+            }
+            "place_person" | "move_person" => {
+                self.stage.people.insert(
+                    get("person"),
+                    [get("x") as u8, get("y") as u8, get("dir") as u8],
+                );
+                self.stage_dirty = true;
+            }
+            "remove_person" => {
+                self.stage.people.remove(&get("person"));
+                self.stage_dirty = true;
+            }
+            "clear_persons" => {
+                self.stage.people.clear();
+                self.stage_dirty = true;
+            }
             "dialogue" => match ctx.text.dialogue(get("text")) {
                 Ok(lines) => {
                     for (speaker, text) in lines {
@@ -656,6 +717,8 @@ impl<'c, 'a> Writer<'c, 'a> {
             army_only: false,
             speech: false,
             picture: false,
+            stage: StoryStage::default(),
+            stage_dirty: false,
         }
     }
 
@@ -1883,6 +1946,47 @@ mod tests {
     fn parses(text: &str) {
         let scenes = hero_core::script::parse_drama("t.drama", &format!("== s\n{text}")).unwrap();
         assert_eq!(scenes.len(), 1);
+    }
+
+    #[test]
+    fn interior_views_survive_narration_and_update_after_people_move() {
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("load_map", &[("map", 0x2005)]),
+                instr(
+                    "place_person",
+                    &[("person", 9), ("x", 23), ("y", 7), ("dir", 2)],
+                ),
+                instr("show_screen", &[]),
+                instr("narration", &[("text", 11)]),
+                instr("dialogue", &[("text", 2)]),
+                instr(
+                    "move_person",
+                    &[("person", 9), ("x", 5), ("y", 16), ("dir", 2)],
+                ),
+                instr("dialogue", &[("text", 4)]),
+                instr("remove_person", &[("person", 9)]),
+                instr("narration", &[("text", 11)]),
+            ],
+        )]);
+        let names = names();
+        let song = |_| None;
+        let s = story_scene(&b, &ctx(&names, &song));
+        assert_eq!(s.stages.len(), 3);
+        assert_eq!(s.text.matches("@bg orig_stage_").count(), 3);
+        assert!(!s.text.contains("@bg none"));
+        assert!(s
+            .stages
+            .values()
+            .any(|stage| stage.people.get(&9) == Some(&[23, 7, 2])));
+        assert!(s
+            .stages
+            .values()
+            .any(|stage| stage.people.get(&9) == Some(&[5, 16, 2])));
+        assert!(s.stages.values().any(|stage| stage.people.is_empty()));
+        parses(&s.text);
     }
 
     #[test]

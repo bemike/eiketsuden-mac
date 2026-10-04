@@ -6,7 +6,7 @@
 //!   `crate::flow`. When the battle is over the screen returns
 //!   `Transition::Flow(Flow::BattleEnded(state))`.
 //! * **State** — the [`BattleState`] is the single source of truth; after every applied action
-//!   it is copied into `ctx.session.battle`, so 중단 기록 saves exactly what is on screen.
+//!   it is copied into `ctx.session.battle`, so 中断存档 saves exactly what is on screen.
 //! * **Animation** — actions return events; [`anim`] turns them into beats that move
 //!   [`anim::UnitView`]s (what is drawn) until they catch up with the state.
 //! * **Player phase** — [`player::PlayerUi`] is the command state machine (select, move,
@@ -25,7 +25,7 @@
 //!   (`gfx/maps/<image>.png`) when it has one, and every window is laid out relative to the
 //!   canvas size (`[presentation] canvas` of `pack.toml`).
 //! * **View options beyond the original** (`docs/DECISIONS.md` D25, off by default, read from
-//!   the settings every frame): "위험 범위" tints every tile an enemy could attack next phase
+//!   the settings every frame): "敌军威胁范围" tints every tile an enemy could attack next phase
 //!   while the player browses the map ([`player::danger_tiles`], recomputed only when
 //!   [`player::danger_key`] changes); "전투 연출 · 강화" shows HP damage as red `-123` numbers and
 //!   shakes the map and its units, not the frame, on heavy or defeating hits
@@ -214,14 +214,14 @@ impl BattleMenuItem {
 
     fn label(self) -> &'static str {
         match self {
-            BattleMenuItem::EndTurn => "턴 종료",
-            BattleMenuItem::Units => "부대 일람",
-            BattleMenuItem::Objective => "승리 조건",
-            BattleMenuItem::Save => "중단 기록",
-            BattleMenuItem::QuickSave => "순간 저장 (F5)",
-            BattleMenuItem::QuickLoad => "순간 불러오기 (F9)",
-            BattleMenuItem::Settings => "설정",
-            BattleMenuItem::Title => "타이틀로",
+            BattleMenuItem::EndTurn => "结束回合",
+            BattleMenuItem::Units => "部队一览",
+            BattleMenuItem::Objective => "胜利条件",
+            BattleMenuItem::Save => "中断存档",
+            BattleMenuItem::QuickSave => "快速存档（F5）",
+            BattleMenuItem::QuickLoad => "快速读档（F9）",
+            BattleMenuItem::Settings => "游戏设置",
+            BattleMenuItem::Title => "返回标题",
         }
     }
 }
@@ -318,7 +318,7 @@ pub struct BattleScreen {
     shown_tiles: Vec<MapImage>,
     /// The map was drawn from the tileset before a terrain change; rebuild it.
     map_stale: bool,
-    /// Tiles the enemies could attack next phase (the "위험 범위" view option, D25 X4) with the
+    /// Tiles the enemies could attack next phase (the "敌军威胁范围" view option, D25 X4) with the
     /// [`player::danger_key`] they were computed for; refreshed only when that changes.
     danger: Option<(Vec<i64>, Vec<Pos>)>,
 }
@@ -329,8 +329,8 @@ impl BattleScreen {
     pub fn start(ctx: &mut Ctx, battle_id: &str) -> Box<dyn Screen> {
         let (Some(pack), Some(session)) = (ctx.pack.clone(), ctx.session.as_ref()) else {
             return Box::new(ErrorScreen::recoverable(
-                "전투 오류",
-                vec!["진행 중인 캠페인이 없습니다.".into()],
+                "战斗错误",
+                vec!["没有正在进行的战役。".into()],
             ));
         };
         let seed = crate::platform::unix_now() ^ ctx.frame.wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -342,8 +342,8 @@ impl BattleScreen {
                 Box::new(BattleScreen::new(pack, state, true, ctx.gfx.size()))
             }
             Err(e) => Box::new(ErrorScreen::recoverable(
-                "전투 오류",
-                vec![format!("전투 `{battle_id}`를 시작할 수 없습니다: {e}")],
+                "战斗错误",
+                vec![format!("无法开始战斗 `{battle_id}`：{e}")],
             )),
         }
     }
@@ -363,9 +363,9 @@ impl BattleScreen {
                 // version); refuse such a save instead.
                 match state.units.iter().find(|u| pack.class(&u.class).is_none()) {
                     Some(u) => Box::new(ErrorScreen::recoverable(
-                        "전투 오류",
+                        "战斗错误",
                         vec![format!(
-                            "기록된 부대 `{}`의 병종 `{}`이(가) 데이터 팩에 없습니다.",
+                            "存档中部队 `{}` 的兵种 `{}` 不存在于游戏数据中。",
                             u.name, u.class
                         )],
                     )),
@@ -381,15 +381,15 @@ impl BattleScreen {
                 }
             }
             (Some(_), Some(state)) => Box::new(ErrorScreen::recoverable(
-                "전투 오류",
+                "战斗错误",
                 vec![format!(
-                    "기록된 전투 `{}`가 데이터 팩에 없습니다.",
+                    "游戏数据中找不到存档里的战斗 `{}`。",
                     state.battle_id
                 )],
             )),
             _ => Box::new(ErrorScreen::recoverable(
-                "전투 오류",
-                vec!["이어서 할 전투 기록이 없습니다.".into()],
+                "战斗错误",
+                vec!["没有可以继续的战斗存档。".into()],
             )),
         }
     }
@@ -718,7 +718,7 @@ impl BattleScreen {
         ctx.settings.battle_speed.multiplier() * if held { FAST_FORWARD } else { 1.0 }
     }
 
-    /// Keep the danger tiles of the "위험 범위" option up to date while the player's phase waits
+    /// Keep the danger tiles of the "敌军威胁范围" option up to date while the player's phase waits
     /// for input (D25 X4); dropped while the option is off.
     fn refresh_danger(&mut self, ctx: &Ctx) {
         if !ctx.settings.danger_range {
@@ -904,9 +904,9 @@ impl BattleScreen {
             Some(Outcome::Victory) => {
                 let mut sections = Vec::new();
                 sections.push((
-                    "전리품".to_string(),
+                    "战利品".to_string(),
                     vec![(
-                        format!("금 {}", crate::ui::format::thousands(self.state.gold_found)),
+                        format!("金 {}", crate::ui::format::thousands(self.state.gold_found)),
                         theme::TEXT_ACCENT,
                     )],
                 ));
@@ -924,20 +924,17 @@ impl BattleScreen {
                 }
                 let grown = self.level_ups();
                 if !grown.is_empty() {
-                    sections.push(("성장".to_string(), grown));
+                    sections.push(("成长".to_string(), grown));
                 }
                 if let Some(b) = &def.bonus {
                     let line = if self.state.bonus_done {
-                        (
-                            format!("달성 — 출진 부대 경험치 +{}", b.exp),
-                            theme::TEXT_GOOD,
-                        )
+                        (format!("达成 — 出战部队经验 +{}", b.exp), theme::TEXT_GOOD)
                     } else {
-                        (format!("미달성 — {}", b.desc), theme::TEXT_DIM)
+                        (format!("未达成 — {}", b.desc), theme::TEXT_DIM)
                     };
-                    sections.push(("보너스 목표".to_string(), vec![line]));
+                    sections.push(("额外目标".to_string(), vec![line]));
                 }
-                (format!("{} 승리", def.name), sections)
+                (format!("{} 胜利", def.name), sections)
             }
             Some(Outcome::Defeat(reason)) => {
                 let lord = self
@@ -947,9 +944,9 @@ impl BattleScreen {
                     .find(|u| u.lord)
                     .map(|u| u.name.clone());
                 (
-                    format!("{} 패배", def.name),
+                    format!("{} 失败", def.name),
                     vec![(
-                        "패인".to_string(),
+                        "失败原因".to_string(),
                         vec![(text::defeat_text(reason, lord.as_deref()), theme::TEXT_BAD)],
                     )],
                 )
@@ -1121,7 +1118,7 @@ impl BattleScreen {
                     .map_or(u.class.as_str(), |c| c.name.as_str());
                 let mut label = format!("{class} Lv{}", u.level);
                 if side == Side::Player && u.acted {
-                    label.push_str(" (행동 끝)");
+                    label.push_str("（行动结束）");
                 }
                 MenuItem::new(label)
                     .tag(u.name.clone())
@@ -1130,7 +1127,7 @@ impl BattleScreen {
             .collect();
         let empty = items.is_empty();
         let mut menu = Menu::new(if empty {
-            vec![MenuItem::new("— 없음 —").enabled(false)]
+            vec![MenuItem::new("— 无 —").enabled(false)]
         } else {
             items
         })
@@ -1199,6 +1196,15 @@ impl BattleScreen {
             _ => return,
         };
         let mut menu = Menu::new(items).rows(7);
+        // Prefer ending the action when there is no legal attack target. The
+        // first enabled row can otherwise be an item or a support strategy.
+        if kind == MenuKind::Command && !menu.items[0].enabled {
+            let wait = Command::ALL
+                .iter()
+                .position(|c| *c == Command::Wait)
+                .expect("the command menu includes Wait");
+            menu.set_cursor(wait);
+        }
         if kind != MenuKind::Command {
             menu.tag_width = 18.0;
             menu.wrap = false;
@@ -1457,10 +1463,7 @@ impl BattleScreen {
             BattleMenuItem::EndTurn => {
                 if player::cycle_actor(&self.state, None, 1).is_some() {
                     self.dialog = Some((
-                        ConfirmDialog::new(
-                            &ctx.gfx,
-                            "아직 행동하지 않은 부대가 있습니다. 턴을 종료할까요?",
-                        ),
+                        ConfirmDialog::new(&ctx.gfx, "还有部队尚未行动，结束回合？"),
                         Confirm::EndTurn,
                     ));
                 } else {
@@ -1485,7 +1488,7 @@ impl BattleScreen {
                 }
                 None => {
                     ctx.sfx(sfx::ERROR);
-                    ctx.toast("기록할 게임이 없습니다.");
+                    ctx.toast("没有可保存的游戏。");
                     Transition::None
                 }
             },
@@ -1497,11 +1500,8 @@ impl BattleScreen {
             }
             BattleMenuItem::Title => {
                 self.dialog = Some((
-                    ConfirmDialog::new(
-                        &ctx.gfx,
-                        "전투를 중단하고 타이틀로 돌아갈까요? 기록하지 않은 진행은 사라집니다.",
-                    )
-                    .default_no(),
+                    ConfirmDialog::new(&ctx.gfx, "中断战斗并返回标题？未存档的进度会丢失。")
+                        .default_no(),
                     Confirm::Title,
                 ));
                 Transition::None
@@ -1920,19 +1920,19 @@ impl Screen for BattleScreen {
                 let sub = if self.fresh {
                     self.def().location.clone()
                 } else {
-                    format!("{} — 이어서", self.def().location)
+                    format!("{} — 继续", self.def().location)
                 };
                 hud::draw_title_card(ctx, &self.def().name, &sub, *age);
                 return;
             }
             Stage::Objective => {
                 fill_rect(screen, Color::new(0.0, 0.0, 0.02, 0.45));
-                self.draw_objective(ctx, "Z / 클릭 — 출진");
+                self.draw_objective(ctx, "Z / 点击 — 出战");
                 return;
             }
             Stage::Result { lines, title } => {
                 fill_rect(screen, Color::new(0.0, 0.0, 0.02, 0.5));
-                hud::draw_text_window(ctx, title, lines, "Z / 클릭 — 계속");
+                hud::draw_text_window(ctx, title, lines, "Z / 点击 — 继续");
                 return;
             }
             Stage::Battle => {}
@@ -1986,7 +1986,7 @@ impl Screen for BattleScreen {
             && self.scene.outcome.is_none()
         {
             ctx.gfx.text_aligned(
-                "Z 길게 누르기: 빨리 감기",
+                "长按 Z：快进",
                 0.0,
                 screen.h - 13.0,
                 screen.w - 6.0,

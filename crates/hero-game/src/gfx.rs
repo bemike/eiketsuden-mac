@@ -291,7 +291,7 @@ impl LoadedFont {
     fn new(font: Font, id: FontId) -> LoadedFont {
         let nominal = id.nominal_px();
         // Reference glyphs: a Hangul syllable, a capital and a descender.
-        let dims = measure_text("가Ag", Some(&font), nominal, 1.0);
+        let dims = measure_text("国Ag", Some(&font), nominal, 1.0);
         let pad = ((id.line_height() - dims.height) / 2.0).round().max(0.0);
         LoadedFont {
             font,

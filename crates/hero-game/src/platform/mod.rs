@@ -763,9 +763,9 @@ mod tests {
     #[test]
     fn memory_pack_stands_next_to_the_base_pack() {
         let base = DataRoot::from_dir(Path::new(r"D:\games\hero\data\base"), &[]);
-        let (root, extends) = base.memory_pack("original", "원작").unwrap();
+        let (root, extends) = base.memory_pack("original", "原版").unwrap();
         assert_eq!(extends, "../base");
-        assert_eq!(root.display(), "원작");
+        assert_eq!(root.display(), "原版");
         assert_eq!(
             root.path("pack.toml"),
             "D:/games/hero/data/original/pack.toml"
@@ -780,20 +780,20 @@ mod tests {
         );
 
         let relative = DataRoot::from_dir(Path::new("data/base"), &[]);
-        let (root, extends) = relative.memory_pack("original", "원작").unwrap();
+        let (root, extends) = relative.memory_pack("original", "原版").unwrap();
         assert_eq!(
             (root.path("a"), extends.as_str()),
             ("data/original/a".to_string(), "../base")
         );
         let bare = DataRoot::from_dir(Path::new("base"), &[]);
         assert_eq!(
-            bare.memory_pack("original", "원작").unwrap().0.path("a"),
+            bare.memory_pack("original", "原版").unwrap().0.path("a"),
             "original/a"
         );
 
         for rootless in ["/", "D:/", ".."] {
             let r = DataRoot::from_dir(Path::new(rootless), &[]);
-            assert!(r.memory_pack("original", "원작").is_none(), "{rootless}");
+            assert!(r.memory_pack("original", "原版").is_none(), "{rootless}");
         }
     }
 }

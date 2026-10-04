@@ -59,18 +59,15 @@ impl FolderCheck {
     pub fn summary(&self) -> String {
         match self {
             FolderCheck::Supported(e) => {
-                format!("{} — 원작 모드로 플레이할 수 있습니다", edition_label(e.id))
+                format!("{} — 可以使用原版数据", edition_label(e.id))
             }
             FolderCheck::Unsupported(e) if e.id == EditionId::Unknown => {
-                "이 폴더에서 원작 파일을 찾지 못했습니다".to_string()
+                "此文件夹中没有找到原版文件".to_string()
             }
             FolderCheck::Unsupported(e) => {
-                format!(
-                    "{} — 아직 원작 모드를 지원하지 않는 판본입니다",
-                    edition_label(e.id)
-                )
+                format!("{} — 尚未支持此版本的原版数据", edition_label(e.id))
             }
-            FolderCheck::Unreadable(why) => format!("폴더를 읽을 수 없습니다: {why}"),
+            FolderCheck::Unreadable(why) => format!("无法读取文件夹：{why}"),
         }
     }
 
@@ -87,11 +84,11 @@ impl FolderCheck {
 /// Korean name of an edition.
 pub fn edition_label(id: EditionId) -> &'static str {
     match id {
-        EditionId::KoreanDos => "한국어 DOS/V판",
-        EditionId::ChineseDos => "중국어(번체) DOS판",
-        EditionId::Steam2017 => "Steam 2017판",
-        EditionId::Pc98Images => "PC-98 디스크 이미지",
-        EditionId::Unknown => "알 수 없는 판본",
+        EditionId::KoreanDos => "韩文 DOS/V 版",
+        EditionId::ChineseDos => "繁体中文 DOS 版",
+        EditionId::Steam2017 => "Steam 2017 版",
+        EditionId::Pc98Images => "PC-98 磁盘镜像",
+        EditionId::Unknown => "未知版本",
     }
 }
 
@@ -354,7 +351,7 @@ impl<T: Send + 'static> Background<T> {
             },
             Err(e) => Background {
                 running: None,
-                failed: Some(format!("작업 스레드를 시작하지 못했습니다: {e}")),
+                failed: Some(format!("无法启动工作线程：{e}")),
             },
         }
     }
@@ -373,7 +370,7 @@ impl<T: Send + 'static> Background<T> {
         Some(
             handle
                 .join()
-                .map_err(|panic| format!("읽다가 오류가 났습니다: {}", panic_message(&*panic))),
+                .map_err(|panic| format!("读取失败：{}", panic_message(&*panic))),
         )
     }
 }
@@ -533,7 +530,7 @@ pub fn typed_folder(text: &str, base: Option<&Path>) -> Result<PathBuf, String> 
         }
     }
     if text.is_empty() {
-        return Err("경로를 입력해 주세요".to_string());
+        return Err("请输入文件夹路径".to_string());
     }
     let bare_drive = cfg!(windows)
         && text.len() == 2
@@ -557,7 +554,7 @@ pub fn typed_folder(text: &str, base: Option<&Path>) -> Result<PathBuf, String> 
     }
     match path.parent() {
         Some(p) if path.is_file() && !p.as_os_str().is_empty() => Ok(p.to_path_buf()),
-        _ => Err(format!("폴더를 찾을 수 없습니다: {text}")),
+        _ => Err(format!("找不到文件夹：{text}")),
     }
 }
 
@@ -630,10 +627,7 @@ mod tests {
     fn background_reads_report_their_result_or_crash() {
         assert_eq!(wait(Background::spawn(|| 7)), Ok(7));
         let crashed: Result<(), String> = wait(Background::spawn(|| panic!("disk on fire")));
-        assert_eq!(
-            crashed,
-            Err("읽다가 오류가 났습니다: disk on fire".to_string())
-        );
+        assert_eq!(crashed, Err("读取失败：disk on fire".to_string()));
     }
 
     #[test]
@@ -855,7 +849,7 @@ mod tests {
         })
         .unwrap();
         let (root, extends) = DataRoot::from_dir(&base_dir, &[])
-            .memory_pack(PACK_DIR, "원작")
+            .memory_pack(PACK_DIR, "原版")
             .unwrap();
         let started = std::time::Instant::now();
         let mut job =

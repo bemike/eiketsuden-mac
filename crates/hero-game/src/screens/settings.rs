@@ -68,38 +68,38 @@ impl SettingsScreen {
         self.rows
             .iter()
             .map(|row| match row {
-                Row::Master => MenuItem::new("전체 음량")
+                Row::Master => MenuItem::new("总音量")
                     .detail(format::percent(s.master_volume))
                     .adjustable(),
-                Row::Bgm => MenuItem::new("배경음")
+                Row::Bgm => MenuItem::new("背景音乐")
                     .detail(format::percent(s.bgm_volume))
                     .adjustable(),
-                Row::Sfx => MenuItem::new("효과음")
+                Row::Sfx => MenuItem::new("音效")
                     .detail(format::percent(s.sfx_volume))
                     .adjustable(),
-                Row::TextSpeed => MenuItem::new("글자 속도")
+                Row::TextSpeed => MenuItem::new("文字速度")
                     .detail(s.text_speed.label())
                     .adjustable(),
-                Row::BattleSpeed => MenuItem::new("전투 속도")
+                Row::BattleSpeed => MenuItem::new("战斗速度")
                     .detail(s.battle_speed.label())
                     .adjustable(),
-                Row::Fullscreen => MenuItem::new("전체 화면")
-                    .detail(if s.fullscreen { "켬" } else { "끔" })
+                Row::Fullscreen => MenuItem::new("全屏")
+                    .detail(if s.fullscreen { "开" } else { "关" })
                     .adjustable(),
-                Row::Portraits if !faces => MenuItem::new("얼굴")
-                    .detail("원작 데이터 없음")
-                    .enabled(false),
-                Row::Portraits => MenuItem::new("얼굴")
+                Row::Portraits if !faces => {
+                    MenuItem::new("头像").detail("没有原版数据").enabled(false)
+                }
+                Row::Portraits => MenuItem::new("头像")
                     .detail(s.portraits.label())
                     .adjustable(),
-                Row::DangerRange => MenuItem::new("위험 범위")
-                    .detail(if s.danger_range { "켬" } else { "끔" })
+                Row::DangerRange => MenuItem::new("敌军威胁范围")
+                    .detail(if s.danger_range { "开" } else { "关" })
                     .adjustable(),
-                Row::BattleFx => MenuItem::new("전투 연출")
+                Row::BattleFx => MenuItem::new("战斗表现")
                     .detail(s.battle_fx.label())
                     .adjustable(),
-                Row::Defaults => MenuItem::new("기본값으로"),
-                Row::Back => MenuItem::new("돌아가기"),
+                Row::Defaults => MenuItem::new("恢复默认"),
+                Row::Back => MenuItem::new("返回"),
             })
             .collect()
     }
@@ -191,7 +191,7 @@ impl Screen for SettingsScreen {
                     ctx.audio.apply_settings(&ctx.settings);
                     self.changed = true;
                     self.refresh(ctx);
-                    ctx.toast("기본 설정으로 되돌렸습니다.");
+                    ctx.toast("已恢复默认设置。");
                 }
                 Row::Back => return self.leave(ctx),
                 row => self.adjust(ctx, row, 1),
@@ -209,7 +209,7 @@ impl Screen for SettingsScreen {
         let frame = Rect::new(m.x - 6.0, m.y - 26.0, WIDTH, m.h + 32.0);
         draw_window(frame);
         ctx.gfx.text_aligned(
-            "설정",
+            "游戏设置",
             frame.x,
             frame.y + 6.0,
             frame.w,
@@ -217,7 +217,7 @@ impl Screen for SettingsScreen {
             TextStyle::main(theme::TEXT_ACCENT).shadow(theme::TEXT_SHADOW),
         );
         self.menu.draw(ctx);
-        let where_ = format!("저장 위치: {}", ctx.storage.location());
+        let where_ = format!("存档位置：{}", ctx.storage.location());
         let lines = ctx
             .gfx
             .wrap(&where_, crate::gfx::FontId::Small, 1, canvas.x - 20.0);
@@ -245,7 +245,7 @@ mod tests {
         let s = Settings::default();
         let off = &screen.items(&s, false)[at];
         assert!(!off.enabled && !off.adjustable);
-        assert_eq!(off.detail.as_deref(), Some("원작 데이터 없음"));
+        assert_eq!(off.detail.as_deref(), Some("没有原版数据"));
         let on = &screen.items(&s, true)[at];
         assert!(on.enabled && on.adjustable);
         assert_eq!(on.detail.as_deref(), Some(s.portraits.label()));

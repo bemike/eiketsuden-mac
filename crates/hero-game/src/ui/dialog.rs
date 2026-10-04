@@ -146,8 +146,8 @@ impl ConfirmDialog {
         let canvas = gfx.size();
         ConfirmDialog {
             lines,
-            yes: "예".into(),
-            no: "아니오".into(),
+            yes: "是".into(),
+            no: "否".into(),
             yes_selected: true,
             rect: Rect::new(
                 ((canvas.x - w) / 2.0).round(),

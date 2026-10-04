@@ -49,7 +49,7 @@ fn free_editing_sets_abilities_only_when_chosen() {
         extended_rules: false,
     });
     assert!(state.off_original());
-    assert_eq!(state.option_tags(), ["쉬움", "조정"]);
+    assert_eq!(state.option_tags(), ["简单", "能力调整"]);
     assert_eq!(
         state.set_ability("liu_bei", Ability::Strength, 90),
         Some(90)
@@ -364,6 +364,7 @@ fn equip_and_unequip() {
     assert_eq!(
         state.officer("guan_yu").unwrap().equip,
         Equipment {
+            carried: None,
             weapon: Some("bronze_sword".into()),
             armor: Some("war_manual".into()),
             accessory: Some("red_horse".into()),
@@ -743,8 +744,8 @@ fn a_won_battle_takes_out_exactly_the_items_it_used() {
     state.add_item("bean", 1);
     state.add_item("wine", 1);
     // A `give_item` event and a treasure: rewards that arrive with the victory.
-    battle.items_found.push("fire_scroll".into());
-    battle.items_found.push("bean".into());
+    battle.gain_item("fire_scroll");
+    battle.gain_item("bean");
     battle.outcome = Some(Outcome::Victory);
     state.apply_battle_result(&pack, &battle);
     // 3 at the start + 1 from the scene - 1 used + 1 found.
@@ -758,7 +759,7 @@ fn a_lost_battle_takes_out_exactly_the_items_it_used() {
     let (pack, mut state) = new_game();
     let mut battle = b01_after_using_a_bean(&pack, &state);
     state.add_item("wine", 1);
-    battle.items_found.push("fire_scroll".into());
+    battle.gain_item("fire_scroll");
     battle.outcome = Some(Outcome::Defeat(DefeatReason::LordRetreated));
     state.apply_battle_result(&pack, &battle);
     assert_eq!(state.item_count("bean"), 2, "the used bean stays used");
@@ -772,16 +773,15 @@ fn a_lost_battle_takes_out_exactly_the_items_it_used() {
 
 #[test]
 fn items_given_by_battle_events_are_not_taken_out() {
-    // A `give_item` event, a drop or a treasure never enters the battle's stock, so it can be
-    // neither used nor lost there: a victory adds it, a defeat does not.
+    // Unused loot is immediately available, but only retained after victory.
     let (pack, mut state) = new_game();
     let mut battle = BattleState::new(&pack, "b01", &state, 1).unwrap();
     battle.begin(&pack);
-    battle.items_found.push("bean".into());
+    battle.gain_item("bean");
     assert_eq!(
         battle.inventory.get("bean"),
-        Some(&3),
-        "not usable in this battle"
+        Some(&4),
+        "usable immediately in this battle"
     );
     let lost = {
         let mut b = battle.clone();
@@ -807,6 +807,72 @@ fn battle_saves_without_used_items_still_load() {
     assert!(battle.items_used.is_empty());
 }
 
+#[test]
+fn spent_loot_is_not_awarded_again_or_charged_to_original_inventory() {
+    for win in [false, true] {
+        let (pack, mut campaign) = new_game();
+        let original = campaign.item_count("bean");
+        let mut battle = BattleState::new(&pack, "b01", &campaign, 3).unwrap();
+        battle.begin(&pack);
+        battle.gain_item("bean");
+        let lord = battle
+            .units
+            .iter()
+            .position(|u| u.side == Side::Player && u.lord)
+            .unwrap();
+        battle.units[lord].hp = 1;
+        battle
+            .apply(
+                &pack,
+                Action::UseItem {
+                    unit: lord,
+                    item: "bean".into(),
+                    target: lord,
+                },
+            )
+            .unwrap();
+        assert_eq!(battle.inventory.get("bean"), Some(&original));
+        battle.outcome = Some(if win {
+            Outcome::Victory
+        } else {
+            Outcome::Defeat(DefeatReason::TurnLimit)
+        });
+        campaign.apply_battle_result(&pack, &battle);
+        assert_eq!(campaign.item_count("bean"), original);
+    }
+}
+
+#[test]
+fn old_save_migrates_found_items_once_and_preserves_counts_on_reload() {
+    use hero_core::save::{SaveGame, SAVE_VERSION};
+    let (pack, campaign) = new_game();
+    let mut battle = BattleState::new(&pack, "b01", &campaign, 3).unwrap();
+    battle.items_found = vec!["bean".into(), "bean".into()];
+    let save = SaveGame {
+        version: SAVE_VERSION,
+        pack_id: "base".into(),
+        pack_version: "0.4.1".into(),
+        label: "legacy".into(),
+        saved_at: 0,
+        campaign,
+        battle: Some(battle),
+        scene: None,
+        pending_scenes: vec![],
+    };
+    let mut value = serde_json::to_value(save).unwrap();
+    value["battle"]
+        .as_object_mut()
+        .unwrap()
+        .remove("loot_in_inventory");
+    let loaded = SaveGame::from_json(&value.to_string(), "base").unwrap();
+    assert_eq!(
+        loaded.battle.as_ref().unwrap().inventory.get("bean"),
+        Some(&5)
+    );
+    let reloaded = SaveGame::from_json(&loaded.to_json(), "base").unwrap();
+    assert_eq!(reloaded.battle, loaded.battle);
+}
+
 /// A scene a battle plays sees the flags the battle has set so far; nothing else of the battle
 /// reaches the campaign before its result.
 #[test]
@@ -825,4 +891,167 @@ fn battle_flags_reach_the_campaign_before_its_scenes() {
         state.officer("guan_yu").unwrap().level,
         pack.officer("guan_yu").unwrap().level
     );
+}
+
+#[test]
+fn personal_items_exchange_between_officers_without_touching_shared_stock() {
+    use hero_core::inventory::Pocket;
+    let (_, mut c) = new_game();
+    c.roster[0].equip.carried = Some(Pocket::from_items(vec!["bean".into(); 8]).unwrap());
+    c.roster[1].equip.carried = Some(Pocket::from_items(vec!["war_manual".into(); 8]).unwrap());
+    let stock = c.inventory.clone();
+    c.exchange_items("liu_bei", 2, "guan_yu", 5).unwrap();
+    assert_eq!(c.roster[0].equip.carried.as_ref().unwrap().count("bean"), 7);
+    assert_eq!(c.roster[1].equip.carried.as_ref().unwrap().count("bean"), 1);
+    assert_eq!(c.inventory, stock);
+    let saved = serde_json::to_string(&c).unwrap();
+    assert_eq!(serde_json::from_str::<CampaignState>(&saved).unwrap(), c);
+}
+
+#[test]
+fn personal_exchange_rejects_away_invalid_or_same_officer_without_changes() {
+    use hero_core::inventory::Pocket;
+    let (_, mut c) = new_game();
+    for o in &mut c.roster {
+        o.equip.carried = Some(Pocket::from_items(vec!["bean".into()]).unwrap());
+    }
+    let before = c.clone();
+    assert!(c.exchange_items("liu_bei", 0, "liu_bei", 1).is_err());
+    assert_eq!(c, before);
+    assert!(c.exchange_items("liu_bei", 0, "guan_yu", 8).is_err());
+    assert_eq!(c, before);
+    c.set_away("guan_yu").unwrap();
+    let before = c.clone();
+    assert!(c.exchange_items("liu_bei", 0, "guan_yu", 0).is_err());
+    assert_eq!(c, before);
+}
+
+#[test]
+fn dos_click_transfer_fills_free_space_and_full_recipient_keeps_every_item() {
+    use hero_core::inventory::Pocket;
+    let (_, mut c) = new_game();
+    c.roster[0].equip.carried = Some(Pocket::from_items(vec!["bean".into(); 2]).unwrap());
+    c.roster[1].equip.carried = Some(Pocket::from_items(vec!["wine".into(); 7]).unwrap());
+    c.transfer_item("liu_bei", 0, "guan_yu").unwrap();
+    assert_eq!(
+        c.roster[1].equip.carried.as_ref().unwrap().slots()[7].as_deref(),
+        Some("bean")
+    );
+    let before = c.clone();
+    assert!(c.transfer_item("liu_bei", 1, "guan_yu").is_err());
+    assert_eq!(c, before);
+    c.transfer_item("guan_yu", 7, "liu_bei").unwrap();
+    assert_eq!(c.roster[0].equip.carried.as_ref().unwrap().count("bean"), 2);
+    assert_eq!(c.roster[1].equip.carried.as_ref().unwrap().count("wine"), 7);
+}
+
+#[test]
+fn personal_shop_checks_capacity_before_payment_and_sells_only_selected_copy() {
+    use hero_core::inventory::Pocket;
+    let (mut pack, mut c) = new_game();
+    c.gold = 1000;
+    c.roster[0].equip.carried = Some(Pocket::from_items(vec!["bean".into(); 8]).unwrap());
+    let before = c.clone();
+    assert!(c.buy_for(&pack, "bean", "liu_bei").is_err());
+    assert_eq!(c, before);
+    pack.items.get_mut("bean").unwrap().price = 100;
+    pack.items.get_mut("bean").unwrap().resale_price = Some(70);
+    c.sell_from(&pack, "liu_bei", 3).unwrap();
+    assert_eq!(c.gold, 1070);
+    assert_eq!(c.roster[0].equip.carried.as_ref().unwrap().count("bean"), 7);
+    assert_eq!(c.inventory, before.inventory);
+    c.buy_for(&pack, "bean", "liu_bei").unwrap();
+    assert_eq!(c.gold, 970);
+    assert_eq!(
+        c.roster[0].equip.carried.as_ref().unwrap().slots()[3].as_deref(),
+        Some("bean")
+    );
+    c.set_away("liu_bei").unwrap();
+    let before = c.clone();
+    assert!(c.sell_from(&pack, "liu_bei", 0).is_err());
+    assert_eq!(c, before);
+}
+
+#[test]
+fn exchange_upgrade_withdraw_save_and_battle_consumption_preserve_copies() {
+    let (pack, mut c) = new_game();
+    let original = c.clone();
+    c.enable_personal_inventory();
+    assert_eq!(c.inventory, original.inventory);
+    assert_eq!(
+        c.roster[0]
+            .equip
+            .carried
+            .as_ref()
+            .unwrap()
+            .count("bronze_sword"),
+        1
+    );
+    assert!(c.roster[0].equip.weapon.is_none());
+    let once = c.clone();
+    c.enable_personal_inventory();
+    assert_eq!(c, once);
+    c.withdraw_item("guan_yu", "bean").unwrap();
+    let slot = c
+        .officer("guan_yu")
+        .unwrap()
+        .equip
+        .carried
+        .as_ref()
+        .unwrap()
+        .slots()
+        .iter()
+        .position(|v| v.as_deref() == Some("bean"))
+        .unwrap();
+    c.transfer_item("guan_yu", slot, "liu_bei").unwrap();
+    let mut c: CampaignState = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+    let mut battle = BattleState::new(&pack, "b01", &c, 3).unwrap();
+    battle.begin(&pack);
+    let lord = battle
+        .units
+        .iter()
+        .position(|u| u.side == Side::Player && u.lord)
+        .unwrap();
+    battle.units[lord].hp -= 100;
+    let hp = battle.units[lord].hp;
+    battle
+        .apply(
+            &pack,
+            Action::UseItem {
+                unit: lord,
+                item: "bean".into(),
+                target: lord,
+            },
+        )
+        .unwrap();
+    assert!(battle.units[lord].hp > hp);
+    assert_eq!(
+        battle.inventory.get("bean"),
+        Some(&2),
+        "personal copy is consumed first"
+    );
+    assert!(battle.items_used.is_empty());
+    c.apply_battle_result(&pack, &battle);
+    assert_eq!(c.item_count("bean"), 2);
+    assert_eq!(
+        c.officer("liu_bei")
+            .unwrap()
+            .equip
+            .carried
+            .as_ref()
+            .unwrap()
+            .count("bean"),
+        0
+    );
+}
+
+#[test]
+fn full_pocket_withdrawal_does_not_remove_shared_stock() {
+    let (_, mut c) = new_game();
+    c.enable_personal_inventory();
+    c.roster[0].equip.carried =
+        Some(hero_core::inventory::Pocket::from_items(vec!["bean".into(); 8]).unwrap());
+    let before = c.clone();
+    assert!(c.withdraw_item("liu_bei", "bean").is_err());
+    assert_eq!(c, before);
 }

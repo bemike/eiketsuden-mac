@@ -41,9 +41,9 @@ impl Difficulty {
 
     pub fn label(self) -> &'static str {
         match self {
-            Difficulty::Easy => "쉬움",
-            Difficulty::Normal => "기본",
-            Difficulty::Hard => "어려움",
+            Difficulty::Easy => "简单",
+            Difficulty::Normal => "原版",
+            Difficulty::Hard => "困难",
         }
     }
 }
@@ -359,10 +359,10 @@ impl CampaignState {
             tags.push(self.difficulty.label());
         }
         if self.free_edit {
-            tags.push("조정");
+            tags.push("能力调整");
         }
         if self.extended_rules {
-            tags.push("확장");
+            tags.push("扩展规则");
         }
         tags
     }
@@ -390,6 +390,116 @@ impl CampaignState {
 
     pub fn officer_mut(&mut self, id: &str) -> Option<&mut OfficerState> {
         self.roster.iter_mut().find(|o| o.id == id)
+    }
+
+    /// Exchange physical slots between two present officers, without an intermediate pool.
+    pub fn exchange_items(
+        &mut self,
+        from: &str,
+        source: usize,
+        to: &str,
+        target: usize,
+    ) -> Result<(), CampaignError> {
+        let find = |id: &str| {
+            self.roster
+                .iter()
+                .position(|o| o.id == id && !o.away)
+                .ok_or_else(|| CampaignError::NotInArmy(id.into()))
+        };
+        let a = find(from)?;
+        let b = find(to)?;
+        let invalid = |reason: &str| CampaignError::CannotUse {
+            item: String::new(),
+            officer: from.into(),
+            reason: reason.into(),
+        };
+        if a == b {
+            return Err(invalid("请选择另一位武将。"));
+        }
+        let (left, right) = if a < b {
+            let (l, r) = self.roster.split_at_mut(b);
+            (&mut l[a], &mut r[0])
+        } else {
+            let (l, r) = self.roster.split_at_mut(a);
+            (&mut r[0], &mut l[b])
+        };
+        let (Some(src), Some(dst)) = (&mut left.equip.carried, &mut right.equip.carried) else {
+            return Err(invalid("此存档使用旧版公用背包，请重新开局。"));
+        };
+        src.exchange(source, dst, target)
+            .map_err(|e| invalid(&e.to_string()))
+    }
+
+    /// Upgrade legacy equipment without duplicating stock. Safe to call repeatedly.
+    pub fn enable_personal_inventory(&mut self) {
+        for officer in &mut self.roster {
+            if officer.equip.carried.is_none() {
+                let items = [
+                    officer.equip.weapon.take(),
+                    officer.equip.armor.take(),
+                    officer.equip.accessory.take(),
+                ]
+                .into_iter()
+                .flatten();
+                officer.equip.carried = Some(
+                    crate::inventory::Pocket::from_items(items)
+                        .expect("three equipment slots fit in eight pockets"),
+                );
+            }
+        }
+    }
+
+    pub fn withdraw_item(&mut self, officer: &str, item: &str) -> Result<(), CampaignError> {
+        if self.item_count(item) == 0 {
+            return Err(CampaignError::NotOwned(item.into()));
+        }
+        let state = self
+            .officer_mut(officer)
+            .filter(|o| !o.away)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.into()))?;
+        let pocket = state
+            .equip
+            .carried
+            .as_mut()
+            .ok_or_else(|| CampaignError::NotInArmy(officer.into()))?;
+        pocket
+            .insert(item.into())
+            .map_err(|e| CampaignError::CannotUse {
+                item: item.into(),
+                officer: officer.into(),
+                reason: e.to_string(),
+            })?;
+        self.remove_item(item)
+    }
+
+    /// DOS officer menu: clicking an item moves it to the other officer's first free slot.
+    /// A full recipient is rejected without moving or consuming either officer's items.
+    pub fn transfer_item(
+        &mut self,
+        from: &str,
+        source: usize,
+        to: &str,
+    ) -> Result<(), CampaignError> {
+        let recipient = self
+            .officer(to)
+            .filter(|o| !o.away)
+            .ok_or_else(|| CampaignError::NotInArmy(to.into()))?;
+        let invalid = |reason: &str| CampaignError::CannotUse {
+            item: String::new(),
+            officer: from.into(),
+            reason: reason.into(),
+        };
+        let pocket = recipient
+            .equip
+            .carried
+            .as_ref()
+            .ok_or_else(|| invalid("此存档使用旧版公用背包，请重新开局。"))?;
+        let target = pocket
+            .slots()
+            .iter()
+            .position(Option::is_none)
+            .ok_or_else(|| invalid("对方最多持有八件道具，请先移出一件。"))?;
+        self.exchange_items(from, source, to, target)
     }
 
     pub fn flag(&self, name: &str) -> i64 {
@@ -521,16 +631,90 @@ impl CampaignState {
         Ok(())
     }
 
-    /// Sell for half the price (items with price 0 cannot be sold).
+    /// Buy directly into an officer's pocket; capacity is checked before charging gold.
+    pub fn buy_for(&mut self, pack: &Pack, item: &str, officer: &str) -> Result<(), CampaignError> {
+        let def = pack
+            .item(item)
+            .ok_or_else(|| CampaignError::UnknownItem(item.into()))?;
+        if def.price == 0 {
+            return Err(CampaignError::CannotBuy(item.into()));
+        }
+        let price = i64::from(def.price);
+        if self.gold < price {
+            return Err(CampaignError::NotEnoughGold {
+                need: price,
+                have: self.gold,
+            });
+        }
+        let o = self
+            .officer_mut(officer)
+            .filter(|o| !o.away)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.into()))?;
+        let error = |reason: String| CampaignError::CannotUse {
+            item: item.into(),
+            officer: officer.into(),
+            reason,
+        };
+        let pocket = o
+            .equip
+            .carried
+            .as_mut()
+            .ok_or_else(|| error("请重新开局。".into()))?;
+        pocket
+            .insert(item.into())
+            .map_err(|e| error(e.to_string()))?;
+        self.gold -= price;
+        Ok(())
+    }
+
+    /// Sell the selected physical copy, including carried equipment.
+    pub fn sell_from(
+        &mut self,
+        pack: &Pack,
+        officer: &str,
+        slot: usize,
+    ) -> Result<(), CampaignError> {
+        let o = self
+            .officer_mut(officer)
+            .filter(|o| !o.away)
+            .ok_or_else(|| CampaignError::NotInArmy(officer.into()))?;
+        let error = |reason: &str| CampaignError::CannotUse {
+            item: String::new(),
+            officer: officer.into(),
+            reason: reason.into(),
+        };
+        let pocket = o
+            .equip
+            .carried
+            .as_mut()
+            .ok_or_else(|| error("请重新开局。"))?;
+        let id = pocket
+            .slots()
+            .get(slot)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| error("此位置没有道具。"))?;
+        let def = pack
+            .item(id)
+            .ok_or_else(|| CampaignError::UnknownItem(id.clone()))?;
+        let price = def.resale_price.unwrap_or(def.price / 2);
+        if price == 0 {
+            return Err(CampaignError::CannotSell(id.clone()));
+        }
+        pocket.take(slot).map_err(|e| error(&e.to_string()))?;
+        self.add_gold(pack, i64::from(price));
+        Ok(())
+    }
+
+    /// Sell for the pack's resale price.
     pub fn sell(&mut self, pack: &Pack, item: &str) -> Result<(), CampaignError> {
         let def = pack
             .item(item)
             .ok_or_else(|| CampaignError::UnknownItem(item.to_string()))?;
-        if def.price == 0 {
+        if def.resale_price.unwrap_or(def.price / 2) == 0 {
             return Err(CampaignError::CannotSell(item.to_string()));
         }
         self.remove_item(item)?;
-        self.add_gold(pack, i64::from(def.price / 2));
+        self.add_gold(pack, i64::from(def.resale_price.unwrap_or(def.price / 2)));
         Ok(())
     }
 
@@ -595,7 +779,9 @@ impl CampaignState {
         let def = pack
             .item(item)
             .ok_or_else(|| CampaignError::UnknownItem(item.to_string()))?;
-        if self.item_count(item) == 0 {
+        if self.item_count(item) == 0
+            && state.equip.carried.as_ref().map_or(0, |p| p.count(item)) == 0
+        {
             return Err(CampaignError::NotOwned(item.to_string()));
         }
         let cannot = |reason: String| CampaignError::CannotUse {
@@ -644,7 +830,13 @@ impl CampaignState {
         if pack.class(&new_class).is_none() {
             return Err(cannot(format!("unknown class `{new_class}`")));
         }
-        self.remove_item(item)?;
+        let personal = self
+            .officer_mut(officer)
+            .and_then(|o| o.equip.carried.as_mut())
+            .is_some_and(|p| p.consume(item).is_ok());
+        if !personal {
+            self.remove_item(item)?;
+        }
         self.change_class(pack, officer, new_class);
         Ok(())
     }

@@ -92,6 +92,7 @@ pub(super) fn build(
         outcome: None,
         bonus_done: false,
         inventory: campaign.inventory.clone(),
+        loot_in_inventory: true,
         items_used: BTreeMap::new(),
         gold_found: 0,
         items_found: Vec::new(),

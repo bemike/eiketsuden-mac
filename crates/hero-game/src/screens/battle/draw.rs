@@ -214,9 +214,6 @@ impl BattleScreen {
                         v.alpha,
                     );
                 }
-                if u.lord {
-                    hud::draw_crown(screen + vec2(0.0, head), v.alpha);
-                }
                 // A confusion sprite of its own (the original mode's) shows it already.
                 if v.confused && !self.meta.units.statuses.contains_key("confused") {
                     hud::draw_confusion(screen + vec2(tile / 2.0, head - 1.0), ctx.time, v.alpha);
@@ -390,7 +387,7 @@ impl BattleScreen {
                 if let Some(up) = text::affinity_mark(f.affinity) {
                     hud::draw_affinity_arrow(vec2(r.x + 14.0 + dw, r.y + 25.0), up);
                     gfx.text(
-                        if up { "상성 유리" } else { "상성 불리" },
+                        if up { "兵种优势" } else { "兵种劣势" },
                         r.x + 26.0 + dw,
                         r.y + 22.0,
                         small.color(if up {
@@ -404,7 +401,7 @@ impl BattleScreen {
                 let joint = self.state.joint_attack_pct(unit, t);
                 if joint > 0 {
                     gfx.text_aligned(
-                        &format!("협공 +{joint}%"),
+                        &format!("夹击 +{joint}%"),
                         r.x,
                         r.y + 22.0,
                         r.w - 8.0,
@@ -471,7 +468,7 @@ impl BattleScreen {
                 }
                 if fs.len() > 5 {
                     gfx.text(
-                        &format!("외 {}부대", fs.len() - 5),
+                        &format!("另有 {} 部队", fs.len() - 5),
                         r.x + 10.0,
                         r.y + 20.0 + 5.0 * 13.0,
                         small,
@@ -502,7 +499,7 @@ impl BattleScreen {
                             .forecast_strategy(&self.pack, unit, s, target.pos);
                         fs.iter()
                             .find(|f| f.unit == t)
-                            .map_or_else(|| "효과 없음".to_string(), text::strategy_line)
+                            .map_or_else(|| "没有效果".to_string(), text::strategy_line)
                     }
                     None => item_effect_line(&self.pack, &e.id, target),
                 };
@@ -621,7 +618,7 @@ impl BattleScreen {
                 }
                 menu.draw(ctx);
                 ctx.gfx.text_aligned(
-                    "←/→ 진영 · Z 이동 · X 닫기",
+                    "←/→：阵营 · Z：定位 · X：关闭",
                     frame.x,
                     frame.bottom() + 2.0,
                     frame.w,
@@ -631,7 +628,7 @@ impl BattleScreen {
             }
             Panel::Objective => {
                 fill_rect(ctx.gfx.screen(), Color::new(0.0, 0.0, 0.0, 0.3));
-                self.draw_objective(ctx, "Z / X 닫기");
+                self.draw_objective(ctx, "Z / X：关闭");
             }
         }
     }
@@ -649,33 +646,33 @@ impl BattleScreen {
         }
         let mut defeat: Vec<(String, Color)> = Vec::new();
         match self.state.units.iter().find(|u| u.lord) {
-            Some(l) => defeat.push((format!("{} 퇴각", l.name), theme::TEXT)),
+            Some(l) => defeat.push((format!("{} 撤退", l.name), theme::TEXT)),
             // A troop fought without the lord is lost when it has retreated.
-            None => defeat.push(("아군 전멸".into(), theme::TEXT)),
+            None => defeat.push(("我军全灭".into(), theme::TEXT)),
         }
         defeat.extend(
             def.defeat
                 .iter()
                 .map(|c| (text::condition_text(c, name), theme::TEXT)),
         );
-        defeat.push((format!("{}턴 경과", self.state.turn_limit), theme::TEXT));
+        defeat.push((format!("经过 {} 回合", self.state.turn_limit), theme::TEXT));
         let mut sections = vec![
-            ("승리 조건".to_string(), victory),
-            ("패배 조건".to_string(), defeat),
+            ("胜利条件".to_string(), victory),
+            ("失败条件".to_string(), defeat),
         ];
         if let Some(b) = &def.bonus {
             let (line, color) = if self.state.bonus_done {
-                (format!("{} (달성)", b.desc), theme::TEXT_GOOD)
+                (format!("{}（已达成）", b.desc), theme::TEXT_GOOD)
             } else {
-                (format!("{} (경험치 +{})", b.desc, b.exp), theme::TEXT)
+                (format!("{}（经验 +{}）", b.desc, b.exp), theme::TEXT)
             };
-            sections.push(("보너스 목표".to_string(), vec![(line, color)]));
+            sections.push(("额外目标".to_string(), vec![(line, color)]));
         }
         sections.push((
-            "턴 제한".to_string(),
+            "回合限制".to_string(),
             vec![(
                 format!(
-                    "{} / {}턴",
+                    "{} / {} 回合",
                     self.state.turn.min(self.state.turn_limit),
                     self.state.turn_limit
                 ),
@@ -732,7 +729,7 @@ fn item_effect_line(pack: &Pack, item: &str, target: &hero_core::battle::Unit) -
         match e {
             Effect::Heal { power } => {
                 let h = (*power).min(target.max_hp - target.hp).max(0);
-                parts.push(format!("회복 {h}"));
+                parts.push(format!("恢复 {h}"));
             }
             Effect::Morale { amount } => {
                 let m = (target.morale + amount).clamp(0, 100) - target.morale;
@@ -742,7 +739,7 @@ fn item_effect_line(pack: &Pack, item: &str, target: &hero_core::battle::Unit) -
         }
     }
     if parts.is_empty() {
-        "효과 없음".into()
+        "没有效果".into()
     } else {
         parts.join(" · ")
     }
