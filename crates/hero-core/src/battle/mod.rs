@@ -707,7 +707,7 @@ impl BattleState {
         self.strategy_aims(pack, id, strategy, from)
     }
 
-    /// Units `item` can be used on: for healing items the user and orthogonally adjacent
+    /// Units `item` can be used on: for healing items the user and all eight adjacent
     /// friendly units; for strategy scrolls the targets of that strategy from the user's tile.
     pub fn item_targets(&self, pack: &Pack, id: UnitId, item: &str) -> Vec<UnitId> {
         self.item_target_list(pack, id, item)

@@ -371,6 +371,7 @@ mod tests {
             label: label.into(),
             saved_at: at,
             campaign: CampaignState {
+                story_background: None,
                 node: "start".into(),
                 roster: Vec::new(),
                 inventory: BTreeMap::new(),

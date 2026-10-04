@@ -1083,6 +1083,13 @@ impl DramaScreen {
             &screen.terrain,
             &resume.stage,
         );
+        if let Backdrop::Image(key) = &screen.stage.backdrop {
+            if key.starts_with("orig_stage_") {
+                if let Some(session) = &mut ctx.session {
+                    session.campaign.story_background = Some(key.clone());
+                }
+            }
+        }
         // The recorder starts from what was replayed, so the restored scene can be saved again.
         for step in &resume.stage {
             screen.recorder.record(step);
@@ -1138,11 +1145,18 @@ impl DramaScreen {
             },
             None => (None, Some("游戏数据尚未载入".to_string())),
         };
-        let backdrop = if end == DramaEnd::Pop {
-            Backdrop::Transparent
-        } else {
-            Backdrop::Black
-        };
+        let inherited = ctx
+            .session
+            .as_ref()
+            .and_then(|s| s.campaign.story_background.clone());
+        let backdrop = initial_story_backdrop(scene, end == DramaEnd::Pop, inherited.as_deref());
+        if let Backdrop::Image(key) = &backdrop {
+            ctx.media.preload_textures(&[format!("bg/{key}")]);
+        }
+        let mut recorder = Recorder::default();
+        if let Backdrop::Image(key) = &backdrop {
+            recorder.record(&Step::Background(Some(key.clone())));
+        }
         DramaScreen {
             scene: scene.to_string(),
             end,
@@ -1160,7 +1174,7 @@ impl DramaScreen {
             skipping: false,
             shown_anything: false,
             fast_now: false,
-            recorder: Recorder::default(),
+            recorder,
         }
     }
 
@@ -1424,7 +1438,12 @@ impl DramaScreen {
         }
         self.recorder.record(&step);
         match step {
-            Step::Background(_) => {
+            Step::Background(ref key) => {
+                if let Some(key) = key.as_ref().filter(|key| key.starts_with("orig_stage_")) {
+                    if let Some(session) = &mut ctx.session {
+                        session.campaign.story_background = Some(key.clone());
+                    }
+                }
                 let instant = skipping || !self.shown_anything;
                 self.stage.apply(&step, instant);
             }
@@ -1670,18 +1689,37 @@ impl DramaScreen {
     }
 }
 
-/// The 0.1.0 importer omitted interior commands. Keep its saved dialogue position while
-/// inserting the newly restored background, without running gold/join/flag effects again.
+/// Original blocks can talk on a screen loaded by a preceding block. Overlays retain
+/// the battlefield; unrelated scenes must not inherit an original story backdrop.
+fn initial_story_backdrop(scene: &str, overlay: bool, inherited: Option<&str>) -> Backdrop {
+    if overlay {
+        Backdrop::Transparent
+    } else if scene.starts_with("c") || scene.starts_with("orig_c") {
+        inherited
+            .filter(|key| key.starts_with("orig_stage_"))
+            .map_or(Backdrop::Black, |key| Backdrop::Image(key.into()))
+    } else {
+        Backdrop::Black
+    }
+}
+
+/// Insert restored backdrop commands into legacy cursors without replaying side effects.
 fn upgrade_original_stage_resume(cmds: &[Cmd], resume: &mut SceneResume) {
-    let original_bg =
-        |cmd: &Cmd| matches!(cmd, Cmd::Bg(Some(key)) if key.starts_with("orig_stage_"));
-    if !cmds.iter().any(original_bg)
-        || resume.stage.iter().any(
-            |step| matches!(step, Step::Background(Some(key)) if key.starts_with("orig_stage_")),
-        )
-    {
+    if resume.background_layout >= 2 {
         return;
     }
+    let has_interior = resume
+        .stage
+        .iter()
+        .any(|step| matches!(step, Step::Background(Some(key)) if key.starts_with("orig_stage_")));
+    let inserted = |cmd: &Cmd| match cmd {
+        Cmd::Bg(Some(key)) if key.starts_with("orig_stage_") => {
+            !has_interior
+                || key.starts_with("orig_stage_000")
+                || key.starts_with("orig_stage_1000_")
+        }
+        _ => false,
+    };
     let old_pc = resume.runner.pc;
     let mut consumed = 0;
     let mut new_pc = 0;
@@ -1690,17 +1728,22 @@ fn upgrade_original_stage_resume(cmds: &[Cmd], resume: &mut SceneResume) {
             break;
         }
         new_pc += 1;
-        if !original_bg(cmd) {
+        if !inserted(cmd) {
             consumed += 1;
         }
     }
     resume.runner.pc = new_pc;
-    if let Some(Cmd::Bg(key)) = cmds[..new_pc].iter().rev().find(|cmd| original_bg(cmd)) {
+    if let Some(Cmd::Bg(key)) = cmds[..new_pc]
+        .iter()
+        .rev()
+        .find(|cmd| matches!(cmd, Cmd::Bg(_)))
+    {
         resume
             .stage
             .retain(|step| !matches!(step, Step::Background(_)));
         resume.stage.push(Step::Background(key.clone()));
     }
+    resume.background_layout = 2;
 }
 
 /// Steps of the duel scene between `@duel` and `@duel_end`.
@@ -1891,6 +1934,7 @@ impl Screen for DramaScreen {
             DramaEnd::Pop => SceneKind::Overlay,
         };
         Some(ResumePoint::Scene(Box::new(SceneResume {
+            background_layout: 2,
             kind,
             runner: runner.clone(),
             stage: self.recorder.stage.clone(),
@@ -1913,6 +1957,60 @@ mod tests {
     use super::*;
 
     #[test]
+    fn original_story_blocks_inherit_the_screen_but_battle_overlays_do_not() {
+        let key = "orig_stage_2002_example";
+        assert_eq!(
+            initial_story_backdrop("c1_s0_story1", false, Some(key)),
+            Backdrop::Image(key.into())
+        );
+        assert_eq!(
+            initial_story_backdrop("orig_c1_s0_b4_3", true, Some(key)),
+            Backdrop::Transparent
+        );
+        assert_eq!(
+            initial_story_backdrop("intro", false, Some(key)),
+            Backdrop::Black
+        );
+    }
+
+    #[test]
+    fn saved_interior_cursor_accounts_for_new_campaign_backgrounds_only_once() {
+        let cmds = vec![
+            Cmd::Bg(Some("orig_stage_2002_a".into())),
+            Cmd::Narr("旧对白".into()),
+            Cmd::Bg(Some("orig_stage_1000_b".into())),
+            Cmd::Narr("大地图对白".into()),
+            Cmd::Gold(200),
+        ];
+        let mut resume = SceneResume {
+            background_layout: 0,
+            kind: SceneKind::Node,
+            runner: DramaRunner {
+                scene: "c1_s0_story0".into(),
+                pc: 3,
+                pending_choice: None,
+                finished: false,
+            },
+            stage: vec![Step::Background(Some("orig_stage_2002_a".into()))],
+            shown: Some(Step::Narration("大地图对白".into())),
+            last_text: None,
+            choice: None,
+            bgm: None,
+            terrain: BTreeMap::new(),
+            backlog: vec![],
+        };
+        upgrade_original_stage_resume(&cmds, &mut resume);
+        assert_eq!(resume.runner.pc, 4);
+        assert_eq!(
+            resume.stage,
+            vec![Step::Background(Some("orig_stage_1000_b".into()))]
+        );
+        let once = resume.clone();
+        upgrade_original_stage_resume(&cmds, &mut resume);
+        assert_eq!(resume, once);
+    }
+
+    #[test]
     fn old_scene_save_keeps_dialogue_position_and_restores_original_stage_once() {
         let cmds = vec![
             Cmd::Bgm(Some("camp".into())),
@@ -1926,6 +2024,7 @@ mod tests {
             Cmd::Gold(500),
         ];
         let mut resume = SceneResume {
+            background_layout: 0,
             kind: SceneKind::Node,
             runner: DramaRunner {
                 scene: "c0_s0_story3".into(),

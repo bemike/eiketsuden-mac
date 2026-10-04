@@ -283,7 +283,7 @@ impl Screen for TitleScreen {
         }
 
         gfx.text_aligned(
-            "Mac 原生版 0.1.9",
+            "Mac 原生版 0.1.10",
             0.0,
             h - 13.0,
             w - 4.0,

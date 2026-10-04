@@ -649,7 +649,7 @@ impl BattleState {
             Err(_) => Vec::new(),
             Ok(BattleItem::Direct(_)) => {
                 let mut v = vec![id];
-                for p in u.pos.neighbors4() {
+                for p in u.pos.neighbors8() {
                     if let Some(o) = self
                         .unit_at(p)
                         .filter(|&o| !self.units[o].side.is_hostile(u.side))
@@ -707,7 +707,7 @@ impl BattleState {
                 if t.side.is_hostile(user.side) {
                     return Err(ActionError::InvalidTarget);
                 }
-                if target != unit && user.pos.manhattan(t.pos) != 1 {
+                if target != unit && user.pos.chebyshev(t.pos) > 1 {
                     return Err(ActionError::OutOfRange);
                 }
                 let (from, to) = (user.pos, t.pos);

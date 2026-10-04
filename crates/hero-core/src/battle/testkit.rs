@@ -483,6 +483,7 @@ pub fn pack(rows: &str) -> Pack {
 
 pub fn campaign(roster: Vec<OfficerState>, deployed: &[&str]) -> CampaignState {
     CampaignState {
+        story_background: None,
         node: "start".into(),
         roster,
         inventory: BTreeMap::new(),

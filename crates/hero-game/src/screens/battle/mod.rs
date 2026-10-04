@@ -2075,6 +2075,7 @@ mod tests {
 
     fn scene_record() -> SceneResume {
         SceneResume {
+            background_layout: 0,
             kind: SceneKind::Overlay,
             runner: DramaRunner {
                 scene: "p1_intro".into(),

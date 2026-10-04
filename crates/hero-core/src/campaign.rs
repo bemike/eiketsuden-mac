@@ -266,6 +266,10 @@ fn family_allows(item: &ItemDef, family: &str) -> bool {
 pub struct CampaignState {
     /// Current campaign node id.
     pub node: Id,
+    /// Last original story backdrop. Blocks which inherit the DOS screen keep it across
+    /// campaign nodes and reloads; older saves have no remembered backdrop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub story_background: Option<String>,
     /// Officers in the player's army, in roster order.
     pub roster: Vec<OfficerState>,
     /// Unequipped items: item id -> count.
@@ -307,6 +311,7 @@ impl CampaignState {
     pub fn new_game(pack: &Pack) -> CampaignState {
         let campaign = &pack.campaign;
         let mut state = CampaignState {
+            story_background: None,
             node: campaign.start.clone(),
             roster: Vec::new(),
             inventory: BTreeMap::new(),

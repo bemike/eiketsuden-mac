@@ -2697,6 +2697,7 @@ fn convert_battles(
                 // The flag a route choice of the block sets for the campaign to branch on.
                 let route_flag = format!("orig_route_c{file}_s{scene_index}_b{block}");
                 let ctx = chapters::StoryContext {
+                    chapter: file as u8,
                     names: &names,
                     text: text.as_ref(),
                     song_key: &song_key,
@@ -3689,34 +3690,61 @@ fn convert_story_stages(
             .collect()
     };
     let inputs = (|| -> Result<_, String> {
-        let maps = archive("PMAP.R3", report)?;
-        let chips = archive("SMAPBGPL.R3", report)?
-            .get(1)
-            .cloned()
-            .ok_or("palace chips missing")?;
+        let interiors = archive("PMAP.R3", report)?;
+        let towns = archive("SMAP.R3", report)?;
+        let campaigns = archive("MMAP.R3", report)?;
+        let town_chips = archive("SMAPBGPL.R3", report)?;
+        let campaign_chips = archive("MMAPBGPL.R3", report)?;
+        let sizes = &exe.tables.as_ref().map_err(Clone::clone)?.campaign_sizes;
         let sprites = archive("SSCCHR2.R3", report)?;
         let bytes = read_source(install, "BAKDATA.R3", report)
             .map_err(|e| e.to_string())?
             .ok_or("BAKDATA.R3 missing")?;
         let bak = bakdata::parse(&bytes, encoding).map_err(|e| e.to_string())?;
-        Ok((maps, chips, sprites, bak))
+        Ok((
+            interiors,
+            towns,
+            campaigns,
+            town_chips,
+            campaign_chips,
+            sizes,
+            sprites,
+            bak,
+        ))
     })();
-    let (interiors, chips, sprites, bak) = match inputs {
-        Ok(inputs) => inputs,
-        Err(e) => {
-            report.errors.push(format!("story stages: {e}"));
-            return Ok(());
-        }
-    };
+    let (interiors, towns, campaigns, town_chips, campaign_chips, sizes, sprites, bak) =
+        match inputs {
+            Ok(inputs) => inputs,
+            Err(e) => {
+                report.errors.push(format!("story stages: {e}"));
+                return Ok(());
+            }
+        };
     let mut count = 0;
     for (key, stage) in stages {
-        let rendered = (|| -> Result<IndexedImage, String> {
-            let bytes = interiors
+        let rendered = (|| -> Result<(IndexedImage, usize), String> {
+            if stage.map & 0xf000 == 0x1000 {
+                let bytes = campaigns
+                    .get(usize::from(stage.campaign_map))
+                    .ok_or("campaign map missing")?;
+                let map = maps::CampaignMap::parse(bytes, sizes).map_err(|e| e.to_string())?;
+                let chips = campaign_chips.first().ok_or("campaign chips missing")?;
+                let image = maps::render_tiles(&map.tiles, map.width, map.height, chips)
+                    .map_err(|e| e.to_string())?;
+                // Campaign coordinates are 32-pixel route cells. Keep the map readable:
+                // show a DOS-sized viewport around Liu Bei, clamped at the map's edges.
+                return Ok((campaign_view(&image, stage.people.get(&0).copied()), 1));
+            }
+            let interior = stage.map & 0xf000 == 0x2000;
+            let bytes = (if interior { &interiors } else { &towns })
                 .get(usize::from(stage.map & 0xff))
-                .ok_or("interior map missing")?;
+                .ok_or("town/interior map missing")?;
             let map = maps::TownMap::parse(bytes).map_err(|e| e.to_string())?;
+            let chips = town_chips
+                .get(usize::from(interior))
+                .ok_or("town chips missing")?;
             let mut image =
-                maps::render_tiles(&map.tiles, 32, 20, &chips).map_err(|e| e.to_string())?;
+                maps::render_tiles(&map.tiles, 32, 20, chips).map_err(|e| e.to_string())?;
             let mut people: Vec<_> = stage.people.iter().collect();
             people.sort_by_key(|(id, [x, y, _])| (*y, *x, **id));
             for (person, [x, y, dir]) in people {
@@ -3734,11 +3762,11 @@ fn convert_story_stages(
                     i32::from(*y) * 16 + 8 - 40,
                 );
             }
-            Ok(image)
+            Ok((image, if interior { 2 } else { 0 }))
         })();
         match rendered {
-            Ok(image) => {
-                let png = encode_png(&image, &bank[2], false)
+            Ok((image, palette)) => {
+                let png = encode_png(&image, &bank[palette], false)
                     .map_err(|e| output_error(&out.root, std::io::Error::other(e)))?;
                 out.write(&format!("gfx/bg/{key}.png"), &png)?;
                 count += 1;
@@ -3747,8 +3775,33 @@ fn convert_story_stages(
         }
     }
     report.outputs += count;
-    report.notes.push(format!("{count} original interior views with placed people; walking is presented at dialogue boundaries, decorative object layouts are not decoded"));
+    report.notes.push(format!("{count} original town, interior and campaign views; town people and walking are presented at dialogue boundaries, decorative object layouts and campaign markers are not decoded"));
     Ok(())
+}
+
+/// Crop a campaign background to the town stage's 512×320 viewport.
+fn campaign_view(image: &IndexedImage, person: Option<[u8; 3]>) -> IndexedImage {
+    let width = image.width.min(512);
+    let height = image.height.min(320);
+    let [x, y, _] = person.unwrap_or([8, 5, 0]);
+    let left = (usize::from(x) * 32)
+        .saturating_sub(width / 2)
+        .min(image.width - width);
+    let top = (usize::from(y) * 32)
+        .saturating_sub(height / 2)
+        .min(image.height - height);
+    let pixels = (top..top + height)
+        .flat_map(|row| {
+            image.pixels[row * image.width + left..row * image.width + left + width]
+                .iter()
+                .copied()
+        })
+        .collect();
+    IndexedImage {
+        width,
+        height,
+        pixels,
+    }
 }
 
 /// SSCCHR2 has four 32×40 planar frames, two poses for each stored facing.
@@ -4264,7 +4317,9 @@ fn joining(scene: &crate::scenario::Scene) -> Vec<u16> {
 }
 
 /// The persons the scenes of the scenario files `files` (`SNRnD.R3`) bring into Liu Bei's army
-/// ([`joining`]); a file or scene that cannot be read is an error of `report`.
+/// ([`joining`]), plus participants in scripted duels. Some late encounters use a
+/// deliberately unnamed person with its own BAKDATA record and portrait; they still need
+/// an officer definition to spawn and trigger contact. Reading failures are reported.
 fn joining_persons(
     install: &InstallDir,
     files: &[usize],
@@ -4290,7 +4345,19 @@ fn joining_persons(
                 .map_err(|e| e.to_string())
                 .and_then(|data| crate::scenario::parse_scene(&data).map_err(|e| e.to_string()));
             match scene {
-                Ok(scene) => persons.extend(joining(&scene)),
+                Ok(scene) => {
+                    persons.extend(joining(&scene));
+                    persons.extend(
+                        scene
+                            .instructions()
+                            .filter(|c| c.mnemonic == "duel")
+                            .flat_map(|c| {
+                                [c.operands.get("first"), c.operands.get("second")]
+                                    .into_iter()
+                                    .flatten()
+                            }),
+                    );
+                }
                 Err(e) => report
                     .errors
                     .push(format!("{name} scene {scene_index}: {e}")),
@@ -5867,6 +5934,28 @@ fn convert_maps(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn campaign_view_crops_around_route_cells_and_clamps_edges() {
+        let image = IndexedImage {
+            width: 768,
+            height: 640,
+            pixels: (0..768 * 640)
+                .map(|i| ((i / 768 + i % 768) % 16) as u8)
+                .collect(),
+        };
+        let view = campaign_view(&image, Some([24, 20, 0]));
+        assert_eq!((view.width, view.height), (512, 320));
+        assert_eq!(view.pixels[0], image.pixels[320 * 768 + 256]);
+        let near_origin = campaign_view(&image, Some([0, 0, 0]));
+        assert_eq!(near_origin.pixels[0], image.pixels[0]);
+        let small = IndexedImage {
+            width: 16,
+            height: 16,
+            pixels: vec![4; 256],
+        };
+        assert_eq!(campaign_view(&small, Some([255, 255, 0])), small);
+    }
 
     #[test]
     fn town_sprite_frames_and_transparent_clipped_blit() {

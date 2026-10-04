@@ -694,6 +694,35 @@ mod tests {
     }
 
     #[test]
+    fn diagonal_friend_is_selectable_in_the_item_menu() {
+        let (pack, mut state) = begun();
+        let user = state.find_unit("liu_bei").unwrap();
+        let friend = state.find_unit("guan_yu").unwrap();
+        state.units[user].pos = Pos::new(3, 3);
+        state.units[friend].pos = Pos::new(4, 4);
+        state.inventory.insert("bean".into(), 1);
+        let list = item_entries(&state, &pack, user);
+        let index = list.iter().position(|e| e.id == "bean").unwrap();
+        assert!(list[index].targets.as_ref().unwrap().contains(&friend));
+        let mut ui = PlayerUi {
+            mode: Mode::ItemTarget {
+                unit: user,
+                undo: None,
+                list,
+                index,
+            },
+        };
+        assert_eq!(
+            ui.confirm(&state, &pack, Pos::new(4, 4)),
+            Request::Apply(Action::UseItem {
+                unit: user,
+                item: "bean".into(),
+                target: friend
+            })
+        );
+    }
+
+    #[test]
     fn select_move_and_undo() {
         let (pack, mut state) = begun();
         let gy = state.find_unit("guan_yu").unwrap();

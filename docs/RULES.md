@@ -209,7 +209,7 @@ strategies impossible and water strategies deal +25%. Battles may override the c
 ## 10. Items in battle
 
 * Battle consumables (`battle_use = true`) come from the army inventory. A unit uses one as its action on itself or an
-  orthogonally adjacent friendly unit (`effects`: `heal` restores exactly `power` HP, `morale` adds morale; under the
+  orthogonally or diagonally adjacent friendly unit (`effects`: `heal` restores exactly `power` HP, `morale` adds morale; under the
   original strategy formulas (§5) plus `r` with `0 ≤ r < value / 10` each, as the original heals through the
   support strategies' routine without a caster; the forecast shows it without), or — for items with `strategy` — casts that strategy from its tile without
   paying MP.

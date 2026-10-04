@@ -98,6 +98,9 @@ pub enum SceneKind {
 /// [`SceneResume::stage`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneResume {
+    /// Importer backdrop layout used by this cursor (0 = legacy, 2 = town/campaign stages).
+    #[serde(default)]
+    pub background_layout: u8,
     pub kind: SceneKind,
     /// The cursor into the scene (its position is the step after the one on screen).
     pub runner: DramaRunner,
@@ -280,6 +283,7 @@ mod tests {
 
     fn campaign() -> CampaignState {
         CampaignState {
+            story_background: None,
             node: "n".into(),
             roster: Vec::new(),
             inventory: BTreeMap::new(),
@@ -311,6 +315,7 @@ mod tests {
 
     fn resume() -> SceneResume {
         SceneResume {
+            background_layout: 0,
             kind: SceneKind::Ending {
                 title: "끝".into()
             },

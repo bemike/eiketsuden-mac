@@ -558,6 +558,70 @@ fn strategy_validation_leaves_the_state_untouched() {
 }
 
 #[test]
+fn direct_items_work_on_self_and_all_eight_neighbors_in_both_inventory_sources() {
+    let pack = pack(OPEN_MAP);
+    let origin = p(3, 3);
+    for personal in [false, true] {
+        for item in ["bean", "wine"] {
+            for target_pos in std::iter::once(origin).chain(origin.neighbors8()) {
+                let mut st = state(&pack);
+                let user = add(&mut st, &pack, Side::Player, "infantry", 1, origin);
+                let target = if target_pos == origin {
+                    user
+                } else {
+                    add(&mut st, &pack, Side::Ally, "infantry", 1, target_pos)
+                };
+                let distant = add(&mut st, &pack, Side::Player, "infantry", 1, p(5, 5));
+                let foe = add(&mut st, &pack, Side::Enemy, "infantry", 1, p(4, 3));
+                // Keep the enemy distinct from the friendly target in the right-hand case.
+                if target_pos == p(4, 3) {
+                    st.units[foe].pos = p(2, 2);
+                }
+                st.units[target].hp = 1;
+                st.units[target].max_hp = 1000;
+                st.units[target].morale = 20;
+                if personal {
+                    st.units[user].equip.carried =
+                        Some(crate::inventory::Pocket::from_items(vec![item.into()]).unwrap());
+                } else {
+                    st.inventory.insert(item.into(), 1);
+                }
+                assert!(
+                    st.item_targets(&pack, user, item).contains(&target),
+                    "{item} at {target_pos:?}"
+                );
+                assert!(!st.item_targets(&pack, user, item).contains(&distant));
+                assert!(!st.item_targets(&pack, user, item).contains(&foe));
+                assert_eq!(
+                    st.apply(&pack, use_item(user, item, distant)),
+                    Err(ActionError::OutOfRange)
+                );
+                assert_eq!(
+                    st.apply(&pack, use_item(user, item, foe)),
+                    Err(ActionError::InvalidTarget)
+                );
+                assert_eq!(
+                    st.item_count_for(user, item),
+                    1,
+                    "rejected use must not consume"
+                );
+                let events = st.apply(&pack, use_item(user, item, target)).unwrap();
+                assert!(events.iter().any(
+                    |e| matches!(e, BattleEvent::ItemUsed { target: got, .. } if *got == target)
+                ));
+                if item == "bean" {
+                    assert_eq!(st.units[target].hp, 301);
+                } else {
+                    assert_eq!(st.units[target].morale, 50);
+                }
+                assert_eq!(st.item_count_for(user, item), 0);
+                assert!(st.units[user].acted);
+            }
+        }
+    }
+}
+
+#[test]
 fn healing_items_and_their_targets() {
     let pack = pack(OPEN_MAP);
     let mut st = state(&pack);

@@ -16,7 +16,6 @@
 //! re-staged like the paired ones ([`crate::battles::convert`]) from a base made from the
 //! original's header ([`chapter_base`]).
 
-use crate::battles::BATTLE_MAP;
 use crate::battles::{self, Names, TextSource};
 use crate::scenario::{story, Block, Instr, Operands, Record, Scene};
 use hero_core::battledef::{BattleDef, Condition, DeployDef, MapDef};
@@ -60,10 +59,7 @@ pub fn parts(scene: &Scene) -> Vec<Part> {
             continue;
         }
         let code = || block.records.iter().flat_map(|r| &r.code);
-        let battle_map = code()
-            .filter(|c| c.mnemonic == "load_map")
-            .filter_map(|c| c.operands.get("map"))
-            .find(|m| m & 0xf000 == BATTLE_MAP);
+        let battle_map = battles::starting_battle_map(block).map(|(_, map)| map);
         // The setup may come in the block before (with the camp's story).
         let sets_up = code().any(story::sets_up_battle);
         match battle_map {
@@ -110,10 +106,13 @@ pub struct StoryScene {
     pub notes: Vec<String>,
 }
 
-/// An original interior and its placed people, captured at a dialogue boundary.
+/// An original town, interior or campaign map at a dialogue boundary.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StoryStage {
     pub map: u16,
+    /// Prologue and chapter one share MMAP entry zero; later chapters use entries 1–3.
+    pub campaign_map: u8,
+    pub loaded: bool,
     pub people: BTreeMap<u16, [u8; 3]>,
 }
 
@@ -126,6 +125,9 @@ impl StoryStage {
                 .flat_map(|(id, pose)| id.to_le_bytes().into_iter().chain(*pose)),
         ) {
             hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+        }
+        if self.map & 0xf000 == 0x1000 {
+            hash = (hash ^ u64::from(self.campaign_map)).wrapping_mul(0x100000001b3);
         }
         format!("orig_stage_{:04x}_{hash:016x}", self.map)
     }
@@ -151,6 +153,7 @@ pub enum Next {
 
 /// What a story scene needs besides the block.
 pub struct StoryContext<'a> {
+    pub chapter: u8,
     pub names: &'a Names,
     pub text: &'a dyn TextSource,
     /// Music key of an original song number (`MUSIC.R3`), if the pack has one for it.
@@ -208,7 +211,10 @@ struct Writer<'c, 'a> {
 
 impl Writer<'_, '_> {
     fn flush_stage(&mut self) {
-        if self.stage_dirty && self.stage.map & 0xf000 == 0x2000 {
+        if self.stage_dirty
+            && self.stage.loaded
+            && matches!(self.stage.map & 0xf000, 0x0000 | 0x1000 | 0x2000)
+        {
             let key = self.stage.key();
             let _ = writeln!(self.out.text, "@bg {key}");
             self.out.stages.insert(key, self.stage.clone());
@@ -429,6 +435,8 @@ impl Writer<'_, '_> {
             "load_map" => {
                 self.stage = StoryStage {
                     map: get("map"),
+                    campaign_map: ctx.chapter.saturating_sub(1),
+                    loaded: true,
                     people: BTreeMap::new(),
                 };
                 self.stage_dirty = true;
@@ -1932,6 +1940,7 @@ mod tests {
         song_key: &'a dyn Fn(u16) -> Option<&'static str>,
     ) -> StoryContext<'a> {
         StoryContext {
+            chapter: 1,
             names,
             text: &Text,
             song_key,
@@ -1946,6 +1955,52 @@ mod tests {
     fn parses(text: &str) {
         let scenes = hero_core::script::parse_drama("t.drama", &format!("== s\n{text}")).unwrap();
         assert_eq!(scenes.len(), 1);
+    }
+
+    #[test]
+    fn town_and_campaign_views_are_emitted_with_distinct_chapter_maps() {
+        let names = names();
+        let song = |_| None;
+        let mut context = ctx(&names, &song);
+        let b = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("load_map", &[("map", 0x0005)]),
+                instr("dialogue", &[("text", 2)]),
+                instr("load_map", &[("map", 0x1000)]),
+                instr("narration", &[("text", 11)]),
+            ],
+        )]);
+        let first = story_scene(&b, &context);
+        assert_eq!(first.stages.len(), 2);
+        assert!(first.text.contains("@bg orig_stage_0005_"));
+        assert!(first.text.contains("@bg orig_stage_1000_"));
+        context.chapter = 4;
+        let last = story_scene(&b, &context);
+        assert_ne!(
+            first.stages.keys().find(|k| k.contains("1000")),
+            last.stages.keys().find(|k| k.contains("1000"))
+        );
+        assert_eq!(
+            last.stages
+                .values()
+                .find(|s| s.map == 0x1000)
+                .unwrap()
+                .campaign_map,
+            3
+        );
+        // A move on an inherited screen must not invent SMAP entry zero.
+        let inherited = block(vec![record(
+            RUN,
+            0,
+            vec![
+                instr("move_person", &[("person", 0), ("x", 5), ("y", 10)]),
+                instr("dialogue", &[("text", 2)]),
+            ],
+        )]);
+        assert!(story_scene(&inherited, &context).stages.is_empty());
+        parses(&first.text);
     }
 
     #[test]

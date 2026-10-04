@@ -424,6 +424,7 @@ mod tests {
 
     fn campaign() -> CampaignState {
         CampaignState {
+            story_background: None,
             node: "n".into(),
             roster: Vec::new(),
             inventory: BTreeMap::new(),
@@ -597,6 +598,7 @@ mod tests {
 
     fn record(scene: &str, kind: SceneKind, pc: usize) -> SceneResume {
         SceneResume {
+            background_layout: 0,
             kind,
             runner: hero_core::drama::DramaRunner {
                 scene: scene.into(),

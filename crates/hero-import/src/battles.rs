@@ -253,24 +253,81 @@ pub fn battle_set_flags(scene: &Scene) -> BTreeSet<u8> {
         .collect()
 }
 
-/// Whether `block` loads a battle map.
-fn loads_battle_map(block: &Block) -> bool {
-    block.records.iter().flat_map(|r| &r.code).any(|c| {
-        c.mnemonic == "load_map"
-            && c.operands
-                .get("map")
-                .is_some_and(|m| m & 0xf000 == BATTLE_MAP)
-    })
+/// Map loaded before the battle starts. Xuchang's second and third battles use
+/// `battle_end next_map=0x30xx` to switch maps, rather than `load_map`.
+pub fn starting_battle_map(block: &Block) -> Option<(usize, u16)> {
+    let has_start = starts_battle(block);
+    for (record, rec) in block.records.iter().enumerate() {
+        for cmd in &rec.code {
+            if cmd.mnemonic == "begin_battle" {
+                return None;
+            }
+            let map = match cmd.mnemonic {
+                "load_map" => cmd.operands.get("map"),
+                "battle_end" if has_start => cmd.operands.get("next_map"),
+                _ => None,
+            };
+            if let Some(map) = map.filter(|m| m & 0xf000 == BATTLE_MAP) {
+                return Some((record, map));
+            }
+        }
+    }
+    None
 }
 
-/// Whether block `index` of `scene` only sets a battle up (map and rosters) and the block after
-/// it fights it (starts it and holds its triggers, without loading a map of its own): SNR3's
-/// Maicheng.
+fn loads_battle_map(block: &Block) -> bool {
+    starting_battle_map(block).is_some()
+}
+
+/// Normalise only the pre-start map switch; a later `battle_end` still ends the battle.
+fn normalized_start(block: &Block) -> Cow<'_, Block> {
+    let Some((record, map)) = starting_battle_map(block) else {
+        return Cow::Borrowed(block);
+    };
+    if !block.records[record]
+        .code
+        .iter()
+        .any(|c| c.mnemonic == "battle_end" && c.operands.get("next_map") == Some(map))
+    {
+        return Cow::Borrowed(block);
+    }
+    let mut copy = block.clone();
+    for cmd in &mut copy.records[record].code {
+        if cmd.mnemonic == "battle_end" && cmd.operands.get("next_map") == Some(map) {
+            cmd.mnemonic = "load_map";
+            cmd.opcode = 0x09;
+            cmd.operands = Operands::Fields {
+                args: vec![crate::scenario::Arg {
+                    name: "map",
+                    kind: crate::scenario::ArgKind::Map,
+                    value: map,
+                }],
+            };
+        }
+    }
+    Cow::Owned(copy)
+}
+
+/// A battle split across consecutive blocks: Maicheng puts its start after the setup;
+/// Guangchuan puts its watched events and epilogue after the opening. Never consume a
+/// following story block unless it begins with battle triggers and loads no battle map.
 pub fn fought_in_next_block(scene: &Scene, index: usize) -> bool {
     let (Some(this), Some(next)) = (scene.blocks.get(index), scene.blocks.get(index + 1)) else {
         return false;
     };
-    loads_battle_map(this) && !starts_battle(this) && starts_battle(next) && !loads_battle_map(next)
+    if !loads_battle_map(this) || loads_battle_map(next) {
+        return false;
+    }
+    (!starts_battle(this) && starts_battle(next))
+        || (starts_battle(this)
+            && !this
+                .records
+                .iter()
+                .any(|r| WATCHED.contains(&r.trigger.kind))
+            && next
+                .records
+                .first()
+                .is_some_and(|r| WATCHED.contains(&r.trigger.kind)))
 }
 
 /// Record kinds a battle watches (FORMATS §13.2): contact, a unit on a cell, won, lost, a turn,
@@ -356,20 +413,27 @@ pub fn has_continuation(scene: &Scene, index: usize) -> bool {
 }
 
 /// Battle block `index` of `scene`, joined with the block after it when that one fights it
-/// ([`fought_in_next_block`]; its groups one up, the setup block holding group 0).
+/// ([`fought_in_next_block`]); the second block's groups follow all opening groups.
 fn setup_and_battle(scene: &Scene, index: usize) -> Cow<'_, Block> {
     let block = &scene.blocks[index];
     if !fought_in_next_block(scene, index) {
-        return Cow::Borrowed(block);
+        return normalized_start(block);
     }
-    let mut joined = block.clone();
+    let mut joined = normalized_start(block).into_owned();
+    let offset = block
+        .records
+        .iter()
+        .map(|r| r.trigger.group)
+        .max()
+        .unwrap_or(0)
+        + 1;
     joined.records.extend(
         scene.blocks[index + 1]
             .records
             .iter()
             .cloned()
             .map(|mut r| {
-                r.trigger.group += 1;
+                r.trigger.group += offset;
                 r
             }),
     );
@@ -569,7 +633,6 @@ pub fn find_battle_leg(
     leg: u8,
 ) -> Result<OriginalBattle, String> {
     let wanted = BATTLE_MAP | u16::from(map);
-    let is_load = |op: &Operands| op.get("map") == Some(wanted);
     let (block_index, record_index) = if leg == 0 {
         scene
             .blocks
@@ -577,12 +640,9 @@ pub fn find_battle_leg(
             .enumerate()
             .filter(|(b, _)| only.is_none_or(|o| o == *b))
             .find_map(|(b, block)| {
-                block.records.iter().enumerate().find_map(|(r, rec)| {
-                    rec.code
-                        .iter()
-                        .any(|i| i.mnemonic == "load_map" && is_load(&i.operands))
-                        .then_some((b, r))
-                })
+                starting_battle_map(block)
+                    .filter(|(_, loaded)| *loaded == wanted)
+                    .map(|(record, _)| (b, record))
             })
             .ok_or_else(|| format!("no block loads battle map {map}"))?
     } else {
@@ -2082,11 +2142,39 @@ pub fn convert(
 
     // When each person comes onto the map: with the first record that brings it in; `None` = at
     // the start (the opening brings it in right after the battle begins).
+    let conditional_arrivals: BTreeSet<u16> = orig
+        .records
+        .iter()
+        .flat_map(|r| {
+            r.code
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.mnemonic == "if_flags")
+                .flat_map(|(i, c)| {
+                    let skip = match &c.operands {
+                        Operands::Condition { skip, .. } => usize::from(*skip),
+                        _ => 0,
+                    };
+                    &r.code[i + 1..(i + 1 + skip).min(r.code.len())]
+                })
+                .filter(|c| c.mnemonic == "join_battle")
+                .filter_map(|c| c.operands.get("person"))
+        })
+        .collect();
     let mut arrival: BTreeMap<u16, Option<String>> = BTreeMap::new();
     for j in &orig.joins {
-        let group = (j.group >= FIRST_PHASE_GROUP).then(|| arrival_group(j.record));
         for &p in &j.persons {
-            arrival.entry(p).or_insert_with(|| group.clone());
+            let group = (j.group >= FIRST_PHASE_GROUP).then(|| {
+                let group = arrival_group(j.record);
+                // A conditional guest must not share a spawn group with unconditional
+                // reinforcements from the same record (Yangping's unnamed rider).
+                if conditional_arrivals.contains(&p) {
+                    format!("{group}_p{p}")
+                } else {
+                    group
+                }
+            });
+            arrival.entry(p).or_insert(group);
         }
     }
     let mut never_arrive = 0;
@@ -4149,6 +4237,157 @@ item = "wine"
             vec![fields("add_item", &[("item", 3)])],
         );
         assert!(!is_treasure(&liu_bei));
+    }
+
+    #[test]
+    fn conditional_guest_does_not_spawn_with_unconditional_reinforcements() {
+        let mut original = scene();
+        original.blocks[1].records[7].code = vec![
+            fields("join_battle", &[("person", 302)]),
+            guard(1, vec![91], vec![]),
+            fields("join_battle", &[("person", 303)]),
+        ];
+        let battle = find_battle(&original, 2, &[133], Some(1)).unwrap();
+        let text = text();
+        let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        let converted = convert(
+            &crate::chapters::chapter_base("b", "test", "test", 30, true, Some("liu_bei")),
+            &battle,
+            &names(),
+            &Pairing {
+                flags: &[133],
+                ..pair("", 1, 0, 2)
+            },
+            "hexz_02",
+            &mut EventSources {
+                text: &text,
+                cell_change: &mut none,
+            },
+        )
+        .unwrap();
+        assert!(
+            converted
+                .battle
+                .units
+                .iter()
+                .any(|u| u.group.as_deref() == Some("original_7_p303")),
+            "{:#?}\n{:?}",
+            converted.battle.units,
+            converted.notes
+        );
+        assert!(converted.battle.events.iter().any(|e| e
+            .when
+            .iter()
+            .any(|f| f.flag == "orig_f91")
+            && e.actions
+                .iter()
+                .any(|a| matches!(a, EventAction::Spawn { group } if group == "original_7_p303"))));
+        assert!(converted
+            .battle
+            .events
+            .iter()
+            .filter(|e| e.when.is_empty() && matches!(e.trigger, Trigger::Reach { .. }))
+            .all(|e| !e
+                .actions
+                .iter()
+                .any(|a| matches!(a, EventAction::Spawn { group } if group == "original_7_p303"))));
+    }
+
+    #[test]
+    fn pre_start_battle_end_loads_a_battle_map_without_ending_that_battle() {
+        let mut original = scene();
+        let load = original.blocks[1].records[0]
+            .code
+            .iter_mut()
+            .find(|c| c.mnemonic == "load_map")
+            .unwrap();
+        *load = fields("battle_end", &[("next_map", 0x3002)]);
+        assert_eq!(starting_battle_map(&original.blocks[1]), Some((0, 0x3002)));
+        assert!(crate::chapters::parts(&original).iter().any(|p| matches!(
+            p,
+            crate::chapters::Part::Battle {
+                block: 1,
+                map: 2,
+                ..
+            }
+        )));
+        let joined = battle_block(&original, 1);
+        assert!(joined.records[0]
+            .code
+            .iter()
+            .any(|c| c.mnemonic == "load_map" && c.operands.get("map") == Some(0x3002)));
+        let battle = find_battle(&original, 2, &[133], Some(1)).unwrap();
+        assert_eq!(battle.map, 2);
+        assert!(battle.records.iter().any(|r| r.trigger.kind == 4));
+        // Switching to a campaign map after combat does not create another battle.
+        original.blocks[1].records[0]
+            .code
+            .iter_mut()
+            .find(|c| c.mnemonic == "battle_end")
+            .unwrap()
+            .operands = fields("battle_end", &[("next_map", 0x1000)]).operands;
+        assert_eq!(starting_battle_map(&original.blocks[1]), None);
+    }
+
+    #[test]
+    fn watched_block_after_opening_is_part_of_the_battle_not_a_story() {
+        let mut original = scene();
+        let all = original.blocks[1].records.clone();
+        let first_watched = all
+            .iter()
+            .position(|r| WATCHED.contains(&r.trigger.kind))
+            .unwrap();
+        original.blocks[1].records = all[..first_watched].to_vec();
+        let first_group = all[first_watched].trigger.group;
+        original.blocks.insert(
+            2,
+            Block {
+                offset: 0,
+                records: all[first_watched..]
+                    .iter()
+                    .cloned()
+                    .map(|mut r| {
+                        r.trigger.group -= first_group;
+                        r
+                    })
+                    .collect(),
+            },
+        );
+        assert!(fought_in_next_block(&original, 1));
+        assert!(part_of_earlier_battle(&original, 2));
+        assert!(!crate::chapters::parts(&original)
+            .iter()
+            .any(|p| matches!(p, crate::chapters::Part::Story { block: 2 })));
+        let joined = battle_block(&original, 1);
+        assert_eq!(joined.records, all);
+        let battle = find_battle(&original, 2, &[133], Some(1)).unwrap();
+        assert!(battle.records.iter().any(|r| r.trigger.kind == 4));
+        assert!(battle.cells.iter().any(|c| c.item == Some(30)));
+        let text = text();
+        let mut none = |_: Pos, _: u8| -> Result<CellChange, String> { Ok(None) };
+        let converted = convert(
+            &crate::chapters::chapter_base("b", "test", "test", 30, true, Some("liu_bei")),
+            &battle,
+            &names(),
+            &Pairing {
+                flags: &[133],
+                ..pair("b", 1, 0, 2)
+            },
+            "hexz_02",
+            &mut EventSources {
+                text: &text,
+                cell_change: &mut none,
+            },
+        )
+        .unwrap();
+        assert!(converted.battle.events.iter().any(|e| matches!(&e.trigger, Trigger::Adjacent { a: Some(a), b } if a == "guan_yu" && b == "boss")));
+        assert!(converted.drama.contains("@duel guan_yu boss"));
+        assert!(converted.battle.events.iter().flat_map(|e| &e.actions).any(
+            |a| matches!(a, EventAction::LevelUp { target, amount: 1 } if target == "guan_yu")
+        ));
+        // A normal following story must not be consumed.
+        original.blocks[2].records[0].trigger.kind = RUN;
+        assert!(!fought_in_next_block(&original, 1));
     }
 
     /// The setup and rosters are the ones the flags' `if_flags` let run; slots that need a flag

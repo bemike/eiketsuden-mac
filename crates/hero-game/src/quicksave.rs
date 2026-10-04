@@ -154,6 +154,7 @@ mod tests {
 
     fn scene() -> SceneResume {
         SceneResume {
+            background_layout: 0,
             kind: SceneKind::Node,
             runner: DramaRunner {
                 scene: "c1_jade_belt".into(),

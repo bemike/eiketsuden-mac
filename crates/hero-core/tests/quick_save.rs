@@ -38,6 +38,7 @@ fn play_out(
 
 fn resume_of(runner: &DramaRunner, choice: Option<Vec<String>>) -> SceneResume {
     SceneResume {
+        background_layout: 0,
         kind: SceneKind::Node,
         runner: runner.clone(),
         stage: Vec::new(),
