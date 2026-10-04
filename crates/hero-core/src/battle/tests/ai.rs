@@ -735,3 +735,100 @@ fn plans_one_unit_quickly_on_a_crowded_30x30_map() {
         );
     }
 }
+
+#[test]
+fn original_march_finishes_arrival_turn_then_defends() {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.ai_defend_on_arrival = true;
+    let mut st = state(&pack);
+    add(&mut st, &pack, Side::Player, "infantry", 1, p(3, 3));
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    st.units[foe].ai = AiMode::March;
+    st.units[foe].ai_pos = Some(p(2, 1));
+    enemy_phase(&mut st);
+    st.apply(
+        &pack,
+        Action::Move {
+            unit: foe,
+            to: p(2, 1),
+        },
+    )
+    .unwrap();
+    assert_eq!(st.units[foe].ai, AiMode::March);
+    assert_eq!(st.ai_actions(&pack, foe), vec![Action::Wait { unit: foe }]);
+    st.apply(&pack, Action::Wait { unit: foe }).unwrap();
+    assert_eq!(st.units[foe].ai, AiMode::Defensive);
+    assert_eq!(st.units[foe].ai_pos, None);
+    st.units[foe].acted = false;
+    st.units[foe].moved = false;
+    assert!(matches!(
+        last(&st.ai_actions(&pack, foe)),
+        Action::Attack { .. }
+    ));
+}
+
+#[test]
+fn original_legacy_arrived_march_leaves_post_and_never_marches_back() {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.ai_defend_on_arrival = true;
+    let mut st = state(&pack);
+    let target = add(&mut st, &pack, Side::Player, "infantry", 1, p(4, 1));
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    st.units[foe].ai = AiMode::March;
+    st.units[foe].ai_pos = Some(p(1, 1));
+    enemy_phase(&mut st);
+    let serialized = serde_json::to_string(&st).unwrap();
+    let mut restored: BattleState = serde_json::from_str(&serialized).unwrap();
+    let plan = restored.ai_actions(&pack, foe);
+    assert_eq!(
+        serde_json::to_string(&restored).unwrap(),
+        serialized,
+        "planning is read only"
+    );
+    assert!(move_target(&plan).is_some());
+    assert_eq!(last(&plan), &Action::Attack { unit: foe, target });
+    play(&mut restored, &pack, plan);
+    assert_eq!(restored.units[foe].ai, AiMode::Defensive);
+    assert_eq!(restored.units[foe].ai_pos, None);
+}
+
+#[test]
+fn original_coordinate_advance_arrival_defends_but_unit_march_does_not() {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.ai_defend_on_arrival = true;
+    let mut st = state(&pack);
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    enemy_phase(&mut st);
+    st.units[foe].ai = AiMode::Advance;
+    st.units[foe].ai_pos = Some(p(1, 1));
+    st.apply(&pack, Action::Wait { unit: foe }).unwrap();
+    assert_eq!(st.units[foe].ai, AiMode::Defensive);
+    st.units[foe].acted = false;
+    st.units[foe].ai = AiMode::March;
+    st.units[foe].ai_pos = Some(p(1, 1));
+    st.units[foe].ai_target = Some("mark".into());
+    st.apply(&pack, Action::Wait { unit: foe }).unwrap();
+    assert_eq!(st.units[foe].ai, AiMode::March);
+}
+
+#[test]
+fn rejected_action_does_not_change_arrived_ai() {
+    let mut pack = pack(OPEN_MAP);
+    pack.rules.ai_defend_on_arrival = true;
+    let mut st = state(&pack);
+    let foe = brawler(&mut st, &pack, Side::Enemy, p(1, 1));
+    enemy_phase(&mut st);
+    st.units[foe].ai = AiMode::March;
+    st.units[foe].ai_pos = Some(p(1, 1));
+    let before = serde_json::to_string(&st).unwrap();
+    assert!(st
+        .apply(
+            &pack,
+            Action::Move {
+                unit: foe,
+                to: p(-1, -1)
+            }
+        )
+        .is_err());
+    assert_eq!(serde_json::to_string(&st).unwrap(), before);
+}

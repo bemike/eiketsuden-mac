@@ -379,6 +379,7 @@ pub fn rules() -> GameRules {
             rain: 0,
         },
         strategy_formulas: StrategyFormulas::Engine,
+        ai_defend_on_arrival: false,
     }
 }
 

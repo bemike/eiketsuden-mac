@@ -1968,6 +1968,7 @@ fn convert_rules(
                 if let Some(rules) = &options.game_rules {
                     let rules = GameRules {
                         strategy_formulas: StrategyFormulas::Original,
+                        ai_defend_on_arrival: true,
                         ..rules.clone()
                     };
                     let body = toml::to_string(&rules).map_err(|e| {
@@ -7243,6 +7244,7 @@ mod tests {
             rules,
             GameRules {
                 strategy_formulas: StrategyFormulas::Original,
+                ai_defend_on_arrival: true,
                 ..game
             }
         );

@@ -350,11 +350,26 @@ fn offer(best: &mut Option<Choice>, c: Choice, origin: Pos) {
     }
 }
 
+/// DOS coordinate modes 0/4 become mode 3 at their destination (FORMATS §13.4).
+/// Also interprets old saves stranded at the destination without changing them during planning.
+pub(super) fn arrival_ai(pack: &Pack, unit: &Unit) -> AiMode {
+    if pack.rules.ai_defend_on_arrival
+        && matches!(unit.ai, AiMode::Advance | AiMode::March)
+        && unit.ai_target.is_none()
+        && unit.ai_pos == Some(unit.pos)
+    {
+        AiMode::Defensive
+    } else {
+        unit.ai
+    }
+}
+
 struct Planner<'a> {
     st: &'a BattleState,
     pack: &'a Pack,
     id: UnitId,
     me: &'a Unit,
+    ai: AiMode,
     board: Board<'a>,
     /// Tiles the unit may end its move on, in position order.
     reach: Vec<Pos>,
@@ -382,6 +397,11 @@ struct Planner<'a> {
 impl<'a> Planner<'a> {
     fn new(st: &'a BattleState, pack: &'a Pack, id: UnitId) -> Planner<'a> {
         let me = &st.units[id];
+        let ai = if me.moved {
+            me.ai
+        } else {
+            arrival_ai(pack, me)
+        };
         let board = Board::new(st, pack);
         let reach: Vec<Pos> = if me.moved {
             vec![me.pos]
@@ -411,7 +431,7 @@ impl<'a> Planner<'a> {
                 v
             })
             .collect();
-        let focus = match me.ai {
+        let focus = match ai {
             AiMode::Target | AiMode::March => me
                 .ai_target
                 .as_deref()
@@ -424,6 +444,7 @@ impl<'a> Planner<'a> {
             pack,
             id,
             me,
+            ai,
             board,
             reach,
             threat: Vec::new(),
@@ -470,7 +491,7 @@ impl<'a> Planner<'a> {
         if self.me.lord {
             reach = self.lord_tiles(reach);
         }
-        let (tile, action) = match self.me.ai {
+        let (tile, action) = match self.ai {
             AiMode::Hold => self.act_at(origin),
             AiMode::Aggressive => self.aggressive(&reach),
             AiMode::Defensive => self.defensive(&reach),
@@ -1232,7 +1253,7 @@ impl<'a> Planner<'a> {
             .units
             .iter()
             .filter(|h| h.is_active() && self.is_hostile(h.id))
-            .filter(|h| h.side == Side::Player || h.ai != AiMode::March)
+            .filter(|h| h.side == Side::Player || arrival_ai(self.pack, h) != AiMode::March)
         {
             if h.statuses
                 .iter()
@@ -1340,7 +1361,7 @@ impl<'a> Planner<'a> {
         let ai = if h.side == Side::Player {
             AiMode::Aggressive
         } else {
-            h.ai
+            arrival_ai(self.pack, h)
         };
         if ai == AiMode::Hold {
             return vec![h.pos];

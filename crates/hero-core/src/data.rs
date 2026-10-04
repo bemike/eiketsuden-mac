@@ -63,6 +63,9 @@ pub struct GameRules {
     /// Which strategy formulas the battles use (RULES.md §5, §6).
     #[serde(default)]
     pub strategy_formulas: StrategyFormulas,
+    /// Original coordinate-directed advance/march units defend after reaching their post.
+    #[serde(default)]
+    pub ai_defend_on_arrival: bool,
 }
 
 /// The strategy formulas of `GameRules::strategy_formulas`.

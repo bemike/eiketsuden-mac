@@ -98,7 +98,7 @@ def package(binary, original, output):
             "CFBundleName": "三国志英杰传", "CFBundleDisplayName": "三国志英杰传",
             "CFBundleIdentifier": "local.bemike.eiketsuden-native.classic-rounded",
             "CFBundleExecutable": "eiketsuden", "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": version, "CFBundleVersion": "11",
+            "CFBundleShortVersionString": version, "CFBundleVersion": "12",
             "LSMinimumSystemVersion": "12.0", "LSArchitecturePriority": ["arm64"],
             "NSHighResolutionCapable": True, "CFBundleIconFile": "AppIcon.icns",
             "NSHumanReadableCopyright": "Non-official GPL engine adaptation. Original assets belong to their rights holders.",

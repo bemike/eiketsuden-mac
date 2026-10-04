@@ -743,6 +743,17 @@ impl BattleState {
         if self.outcome.is_some() {
             return Err(ActionError::BattleOver);
         }
+        let actor = match &action {
+            Action::Move { unit, .. }
+            | Action::Attack { unit, .. }
+            | Action::Strategy { unit, .. }
+            | Action::UseItem { unit, .. }
+            | Action::Wait { unit } => Some(*unit),
+            Action::EndPhase => None,
+        };
+        let already_arrived = actor
+            .and_then(|id| self.units.get(id))
+            .is_some_and(|u| !u.moved && ai::arrival_ai(pack, u) != u.ai);
         let mut ev = Vec::new();
         match action {
             Action::Move { unit, to } => self.act_move(pack, unit, to, &mut ev)?,
@@ -762,6 +773,16 @@ impl BattleState {
             Action::EndPhase => {
                 self.end_phase(pack, &mut ev);
                 return Ok(ev);
+            }
+        }
+        // Resolve arrival only after an accepted action. A marching unit finishes its
+        // arrival turn without attacking; an old save already at the post can leave it.
+        if let Some(id) = actor {
+            let unit = &mut self.units[id];
+            if already_arrived || (unit.acted && ai::arrival_ai(pack, unit) != unit.ai) {
+                unit.ai = AiMode::Defensive;
+                unit.ai_pos = None;
+                unit.ai_target = None;
             }
         }
         self.settle(pack, &mut ev);
