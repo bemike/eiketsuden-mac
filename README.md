@@ -2,14 +2,14 @@
 
 基于 [Eiketsuden Reloaded](https://github.com/jeiel85/eiketsuden-reloaded) 的中文 Mac 改造版，在 Apple Silicon 上运行原生 Rust 引擎，读取转换后的中文 DOS 游戏资源。运行时不依赖 DOSBox、Windows 或 Rosetta。
 
-**当前 Mac 版：0.1.11。**
+**当前 Mac 版：0.1.12。**
 
 ## 下载与运行
 
-[下载最新版（Releases）](https://github.com/bemike/eiketsuden-mac/releases/latest) · [0.1.11 Apple Silicon ZIP](https://github.com/bemike/eiketsuden-mac/releases/download/v0.1.11/eiketsuden-mac-0.1.11-arm64.zip)
+[下载最新版（Releases）](https://github.com/bemike/eiketsuden-mac/releases/latest) · [0.1.12 Apple Silicon ZIP](https://github.com/bemike/eiketsuden-mac/releases/download/v0.1.12/eiketsuden-mac-0.1.12-arm64.zip)
 
-1. 下载 `eiketsuden-mac-0.1.11-arm64.zip` 并解压。
-2. 将 `三国志英杰传-0.1.11.app` 放到“应用程序”或其他文件夹，双击打开。
+1. 下载 `eiketsuden-mac-0.1.12-arm64.zip` 并解压。
+2. 将 `三国志英杰传-0.1.12.app` 放到“应用程序”或其他文件夹，双击打开。
 3. 首次游玩选择“新的征程”；已有本项目存档时，可继续游戏或读档。
 
 完整版所需资源随应用打包，不需要安装 Rust、Python 或 DOSBox。仅提供 Apple Silicon 包，没有 Intel Mac 包。应用包声明最低 macOS 12；目前只在开发者的 Apple Silicon Mac 上实际验证，未覆盖所有系统版本。应用采用本地临时签名，尚未完成 Apple 开发者签名和公证，首次运行可能被 macOS 安全机制阻止。
@@ -18,6 +18,7 @@
 
 - 中文对白、菜单和中文像素字体补字。
 - 开场室内背景与人物显示。
+- 战前「本关要点」：查看当前关卡的单挑、宝物坐标、物品和兵种转换提示，分支奖励注明选择条件。
 - 战前八格个人背包，以及武将间道具转交、互换。
 - 战斗物品获得、使用与结算衔接，豆、酒支持给周围八格友军使用。
 - 补回广川关羽单挑逢纪、许昌连战及过场城镇和大地图背景。
@@ -61,7 +62,7 @@ source .venv/bin/activate
 python -m pip install 'fonttools[woff]'
 python scripts/package_macos.py \
   --binary target/aarch64-apple-darwin/release/eiketsuden \
-  --original-pack '/path/to/三国志英杰传-0.1.11.app/Contents/Resources/data/original' \
+  --original-pack '/path/to/三国志英杰传-0.1.12.app/Contents/Resources/data/original' \
   --output dist
 ```
 

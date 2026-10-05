@@ -22,6 +22,7 @@ pub mod deploy;
 pub mod equip;
 pub mod exchange;
 pub mod frame;
+pub mod guide;
 pub mod officers;
 pub mod personal_shop;
 pub mod shop;
@@ -56,6 +57,7 @@ use macroquad::prelude::*;
 enum Command {
     Sortie,
     Deploy,
+    Guide,
     Equip,
     Shop,
     Tools,
@@ -72,6 +74,7 @@ impl Command {
             Command::Sortie if has_battle => "出战",
             Command::Sortie => "继续",
             Command::Deploy => "部队编成",
+            Command::Guide => "本关要点",
             Command::Equip => "交换道具",
             Command::Shop => "商店",
             Command::Tools => "道具",
@@ -89,6 +92,7 @@ fn commands(has_battle: bool) -> Vec<Command> {
     let mut v = vec![Command::Sortie];
     if has_battle {
         v.push(Command::Deploy);
+        v.push(Command::Guide);
     }
     v.extend([
         Command::Equip,
@@ -248,6 +252,7 @@ impl CampScreen {
             Command::Sortie if self.battle.is_some() => "确认编成并进入战斗。".to_string(),
             Command::Sortie => "完成准备，进入下一阶段。".to_string(),
             Command::Deploy => "选择本场出战的武将。".to_string(),
+            Command::Guide => "查看本关单挑、宝物、物品和兵种转换提示。".to_string(),
             Command::Equip => "转交、交换随身物品，或领取公用道具。".to_string(),
             Command::Shop if self.shop.is_empty() => {
                 "出售持有物品，此处没有可购买的商品。".to_string()
@@ -291,6 +296,10 @@ impl CampScreen {
             }
             Command::Deploy => match &self.battle {
                 Some(b) => Transition::push(DeployScreen::new(b)),
+                None => Transition::None,
+            },
+            Command::Guide => match &self.battle {
+                Some(b) => Transition::push(guide::GuideScreen::new(b, &self.shop)),
                 None => Transition::None,
             },
             Command::Equip => Transition::push(exchange::ExchangeScreen::new()),
@@ -667,11 +676,13 @@ mod tests {
         let with = commands(true);
         assert_eq!(with[0], Command::Sortie);
         assert!(with.contains(&Command::Deploy));
+        assert!(with.contains(&Command::Guide));
         assert_eq!(Command::Sortie.label(true), "出战");
         let without = commands(false);
         assert!(!without.contains(&Command::Deploy));
+        assert!(!without.contains(&Command::Guide));
         assert_eq!(Command::Sortie.label(false), "继续");
-        assert_eq!(with.len(), without.len() + 1);
+        assert_eq!(with.len(), without.len() + 2);
     }
 
     #[test]
