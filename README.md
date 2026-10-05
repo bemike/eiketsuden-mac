@@ -2,13 +2,13 @@
 
 基于 [Eiketsuden Reloaded](https://github.com/jeiel85/eiketsuden-reloaded) 的中文 Mac 改造版，在 Apple Silicon 上运行原生 Rust 引擎，读取转换后的中文 DOS 游戏资源。运行时不依赖 DOSBox、Windows 或 Rosetta。
 
-**当前本地 Mac 打包版：0.1.11。GitHub 上的 0.1.11 完整版发布范围待确认。**
+**当前 Mac 版：0.1.11。**
 
 ## 下载与运行
 
-[查看已发布版本（Releases）](https://github.com/bemike/eiketsuden-mac/releases/latest)
+[下载最新版（Releases）](https://github.com/bemike/eiketsuden-mac/releases/latest) · [0.1.11 Apple Silicon ZIP](https://github.com/bemike/eiketsuden-mac/releases/download/v0.1.11/eiketsuden-mac-0.1.11-arm64.zip)
 
-1. 获取 `eiketsuden-mac-0.1.11-arm64.zip` 并解压。
+1. 下载 `eiketsuden-mac-0.1.11-arm64.zip` 并解压。
 2. 将 `三国志英杰传-0.1.11.app` 放到“应用程序”或其他文件夹，双击打开。
 3. 首次游玩选择“新的征程”；已有本项目存档时，可继续游戏或读档。
 
@@ -53,7 +53,7 @@ cargo build --locked --release -p hero-game --target aarch64-apple-darwin
 cargo test --locked --workspace
 ```
 
-引擎源代码在 `crates/`，基础资源在 `data/base/`。完整中文原版转换数据不提交到 Git 历史，只随私有 Release 分发。重打包时可以使用现有完整版应用内的转换数据：
+引擎源代码在 `crates/`，基础资源在 `data/base/`。完整中文原版转换数据不提交到 Git 历史，随完整版 Release 分发。重打包时可以使用现有完整版应用内的转换数据：
 
 ```bash
 python3 -m venv .venv
@@ -78,6 +78,6 @@ Mac 应用版本记录在 `VERSION`；Cargo 中的 `0.4.1` 是所采用的上游
 - 中文原版游戏的图像、对白、音乐和其他素材：归原权利人所有，**不因引擎开源而获得 GPL 或 CC 授权**。本仓库的原版标题图及标题衍生图标也不属于上游的 CC0 美术。
 - 营地插画为 AI 生成，高清圆角图标为参考原版标志的 AI 重建。
 
-完整版此前获准按私有范围发布；公开分发原版素材前，需要单独确认其授权范围。我们不代表 KOEI TECMO，也不是官方移植。
+我们不代表 KOEI TECMO，也不是官方移植。
 
 上游原始说明保存在 [README.upstream.md](README.upstream.md)，其“发布物不含原版素材”等表述仅适用于上游，不能用于描述本仓库的完整版。字体、标题及插画来源见 [CREDITS.md](CREDITS.md)、[docs/ORIGINAL_TITLE_SOURCES.md](docs/ORIGINAL_TITLE_SOURCES.md) 和 [docs/HAN_CAMP_AND_CHINESE_FONTS.md](docs/HAN_CAMP_AND_CHINESE_FONTS.md)。
